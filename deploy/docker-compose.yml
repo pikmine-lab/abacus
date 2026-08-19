@@ -1,0 +1,28 @@
+# Production stack, deployed by the provisioner (provision/) on every main
+# commit. Environment values are injected by Dokploy from the compose env,
+# which the provisioner writes; nothing sensitive lives in this file.
+# The MCP container owns the migrations (forward-only, advisory-locked), so
+# both services can start in any order.
+services:
+  web:
+    image: ghcr.io/pikmine-lab/abacus-web:${IMAGE_TAG}
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+    networks:
+      - dokploy-network
+
+  mcp:
+    image: ghcr.io/pikmine-lab/abacus-mcp:${IMAGE_TAG}
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+      PORT: "3000"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true

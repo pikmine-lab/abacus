@@ -11,6 +11,6 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["packages/**/*.ts", "apps/**/*.ts"],
+  "include": ["packages/**/*.ts", "apps/**/*.ts", "provision/**/*.ts"],
   "exclude": ["apps/web"]
 }

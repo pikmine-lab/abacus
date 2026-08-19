@@ -1,0 +1,10 @@
+{
+  "name": "@abacus/provision",
+  "private": true,
+  "type": "module",
+  "description": "Idempotent Dokploy provisioning for abacus. Zero dependencies: Node 24 runs the TypeScript directly.",
+  "scripts": {
+    "plan": "node src/provision.ts --dry-run",
+    "provision": "node src/provision.ts"
+  }
+}

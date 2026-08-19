@@ -53,20 +53,39 @@ nr db:reset      # base vierge (détruit le volume)
 Les identifiants `abacus:abacus@127.0.0.1:5544` sont locaux et jetables, ce ne sont pas
 des secrets. Tout le reste passe par `DATABASE_URL`.
 
+## Flux de travail (depuis le 2026-08-19)
+
+**`main` = production, déploiement continu.** Chaque commit sur `main` déclenche
+tests → build des deux images → déploiement Dokploy. En conséquence :
+
+- **Les features passent par une pull request.** Branche courte, PR vers `main`, la CI
+  (lint, typecheck, tests, build web et images) doit être verte avant merge. Le merge
+  déploie, il n'y a pas d'étape manuelle.
+- Un commit direct sur `main` reste techniquement possible mais réservé aux corrections
+  triviales ; tout ce qui porte du comportement passe en PR.
+- Rollback : relancer le provisionneur avec un tag antérieur
+  (`cd provision && IMAGE_TAG=sha-… node src/provision.ts`, tags visibles sur GHCR).
+
 ## Déploiement
 
-Mêmes décisions que radar, à ne pas rejouer : un Dockerfile, image construite par GitHub
-Actions → GHCR (`ghcr.io/pikmine-lab/abacus`), déploiement par appel explicite à l'API
-Dokploy après les tests (jamais l'auto-deploy natif), projet Dokploy dédié, secrets via le
-vault Infisical du socle, socle privé en submodule `vendors/infra` le moment venu.
+Continu, sur le modèle de `pikmine-lab/space-engineers` : le dépôt embarque son
+provisionneur (`provision/`, zéro dépendance, idempotent, API Dokploy uniquement) et la CI
+le rejoue à chaque commit sur `main` avec le tag `sha-…` fraîchement construit. Le
+provisionneur ne supprime jamais rien ; `node provision/src/provision.ts --dry-run` montre
+l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 
-Dépôt public : aucun secret, aucune topologie serveur ici.
-
-CI (`.github/workflows/ci.yml`) : chaque commit sur `main` (et chaque PR) exécute typecheck +
-tests contre un Postgres ISO socle, puis construit l'image `ghcr.io/pikmine-lab/abacus-mcp`
-(poussée uniquement depuis `main`). L'image migre la base à son démarrage. Variables requises
-au runtime : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET` (obligatoire en production,
-sinon crash à la première requête), `PORT` (défaut 3000).
+- Images : `ghcr.io/pikmine-lab/abacus-web` (Next standalone) et `abacus-mcp` (migre la
+  base à son démarrage, verrou advisory). Tags `sha-<court>` immuables + `latest`.
+- Stack : `deploy/docker-compose.yml`, projet Dokploy `abacus`, réseau `dokploy-network`,
+  domaines `abacus.payangar.dev` (web) et `abacus-mcp.payangar.dev` (MCP), TLS Let's
+  Encrypt via Traefik. Base et rôle `abacus` sur le Postgres partagé du socle (création
+  one-shot en SSH, hors provisionneur).
+- Secrets : environnement GitHub `production` restreint à `main` (`DOKPLOY_URL`,
+  `DOKPLOY_AUTH_TOKEN`, `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`) ; copies locales dans
+  `~/.config/abacus/`. Dépôt public : aucun secret, aucune topologie serveur ici.
+- Variables runtime des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
+  (obligatoire en production, sinon crash à la première requête), `PORT` (MCP).
+- Actions GitHub épinglées par commit, jamais par tag.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès

@@ -1,7 +1,14 @@
-# Every commit on main runs the tests against a database identical to the
-# socle (pgvector/pgvector:pg16 + extensions), then builds the MCP image.
-# The image is pushed to GHCR only from main; deployment stays a separate,
-# explicit Dokploy API call (pikmine-lab convention: never auto-deploy).
+# Continuous deployment: every commit on main runs the tests, builds both
+# images (web + MCP) tagged by commit SHA, and reconciles Dokploy against the
+# repository through the embedded provisioner (provision/). Pull requests run
+# the tests and a build without pushing anything.
+#
+# The deploy job is separate on purpose: environment secrets are only handed to
+# the job that declares the environment, so the Dokploy token (instance-wide,
+# not scoped to one project) never shares a process with the Docker actions.
+#
+# Actions are pinned by commit rather than by tag: a tag is a moving target its
+# owner can repoint (see the tj-actions/changed-files leak, 2025).
 name: CI
 
 on:
@@ -12,6 +19,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -28,9 +37,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: pnpm
@@ -55,22 +64,63 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        include:
+          - name: web
+            dockerfile: apps/web/Dockerfile
+          - name: mcp
+            dockerfile: apps/mcp/Dockerfile
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         if: github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/pikmine-lab/abacus-${{ matrix.name }}
+          # sha-<short> is what gets deployed: immutable, names exactly one
+          # build. `latest` is a convenience for pulling by hand.
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
-          file: apps/mcp/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/pikmine-lab/abacus-mcp:latest
-            ghcr.io/pikmine-lab/abacus-mcp:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Holds the Dokploy and application secrets. Restricted to main in the
+    # repository settings: a workflow on any other branch cannot read them.
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      # The provisioner has zero dependencies (Node runs the TypeScript
+      # directly), so nothing is installed in the job that holds the token.
+      - name: Reconcile Dokploy against the repository
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_AUTH_TOKEN: ${{ secrets.DOKPLOY_AUTH_TOKEN }}
+          DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+        run: |
+          export IMAGE_TAG="sha-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          node provision/src/provision.ts
