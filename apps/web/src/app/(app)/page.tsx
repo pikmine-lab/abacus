@@ -7,9 +7,10 @@ import {
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { outstandingAdvances } from '@abacus/core/services/movements'
-import { spendingBreakdown } from '@abacus/core/services/reports'
+import { balanceSeries, spendingBreakdown } from '@abacus/core/services/reports'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { BalanceChart } from '@/components/balance-chart'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardSub, CardTitle } from '@/components/ui/card'
 import { eur } from '@/lib/utils'
@@ -43,12 +44,14 @@ export default async function DashboardPage() {
   const userId = session.user.id
 
   const { from, to, label: monthLabel } = monthRange()
-  const [accounts, pending, advances, commitments, breakdown] = await Promise.all([
+  const yearAgo = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10)
+  const [accounts, pending, advances, commitments, breakdown, series] = await Promise.all([
     listAccounts(userId),
     pendingOccurrences(userId),
     outstandingAdvances(userId),
     listCommitmentsWithProgress(userId),
     spendingBreakdown(userId, from, to, 'category'),
+    balanceSeries(userId, yearAgo, to),
   ])
 
   const patrimoine = accounts.reduce((sum, a) => sum + Number(a.balance), 0)
@@ -113,6 +116,11 @@ export default async function DashboardPage() {
           </p>
         </Card>
       </section>
+
+      <BalanceChart
+        accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
+        rows={series.map((r) => ({ day: r.day, accountId: r.accountId, balance: Number(r.balance) }))}
+      />
 
       {/* Accounts + pending occurrences */}
       <section className="grid gap-3 lg:grid-cols-[1.55fr_1fr]">

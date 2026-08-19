@@ -6,7 +6,7 @@ import { createActor } from '../src/services/actors.ts'
 import { createAdjustment, recordBalanceCheck } from '../src/services/balanceChecks.ts'
 import { createCategory } from '../src/services/catalog.ts'
 import { closeAdvance, declareMovement, outstandingAdvances } from '../src/services/movements.ts'
-import { spendingBreakdown } from '../src/services/reports.ts'
+import { balanceSeries, spendingBreakdown } from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -100,4 +100,35 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
   assert.deepEqual([...(await outstandingAdvances(user))], [])
   const after = await spendingBreakdown(user, '2026-04-01', '2026-04-30', 'category')
   assert.deepEqual([...after], [{ label: 'Dining', gross: '120.00', net: '70.00' }])
+})
+
+test('balance series runs the daily cumulative sum per account', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  const employer = await createActor(user, { name: 'Employer' })
+
+  await declareMovement(user, {
+    happenedOn: '2026-05-02',
+    amount: 1000,
+    sourceActorId: employer.id,
+    targetAccountId: checking.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-05-04',
+    amount: 300,
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+  })
+
+  const rows = await balanceSeries(user, '2026-05-01', '2026-05-05')
+  const at = (day: string, accountId: string) =>
+    rows.find((r) => r.day === day && r.accountId === accountId)?.balance
+
+  assert.equal(rows.length, 10) // 5 days x 2 accounts
+  assert.equal(at('2026-05-01', checking.id), '0.00')
+  assert.equal(at('2026-05-02', checking.id), '1000.00')
+  assert.equal(at('2026-05-03', savings.id), '0.00')
+  assert.equal(at('2026-05-04', checking.id), '700.00')
+  assert.equal(at('2026-05-05', savings.id), '300.00')
 })
