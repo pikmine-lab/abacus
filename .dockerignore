@@ -1,0 +1,9 @@
+# Keep the build context clean: dependencies are installed inside the image,
+# and a host node_modules copied over them would break the pnpm symlink store.
+node_modules
+**/node_modules
+**/.next
+.git
+vendors
+provision/.env
+**/.env*

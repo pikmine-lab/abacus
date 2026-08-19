@@ -19,6 +19,10 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     BETTER_AUTH_SECRET=build-only \
     DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm --filter @abacus/web build
+# Next's file tracer copies only cjs/ out of @swc/helpers in a pnpm store, but
+# the runtime resolves the esm/ entries too: complete the traced package.
+RUN cp -r node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/esm \
+      apps/web/.next/standalone/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/
 
 FROM node:24-slim
 WORKDIR /app
