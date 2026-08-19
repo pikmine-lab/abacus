@@ -51,11 +51,20 @@ Fond quasi noir et blancs cassés (gamme zinc), un accent, une famille de varian
    | s1 | `#3987e5` | série principale (= l'accent) |
    | s2 | `#c9bcf8` | deuxième série (périwinkle clair) |
    | s3 | `#7365e0` | troisième série (violet) |
-   | barres | `#7365e0` | graphes à série unique |
 
-   Au-delà de trois séries : regrouper, ou passer en small multiples. On n'ajoute pas
-   une quatrième teinte à la famille sans la re-valider
+   Au-delà de trois séries de courbes : regrouper, ou passer en small multiples. On
+   n'ajoute pas une quatrième teinte de courbe sans la re-valider
    (`dataviz` skill, `scripts/validate_palette.js`, surface `#141417`).
+
+3. **Les catégories aussi vivent dans la famille.** Chaque catégorie reçoit une
+   variante bleu → violet **stable** (elle suit l'entité, pas son rang dans le
+   graphe). Dans un graphe à barres libellées, l'identité est portée par le libellé
+   et la valeur ; la couleur n'est qu'une aide de reconnaissance, donc la contrainte
+   daltonisme ne s'applique pas à ces variantes (décision du 2026-08-19), seul le
+   contraste ≥ 3:1 sur la surface reste exigé. Variantes en service :
+   `#3987e5 · #c9bcf8 · #7365e0 · #5a9df0 · #9d92f5 · #3576d4 · #8b7ff0`
+   (attribution à la création de la catégorie, réutilisation cyclique acceptée ici
+   puisque la couleur n'est pas le canal d'identité).
 
 La couleur suit **l'entité**, jamais son rang : filtrer ne repeint aucune série.
 Le sens (positif/négatif) n'est jamais porté par la couleur seule (flèches ↑↓ toujours).
