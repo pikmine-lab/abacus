@@ -1,4 +1,4 @@
-import type { AuthInfo } from '@modelcontextprotocol/server'
+import { OAuthError, OAuthErrorCode, type AuthInfo } from '@modelcontextprotocol/server'
 import { auth } from '@abacus/core/auth'
 
 /**
@@ -11,7 +11,8 @@ export async function verifyApiKeyToken(token: string): Promise<AuthInfo> {
   const key = result.key as { userId?: string; referenceId?: string; expiresAt?: Date | null } | null
   const userId = key?.userId ?? key?.referenceId
   if (!result.valid || !userId) {
-    throw new Error('Invalid API key')
+    // The typed error is what turns into a clean 401; anything else is a 500.
+    throw new OAuthError(OAuthErrorCode.InvalidToken, 'Invalid API key')
   }
   // The bearer gate requires an expiration. API keys may not carry one; the
   // key is re-verified on every request anyway, so a short synthetic window

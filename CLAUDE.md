@@ -62,6 +62,12 @@ vault Infisical du socle, socle privé en submodule `vendors/infra` le moment ve
 
 Dépôt public : aucun secret, aucune topologie serveur ici.
 
+CI (`.github/workflows/ci.yml`) : chaque commit sur `main` (et chaque PR) exécute typecheck +
+tests contre un Postgres ISO socle, puis construit l'image `ghcr.io/pikmine-lab/abacus-mcp`
+(poussée uniquement depuis `main`). L'image migre la base à son démarrage. Variables requises
+au runtime : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET` (obligatoire en production,
+sinon crash à la première requête), `PORT` (défaut 3000).
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès
 que re-saisir l'historique ferait mal.
