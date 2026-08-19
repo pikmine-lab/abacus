@@ -90,8 +90,11 @@ Cas : payer pour quelqu'un et attendre un remboursement, éventuellement partiel
 - La **créance** est dérivée : montant avancé moins remboursements liés, par acteur. Une
   créance peut être soldée explicitement (abandon du reste : « il ne remboursera que
   50 % »), pour ne pas traîner éternellement.
-- Les analyses de dépenses affichent le **coût net** (dépense moins remboursements liés),
-  sinon avancer 100 € remboursés 50 fausserait le « réellement dépensé ».
+- Les analyses de dépenses distinguent **deux lectures, toutes deux visibles** : le
+  **brut** (ce qui est réellement sorti des comptes, la dépense « est ce qu'elle est ») et
+  le **net** (brut moins remboursements liés **effectivement reçus**). Une créance en
+  attente ne réduit jamais le net : tant que l'argent n'est pas revenu, la dépense est
+  entière, et une avance jamais remboursée reste simplement une dépense pleine.
 
 ### Engagement récurrent : abonnement et financement
 Engagement déclaré, lié à un acteur et à un compte de prélèvement, en deux formes :
