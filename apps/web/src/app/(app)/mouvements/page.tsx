@@ -8,7 +8,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { MovementForm } from '@/components/movement-form'
-import { Card, CardSub, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { createActivityAction, createCategoryAction } from '@/lib/actions'
 import { eur } from '@/lib/utils'
@@ -59,9 +59,11 @@ export default async function MovementsPage() {
     <main className="grid items-start gap-3 lg:grid-cols-[1fr_1.4fr]">
       <div className="flex flex-col gap-3 lg:order-2">
         <Card>
-          <CardTitle>Déclarer un mouvement</CardTitle>
-          <CardSub>dépense, revenu ou virement entre tes comptes (neutre)</CardSub>
-          <div className="mt-3">
+          <CardHeader>
+            <CardTitle>Déclarer un mouvement</CardTitle>
+            <CardDescription>dépense, revenu ou virement entre tes comptes (neutre)</CardDescription>
+          </CardHeader>
+          <CardContent>
             <MovementForm
               accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
               actors={actors.map((a) => ({ id: a.id, name: a.name }))}
@@ -75,15 +77,17 @@ export default async function MovementsPage() {
               }))}
               today={today()}
             />
-          </div>
+          </CardContent>
         </Card>
 
         <Card>
-          <CardTitle>Catégories et activités</CardTitle>
-          <CardSub>
-            ton vocabulaire : catégories pour la nature, activités pour la sphère (ex. Freelance)
-          </CardSub>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <CardHeader>
+            <CardTitle>Catégories et activités</CardTitle>
+            <CardDescription>
+              ton vocabulaire : catégories pour la nature, activités pour la sphère (ex. Freelance)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="mb-2 text-xs text-faint">
                 {categories.map((c) => c.name).join(' · ') || 'aucune'}
@@ -106,14 +110,18 @@ export default async function MovementsPage() {
                 </SubmitButton>
               </ActionForm>
             </div>
-          </div>
+          </CardContent>
         </Card>
       </div>
 
       <Card className="lg:order-1">
-        <CardTitle>Mouvements</CardTitle>
-        <CardSub>{movements.length} derniers · les virements internes ne comptent jamais en dépense</CardSub>
-        <div className="mt-3 flex flex-col">
+        <CardHeader>
+          <CardTitle>Mouvements</CardTitle>
+          <CardDescription>
+            {movements.length} derniers · les virements internes ne comptent jamais en dépense
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col">
           {movements.length === 0 && <p className="text-sm text-faint">Rien de déclaré pour l’instant.</p>}
           {movements.map((m) => {
             const { who, detail } = describe(m)
@@ -142,7 +150,7 @@ export default async function MovementsPage() {
               </div>
             )
           })}
-        </div>
+        </CardContent>
       </Card>
     </main>
   )

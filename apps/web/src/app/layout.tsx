@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${geist.variable} ${geistMono.variable}`}>
+    <html lang="fr" className={`dark ${geist.variable} ${geistMono.variable}`}>
       <body className="font-sans text-[14px] antialiased">{children}</body>
     </html>
   )

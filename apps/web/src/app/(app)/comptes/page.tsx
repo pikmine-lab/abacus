@@ -4,9 +4,9 @@ import { latestCheck } from '@abacus/core/services/balanceChecks'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { BalanceCheckForm } from '@/components/balance-check-form'
-import { ActionForm, Field, Select, SubmitButton } from '@/components/forms'
+import { ActionForm, Field, FormSelect, SubmitButton } from '@/components/forms'
 import { Button } from '@/components/ui/button'
-import { Card, CardSub, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { closeAccountAction, createAccountAction } from '@/lib/actions'
 import { eur } from '@/lib/utils'
@@ -26,12 +26,14 @@ export default async function AccountsPage() {
   return (
     <main className="grid items-start gap-3 lg:grid-cols-[1.55fr_1fr]">
       <Card>
-        <CardTitle>Comptes</CardTitle>
-        <CardSub>
-          le pointage compare le solde réel (lu dans ta banque) au solde calculé : c’est le garde-fou du
-          déclaratif
-        </CardSub>
-        <div className="mt-3 flex flex-col">
+        <CardHeader>
+          <CardTitle>Comptes</CardTitle>
+          <CardDescription>
+            le pointage compare le solde réel (lu dans ta banque) au solde calculé : c’est le garde-fou du
+            déclaratif
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col">
           {accounts.length === 0 && (
             <p className="text-sm text-faint">Aucun compte : crée le premier ci-contre.</p>
           )}
@@ -71,30 +73,38 @@ export default async function AccountsPage() {
               </div>
             )
           })}
-        </div>
+        </CardContent>
       </Card>
 
       <Card>
-        <CardTitle>Nouveau compte</CardTitle>
-        <CardSub>ton montage bancaire réel, un compte à la fois</CardSub>
-        <ActionForm action={createAccountAction} className="mt-3">
-          <Field label="Nom">
-            <Input name="name" required placeholder="Fortuneo courant" />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Type">
-              <Select name="behavior" defaultValue="payment">
-                <option value="payment">Courant</option>
-                <option value="savings">Épargne (livret)</option>
-                <option value="investment">Investissement</option>
-              </Select>
+        <CardHeader>
+          <CardTitle>Nouveau compte</CardTitle>
+          <CardDescription>ton montage bancaire réel, un compte à la fois</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ActionForm action={createAccountAction}>
+            <Field label="Nom">
+              <Input name="name" required placeholder="Fortuneo courant" />
             </Field>
-            <Field label="Établissement (optionnel)">
-              <Input name="institution" placeholder="Fortuneo" />
-            </Field>
-          </div>
-          <SubmitButton className="self-start">Créer le compte</SubmitButton>
-        </ActionForm>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Type">
+                <FormSelect
+                  name="behavior"
+                  defaultValue="payment"
+                  options={[
+                    { value: 'payment', label: 'Courant' },
+                    { value: 'savings', label: 'Épargne (livret)' },
+                    { value: 'investment', label: 'Investissement' },
+                  ]}
+                />
+              </Field>
+              <Field label="Établissement (optionnel)">
+                <Input name="institution" placeholder="Fortuneo" />
+              </Field>
+            </div>
+            <SubmitButton className="self-start">Créer le compte</SubmitButton>
+          </ActionForm>
+        </CardContent>
       </Card>
     </main>
   )

@@ -1,8 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { ActionForm, Field, Select, SubmitButton } from '@/components/forms'
+import { useEffect, useRef, useState } from 'react'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createFinancingAction, createSubscriptionAction, setJudgmentAction } from '@/lib/actions'
 
 interface Option {
@@ -35,31 +39,24 @@ export function NewCommitmentForm({
           <Input name="actor" required list="commitment-actors" placeholder="Netflix" autoComplete="off" />
         </Field>
         <Field label="Compte prélevé">
-          <Select name="accountId" required defaultValue="">
-            <option value="" disabled>
-              Choisir
-            </option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+          <FormSelect
+            name="accountId"
+            required
+            placeholder="Choisir"
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Première échéance">
-          <Input type="date" name="firstDueOn" defaultValue={today} required />
+          <DateField name="firstDueOn" defaultValue={today} />
         </Field>
         <Field label="Catégorie">
-          <Select name="categoryId" defaultValue="">
-            <option value="">(aucune)</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+          <FormSelect
+            name="categoryId"
+            noneLabel="(aucune)"
+            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+          />
         </Field>
       </div>
     </>
@@ -67,26 +64,12 @@ export function NewCommitmentForm({
 
   return (
     <div>
-      <div className="flex rounded-lg border border-border p-0.5 text-[13px]">
-        {(
-          [
-            ['subscription', 'Abonnement / récurrent'],
-            ['financing', 'Paiement en X fois'],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={kind === value}
-            onClick={() => setKind(value)}
-            className={`flex-1 cursor-pointer rounded-md py-1.5 transition-colors ${
-              kind === value ? 'bg-wash font-semibold text-primary' : 'text-secondary-foreground'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+        <TabsList className="w-full">
+          <TabsTrigger value="subscription">Abonnement / récurrent</TabsTrigger>
+          <TabsTrigger value="financing">Paiement en X fois</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {kind === 'subscription' ? (
         <ActionForm action={createSubscriptionAction} className="mt-3">
@@ -99,26 +82,33 @@ export function NewCommitmentForm({
               <Input name="amount" required inputMode="decimal" placeholder="15,99" />
             </Field>
             <Field label="Périodicité">
-              <Select name="periodUnit" defaultValue="month">
-                <option value="week">Hebdomadaire</option>
-                <option value="month">Mensuelle</option>
-                <option value="year">Annuelle</option>
-              </Select>
+              <FormSelect
+                name="periodUnit"
+                defaultValue="month"
+                options={[
+                  { value: 'week', label: 'Hebdomadaire' },
+                  { value: 'month', label: 'Mensuelle' },
+                  { value: 'year', label: 'Annuelle' },
+                ]}
+              />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Jugement">
-              <Select name="judgment" defaultValue="">
-                <option value="">à juger plus tard</option>
-                <option value="essential">essentiel</option>
-                <option value="reducible">réductible</option>
-                <option value="to_cancel">à résilier</option>
-              </Select>
+              <FormSelect
+                name="judgment"
+                noneLabel="à juger plus tard"
+                options={[
+                  { value: 'essential', label: 'essentiel' },
+                  { value: 'reducible', label: 'réductible' },
+                  { value: 'to_cancel', label: 'à résilier' },
+                ]}
+              />
             </Field>
-            <label className="flex items-end gap-2 pb-2 text-xs text-secondary-foreground">
-              <input type="checkbox" name="incoming" className="size-4 accent-(--primary)" />
+            <Label className="flex items-end gap-2 pb-2 text-xs font-normal text-muted-foreground">
+              <Checkbox name="incoming" />
               revenu récurrent (salaire…)
-            </label>
+            </Label>
           </div>
           <SubmitButton className="self-start">Créer l’engagement</SubmitButton>
         </ActionForm>
@@ -147,22 +137,26 @@ export function NewCommitmentForm({
 }
 
 export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; value: string | null }) {
+  const formRef = useRef<HTMLFormElement>(null)
+  const [judgment, setJudgment] = useState(value ?? '')
+
+  // Submit after render so the hidden select carries the new value.
+  useEffect(() => {
+    if (judgment && judgment !== (value ?? '')) formRef.current?.requestSubmit()
+  }, [judgment, value])
+
   return (
-    <form action={setJudgmentAction}>
+    <form action={setJudgmentAction} ref={formRef}>
       <input type="hidden" name="commitmentId" value={commitmentId} />
-      <Select
-        name="judgment"
-        defaultValue={value ?? ''}
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="h-7 w-auto rounded-full border-border px-2 text-[11px]"
-        aria-label="Jugement"
-      >
-        <option value="" disabled>
-          à juger
-        </option>
-        <option value="essential">essentiel</option>
-        <option value="reducible">réductible</option>
-        <option value="to_cancel">à résilier</option>
+      <Select name="judgment" value={judgment} onValueChange={setJudgment}>
+        <SelectTrigger size="sm" className="h-7 rounded-full px-2.5 text-[11px]" aria-label="Jugement">
+          <SelectValue placeholder="à juger" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="essential">essentiel</SelectItem>
+          <SelectItem value="reducible">réductible</SelectItem>
+          <SelectItem value="to_cancel">à résilier</SelectItem>
+        </SelectContent>
       </Select>
     </form>
   )

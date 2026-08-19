@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { ActionForm, Field, Select, SubmitButton } from '@/components/forms'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { declareMovementAction } from '@/lib/actions'
 import { eur } from '@/lib/utils'
 
@@ -41,28 +42,24 @@ export function MovementForm({
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense')
   const [advanceOpen, setAdvanceOpen] = useState(false)
 
+  const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
+
   return (
     <ActionForm action={declareMovementAction}>
       <input type="hidden" name="type" value={type} />
-      <div className="flex rounded-lg border border-border p-0.5 text-[13px]">
-        {TYPES.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            aria-pressed={type === t.value}
-            onClick={() => setType(t.value)}
-            className={`flex-1 cursor-pointer rounded-md py-1.5 transition-colors ${
-              type === t.value ? 'bg-wash font-semibold text-primary' : 'text-secondary-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={type} onValueChange={(v) => setType(v as typeof type)}>
+        <TabsList className="w-full">
+          {TYPES.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date">
-          <Input type="date" name="date" defaultValue={today} required />
+          <DateField name="date" defaultValue={today} />
         </Field>
         <Field label="Montant (€)">
           <Input name="amount" required inputMode="decimal" placeholder="12,50" />
@@ -70,30 +67,12 @@ export function MovementForm({
       </div>
 
       <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'}>
-        <Select name="accountId" required defaultValue="">
-          <option value="" disabled>
-            Choisir un compte
-          </option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
+        <FormSelect name="accountId" required placeholder="Choisir un compte" options={accountOptions} />
       </Field>
 
       {type === 'transfer' ? (
         <Field label="Vers le compte">
-          <Select name="toAccountId" required defaultValue="">
-            <option value="" disabled>
-              Choisir un compte
-            </option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+          <FormSelect name="toAccountId" required placeholder="Choisir un compte" options={accountOptions} />
         </Field>
       ) : (
         <>
@@ -114,24 +93,18 @@ export function MovementForm({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Catégorie">
-              <Select name="categoryId" defaultValue="">
-                <option value="">(aucune)</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              <FormSelect
+                name="categoryId"
+                noneLabel="(aucune)"
+                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
             </Field>
             <Field label="Activité">
-              <Select name="activityId" defaultValue="">
-                <option value="">héritée de l’acteur</option>
-                {activities.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </Select>
+              <FormSelect
+                name="activityId"
+                noneLabel="héritée de l’acteur"
+                options={activities.map((a) => ({ value: a.id, label: a.name }))}
+              />
             </Field>
           </div>
         </>
@@ -146,7 +119,7 @@ export function MovementForm({
           <button
             type="button"
             onClick={() => setAdvanceOpen((v) => !v)}
-            className="cursor-pointer text-xs text-secondary-foreground underline-offset-2 hover:underline"
+            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
             aria-expanded={advanceOpen}
           >
             {advanceOpen ? '− Avance pour quelqu’un' : '+ Avance pour quelqu’un (à rembourser)'}
@@ -161,14 +134,14 @@ export function MovementForm({
 
       {type === 'income' && advances.length > 0 && (
         <Field label="Rembourse une avance (optionnel)">
-          <Select name="refundsMovementId" defaultValue="">
-            <option value="">non</option>
-            {advances.map((adv) => (
-              <option key={adv.id} value={adv.id}>
-                {adv.happenedOn} · {eur(adv.amount)} (reste {eur(adv.remaining)})
-              </option>
-            ))}
-          </Select>
+          <FormSelect
+            name="refundsMovementId"
+            noneLabel="non"
+            options={advances.map((adv) => ({
+              value: adv.id,
+              label: `${adv.happenedOn} · ${eur(adv.amount)} (reste ${eur(adv.remaining)})`,
+            }))}
+          />
         </Field>
       )}
 

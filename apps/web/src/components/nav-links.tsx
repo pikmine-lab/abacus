@@ -2,6 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  navigationMenuTriggerStyle,
+} from '@/components/ui/navigation-menu'
+import { cn } from '@/lib/utils'
 
 const NAV = [
   { href: '/', label: 'Tableau de bord' },
@@ -13,21 +21,23 @@ const NAV = [
 export function NavLinks() {
   const pathname = usePathname()
   return (
-    <nav className="flex gap-1 overflow-x-auto text-[13px]">
-      {NAV.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          aria-current={pathname === item.href ? 'page' : undefined}
-          className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 ${
-            pathname === item.href
-              ? 'bg-wash font-semibold text-foreground'
-              : 'text-secondary-foreground hover:bg-wash hover:text-foreground'
-          }`}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </nav>
+    <NavigationMenu viewport={false} className="max-w-full overflow-x-auto">
+      <NavigationMenuList>
+        {NAV.map((item) => (
+          <NavigationMenuItem key={item.href}>
+            <NavigationMenuLink
+              asChild
+              active={pathname === item.href}
+              className={cn(
+                navigationMenuTriggerStyle(),
+                'h-8 px-2.5 text-[13px] text-muted-foreground data-[active=true]:font-semibold',
+              )}
+            >
+              <Link href={item.href}>{item.label}</Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        ))}
+      </NavigationMenuList>
+    </NavigationMenu>
   )
 }
