@@ -1,4 +1,3 @@
-import type { Commitment } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, listAccounts } from '@abacus/core/services/accounts'
 import { addAlias, createActor, listActors, mergeActors } from '@abacus/core/services/actors'
@@ -11,6 +10,7 @@ import {
   createFinancing,
   createSubscription,
   listCommitmentsWithProgress,
+  monthlyEquivalent,
   pendingOccurrences,
   setJudgment,
   skipNextOccurrence,
@@ -81,17 +81,6 @@ async function run(handler: () => Promise<ToolResult>): Promise<ToolResult> {
   } catch (e) {
     return toFailure(e)
   }
-}
-
-function monthlyEquivalent(c: Commitment): number {
-  const amount = Number(c.amount)
-  const perMonth =
-    c.periodUnit === 'month'
-      ? 1 / c.periodCount
-      : c.periodUnit === 'year'
-        ? 1 / (12 * c.periodCount)
-        : 52 / (12 * c.periodCount)
-  return Math.round(amount * perMonth * 100) / 100
 }
 
 const isoDate = z

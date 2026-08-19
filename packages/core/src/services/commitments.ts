@@ -204,6 +204,18 @@ export async function cancelCommitment(userId: string, id: string, on?: string):
   })
 }
 
+/** What one period of a commitment costs per month, for "committed monthly cost" views. */
+export function monthlyEquivalent(c: Pick<Commitment, 'amount' | 'periodUnit' | 'periodCount'>): number {
+  const amount = Number(c.amount)
+  const perMonth =
+    c.periodUnit === 'month'
+      ? 1 / c.periodCount
+      : c.periodUnit === 'year'
+        ? 1 / (12 * c.periodCount)
+        : 52 / (12 * c.periodCount)
+  return Math.round(amount * perMonth * 100) / 100
+}
+
 export interface PendingOccurrence {
   commitment: Commitment
   dueOn: string

@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* Design tokens from DESIGN.md — committed dark theme. */
+:root {
+  --background: #0a0a0b;
+  --card: #141417;
+  --border: #26262b;
+  --foreground: #f4f4f5;
+  --secondary-foreground: #a1a1aa;
+  --faint: #7c7c85;
+  --grid: #222227;
+  --wash: #1c1c20;
+  --primary: #3987e5;
+  --good: #0ca30c;
+  /* Chart series: the accent family, blue → violet, luminance-separated. */
+  --s1: #3987e5;
+  --s2: #c9bcf8;
+  --s3: #7365e0;
+  /* Per-category variants, same family, stable per entity. */
+  --cat0: #3987e5;
+  --cat1: #c9bcf8;
+  --cat2: #7365e0;
+  --cat3: #5a9df0;
+  --cat4: #9d92f5;
+  --cat5: #3576d4;
+  --cat6: #8b7ff0;
+  --radius: 0.75rem;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-faint: var(--faint);
+  --color-grid: var(--grid);
+  --color-wash: var(--wash);
+  --color-primary: var(--primary);
+  --color-good: var(--good);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --radius-lg: var(--radius);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}

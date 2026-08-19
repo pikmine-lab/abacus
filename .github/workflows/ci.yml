@@ -44,6 +44,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # The web app typechecks through its own Next build (JSX config lives there).
+      - run: pnpm --filter @abacus/web build
+        env:
+          BETTER_AUTH_SECRET: ci-build-only
 
   build:
     needs: test

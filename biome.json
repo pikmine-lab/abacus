@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
   "files": {
-    "includes": ["**", "!vendors", "!node_modules", "!pnpm-lock.yaml"]
+    "includes": ["**", "!vendors", "!node_modules", "!**/.next", "!**/next-env.d.ts", "!pnpm-lock.yaml"]
   },
   "formatter": {
     "enabled": true,
@@ -23,6 +23,11 @@
       "style": {
         "noNonNullAssertion": "off"
       }
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   }
 }
