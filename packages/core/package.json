@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./db": "./src/db/client.ts"
+    "./auth": "./src/auth.ts",
+    "./db": "./src/db/client.ts",
+    "./domain": "./src/domain/types.ts",
+    "./domain/errors": "./src/domain/errors.ts",
+    "./services/*": "./src/services/*.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.7.0",

@@ -15,6 +15,14 @@ import postgres from 'postgres'
  */
 export type Executor = postgres.ISql
 
+/**
+ * Drops undefined entries: the driver rejects them in insert/update helpers,
+ * and "absent" must mean "column default", never "null on purpose".
+ */
+export function compact<T extends object>(row: T): T {
+  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) as T
+}
+
 let pool: postgres.Sql | undefined
 
 /**
@@ -26,7 +34,20 @@ export function db(): postgres.Sql {
   if (!pool) {
     const url = process.env.DATABASE_URL
     if (!url) throw new Error('DATABASE_URL is not set')
-    pool = postgres(url)
+    pool = postgres(url, {
+      transform: postgres.camel,
+      types: {
+        // Keep `date` columns as plain 'YYYY-MM-DD' strings: the domain
+        // reasons in calendar days, and a Date object would drag timezones
+        // into every comparison.
+        date: {
+          to: 1082,
+          from: [1082],
+          serialize: (v: string) => v,
+          parse: (v: string) => v,
+        },
+      },
+    })
   }
   return pool
 }
