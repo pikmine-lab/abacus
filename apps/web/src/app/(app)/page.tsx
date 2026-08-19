@@ -12,7 +12,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { BalanceChart } from '@/components/balance-chart'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardSub, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -24,9 +24,9 @@ function frDate(iso: string): string {
 }
 
 const JUDGMENT = {
-  essential: { label: 'essentiel', variant: 'muted' as const },
+  essential: { label: 'essentiel', variant: 'secondary' as const },
   reducible: { label: 'réductible', variant: 'outline' as const },
-  to_cancel: { label: 'à résilier', variant: 'accent' as const },
+  to_cancel: { label: 'à résilier', variant: 'default' as const },
 }
 
 function monthRange(): { from: string; to: string; label: string } {
@@ -72,7 +72,7 @@ export default async function DashboardPage() {
       <main className="mx-auto mt-16 max-w-md text-center">
         <p className="font-mono text-2xl">🧮</p>
         <h1 className="mt-3 text-lg font-semibold">Bienvenue sur abacus</h1>
-        <p className="mt-2 text-sm text-secondary-foreground">
+        <p className="mt-2 text-sm text-muted-foreground">
           Tout commence par tes comptes bancaires. Déclare-les via l’interface MCP (Claude), ou attends
           l’écran de gestion des comptes, qui arrive bientôt ici.
         </p>
@@ -85,35 +85,43 @@ export default async function DashboardPage() {
       {/* KPI tiles */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card>
-          <p className="text-xs text-secondary-foreground">Patrimoine total</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(patrimoine)}</p>
-          <p className="mt-1 text-xs text-faint">{accounts.length} comptes</p>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">Patrimoine total</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(patrimoine)}</p>
+            <p className="mt-1 text-xs text-faint">{accounts.length} comptes</p>
+          </CardContent>
         </Card>
         <Card>
-          <p className="text-xs text-secondary-foreground">Dépensé en {monthLabel}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(spentNet)}</p>
-          <p className="mt-1 text-xs text-faint">
-            {spentNet !== spentGross ? `brut ${eur(spentGross)}` : 'net = brut'}
-          </p>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">Dépensé en {monthLabel}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(spentNet)}</p>
+            <p className="mt-1 text-xs text-faint">
+              {spentNet !== spentGross ? `brut ${eur(spentGross)}` : 'net = brut'}
+            </p>
+          </CardContent>
         </Card>
         <Card>
-          <p className="text-xs text-secondary-foreground">Récurrent mensuel</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(monthlyCost, 2)}</p>
-          <p className="mt-1 text-xs text-faint">
-            {subscriptions.length} abonnement{subscriptions.length > 1 ? 's' : ''}
-            {financings.length > 0
-              ? ` + ${financings.length} financement${financings.length > 1 ? 's' : ''}`
-              : ''}
-          </p>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">Récurrent mensuel</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(monthlyCost, 2)}</p>
+            <p className="mt-1 text-xs text-faint">
+              {subscriptions.length} abonnement{subscriptions.length > 1 ? 's' : ''}
+              {financings.length > 0
+                ? ` + ${financings.length} financement${financings.length > 1 ? 's' : ''}`
+                : ''}
+            </p>
+          </CardContent>
         </Card>
         <Card>
-          <p className="text-xs text-secondary-foreground">Créances en cours</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(claims)}</p>
-          <p className="mt-1 text-xs text-faint">
-            {advances.length > 0
-              ? `${advances.length} avance${advances.length > 1 ? 's' : ''}`
-              : 'rien à réclamer'}
-          </p>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">Créances en cours</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">{eur(claims)}</p>
+            <p className="mt-1 text-xs text-faint">
+              {advances.length > 0
+                ? `${advances.length} avance${advances.length > 1 ? 's' : ''}`
+                : 'rien à réclamer'}
+            </p>
+          </CardContent>
         </Card>
       </section>
 
@@ -125,9 +133,11 @@ export default async function DashboardPage() {
       {/* Accounts + pending occurrences */}
       <section className="grid gap-3 lg:grid-cols-[1.55fr_1fr]">
         <Card>
-          <CardTitle>Comptes</CardTitle>
-          <CardSub>solde calculé · fraîcheur du dernier pointage</CardSub>
-          <div className="mt-3 flex flex-col">
+          <CardHeader>
+            <CardTitle>Comptes</CardTitle>
+            <CardDescription>solde calculé · fraîcheur du dernier pointage</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col">
             {accounts.map((account, i) => {
               const check = checks[i]
               return (
@@ -149,84 +159,94 @@ export default async function DashboardPage() {
                 </div>
               )
             })}
-          </div>
+          </CardContent>
         </Card>
 
         <Card>
-          <CardTitle>Échéances à confirmer</CardTitle>
-          <CardSub>attendues à ce jour</CardSub>
-          {pending.length === 0 ? (
-            <p className="mt-4 text-sm text-faint">Rien en attente : tout est à jour.</p>
-          ) : (
-            <div className="mt-3 flex flex-col">
-              {pending.map((p) => (
-                <div
-                  key={`${p.commitment.id}-${p.dueOn}`}
-                  className="flex items-baseline gap-3 border-b border-grid py-2.5 last:border-b-0"
-                >
-                  <span className="text-sm">{p.commitment.label}</span>
-                  <span className="text-xs text-faint">{frDate(p.dueOn)}</span>
-                  <span className="ml-auto font-mono text-sm tabular-nums">
-                    {p.commitment.direction === 'incoming' ? '+' : '−'}
-                    {eur(Number(p.commitment.amount), 2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <CardHeader>
+            <CardTitle>Échéances à confirmer</CardTitle>
+            <CardDescription>attendues à ce jour</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pending.length === 0 ? (
+              <p className="mt-1 text-sm text-faint">Rien en attente : tout est à jour.</p>
+            ) : (
+              <div className="flex flex-col">
+                {pending.map((p) => (
+                  <div
+                    key={`${p.commitment.id}-${p.dueOn}`}
+                    className="flex items-baseline gap-3 border-b border-grid py-2.5 last:border-b-0"
+                  >
+                    <span className="text-sm">{p.commitment.label}</span>
+                    <span className="text-xs text-faint">{frDate(p.dueOn)}</span>
+                    <span className="ml-auto font-mono text-sm tabular-nums">
+                      {p.commitment.direction === 'incoming' ? '+' : '−'}
+                      {eur(Number(p.commitment.amount), 2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
         </Card>
       </section>
 
       {/* Spending by category + subscriptions */}
       <section className="grid gap-3 lg:grid-cols-[1.55fr_1fr]">
         <Card>
-          <CardTitle>Dépenses par catégorie</CardTitle>
-          <CardSub>
-            {monthLabel} · brut {eur(spentGross)}
-            {spentNet !== spentGross ? ` · net ${eur(spentNet)} après remboursements` : ''}
-          </CardSub>
-          {breakdown.length === 0 ? (
-            <p className="mt-4 text-sm text-faint">Aucune dépense déclarée ce mois-ci.</p>
-          ) : (
-            <div className="mt-4 flex flex-col gap-2.5">
-              {breakdown.map((row, i) => (
-                <div
-                  key={row.label ?? 'none'}
-                  className="grid grid-cols-[88px_1fr_72px] items-center gap-2 sm:grid-cols-[112px_1fr_84px] sm:gap-3"
-                >
-                  <span className="truncate text-right text-xs text-secondary-foreground sm:text-[12.5px]">
-                    {row.label ?? '(sans)'}
-                  </span>
-                  <span className="relative flex h-5 items-center border-l border-border">
-                    <span
-                      className="h-3.5 min-w-0.5 rounded-r"
-                      style={{
-                        width: `${(Number(row.gross) / maxGross) * 100}%`,
-                        background: `var(${CAT_COLORS[i % CAT_COLORS.length]})`,
-                      }}
-                    />
-                  </span>
-                  <span className="text-right font-mono text-xs font-semibold tabular-nums">
-                    {eur(Number(row.gross))}
-                    {row.net !== row.gross && (
-                      <span className="block font-normal text-faint">net {eur(Number(row.net))}</span>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <CardHeader>
+            <CardTitle>Dépenses par catégorie</CardTitle>
+            <CardDescription>
+              {monthLabel} · brut {eur(spentGross)}
+              {spentNet !== spentGross ? ` · net ${eur(spentNet)} après remboursements` : ''}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {breakdown.length === 0 ? (
+              <p className="mt-1 text-sm text-faint">Aucune dépense déclarée ce mois-ci.</p>
+            ) : (
+              <div className="mt-1 flex flex-col gap-2.5">
+                {breakdown.map((row, i) => (
+                  <div
+                    key={row.label ?? 'none'}
+                    className="grid grid-cols-[88px_1fr_72px] items-center gap-2 sm:grid-cols-[112px_1fr_84px] sm:gap-3"
+                  >
+                    <span className="truncate text-right text-xs text-muted-foreground sm:text-[12.5px]">
+                      {row.label ?? '(sans)'}
+                    </span>
+                    <span className="relative flex h-5 items-center border-l border-border">
+                      <span
+                        className="h-3.5 min-w-0.5 rounded-r"
+                        style={{
+                          width: `${(Number(row.gross) / maxGross) * 100}%`,
+                          background: `var(${CAT_COLORS[i % CAT_COLORS.length]})`,
+                        }}
+                      />
+                    </span>
+                    <span className="text-right font-mono text-xs font-semibold tabular-nums">
+                      {eur(Number(row.gross))}
+                      {row.net !== row.gross && (
+                        <span className="block font-normal text-faint">net {eur(Number(row.net))}</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
         </Card>
 
         <Card>
-          <CardTitle>Abonnements</CardTitle>
-          <CardSub>
-            {subscriptions.length} actif{subscriptions.length > 1 ? 's' : ''}
-            {financings.length > 0
-              ? ` · ${financings.length} financement${financings.length > 1 ? 's' : ''} en cours`
-              : ''}
-          </CardSub>
-          <div className="mt-3 flex flex-col">
+          <CardHeader>
+            <CardTitle>Abonnements</CardTitle>
+            <CardDescription>
+              {subscriptions.length} actif{subscriptions.length > 1 ? 's' : ''}
+              {financings.length > 0
+                ? ` · ${financings.length} financement${financings.length > 1 ? 's' : ''} en cours`
+                : ''}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col">
             {subscriptions.length === 0 && financings.length === 0 && (
               <p className="mt-1 text-sm text-faint">Aucun engagement déclaré.</p>
             )}
@@ -265,14 +285,14 @@ export default async function DashboardPage() {
               </div>
             ))}
             {(subscriptions.length > 0 || financings.length > 0) && (
-              <div className="flex pt-3 text-xs text-secondary-foreground">
+              <div className="flex pt-3 text-xs text-muted-foreground">
                 Coût récurrent mensuel engagé
                 <span className="ml-auto font-mono font-semibold text-foreground tabular-nums">
                   {eur(monthlyCost, 2)}
                 </span>
               </div>
             )}
-          </div>
+          </CardContent>
         </Card>
       </section>
     </main>

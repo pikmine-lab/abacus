@@ -12,7 +12,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { JudgmentSelect, NewCommitmentForm } from '@/components/commitment-forms'
 import { Button } from '@/components/ui/button'
-import { Card, CardSub, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   cancelCommitmentAction,
@@ -57,19 +57,21 @@ export default async function CommitmentsPage({
   return (
     <main className="flex flex-col gap-3">
       {erreur && (
-        <p className="rounded-lg border border-[#e66767]/40 bg-[#e66767]/10 px-3 py-2 text-xs text-[#e66767]">
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {erreur}
         </p>
       )}
 
       {pending.length > 0 && (
         <Card>
-          <CardTitle>Échéances à confirmer</CardTitle>
-          <CardSub>
-            confirmer crée le mouvement réel et avance l’engagement ; passer avance sans mouvement (mois
-            offert). Corrige le montant s’il diffère : c’est comme ça qu’on voit les hausses.
-          </CardSub>
-          <div className="mt-3 flex flex-col">
+          <CardHeader>
+            <CardTitle>Échéances à confirmer</CardTitle>
+            <CardDescription>
+              confirmer crée le mouvement réel et avance l’engagement ; passer avance sans mouvement (mois
+              offert). Corrige le montant s’il diffère : c’est comme ça qu’on voit les hausses.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col">
             {pending.map((p) => (
               <div
                 key={`${p.commitment.id}-${p.dueOn}`}
@@ -103,18 +105,20 @@ export default async function CommitmentsPage({
                 </form>
               </div>
             ))}
-          </div>
+          </CardContent>
         </Card>
       )}
 
       <section className="grid items-start gap-3 lg:grid-cols-[1.55fr_1fr]">
         <div className="flex flex-col gap-3">
           <Card>
-            <CardTitle>Abonnements et récurrents</CardTitle>
-            <CardSub>
-              coût mensuel engagé : {eur(monthlyCost, 2)} · le jugement prépare la revue « que couper ? »
-            </CardSub>
-            <div className="mt-3 flex flex-col">
+            <CardHeader>
+              <CardTitle>Abonnements et récurrents</CardTitle>
+              <CardDescription>
+                coût mensuel engagé : {eur(monthlyCost, 2)} · le jugement prépare la revue « que couper ? »
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col">
               {subscriptions.length === 0 && (
                 <p className="text-sm text-faint">Aucun engagement : déclare le premier ci-contre.</p>
               )}
@@ -162,14 +166,16 @@ export default async function CommitmentsPage({
                   </form>
                 </div>
               ))}
-            </div>
+            </CardContent>
           </Card>
 
           {financings.length > 0 && (
             <Card>
-              <CardTitle>Financements en cours</CardTitle>
-              <CardSub>s’éteignent seuls à la dernière échéance</CardSub>
-              <div className="mt-3 flex flex-col">
+              <CardHeader>
+                <CardTitle>Financements en cours</CardTitle>
+                <CardDescription>s’éteignent seuls à la dernière échéance</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col">
                 {financings.map((fin) => (
                   <div
                     key={fin.id}
@@ -190,22 +196,24 @@ export default async function CommitmentsPage({
                     </span>
                   </div>
                 ))}
-              </div>
+              </CardContent>
             </Card>
           )}
         </div>
 
         <Card>
-          <CardTitle>Nouvel engagement</CardTitle>
-          <CardSub>abonnement, revenu récurrent ou paiement en X fois</CardSub>
-          <div className="mt-3">
+          <CardHeader>
+            <CardTitle>Nouvel engagement</CardTitle>
+            <CardDescription>abonnement, revenu récurrent ou paiement en X fois</CardDescription>
+          </CardHeader>
+          <CardContent>
             <NewCommitmentForm
               accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
               actors={actors.map((a) => ({ id: a.id, name: a.name }))}
               categories={categories.map((c) => ({ id: c.id, name: c.name }))}
               today={today()}
             />
-          </div>
+          </CardContent>
         </Card>
       </section>
     </main>

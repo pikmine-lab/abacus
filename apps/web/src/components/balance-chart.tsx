@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Card, CardSub, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Toggle } from '@/components/ui/toggle'
 import { eur } from '@/lib/utils'
 
 /**
@@ -27,7 +29,7 @@ const RANGES = [
   { days: 182, label: '6 m' },
   { days: 365, label: '12 m' },
 ]
-const SLOT_VARS = ['var(--s1)', 'var(--s2)', 'var(--s3)']
+const SLOT_VARS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)']
 const MAX_ACTIVE = 3
 
 function frDay(iso: string): string {
@@ -142,171 +144,165 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
 
   return (
     <Card>
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div>
-          <CardTitle>Soldes des comptes</CardTitle>
-          <CardSub>point quotidien · calculé depuis les mouvements déclarés</CardSub>
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-border p-0.5">
-            {RANGES.map((r) => (
-              <button
-                key={r.days}
-                type="button"
-                aria-pressed={rangeDays === r.days}
-                onClick={() => setRangeDays(r.days)}
-                className={`cursor-pointer rounded-md px-2.5 py-1 text-xs ${
-                  rangeDays === r.days ? 'bg-wash font-semibold text-primary' : 'text-secondary-foreground'
-                }`}
+      <CardHeader>
+        <CardTitle>Soldes des comptes</CardTitle>
+        <CardDescription>point quotidien · calculé depuis les mouvements déclarés</CardDescription>
+        <CardAction>
+          <Tabs value={String(rangeDays)} onValueChange={(v) => setRangeDays(Number(v))}>
+            <TabsList className="h-8">
+              {RANGES.map((r) => (
+                <TabsTrigger key={r.days} value={String(r.days)} className="text-xs">
+                  {r.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent>
+        <div className="flex flex-wrap gap-1">
+          {accounts.map((a) => {
+            const on = slots.has(a.id)
+            return (
+              <Toggle
+                key={a.id}
+                size="sm"
+                pressed={on}
+                onPressedChange={() => toggle(a.id)}
+                title={
+                  !on && slots.size >= MAX_ACTIVE
+                    ? '3 séries maximum : désactive un compte d’abord'
+                    : undefined
+                }
+                className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
               >
-                {r.label}
-              </button>
-            ))}
-          </div>
+                <span
+                  className="h-0.5 w-3.5 rounded-full"
+                  style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
+                />
+                {a.name}
+              </Toggle>
+            )
+          })}
         </div>
-      </div>
 
-      <div className="mt-1 flex flex-wrap gap-1">
-        {accounts.map((a) => {
-          const on = slots.has(a.id)
-          return (
-            <button
-              key={a.id}
-              type="button"
-              aria-pressed={on}
-              onClick={() => toggle(a.id)}
-              title={
-                !on && slots.size >= MAX_ACTIVE ? '3 séries maximum : désactive un compte d’abord' : undefined
-              }
-              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs hover:bg-wash ${
-                on ? 'text-secondary-foreground' : 'text-faint opacity-60'
-              }`}
-            >
-              <span
-                className="h-0.5 w-3.5 rounded-full"
-                style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
-              />
-              {a.name}
-            </button>
-          )
-        })}
-      </div>
-
-      <div
-        ref={wrapRef}
-        className="relative mt-2 touch-pan-y"
-        onPointerMove={onMove}
-        onPointerLeave={() => setHover(null)}
-      >
-        <svg width="100%" height={H} role="img" aria-label="Évolution des soldes par compte">
-          {yTicks.map((v) => (
-            <g key={v}>
-              <line x1={M.l} x2={width - M.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" />
+        <div
+          ref={wrapRef}
+          className="relative mt-2 touch-pan-y"
+          onPointerMove={onMove}
+          onPointerLeave={() => setHover(null)}
+        >
+          <svg width="100%" height={H} role="img" aria-label="Évolution des soldes par compte">
+            {yTicks.map((v) => (
+              <g key={v}>
+                <line x1={M.l} x2={width - M.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" />
+                <text
+                  x={M.l - 7}
+                  y={Y(v) + 3.5}
+                  textAnchor="end"
+                  className="font-mono"
+                  fontSize={10.5}
+                  fill="var(--faint)"
+                >
+                  {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                </text>
+              </g>
+            ))}
+            <line x1={M.l} x2={width - M.r} y1={Y(y0)} y2={Y(y0)} stroke="var(--border)" />
+            {xTicks.map((t) => (
               <text
-                x={M.l - 7}
-                y={Y(v) + 3.5}
-                textAnchor="end"
+                key={t.i}
+                x={X(t.i)}
+                y={H - 6}
+                textAnchor="middle"
                 className="font-mono"
                 fontSize={10.5}
                 fill="var(--faint)"
               >
-                {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                {t.label}
               </text>
-            </g>
-          ))}
-          <line x1={M.l} x2={width - M.r} y1={Y(y0)} y2={Y(y0)} stroke="var(--border)" />
-          {xTicks.map((t) => (
-            <text
-              key={t.i}
-              x={X(t.i)}
-              y={H - 6}
-              textAnchor="middle"
-              className="font-mono"
-              fontSize={10.5}
-              fill="var(--faint)"
-            >
-              {t.label}
-            </text>
-          ))}
-          {series.map((s) => {
-            const pts = s.values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
-            const last = s.values[s.values.length - 1] ?? 0
-            return (
-              <g key={s.id}>
-                {s.slot === 0 && (
-                  <polygon
-                    points={`${M.l},${Y(y0)} ${pts} ${X(days.length - 1)},${Y(y0)}`}
-                    fill={SLOT_VARS[0]}
-                    opacity={0.07}
+            ))}
+            {series.map((s) => {
+              const pts = s.values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
+              const last = s.values[s.values.length - 1] ?? 0
+              return (
+                <g key={s.id}>
+                  {s.slot === 0 && (
+                    <polygon
+                      points={`${M.l},${Y(y0)} ${pts} ${X(days.length - 1)},${Y(y0)}`}
+                      fill={SLOT_VARS[0]}
+                      opacity={0.07}
+                    />
+                  )}
+                  <polyline
+                    points={pts}
+                    fill="none"
+                    stroke={SLOT_VARS[s.slot]}
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
                   />
-                )}
-                <polyline
-                  points={pts}
-                  fill="none"
-                  stroke={SLOT_VARS[s.slot]}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-                <circle
-                  cx={X(days.length - 1)}
-                  cy={Y(last)}
-                  r={4}
-                  fill={SLOT_VARS[s.slot]}
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                />
-              </g>
-            )
-          })}
-          {!narrow &&
-            ends.map((e) => (
-              <text
-                key={e.slot}
-                x={width - M.r + 10}
-                y={e.y + 4}
-                fontSize={11}
-                fill="var(--secondary-foreground)"
-              >
-                {e.name} · {eur(e.v)}
-              </text>
-            ))}
-          {hover !== null && (
-            <g>
-              <line x1={X(hover)} x2={X(hover)} y1={M.t} y2={H - M.b} stroke="var(--faint)" />
-              {series.map((s) => (
-                <circle
-                  key={s.id}
-                  cx={X(hover)}
-                  cy={Y(s.values[hover] ?? 0)}
-                  r={4.5}
-                  fill={SLOT_VARS[s.slot]}
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                />
+                  <circle
+                    cx={X(days.length - 1)}
+                    cy={Y(last)}
+                    r={4}
+                    fill={SLOT_VARS[s.slot]}
+                    stroke="var(--card)"
+                    strokeWidth={2}
+                  />
+                </g>
+              )
+            })}
+            {!narrow &&
+              ends.map((e) => (
+                <text
+                  key={e.slot}
+                  x={width - M.r + 10}
+                  y={e.y + 4}
+                  fontSize={11}
+                  fill="var(--muted-foreground)"
+                >
+                  {e.name} · {eur(e.v)}
+                </text>
               ))}
-            </g>
-          )}
-        </svg>
+            {hover !== null && (
+              <g>
+                <line x1={X(hover)} x2={X(hover)} y1={M.t} y2={H - M.b} stroke="var(--faint)" />
+                {series.map((s) => (
+                  <circle
+                    key={s.id}
+                    cx={X(hover)}
+                    cy={Y(s.values[hover] ?? 0)}
+                    r={4.5}
+                    fill={SLOT_VARS[s.slot]}
+                    stroke="var(--card)"
+                    strokeWidth={2}
+                  />
+                ))}
+              </g>
+            )}
+          </svg>
 
-        {hover !== null && days[hover] && (
-          <div
-            className="pointer-events-none absolute top-3 z-10 min-w-42 rounded-lg border border-border bg-card px-3 py-2 shadow-lg"
-            style={{ left: tooltipLeft }}
-          >
-            <p className="text-[11px] text-faint">{frDay(days[hover])}</p>
-            {series.map((s) => (
-              <p key={s.id} className="flex items-center gap-2 py-px text-xs">
-                <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />
-                <span className="text-secondary-foreground">{s.name}</span>
-                <span className="ml-auto pl-3 font-mono font-semibold tabular-nums">
-                  {eur(s.values[hover] ?? 0)}
-                </span>
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
+          {hover !== null && days[hover] && (
+            <div
+              className="pointer-events-none absolute top-3 z-10 min-w-42 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
+              style={{ left: tooltipLeft }}
+            >
+              <p className="text-[11px] text-faint">{frDay(days[hover])}</p>
+              {series.map((s) => (
+                <p key={s.id} className="flex items-center gap-2 py-px text-xs">
+                  <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />
+                  <span className="text-muted-foreground">{s.name}</span>
+                  <span className="ml-auto pl-3 font-mono font-semibold tabular-nums">
+                    {eur(s.values[hover] ?? 0)}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
     </Card>
   )
 }

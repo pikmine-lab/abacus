@@ -1,21 +1,40 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* Design tokens from DESIGN.md — committed dark theme. */
+@custom-variant dark (&:is(.dark *));
+
+/* Design tokens from DESIGN.md, mapped onto the shadcn/ui vocabulary.
+   Single committed dark theme: values live on :root and <html> carries the
+   dark class so dark: styles apply regardless of the OS preference. */
 :root {
+  --radius: 0.75rem;
   --background: #0a0a0b;
-  --card: #141417;
-  --border: #26262b;
   --foreground: #f4f4f5;
-  --secondary-foreground: #a1a1aa;
+  --card: #141417;
+  --card-foreground: #f4f4f5;
+  --popover: #141417;
+  --popover-foreground: #f4f4f5;
+  --primary: #3987e5;
+  --primary-foreground: #ffffff;
+  --secondary: #1c1c20;
+  --secondary-foreground: #f4f4f5;
+  --muted: #1c1c20;
+  --muted-foreground: #a1a1aa;
+  --accent: #1c1c20;
+  --accent-foreground: #f4f4f5;
+  --destructive: #e66767;
+  --border: #26262b;
+  --input: #26262b;
+  --ring: #3987e5;
+  /* Ink levels and semantics beyond the shadcn set. */
   --faint: #7c7c85;
   --grid: #222227;
-  --wash: #1c1c20;
-  --primary: #3987e5;
   --good: #0ca30c;
-  /* Chart series: the accent family, blue → violet, luminance-separated. */
-  --s1: #3987e5;
-  --s2: #c9bcf8;
-  --s3: #7365e0;
+  /* Chart series (DESIGN.md slots s1-s3): the accent family, blue → violet,
+     luminance-separated. */
+  --chart-1: #3987e5;
+  --chart-2: #c9bcf8;
+  --chart-3: #7365e0;
   /* Per-category variants, same family, stable per entity. */
   --cat0: #3987e5;
   --cat1: #c9bcf8;
@@ -24,28 +43,48 @@
   --cat4: #9d92f5;
   --cat5: #3576d4;
   --cat6: #8b7ff0;
-  --radius: 0.75rem;
   color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-card: var(--card);
-  --color-border: var(--border);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-faint: var(--faint);
   --color-grid: var(--grid);
-  --color-wash: var(--wash);
-  --color-primary: var(--primary);
   --color-good: var(--good);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+  }
 }

@@ -21,19 +21,22 @@ interactifs, filtrables, jamais décoratifs.
 ## Couleur
 
 Fond quasi noir et blancs cassés (gamme zinc), un accent, une famille de variantes.
+La palette vit dans `globals.css` sous la nomenclature de tokens shadcn/ui (thème
+sombre unique, valeurs sur `:root`, `<html>` porte la classe `dark`).
 
-| Rôle | Valeur |
-|---|---|
-| Page | `#0a0a0b` |
-| Carte / surface | `#141417` |
-| Bordure (hairline) | `#26262b` |
-| Encre principale | `#f4f4f5` |
-| Encre secondaire | `#a1a1aa` |
-| Estompé (axes, labels) | `#7c7c85` |
-| Grille | `#222227` |
-| Lavis (hover, actif) | `#1c1c20` |
-| **Accent** | `#3987e5` |
-| Sémantique positif | `#0ca30c` |
+| Rôle | Valeur | Token(s) |
+|---|---|---|
+| Page | `#0a0a0b` | `--background` |
+| Carte / surface | `#141417` | `--card`, `--popover` |
+| Bordure (hairline) | `#26262b` | `--border`, `--input` |
+| Encre principale | `#f4f4f5` | `--foreground` |
+| Encre secondaire | `#a1a1aa` | `--muted-foreground` |
+| Estompé (axes, labels) | `#7c7c85` | `--faint` (propre au projet) |
+| Grille | `#222227` | `--grid` (propre au projet) |
+| Lavis (hover, actif) | `#1c1c20` | `--muted`, `--accent`, `--secondary` |
+| **Accent** | `#3987e5` | `--primary`, `--ring` |
+| Sémantique positif | `#0ca30c` | `--good` (propre au projet) |
+| Sémantique négatif / erreur | `#e66767` | `--destructive` |
 
 ### Les deux règles qui gouvernent la couleur
 
@@ -48,9 +51,9 @@ Fond quasi noir et blancs cassés (gamme zinc), un accent, une famille de varian
 
    | Slot | Valeur | Usage |
    |---|---|---|
-   | s1 | `#3987e5` | série principale (= l'accent) |
-   | s2 | `#c9bcf8` | deuxième série (périwinkle clair) |
-   | s3 | `#7365e0` | troisième série (violet) |
+   | s1 (`--chart-1`) | `#3987e5` | série principale (= l'accent) |
+   | s2 (`--chart-2`) | `#c9bcf8` | deuxième série (périwinkle clair) |
+   | s3 (`--chart-3`) | `#7365e0` | troisième série (violet) |
 
    Au-delà de trois séries de courbes : regrouper, ou passer en small multiples. On
    n'ajoute pas une quatrième teinte de courbe sans la re-valider
@@ -88,12 +91,30 @@ Le sens (positif/négatif) n'est jamais porté par la couleur seule (flèches �
 
 ## Composants
 
-- Cartes `#141417`, bordure hairline, rayon 12px, ombres quasi nulles.
-- Segmented controls pour les choix exclusifs (période, brut/net), chips avec pastille
-  de couleur pour les comptes, badges pour les jugements d'abonnements
-  (`essentiel` discret, `réductible` contour, `à résilier` plein accent).
-- Focus visible (`outline` accent) sur tout ce qui est interactif ;
-  `prefers-reduced-motion` respecté.
+La base est **shadcn/ui** (style new-york), installée par le CLI dans
+`apps/web/src/components/ui/`. On n'y reproduit plus de composants à la main : un
+besoin nouveau passe d'abord par `shadcn add`. Ces fichiers nous appartiennent
+(modèle shadcn) ; les divergences volontaires avec le registre sont locales et
+motivées par ce document :
+
+- `card` : densité du projet (paddings 16/20px, gap 12px), rayon 12px, titre 13px,
+  description en encre estompée.
+- `tabs` : l'onglet actif porte l'accent (fond page + texte `primary`), la version
+  du registre (`input/30` sur `muted`) étant illisible sur cette palette.
+
+Usages fixés :
+
+- Tabs comme segmented control pour les choix exclusifs (type de mouvement, période,
+  connexion/inscription) ; Toggle pour les chips de comptes, avec pastille de couleur.
+- Select Radix partout, y compris dans les formulaires à server actions (le champ
+  nommé part dans le `FormData`) ; les champs optionnels gardent un item visible qui
+  remet le placeholder.
+- Calendar + Popover pour toute saisie de date, locale `fr`.
+- NavigationMenu pour la navigation ; Avatar + DropdownMenu pour le compte, la
+  déconnexion en variante `destructive`.
+- Badges des jugements d'abonnements : `essentiel` secondary (discret), `réductible`
+  outline (contour), `à résilier` default (plein accent).
+- Focus visible hérité de shadcn (`ring` accent) ; `prefers-reduced-motion` respecté.
 
 ## Reste ouvert
 
