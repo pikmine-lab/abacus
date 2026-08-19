@@ -10,7 +10,7 @@ import {
   listCommitments as listCommitmentsDs,
   updateCommitment,
 } from '../db/datasources/commitments.ts'
-import { countMovementsForCommitment } from '../db/datasources/movements.ts'
+import { countMovementsForCommitment, sumMovementsForCommitment } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
 import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
@@ -108,6 +108,37 @@ export async function createFinancing(userId: string, input: FinancingInput): Pr
 
 export async function listCommitments(userId: string, activeOnly = true): Promise<Commitment[]> {
   return await listCommitmentsDs(db(), userId, { activeOnly })
+}
+
+export interface FinancingProgress {
+  paidInstallments: number
+  paidTotal: string
+  /** total_amount minus what was actually paid. */
+  remainingDue: number
+}
+
+/** Commitments plus, for financings, the derived progress (paid, remaining due). */
+export async function listCommitmentsWithProgress(
+  userId: string,
+  activeOnly = true,
+): Promise<(Commitment & { progress: FinancingProgress | null })[]> {
+  const sql = db()
+  const commitments = await listCommitmentsDs(sql, userId, { activeOnly })
+  return await Promise.all(
+    commitments.map(async (c) => {
+      if (c.kind !== 'financing') return { ...c, progress: null }
+      const paidInstallments = await countMovementsForCommitment(sql, c.id)
+      const paidTotal = await sumMovementsForCommitment(sql, c.id)
+      return {
+        ...c,
+        progress: {
+          paidInstallments,
+          paidTotal,
+          remainingDue: Math.round((Number(c.totalAmount) - Number(paidTotal)) * 100) / 100,
+        },
+      }
+    }),
+  )
 }
 
 export async function commitmentEvents(userId: string, id: string): Promise<CommitmentEvent[]> {

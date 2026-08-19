@@ -80,6 +80,13 @@ export async function countMovementsForCommitment(tx: Executor, commitmentId: st
   return Number(row!.count)
 }
 
+export async function sumMovementsForCommitment(tx: Executor, commitmentId: string): Promise<string> {
+  const [row] = await tx<{ total: string }[]>`
+    select coalesce(sum(amount), 0)::numeric(14,2) as total from movement where commitment_id = ${commitmentId}
+  `
+  return row!.total
+}
+
 /**
  * Open advances: expenses awaiting a refund, with what came back so far.
  * Fully refunded ones drop out on their own; abandoned ones are closed
