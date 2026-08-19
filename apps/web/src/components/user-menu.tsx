@@ -1,6 +1,7 @@
 'use client'
 
-import { LogOutIcon } from 'lucide-react'
+import { KeyRoundIcon, LogOutIcon } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -8,11 +9,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { authClient } from '@/lib/auth-client'
 
-export function SignOut({ name }: { name: string }) {
+export function UserMenu({ name }: { name: string }) {
   const router = useRouter()
   return (
     <DropdownMenu>
@@ -31,6 +33,13 @@ export function SignOut({ name }: { name: string }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link href="/cles-api">
+            <KeyRoundIcon />
+            Clés d’API
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
           onSelect={async () => {

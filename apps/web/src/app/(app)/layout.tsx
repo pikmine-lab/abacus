@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { NavLinks } from '@/components/nav-links'
-import { SignOut } from '@/components/sign-out'
+import { UserMenu } from '@/components/user-menu'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -17,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </Link>
         <NavLinks />
         <div className="ml-auto">
-          <SignOut name={session.user.name} />
+          <UserMenu name={session.user.name} />
         </div>
       </header>
       {children}
