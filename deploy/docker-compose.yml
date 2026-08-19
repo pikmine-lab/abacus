@@ -20,6 +20,7 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       PUBLIC_URL: ${PUBLIC_URL}
       PORT: "3000"
+      MCP_ALLOWED_HOSTS: abacus-mcp.payangar.dev
     networks:
       - dokploy-network
 

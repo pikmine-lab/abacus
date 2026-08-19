@@ -8,7 +8,14 @@ const handler = createMcpHandler(({ authInfo }) => buildServer(userIdOf(authInfo
 
 const gate = requireBearerAuth({ verifier: { verifyAccessToken: verifyApiKeyToken } })
 
-const app = createMcpExpressApp()
+// Behind Traefik the Host header is the public domain: without it in the
+// allowed list, the built-in DNS-rebinding protection answers 403 to everyone.
+const allowedHosts = (process.env.MCP_ALLOWED_HOSTS ?? '')
+  .split(',')
+  .map((h) => h.trim())
+  .filter(Boolean)
+const app =
+  allowedHosts.length > 0 ? createMcpExpressApp({ host: '0.0.0.0', allowedHosts }) : createMcpExpressApp()
 const node = toNodeHandler(handler)
 app.all('/mcp', gate, (req, res) => void node(req, res, req.body))
 
