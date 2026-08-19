@@ -1,0 +1,19 @@
+# Local development database. ISO with the shared instance of the pikmine
+# socle: same image, same per-app role/database layout, same extensions.
+# Never points at anything remote; production is only reachable through
+# DATABASE_URL provided by the host.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: abacus
+      POSTGRES_PASSWORD: abacus
+      POSTGRES_DB: abacus
+    ports:
+      - "127.0.0.1:5544:5432"
+    volumes:
+      - dev-db:/var/lib/postgresql/data
+      - ./scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+volumes:
+  dev-db:

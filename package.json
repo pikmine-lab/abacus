@@ -7,7 +7,11 @@
     "node": ">=24"
   },
   "scripts": {
+    "db:up": "docker compose -f compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f compose.dev.yml down",
+    "db:reset": "docker compose -f compose.dev.yml down -v && docker compose -f compose.dev.yml up -d --wait",
     "migrate": "node packages/core/src/db/migrate.ts",
+    "migrate:dev": "DATABASE_URL=postgresql://abacus:abacus@127.0.0.1:5544/abacus node packages/core/src/db/migrate.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

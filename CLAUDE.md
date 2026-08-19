@@ -38,6 +38,21 @@ Application web de gestion de finances personnelles de Pierre, multi-utilisateur
 - Monorepo pnpm : `packages/core` (domaine + services + datasources), `apps/web` (Next.js),
   `apps/mcp` (serveur MCP).
 
+## Développement local
+
+Base Postgres jetable en Docker, **ISO socle** : même image (`pgvector/pgvector:pg16`),
+même découpage rôle/base `abacus`, mêmes extensions (`vector`, `pg_trgm`, `unaccent`,
+créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de prod en local.
+
+```sh
+nr db:up         # démarre la base (port local 5544)
+nr migrate:dev   # applique les migrations dessus
+nr db:reset      # base vierge (détruit le volume)
+```
+
+Les identifiants `abacus:abacus@127.0.0.1:5544` sont locaux et jetables, ce ne sont pas
+des secrets. Tout le reste passe par `DATABASE_URL`.
+
 ## Déploiement
 
 Mêmes décisions que radar, à ne pas rejouer : un Dockerfile, image construite par GitHub
