@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+dist/
+
+# This repository is public: no secret may ever be committed.
+# Runtime configuration arrives through Dokploy environment variables.
+.env
+.env.*
+*.pem
+*.key
+
+# Written by `infisical init`. Holds the vault workspace id, which is a resource
+# identifier and has no place in a public repository: it arrives through
+# INFISICAL_PROJECT_ID instead.
+.infisical.json
+
+# Local noise
+*.log
+.DS_Store

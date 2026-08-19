@@ -1,0 +1,17 @@
+{
+  "name": "@abacus/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./db": "./src/db/client.ts"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "^1.7.0",
+    "better-auth": "^1.7.0",
+    "pg": "^8.23.0",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  }
+}
