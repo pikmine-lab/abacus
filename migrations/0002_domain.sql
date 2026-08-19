@@ -61,6 +61,9 @@ create table commitment (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references auth_user(id),
   kind text not null check (kind in ('subscription', 'financing')),
+  -- 'outgoing' bills an account (subscription, financing); 'incoming' feeds one
+  -- (salary and other recurring revenues use the same occurrence engine).
+  direction text not null default 'outgoing' check (direction in ('outgoing', 'incoming')),
   label text not null,
   actor_id uuid not null references actor(id),
   account_id uuid not null references account(id),
@@ -83,9 +86,14 @@ create table commitment (
   total_amount numeric(12,2) check (total_amount > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (kind <> 'financing' or (installments_total is not null and total_amount is not null)),
-  check (kind <> 'subscription' or (installments_total is null and total_amount is null)),
-  check (kind <> 'financing' or (judgment is null and engaged_until is null))
+  constraint commitment_financing_fields
+    check (kind <> 'financing' or (installments_total is not null and total_amount is not null)),
+  constraint commitment_subscription_fields
+    check (kind <> 'subscription' or (installments_total is null and total_amount is null)),
+  constraint commitment_financing_plain
+    check (kind <> 'financing' or (judgment is null and engaged_until is null)),
+  constraint commitment_financing_outgoing
+    check (kind <> 'financing' or direction = 'outgoing')
 );
 create index commitment_user_due on commitment (user_id, next_due_on);
 
@@ -149,17 +157,24 @@ create table movement (
   refunds_movement_id uuid references movement(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (num_nonnulls(source_account_id, source_actor_id) = 1),
-  check (num_nonnulls(target_account_id, target_actor_id) = 1),
-  check (source_account_id is not null or target_account_id is not null),
+  constraint movement_single_source
+    check (num_nonnulls(source_account_id, source_actor_id) = 1),
+  constraint movement_single_target
+    check (num_nonnulls(target_account_id, target_actor_id) = 1),
+  constraint movement_touches_owned_account
+    check (source_account_id is not null or target_account_id is not null),
   -- Transfers carry no category.
-  check (source_account_id is null or target_account_id is null or category_id is null),
+  constraint movement_transfer_has_no_category
+    check (source_account_id is null or target_account_id is null or category_id is null),
   -- An advance is an expense; a refund link is an income.
-  check (expected_refund_from_actor_id is null
-         or (source_account_id is not null and target_actor_id is not null)),
-  check (refunds_movement_id is null
-         or (source_actor_id is not null and target_account_id is not null)),
-  check (refund_closed = false or expected_refund_from_actor_id is not null)
+  constraint movement_advance_is_expense
+    check (expected_refund_from_actor_id is null
+           or (source_account_id is not null and target_actor_id is not null)),
+  constraint movement_refund_is_income
+    check (refunds_movement_id is null
+           or (source_actor_id is not null and target_account_id is not null)),
+  constraint movement_refund_closed_requires_advance
+    check (refund_closed = false or expected_refund_from_actor_id is not null)
 );
 create index movement_user_date on movement (user_id, happened_on desc);
 create index movement_source_account on movement (source_account_id) where source_account_id is not null;
@@ -197,7 +212,8 @@ create table investment_operation (
   operated_on date not null,
   note text,
   created_at timestamptz not null default now(),
-  check (type not in ('buy', 'sell') or (asset_id is not null and quantity is not null))
+  constraint investment_operation_trade_requires_asset
+    check (type not in ('buy', 'sell') or (asset_id is not null and quantity is not null))
 );
 create index investment_operation_account on investment_operation (account_id, operated_on desc);
 
