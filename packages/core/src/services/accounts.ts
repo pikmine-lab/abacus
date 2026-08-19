@@ -1,14 +1,13 @@
 import { db } from '../db/client.ts'
 import {
-  getAccount,
   insertAccount,
   listAccountsWithBalance,
-  setAccountClosedOn,
   type NewAccount,
+  setAccountClosedOn,
 } from '../db/datasources/accounts.ts'
 import { DomainError } from '../domain/errors.ts'
-import type { Account } from '../domain/types.ts'
 import { today } from '../domain/period.ts'
+import type { Account } from '../domain/types.ts'
 
 export async function createAccount(input: NewAccount): Promise<Account> {
   return await insertAccount(db(), input)

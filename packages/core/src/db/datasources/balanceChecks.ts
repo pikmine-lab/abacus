@@ -21,7 +21,9 @@ export async function getBalanceCheck(
   userId: string,
   id: string,
 ): Promise<BalanceCheck | undefined> {
-  const [check] = await tx<BalanceCheck[]>`select * from balance_check where user_id = ${userId} and id = ${id}`
+  const [check] = await tx<
+    BalanceCheck[]
+  >`select * from balance_check where user_id = ${userId} and id = ${id}`
   return check
 }
 

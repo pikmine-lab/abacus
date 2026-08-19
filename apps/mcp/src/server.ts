@@ -1,7 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/server'
-import * as z from 'zod'
-import { DomainError } from '@abacus/core/domain/errors'
 import type { Commitment } from '@abacus/core/domain'
+import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, listAccounts } from '@abacus/core/services/accounts'
 import { addAlias, createActor, listActors, mergeActors } from '@abacus/core/services/actors'
 import { createAdjustment, latestCheck, recordBalanceCheck } from '@abacus/core/services/balanceChecks'
@@ -24,6 +22,8 @@ import {
   outstandingAdvances,
 } from '@abacus/core/services/movements'
 import { spendingBreakdown } from '@abacus/core/services/reports'
+import { McpServer } from '@modelcontextprotocol/server'
+import * as z from 'zod'
 import {
   requireAccountByName,
   requireActivityByName,
@@ -55,13 +55,16 @@ function fail(message: string): ToolResult {
 /** Actionable guidance for domain errors raised below the MCP layer. */
 const GUIDANCE: Record<string, string> = {
   account_closed: 'This account is closed at that date. Check the movement date or the targeted account.',
-  transfer_has_no_category: 'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
-  not_an_advance: 'The referenced movement is not marked as an advance, so a refund cannot be linked to it. Check the id with list_outstanding_advances.',
+  transfer_has_no_category:
+    'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
+  not_an_advance:
+    'The referenced movement is not marked as an advance, so a refund cannot be linked to it. Check the id with list_outstanding_advances.',
   financing_settled: 'Every installment of this financing is already paid: it is settled.',
   cancelled: 'This commitment is cancelled: there is no occurrence left to confirm.',
   already_cancelled: 'This commitment is already cancelled.',
   no_gap: 'This balance check has no gap: nothing to settle.',
-  actor_exists: 'This name or alias already resolves to an existing actor: reuse it instead of creating a duplicate.',
+  actor_exists:
+    'This name or alias already resolves to an existing actor: reuse it instead of creating a duplicate.',
   alias_taken: 'This alias already resolves to an actor: pick another one or merge the actors.',
   merge_self: 'An actor cannot be merged into itself.',
   not_a_subscription: 'Only subscriptions carry a judgment (essential / reducible / to_cancel).',
@@ -91,7 +94,10 @@ function monthlyEquivalent(c: Commitment): number {
   return Math.round(amount * perMonth * 100) / 100
 }
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Date in YYYY-MM-DD format')
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .describe('Date in YYYY-MM-DD format')
 
 export function buildServer(userId: string): McpServer {
   const server = new McpServer({ name: 'abacus', version: '0.1.0' }, { instructions: INSTRUCTIONS })
@@ -154,20 +160,58 @@ export function buildServer(userId: string): McpServer {
           .array(
             z.object({
               date: isoDate,
-              amount: z.number().positive().describe('Amount, always positive; the direction comes from the type'),
-              type: z.enum(['expense', 'income', 'transfer']).describe('expense: account → actor; income: actor → account; transfer: account → account (neutral, never an expense)'),
-              account: z.string().describe('Account name: the one paying (expense, transfer) or receiving (income)'),
+              amount: z
+                .number()
+                .positive()
+                .describe('Amount, always positive; the direction comes from the type'),
+              type: z
+                .enum(['expense', 'income', 'transfer'])
+                .describe(
+                  'expense: account → actor; income: actor → account; transfer: account → account (neutral, never an expense)',
+                ),
+              account: z
+                .string()
+                .describe('Account name: the one paying (expense, transfer) or receiving (income)'),
               toAccount: z.string().optional().describe('transfer only: the receiving account'),
-              actor: z.string().optional().describe('expense/income: the external counterparty (merchant, client, organization). Forbidden on a transfer'),
-              category: z.string().optional().describe('Exact name of an existing category. Never on a transfer'),
-              activity: z.string().nullable().optional().describe('Sphere (e.g. Freelance). Omitted: inherited from the actor. null: force "none" (personal)'),
+              actor: z
+                .string()
+                .optional()
+                .describe(
+                  'expense/income: the external counterparty (merchant, client, organization). Forbidden on a transfer',
+                ),
+              category: z
+                .string()
+                .optional()
+                .describe('Exact name of an existing category. Never on a transfer'),
+              activity: z
+                .string()
+                .nullable()
+                .optional()
+                .describe(
+                  'Sphere (e.g. Freelance). Omitted: inherited from the actor. null: force "none" (personal)',
+                ),
               note: z.string().optional(),
-              expectedRefundFrom: z.string().optional().describe('Expense advanced on someone\'s behalf: name of the actor who owes the refund. The claim becomes tracked'),
-              refundsMovementId: z.string().optional().describe('Income refunding an advance: id of the advanced movement, from list_outstanding_advances'),
+              expectedRefundFrom: z
+                .string()
+                .optional()
+                .describe(
+                  "Expense advanced on someone's behalf: name of the actor who owes the refund. The claim becomes tracked",
+                ),
+              refundsMovementId: z
+                .string()
+                .optional()
+                .describe(
+                  'Income refunding an advance: id of the advanced movement, from list_outstanding_advances',
+                ),
             }),
           )
           .min(1),
-        createUnknownActors: z.boolean().optional().describe('Create unknown actors automatically instead of failing with suggestions. Reserve it for genuinely new actors'),
+        createUnknownActors: z
+          .boolean()
+          .optional()
+          .describe(
+            'Create unknown actors automatically instead of failing with suggestions. Reserve it for genuinely new actors',
+          ),
       }),
     },
     async ({ movements, createUnknownActors }) => {
@@ -181,13 +225,18 @@ export function buildServer(userId: string): McpServer {
           let targetActorId: string | undefined
           let createdActor: string | undefined
           if (m.type === 'transfer') {
-            if (!m.toAccount) throw new DomainError('bad_target', 'A transfer requires toAccount (the receiving account).')
-            if (m.actor) throw new DomainError('bad_target', 'A transfer goes through no actor: drop the actor field.')
+            if (!m.toAccount)
+              throw new DomainError('bad_target', 'A transfer requires toAccount (the receiving account).')
+            if (m.actor)
+              throw new DomainError('bad_target', 'A transfer goes through no actor: drop the actor field.')
             sourceAccountId = account.id
             targetAccountId = (await requireAccountByName(userId, m.toAccount)).id
           } else {
-            if (!m.actor) throw new DomainError('bad_target', `A ${m.type} requires actor (the external counterparty).`)
-            const { actor, created } = await requireActorByName(userId, m.actor, { createIfUnknown: createUnknownActors })
+            if (!m.actor)
+              throw new DomainError('bad_target', `A ${m.type} requires actor (the external counterparty).`)
+            const { actor, created } = await requireActorByName(userId, m.actor, {
+              createIfUnknown: createUnknownActors,
+            })
             if (created) createdActor = actor.name
             if (m.type === 'expense') {
               sourceAccountId = account.id
@@ -205,7 +254,11 @@ export function buildServer(userId: string): McpServer {
                 ? null
                 : (await requireActivityByName(userId, m.activity)).id
           const expectedRefundFromActorId = m.expectedRefundFrom
-            ? (await requireActorByName(userId, m.expectedRefundFrom, { createIfUnknown: createUnknownActors })).actor.id
+            ? (
+                await requireActorByName(userId, m.expectedRefundFrom, {
+                  createIfUnknown: createUnknownActors,
+                })
+              ).actor.id
             : undefined
           const movement = await declareMovement(userId, {
             happenedOn: m.date,
@@ -220,9 +273,16 @@ export function buildServer(userId: string): McpServer {
             expectedRefundFromActorId,
             refundsMovementId: m.refundsMovementId,
           })
-          results.push({ index, ok: true, movementId: movement.id, kind: movement.kind, ...(createdActor ? { createdActor } : {}) })
+          results.push({
+            index,
+            ok: true,
+            movementId: movement.id,
+            kind: movement.kind,
+            ...(createdActor ? { createdActor } : {}),
+          })
         } catch (e) {
-          if (e instanceof DomainError) results.push({ index, ok: false, error: GUIDANCE[e.code] ?? e.message })
+          if (e instanceof DomainError)
+            results.push({ index, ok: false, error: GUIDANCE[e.code] ?? e.message })
           else throw e
         }
       }
@@ -334,17 +394,35 @@ export function buildServer(userId: string): McpServer {
         'Manages subscriptions and recurring incomes (open-ended commitments). Actions: create (new subscription, or a salary with direction incoming), change_price (the price changed: the dated history is kept, which is how raises become visible), set_judgment (essential / reducible / to_cancel, with a note), cancel (no more occurrences). For an installment purchase use declare_financing. The actual debit of each occurrence is confirmed through confirm_due_movements, never through declare_movements.',
       inputSchema: z.object({
         action: z.enum(['create', 'change_price', 'set_judgment', 'cancel']),
-        commitment: z.string().optional().describe('Every action except create: label (or id) of the commitment'),
+        commitment: z
+          .string()
+          .optional()
+          .describe('Every action except create: label (or id) of the commitment'),
         label: z.string().optional().describe('create: subscription name (e.g. "Netflix")'),
         actor: z.string().optional().describe('create: the actor debiting (or paying, if incoming)'),
         account: z.string().optional().describe('create: the debited (or credited) account'),
-        amount: z.number().positive().optional().describe('create: amount per period; change_price: the new amount'),
+        amount: z
+          .number()
+          .positive()
+          .optional()
+          .describe('create: amount per period; change_price: the new amount'),
         periodUnit: z.enum(['week', 'month', 'year']).optional().describe('create: defaults to month'),
-        periodCount: z.number().int().positive().optional().describe('create: every N periods, defaults to 1'),
+        periodCount: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('create: every N periods, defaults to 1'),
         firstDueOn: isoDate.optional().describe('create: next expected occurrence'),
-        direction: z.enum(['outgoing', 'incoming']).optional().describe('create: incoming for a recurring income (salary), defaults to outgoing'),
+        direction: z
+          .enum(['outgoing', 'incoming'])
+          .optional()
+          .describe('create: incoming for a recurring income (salary), defaults to outgoing'),
         category: z.string().optional().describe('create: category of the generated movements'),
-        activity: z.string().optional().describe('create: sphere of the generated movements (e.g. Freelance)'),
+        activity: z
+          .string()
+          .optional()
+          .describe('create: sphere of the generated movements (e.g. Freelance)'),
         judgment: z.enum(['essential', 'reducible', 'to_cancel']).optional().describe('create/set_judgment'),
         judgmentNote: z.string().optional(),
         engagedUntil: isoDate.optional().describe('create: end of the contractual lock-in period, if any'),
@@ -378,12 +456,20 @@ export function buildServer(userId: string): McpServer {
         if (a.action === 'change_price') {
           if (!a.amount) return fail('change_price requires amount (the new price).')
           const updated = await changeAmount(userId, target.id, a.amount, a.effectiveOn)
-          return ok({ commitmentId: updated.id, amount: Number(updated.amount), note: 'Change recorded in the dated history.' })
+          return ok({
+            commitmentId: updated.id,
+            amount: Number(updated.amount),
+            note: 'Change recorded in the dated history.',
+          })
         }
         if (a.action === 'set_judgment') {
           if (!a.judgment) return fail('set_judgment requires judgment.')
           const updated = await setJudgment(userId, target.id, a.judgment, a.judgmentNote)
-          return ok({ commitmentId: updated.id, judgment: updated.judgment, judgmentNote: updated.judgmentNote })
+          return ok({
+            commitmentId: updated.id,
+            judgment: updated.judgment,
+            judgmentNote: updated.judgmentNote,
+          })
         }
         const cancelled = await cancelCommitment(userId, target.id, a.effectiveOn)
         return ok({ commitmentId: cancelled.id, cancelledOn: cancelled.cancelledOn })
@@ -402,8 +488,15 @@ export function buildServer(userId: string): McpServer {
         installmentAmount: z.number().positive().describe('Amount of one installment'),
         installmentsTotal: z.number().int().min(2).describe('Total number of installments'),
         firstDueOn: isoDate.describe('First installment date'),
-        totalAmount: z.number().positive().optional().describe('Only when different from N × installment (fees)'),
-        periodUnit: z.enum(['week', 'month', 'year']).optional().describe('Defaults to month; week with periodCount 2 for a pay-in-4 every two weeks'),
+        totalAmount: z
+          .number()
+          .positive()
+          .optional()
+          .describe('Only when different from N × installment (fees)'),
+        periodUnit: z
+          .enum(['week', 'month', 'year'])
+          .optional()
+          .describe('Defaults to month; week with periodCount 2 for a pay-in-4 every two weeks'),
         periodCount: z.number().int().positive().optional(),
         category: z.string().optional(),
       }),
@@ -485,7 +578,11 @@ export function buildServer(userId: string): McpServer {
             z.object({
               commitment: z.string().describe('Label (or id) of the commitment'),
               action: z.enum(['confirm', 'skip']),
-              amount: z.number().positive().optional().describe('confirm: the real amount when it differs from the expected one'),
+              amount: z
+                .number()
+                .positive()
+                .optional()
+                .describe('confirm: the real amount when it differs from the expected one'),
               date: isoDate.optional().describe('confirm: the real date when it differs from the due date'),
             }),
           )
@@ -511,7 +608,9 @@ export function buildServer(userId: string): McpServer {
               movementId: movement.id,
               amount: Number(movement.amount),
               ...(item.amount !== undefined && item.amount !== expected
-                ? { warning: `Expected ${expected} €: report the difference to the user and consider manage_subscription change_price.` }
+                ? {
+                    warning: `Expected ${expected} €: report the difference to the user and consider manage_subscription change_price.`,
+                  }
                 : {}),
             })
           }
@@ -576,7 +675,7 @@ export function buildServer(userId: string): McpServer {
     'close_advance',
     {
       description:
-        'Writes off the remainder of a claim: the person will not refund (any more of) it. The expense stays fully counted in both gross and net; only the claim tracking stops. Practically irreversible: confirm the user\'s intent before calling.',
+        "Writes off the remainder of a claim: the person will not refund (any more of) it. The expense stays fully counted in both gross and net; only the claim tracking stops. Practically irreversible: confirm the user's intent before calling.",
       inputSchema: z.object({
         movementId: z.string().describe('Id of the advanced expense, from list_outstanding_advances'),
       }),
@@ -592,7 +691,7 @@ export function buildServer(userId: string): McpServer {
     'manage_accounts',
     {
       description:
-        'Manages the user\'s accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), close (the account keeps its history, it just stops accepting later movements). Accounts mirror the user\'s real banking setup: never create one without an explicit request.',
+        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), close (the account keeps its history, it just stops accepting later movements). Accounts mirror the user's real banking setup: never create one without an explicit request.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'close']),
         name: z.string().optional().describe('create/close: account name (e.g. "Fortuneo checking")'),
@@ -643,12 +742,15 @@ export function buildServer(userId: string): McpServer {
         action: z.enum(['list', 'create', 'add_alias', 'merge']),
         name: z.string().optional().describe('create: canonical name'),
         aliases: z.array(z.string()).optional().describe('create: initial aliases'),
-        activity: z.string().optional().describe('create: activity passed on to this actor\'s movements'),
+        activity: z.string().optional().describe("create: activity passed on to this actor's movements"),
         note: z.string().optional(),
         actor: z.string().optional().describe('add_alias: target actor'),
         alias: z.string().optional().describe('add_alias: the new alias'),
         keep: z.string().optional().describe('merge: the actor to keep'),
-        absorb: z.string().optional().describe('merge: the duplicate to absorb (its name becomes an alias of keep)'),
+        absorb: z
+          .string()
+          .optional()
+          .describe('merge: the duplicate to absorb (its name becomes an alias of keep)'),
       }),
     },
     async (a) =>
@@ -684,7 +786,11 @@ export function buildServer(userId: string): McpServer {
         const keep = (await requireActorByName(userId, a.keep)).actor
         const absorb = (await requireActorByName(userId, a.absorb)).actor
         const merged = await mergeActors(userId, keep.id, absorb.id)
-        return ok({ kept: merged.name, absorbed: absorb.name, note: `"${absorb.name}" is now an alias of "${merged.name}".` })
+        return ok({
+          kept: merged.name,
+          absorbed: absorb.name,
+          note: `"${absorb.name}" is now an alias of "${merged.name}".`,
+        })
       }),
   )
 
@@ -692,7 +798,7 @@ export function buildServer(userId: string): McpServer {
     'manage_categories',
     {
       description:
-        'Manages expense and income categories (the user\'s vocabulary, flat, with an optional group). Actions: list, create. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category.',
+        "Manages expense and income categories (the user's vocabulary, flat, with an optional group). Actions: list, create. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category.",
       inputSchema: z.object({
         action: z.enum(['list', 'create']),
         name: z.string().optional().describe('create'),

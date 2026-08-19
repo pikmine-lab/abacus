@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { DomainError } from '../src/domain/errors.ts'
+import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
-import { createCategory } from '../src/services/catalog.ts'
 import { createAdjustment, recordBalanceCheck } from '../src/services/balanceChecks.ts'
+import { createCategory } from '../src/services/catalog.ts'
 import { closeAdvance, declareMovement, outstandingAdvances } from '../src/services/movements.ts'
 import { spendingBreakdown } from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -18,7 +18,12 @@ test('a balance check exposes the gap and an adjustment settles it', async () =>
   const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
   const employer = await createActor(user, { name: 'Employer' })
   const unknown = await createActor(user, { name: 'Unknown' })
-  await declareMovement(user, { happenedOn: '2026-03-01', amount: 1000, sourceActorId: employer.id, targetAccountId: account.id })
+  await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 1000,
+    sourceActorId: employer.id,
+    targetAccountId: account.id,
+  })
 
   // Reality says 950: 50 of spending was never declared.
   const result = await recordBalanceCheck(user, account.id, 950, '2026-03-31')

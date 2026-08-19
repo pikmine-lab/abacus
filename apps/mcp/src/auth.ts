@@ -1,5 +1,5 @@
-import { OAuthError, OAuthErrorCode, type AuthInfo } from '@modelcontextprotocol/server'
 import { auth } from '@abacus/core/auth'
+import { type AuthInfo, OAuthError, OAuthErrorCode } from '@modelcontextprotocol/server'
 
 /**
  * The MCP server authenticates with the per-user API keys managed by Better

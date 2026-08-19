@@ -6,8 +6,8 @@ import {
   insertMovement,
   listMovements as listMovementsDs,
   listOutstandingAdvances,
-  setRefundClosed,
   type MovementFilters,
+  setRefundClosed,
 } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import type { Account, Actor, Movement } from '../domain/types.ts'
@@ -92,8 +92,7 @@ export async function declareMovementIn(
 
   // Inherited from the actor at write time on purpose: history stays stable,
   // reclassifying it later is an explicit action.
-  const activityId =
-    input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
+  const activityId = input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
 
   return await insertMovement(tx, { ...input, userId, activityId })
 }

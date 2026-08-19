@@ -10,12 +10,15 @@
     "db:up": "docker compose -f compose.dev.yml up -d --wait",
     "db:down": "docker compose -f compose.dev.yml down",
     "db:reset": "docker compose -f compose.dev.yml down -v && docker compose -f compose.dev.yml up -d --wait",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
     "migrate": "node packages/core/src/db/migrate.ts",
     "migrate:dev": "DATABASE_URL=postgresql://abacus:abacus@127.0.0.1:5544/abacus node packages/core/src/db/migrate.ts",
     "test": "DATABASE_URL=postgresql://abacus:abacus@127.0.0.1:5544/abacus_test node --test --test-concurrency=1 'packages/core/test/*.test.ts' 'apps/mcp/test/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
   }

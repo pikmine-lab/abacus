@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { DomainError } from '../src/domain/errors.ts'
-import { createActivity } from '../src/services/catalog.ts'
-import { addAlias, createActor, mergeActors, resolveActor } from '../src/services/actors.ts'
+import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
+import { addAlias, createActor, mergeActors, resolveActor } from '../src/services/actors.ts'
+import { createActivity } from '../src/services/catalog.ts'
 import { declareMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 

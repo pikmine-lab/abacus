@@ -1,10 +1,6 @@
 import { db } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
-import {
-  getBalanceCheck,
-  insertBalanceCheck,
-  latestBalanceCheck,
-} from '../db/datasources/balanceChecks.ts'
+import { getBalanceCheck, insertBalanceCheck, latestBalanceCheck } from '../db/datasources/balanceChecks.ts'
 import { accountBalance } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'

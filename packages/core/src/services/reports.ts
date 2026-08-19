@@ -1,8 +1,8 @@
 import { db } from '../db/client.ts'
 import {
-  spendingBreakdown as spendingBreakdownDs,
   type BreakdownGroup,
   type BreakdownRow,
+  spendingBreakdown as spendingBreakdownDs,
 } from '../db/datasources/reports.ts'
 
 export type { BreakdownGroup, BreakdownRow }

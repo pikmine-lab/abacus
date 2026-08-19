@@ -1,5 +1,5 @@
-import { DomainError } from '@abacus/core/domain/errors'
 import type { Account, Activity, Actor, Category, Commitment } from '@abacus/core/domain'
+import { DomainError } from '@abacus/core/domain/errors'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { createActor, resolveActor } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'

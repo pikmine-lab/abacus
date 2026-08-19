@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { DomainError } from '../src/domain/errors.ts'
+import type { DomainError } from '../src/domain/errors.ts'
 import { closeAccount, createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createActivity, createCategory } from '../src/services/catalog.ts'
@@ -48,14 +48,29 @@ test('computes account balances from movements', async () => {
   const employer = await createActor(user, { name: 'Employer' })
   const shop = await createActor(user, { name: 'Shop' })
 
-  await declareMovement(user, { happenedOn: '2026-01-01', amount: 2000, sourceActorId: employer.id, targetAccountId: checking.id })
-  await declareMovement(user, { happenedOn: '2026-01-02', amount: 500, sourceAccountId: checking.id, targetAccountId: savings.id })
-  await declareMovement(user, { happenedOn: '2026-01-03', amount: 49.99, sourceAccountId: checking.id, targetActorId: shop.id })
+  await declareMovement(user, {
+    happenedOn: '2026-01-01',
+    amount: 2000,
+    sourceActorId: employer.id,
+    targetAccountId: checking.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-01-02',
+    amount: 500,
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-01-03',
+    amount: 49.99,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+  })
 
   const accounts = await listAccounts(user)
   const byName = Object.fromEntries(accounts.map((a) => [a.name, a.balance]))
-  assert.equal(byName['Checking'], '1450.01')
-  assert.equal(byName['Savings'], '500.00')
+  assert.equal(byName.Checking, '1450.01')
+  assert.equal(byName.Savings, '500.00')
 })
 
 test('inherits the activity from the external actor at write time, overridable', async () => {

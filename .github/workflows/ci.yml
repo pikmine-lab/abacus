@@ -41,6 +41,7 @@ jobs:
             -c 'create extension if not exists vector' \
             -c 'create extension if not exists pg_trgm' \
             -c 'create extension if not exists unaccent'
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
 

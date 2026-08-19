@@ -37,5 +37,7 @@ export async function getCategory(tx: Executor, userId: string, id: string): Pro
 }
 
 export async function listCategories(tx: Executor, userId: string): Promise<Category[]> {
-  return await tx<Category[]>`select * from category where user_id = ${userId} order by group_label nulls last, name`
+  return await tx<
+    Category[]
+  >`select * from category where user_id = ${userId} order by group_label nulls last, name`
 }

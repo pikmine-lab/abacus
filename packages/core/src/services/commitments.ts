@@ -84,7 +84,8 @@ export async function createFinancing(userId: string, input: FinancingInput): Pr
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
-    const total = input.totalAmount ?? Math.round(input.installmentAmount * input.installmentsTotal * 100) / 100
+    const total =
+      input.totalAmount ?? Math.round(input.installmentAmount * input.installmentsTotal * 100) / 100
     const commitment = await insertCommitment(tx, {
       userId,
       kind: 'financing',
@@ -177,7 +178,14 @@ export async function setJudgment(
     if (commitment.kind !== 'subscription')
       throw new DomainError('not_a_subscription', 'Only subscriptions carry a judgment')
     const updated = await updateCommitment(tx, userId, id, { judgment, judgmentNote: note ?? null })
-    await insertCommitmentEvent(tx, id, today(), 'judgment_changed', null, `${judgment}${note ? `: ${note}` : ''}`)
+    await insertCommitmentEvent(
+      tx,
+      id,
+      today(),
+      'judgment_changed',
+      null,
+      `${judgment}${note ? `: ${note}` : ''}`,
+    )
     return updated!
   })
 }
@@ -187,7 +195,8 @@ export async function cancelCommitment(userId: string, id: string, on?: string):
   return await sql.begin(async (tx) => {
     const commitment = await getCommitmentForUpdate(tx, userId, id)
     if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
-    if (commitment.cancelledOn) throw new DomainError('already_cancelled', 'This commitment is already cancelled')
+    if (commitment.cancelledOn)
+      throw new DomainError('already_cancelled', 'This commitment is already cancelled')
     const cancelledOn = on ?? today()
     const updated = await updateCommitment(tx, userId, id, { cancelledOn })
     await insertCommitmentEvent(tx, id, cancelledOn, 'cancelled')

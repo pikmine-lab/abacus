@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { DomainError } from '../src/domain/errors.ts'
+import type { DomainError } from '../src/domain/errors.ts'
 import { addPeriod } from '../src/domain/period.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
@@ -101,7 +101,10 @@ test('a cancelled subscription stops generating occurrences', async () => {
 
   await cancelCommitment(user, subscription.id, '2026-05-15')
   assert.deepEqual(await pendingOccurrences(user, '2026-12-31'), [])
-  await assert.rejects(confirmNextOccurrence(user, subscription.id), (e: DomainError) => e.code === 'cancelled')
+  await assert.rejects(
+    confirmNextOccurrence(user, subscription.id),
+    (e: DomainError) => e.code === 'cancelled',
+  )
 })
 
 test('a financing stops at its last installment and derives its total', async () => {

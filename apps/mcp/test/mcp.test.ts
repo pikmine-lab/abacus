@@ -57,11 +57,22 @@ test('full declarative session through the MCP surface', async () => {
     movements: [
       { date: '2026-08-01', amount: 1500, type: 'income', account: 'Courant', actor: 'ACME' },
       { date: '2026-08-02', amount: 300, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
-      { date: '2026-08-03', amount: 12.5, type: 'expense', account: 'Courant', actor: 'Macdo', category: 'Courses' },
+      {
+        date: '2026-08-03',
+        amount: 12.5,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Macdo',
+        category: 'Courses',
+      },
       { date: '2026-08-04', amount: 20, type: 'expense', account: 'Courant', actor: 'Glovo' },
     ],
   })
-  const batch = declared.json() as { declared: number; failed: number; results: { ok: boolean; error?: string }[] }
+  const batch = declared.json() as {
+    declared: number
+    failed: number
+    results: { ok: boolean; error?: string }[]
+  }
   assert.equal(batch.declared, 3)
   assert.equal(batch.failed, 1)
   assert.match(batch.results[3]!.error!, /createUnknownActors/)
@@ -83,8 +94,8 @@ test('full declarative session through the MCP surface', async () => {
     monthlyCommittedCost: number
   }
   const balances = Object.fromEntries(overview.accounts.map((a) => [a.name, a.balance]))
-  assert.equal(balances['Courant'], 1167.5)
-  assert.equal(balances['Livret'], 300)
+  assert.equal(balances.Courant, 1167.5)
+  assert.equal(balances.Livret, 300)
 
   // Balance check: reality says 1150, so 17.50 of spending is missing.
   const check = (

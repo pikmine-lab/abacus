@@ -27,8 +27,14 @@ export async function insertCommitment(tx: Executor, row: NewCommitment): Promis
   return commitment!
 }
 
-export async function getCommitment(tx: Executor, userId: string, id: string): Promise<Commitment | undefined> {
-  const [commitment] = await tx<Commitment[]>`select * from commitment where user_id = ${userId} and id = ${id}`
+export async function getCommitment(
+  tx: Executor,
+  userId: string,
+  id: string,
+): Promise<Commitment | undefined> {
+  const [commitment] = await tx<
+    Commitment[]
+  >`select * from commitment where user_id = ${userId} and id = ${id}`
   return commitment
 }
 
