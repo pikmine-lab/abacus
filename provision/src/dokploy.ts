@@ -92,8 +92,7 @@ export type Domain = { domainId: string; host: string; port?: number; serviceNam
 
 export const projects = {
   all: () => query<Project[]>('project.all'),
-  create: (name: string, description: string) =>
-    mutate<Project>('project.create', { name, description }),
+  create: (name: string, description: string) => mutate<Project>('project.create', { name, description }),
 }
 
 export const compose = {

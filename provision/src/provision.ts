@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { compose, type ComposeRef, domains, findEnvironment, type Project, projects } from './dokploy.ts'
+import { type ComposeRef, compose, domains, findEnvironment, type Project, projects } from './dokploy.ts'
 import { required } from './env.ts'
 import { SPEC } from './specs.ts'
 
@@ -108,7 +108,12 @@ async function ensureCompose(refs: ComposeRef[], environmentId: string) {
       // Not "stack": swarm mode ignores depends_on and reworks published ports.
       composeType: 'docker-compose',
     })
-    await compose.update({ composeId: c.composeId, sourceType: 'raw', composeFile: wantedFile, env: wantedEnv })
+    await compose.update({
+      composeId: c.composeId,
+      sourceType: 'raw',
+      composeFile: wantedFile,
+      env: wantedEnv,
+    })
     await ensureDomains(c.composeId)
     await compose.deploy(c.composeId)
     return created(`compose ${SPEC.service} (${imageTag}, deployment queued)`)
@@ -134,11 +139,20 @@ async function ensureCompose(refs: ComposeRef[], environmentId: string) {
   const neverDeployed = !['done', 'running'].includes(status)
 
   if (fileDrift || sourceDrift || envDrift) {
-    const why = [fileDrift && 'compose file', envDrift && `environment (${imageTag})`, sourceDrift && 'sourceType']
+    const why = [
+      fileDrift && 'compose file',
+      envDrift && `environment (${imageTag})`,
+      sourceDrift && 'sourceType',
+    ]
       .filter(Boolean)
       .join(' + ')
     if (DRY_RUN) return planned(`compose ${SPEC.service}`, `update ${why} and redeploy`)
-    await compose.update({ composeId: ref.composeId, sourceType: 'raw', composeFile: wantedFile, env: wantedEnv })
+    await compose.update({
+      composeId: ref.composeId,
+      sourceType: 'raw',
+      composeFile: wantedFile,
+      env: wantedEnv,
+    })
     await compose.deploy(ref.composeId)
     return updated(`compose ${SPEC.service}`, `${why} changed, redeployed`)
   }
