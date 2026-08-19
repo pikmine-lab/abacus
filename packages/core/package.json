@@ -6,7 +6,7 @@
     "./auth": "./src/auth.ts",
     "./db": "./src/db/client.ts",
     "./domain": "./src/domain/types.ts",
-    "./domain/errors": "./src/domain/errors.ts",
+    "./domain/*": "./src/domain/*.ts",
     "./services/*": "./src/services/*.ts"
   },
   "dependencies": {
