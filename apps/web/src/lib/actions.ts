@@ -271,3 +271,28 @@ export async function createActivityAction(_prev: FormState, formData: FormData)
   refreshAll()
   return { ok: true }
 }
+
+export interface ApiKeyFormState extends FormState {
+  /** Plain key value: returned once at creation, never retrievable again. */
+  key?: string
+}
+
+export async function createApiKeyAction(
+  _prev: ApiKeyFormState,
+  formData: FormData,
+): Promise<ApiKeyFormState> {
+  const created = await auth.api.createApiKey({
+    body: { name: str(formData, 'name') },
+    headers: await headers(),
+  })
+  revalidatePath('/cles-api')
+  return { ok: true, key: created.key }
+}
+
+export async function deleteApiKeyAction(formData: FormData): Promise<void> {
+  await auth.api.deleteApiKey({
+    body: { keyId: str(formData, 'keyId') },
+    headers: await headers(),
+  })
+  revalidatePath('/cles-api')
+}
