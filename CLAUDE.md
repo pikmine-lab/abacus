@@ -50,6 +50,13 @@ nr migrate:dev   # applique les migrations dessus
 nr db:reset      # base vierge (détruit le volume)
 ```
 
+L'app web se lance avec `pnpm --filter @abacus/web dev` et lit `apps/web/.env.local`
+(non commité) : `DATABASE_URL` vers la base Docker, `BETTER_AUTH_SECRET` quelconque,
+`PUBLIC_URL=http://localhost:3000`.
+
+**Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
+toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
+
 Les identifiants `abacus:abacus@127.0.0.1:5544` sont locaux et jetables, ce ne sont pas
 des secrets. Tout le reste passe par `DATABASE_URL`.
 
@@ -86,6 +93,31 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 - Variables runtime des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
   (obligatoire en production, sinon crash à la première requête), `PORT` (MCP).
 - Actions GitHub épinglées par commit, jamais par tag.
+- **Piège** : les checks requis de la protection de `main` portent les noms complets des
+  jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un Dockerfile ou la matrice
+  casse silencieusement le merge des PR (checks « attendus » à jamais) : mettre à jour la
+  protection en même temps.
+
+## Se connecter au MCP de production
+
+Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, auth
+`Authorization: Bearer <clé d'API>`). Les clés sont par utilisateur, gérées par le plugin
+api-key de Better Auth ; pas encore d'écran pour les créer : passer par
+`auth.api.createApiKey({ body: { name, userId } })` côté serveur. Côté Claude :
+`claude mcp add --transport http abacus https://abacus-mcp.payangar.dev/mcp --header "Authorization: Bearer <clé>"`.
+
+## État (2026-08-20)
+
+**En production** sur `abacus.payangar.dev` : auth multi-utilisateur, tableau de bord
+(KPI, graphe de soldes interactif, dépenses brut/net, échéances), pages Mouvements /
+Abonnements / Comptes avec saisie déclarative complète, serveur MCP (16 outils), UI
+migrée sur les vrais composants shadcn/ui, déploiement continu opérationnel (validé de
+bout en bout par PR).
+
+**Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
+en base), écran de création de clés d'API MCP, multi-devise (V2, schéma prêt), sauvegardes
+Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface MCP en session réelle,
+densité UI à trancher sur données réelles (DESIGN.md).
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès
