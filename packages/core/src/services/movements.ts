@@ -1,6 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { realignNextDue } from '../db/datasources/installments.ts'
 import {
   deleteMovementRow,
   getMovement,
@@ -148,7 +149,7 @@ const CORRECTABLE = [
 
 /**
  * Corrects a declared movement. A declarative ledger is only as good as the
- * user's ability to fix a typo, so this exists — but it is a correction, not a
+ * user's ability to fix a typo, so this exists: but it is a correction, not a
  * rewrite: the origin links (commitment, balance check, advance and refund
  * links) are never touched here, and the merged result must satisfy the same
  * domain rules as a fresh declaration.
@@ -206,17 +207,27 @@ function pick(
  * Removes a declared movement. Refused while another movement refunds it: the
  * refund would be left pointing at nothing, and the user has to decide which
  * of the two is wrong.
+ *
+ * When the movement settled a financing installment, that installment becomes
+ * owed again (the foreign key frees it) and the plan's cursor is moved back
+ * onto it, so what is due reappears instead of being silently skipped.
  */
 export async function deleteMovement(userId: string, id: string): Promise<void> {
   const sql = db()
-  const movement = await getMovement(sql, userId, id)
-  if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
-  const [refund] = await sql<{ id: string }[]>`
-    select id from movement where refunds_movement_id = ${id} limit 1
-  `
-  if (refund)
-    throw new DomainError('refunded_movement', 'A refund is linked to this movement: delete the refund first')
-  await deleteMovementRow(sql, userId, id)
+  await sql.begin(async (tx) => {
+    const movement = await getMovement(tx, userId, id)
+    if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+    const [refund] = await tx<{ id: string }[]>`
+      select id from movement where refunds_movement_id = ${id} limit 1
+    `
+    if (refund)
+      throw new DomainError(
+        'refunded_movement',
+        'A refund is linked to this movement: delete the refund first',
+      )
+    await deleteMovementRow(tx, userId, id)
+    if (movement.commitmentId) await realignNextDue(tx, movement.commitmentId)
+  })
 }
 
 export async function listMovements(userId: string, filters: MovementFilters = {}): Promise<Movement[]> {

@@ -193,9 +193,18 @@ test('financing tracked to settlement through the MCP surface', async () => {
       installmentsTotal: 4,
       firstDueOn: '2026-08-05',
     })
-  ).json() as { installmentAmount: number; totalAmount: number }
+  ).json() as { totalAmount: number; schedule: { dueOn: string; amount: number }[] }
   assert.equal(financing.totalAmount, 1000)
-  assert.equal(financing.installmentAmount, 250)
+  // The plan it wrote comes back, so an agent can report it without asking again.
+  assert.deepEqual(
+    financing.schedule.map((i) => [i.dueOn, i.amount]),
+    [
+      ['2026-08-05', 250],
+      ['2026-09-05', 250],
+      ['2026-10-05', 250],
+      ['2026-11-05', 250],
+    ],
+  )
 
   await call(client, 'confirm_due_movements', {
     items: [

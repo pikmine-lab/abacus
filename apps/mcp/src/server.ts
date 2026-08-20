@@ -9,6 +9,7 @@ import {
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  financingSchedule,
   listCommitmentsWithProgress,
   monthlyEquivalent,
   pendingOccurrences,
@@ -75,6 +76,12 @@ const GUIDANCE: Record<string, string> = {
   refunded_movement:
     'Another movement refunds this one, so deleting it would leave that refund pointing at nothing. Delete the refund first, or correct this movement instead.',
   financing_needs_amount: 'A financing needs its total amount (totalAmount) over N installments.',
+  schedule_length_mismatch:
+    'The schedule you passed has a different number of installments than installmentsTotal: make them match.',
+  schedule_sum_mismatch:
+    'The installments do not add up to the total. Fix one or the other: a plan that does not sum to what is owed would make the remaining due wrong.',
+  cannot_skip_financing:
+    'A financing installment cannot be skipped: it is owed. Confirm it when it is paid, or cancel the financing if the plan ended early.',
   bad_source: 'A movement needs exactly one source: an owned account or an external actor, never both.',
   bad_target: 'A movement needs exactly one target: an owned account or an external actor, never both.',
   no_owned_account:
@@ -480,7 +487,7 @@ export function buildServer(userId: string): McpServer {
     'declare_financing',
     {
       description:
-        'Declares an installment purchase (financing): a total amount paid in N installments. Give the total and the number of installments — the per-installment amount is derived by division. The remaining due is derived from confirmed installments (see list_commitments) and the financing settles itself at the last one. Installments are then confirmed through confirm_due_movements.',
+        'Declares an installment purchase (financing): a total amount paid in N installments. Give the total and the number of installments and the schedule is written for you : equal amounts one period apart, the rounding cent on the last one. Pass installments instead when the real plan is not that: a prorated first month, uneven thirds, a date pushed off a weekend, a payment holiday. That is the normal case for a contract read off a paper, so prefer it whenever the user states actual dates or amounts. Whichever you pass, the installments must add up to the total. The remaining due is then the sum of what is still owed, and each installment is confirmed for its own amount through confirm_due_movements.',
       inputSchema: z.object({
         label: z.string().describe('What is being financed (e.g. "Sofa x4")'),
         actor: z.string().describe('The creditor (store, payment provider)'),
@@ -488,12 +495,17 @@ export function buildServer(userId: string): McpServer {
         totalAmount: z.number().positive().describe('Total owed across every installment'),
         installmentsTotal: z.number().int().min(2).describe('Total number of installments'),
         firstDueOn: isoDate.describe('First installment date'),
-        installmentAmount: z
-          .number()
-          .positive()
+        installments: z
+          .array(
+            z.object({
+              dueOn: isoDate.describe('Date this installment is owed'),
+              amount: z.number().positive().describe('Amount of this installment alone'),
+            }),
+          )
+          .min(2)
           .optional()
           .describe(
-            'Only when the installments are not simply the total divided by their count (uneven split, fees)',
+            'The plan spelled out, in contractual order, one entry per installment. Use it as soon as the installments differ from each other or fall on irregular dates. Its length must equal installmentsTotal and its amounts must sum to totalAmount.',
           ),
         periodUnit: z
           .enum(['week', 'month', 'year'])
@@ -509,7 +521,7 @@ export function buildServer(userId: string): McpServer {
           label: f.label,
           actorId: (await requireActorByName(userId, f.actor, { createIfUnknown: true })).actor.id,
           accountId: (await requireAccountByName(userId, f.account)).id,
-          installmentAmount: f.installmentAmount,
+          installments: f.installments,
           installmentsTotal: f.installmentsTotal,
           totalAmount: f.totalAmount,
           periodUnit: f.periodUnit,
@@ -522,8 +534,11 @@ export function buildServer(userId: string): McpServer {
           label: commitment.label,
           totalAmount: Number(commitment.totalAmount),
           installmentsTotal: commitment.installmentsTotal,
-          installmentAmount: Number(commitment.amount),
-          nextDueOn: commitment.nextDueOn,
+          schedule: (await financingSchedule(userId, commitment.id)).map((i) => ({
+            position: i.position,
+            dueOn: i.dueOn,
+            amount: Number(i.amount),
+          })),
         })
       }),
   )
@@ -575,7 +590,7 @@ export function buildServer(userId: string): McpServer {
     'confirm_due_movements',
     {
       description:
-        'Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service). When reality differed, pass the real amount — recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. Always prefer this tool over declare_movements for a subscription debit, otherwise the occurrence stays pending.',
+        'Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service). When reality differed, pass the real amount : recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. Always prefer this tool over declare_movements for a subscription debit, otherwise the occurrence stays pending.',
       inputSchema: z.object({
         items: z
           .array(
@@ -836,7 +851,7 @@ export function buildServer(userId: string): McpServer {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first — this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the advance or refund links. Deleting is not how you undo a confirmed occurrence — the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the advance or refund links. Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
@@ -851,7 +866,7 @@ export function buildServer(userId: string): McpServer {
         account: z
           .string()
           .optional()
-          .describe('correct: the owned account — paying (expense, transfer) or receiving (income)'),
+          .describe('correct: the owned account : paying (expense, transfer) or receiving (income)'),
         toAccount: z.string().optional().describe('correct, transfer only: the receiving account'),
         actor: z
           .string()

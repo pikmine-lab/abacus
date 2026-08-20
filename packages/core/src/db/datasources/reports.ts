@@ -12,7 +12,7 @@ export interface BalancePoint {
  *
  * The window is honoured exactly as asked, days before the first movement
  * included (they are legitimately zero). Choosing a sensible `from` is the
- * caller's job — see `firstMovementDay`.
+ * caller's job: see `firstMovementDay`.
  */
 export async function balanceSeries(
   tx: Executor,
