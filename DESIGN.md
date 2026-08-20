@@ -1,124 +1,183 @@
-# Design — direction validée le 2026-08-19
+# Design — refonte validée le 2026-08-20
 
-Référence vivante : la maquette interactive
-<https://claude.ai/code/artifact/45bb6d16-31d2-4682-8597-0ec248cdd0ab> (artefact Claude,
-données fictives). Ce document fixe les règles ; la maquette les montre.
+Ce document fixe les règles de l'interface. Il remplace la direction du 2026-08-19
+(gris purs, accent bleu, empilement de cartes, navigation horizontale), abandonnée
+après usage : elle ne répondait à aucune question et ne se distinguait de rien.
 
 ## Parti pris
 
-Minimaliste, technique, professionnel : l'esthétique « developer » sans l'austérité.
-Base **shadcn/ui**, **thème sombre par défaut** (le clair n'est pas prioritaire).
-Les graphes sont le cœur de l'application et reçoivent le plus haut niveau de soin :
-interactifs, filtrables, jamais décoratifs.
+Minimaliste, technique, professionnel. **Thème sombre unique**, base **shadcn/ui**
+(style new-york). Trois principes gouvernent tout le reste :
 
-## Typographie
+1. **Une vue répond à une question.** Le nom d'un écran est la question qu'il traite,
+   pas l'entité qu'il liste. « Abonnements » mélangeait un salaire et un crédit auto :
+   il a été coupé en *Dépenses récurrentes* et *Revenus récurrents*.
+2. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la
+   saisie vit dans un panneau latéral qu'on ouvre. Un formulaire ne squatte jamais
+   la moitié d'un écran de lecture.
+3. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, et tout
+   détail sait revenir d'où il vient.
 
-- **Geist** pour l'interface, **Geist Mono** pour les montants, ticks d'axes, libellés
-  techniques et le wordmark (`abacus_`).
-- `font-variant-numeric: tabular-nums` sur toute colonne de chiffres (tableaux, axes) ;
-  chiffres proportionnels pour les grands nombres isolés (tuiles, héro).
+## Navigation
+
+Barre **latérale pliable** (`sidebar` shadcn, `collapsible="icon"`), groupée par
+question posée, jamais à plat :
+
+| Groupe | Entrées |
+|---|---|
+| Suivi | Vue d'ensemble · Mouvements · Analyse |
+| Engagements | Dépenses récurrentes · Revenus récurrents |
+| Patrimoine | Comptes · Placements (V2, désactivé et marqué) |
+| (pied) | Réglages · compte utilisateur |
+
+- **Repliée**, seules les icônes restent ; le libellé passe en tooltip
+  (`SidebarMenuButton tooltip=`). Les icônes ne changent pas de taille en pliant :
+  le wordmark force `!size-6` contre le `[&>svg]:size-4` du bouton.
+- **Le pli se commande depuis la barre**, par une poignée à chevron posée sur sa
+  propre séparation (`SidebarEdgeToggle`) : replier la navigation est un acte sur la
+  navigation, pas sur la page. Le raccourci `Ctrl/⌘+B` reste actif. Sous `sm`, la
+  barre est un sheet et le header porte alors un déclencheur.
+- L'état est lu **côté serveur** dans le cookie `sidebar_state`, pour que le premier
+  rendu ait déjà la bonne largeur.
+- L'actif porte l'accent sur l'icône et l'encre pleine sur le texte ; rien d'autre.
+- Une vue non encore construite reste visible, désactivée et marquée `V2` : une
+  feuille de route lisible vaut mieux qu'une surprise.
+
+### Revenir en arrière
+
+Les liens qui traversent les pages se taguent `?de=<clé>`. `BackLink` lit ce tag et
+affiche un retour nommé dans le header. Il **repasse par l'historique**
+(`router.back()`), donc la période et les filtres de la page quittée sont retrouvés
+intacts ; il ne retombe sur la route nue que sans historique (lien collé).
 
 ## Couleur
 
-Fond quasi noir et blancs cassés (gamme zinc), un accent, une famille de variantes.
-La palette vit dans `globals.css` sous la nomenclature de tokens shadcn/ui (thème
-sombre unique, valeurs sur `:root`, `<html>` porte la classe `dark`).
+Fonds **bleu-nuit désaturés** (jamais de gris pur), accent **cuivre**. Toutes les
+valeurs ci-dessous sont mesurées, pas choisies à l'œil : les séries de graphes par
+les contrôles data-viz (bande de luminance OKLCH, plancher de chroma, ΔE sous
+simulation de daltonisme, contraste sur la surface), les encres par WCAG sur le fond
+de page.
 
-| Rôle | Valeur | Token(s) |
-|---|---|---|
-| Page | `#0a0a0b` | `--background` |
-| Carte / surface | `#141417` | `--card`, `--popover` |
-| Bordure (hairline) | `#26262b` | `--border`, `--input` |
-| Encre principale | `#f4f4f5` | `--foreground` |
-| Encre secondaire | `#a1a1aa` | `--muted-foreground` |
-| Estompé (axes, labels) | `#7c7c85` | `--faint` (propre au projet) |
-| Grille | `#222227` | `--grid` (propre au projet) |
-| Lavis (hover, actif) | `#1c1c20` | `--muted`, `--accent`, `--secondary` |
-| **Accent** | `#3987e5` | `--primary`, `--ring` |
-| Sémantique positif | `#0ca30c` | `--good` (propre au projet) |
-| Sémantique négatif / erreur | `#e66767` | `--destructive` |
+| Rôle | Valeur | Token | Mesure |
+|---|---|---|---|
+| Page | `#0c0e13` | `--background` | — |
+| Surface (carte, popover) | `#14171f` | `--card`, `--popover` | — |
+| Lavis (survol, actif) | `#1a1e28` | `--muted`, `--accent`, `--secondary` | — |
+| Filet | `#212734` | `--border` | décoratif |
+| Contour de champ | `#3d4557` | `--input` | 2:1 sur la page |
+| Encre principale | `#e8eaf0` | `--foreground` | 16,1:1 |
+| Encre secondaire | `#98a1b3` | `--muted-foreground` | 7,4:1 |
+| Estompé | `#79839a` | `--faint` | 5,1:1 |
+| **Accent (interface)** | `#e2a04c` | `--primary`, `--ring` | 8,6:1 |
+| Encre sur accent | `#17120a` | `--primary-foreground` | 8,3:1 |
+| Positif | `#4ec27a` | `--good` | 8,6:1 |
+| Négatif / erreur | `#e5686b` | `--destructive` | 6,0:1 |
+| Grille de graphe | `#1c212c` | `--grid` | — |
 
-### Les deux règles qui gouvernent la couleur
+### Les règles qui gouvernent la couleur
 
-1. **Accent unique pour l'interface.** Le bleu ne marque que l'actif : filtres
-   sélectionnés, série mise en avant, fin de sparkline, badge « à résilier », focus.
-   Tout le reste est neutre. Jamais d'accent décoratif.
-2. **Une famille de variantes pour les séries des graphes**, du bleu vers le violet,
-   qui **se distinguent par la luminance, jamais par la teinte seule** (des teintes
-   voisines à luminance égale sont indistinguables en vision daltonienne, mesuré :
-   ΔE 1 à 2). Famille validée sur la surface `#141417` (CVD ≥ 18, vision normale ≥ 23,
-   contraste ≥ 3:1) :
-
-   | Slot | Valeur | Usage |
-   |---|---|---|
-   | s1 (`--chart-1`) | `#3987e5` | série principale (= l'accent) |
-   | s2 (`--chart-2`) | `#c9bcf8` | deuxième série (périwinkle clair) |
-   | s3 (`--chart-3`) | `#7365e0` | troisième série (violet) |
-
-   Au-delà de trois séries de courbes : regrouper, ou passer en small multiples. On
-   n'ajoute pas une quatrième teinte de courbe sans la re-valider
-   (`dataviz` skill, `scripts/validate_palette.js`, surface `#141417`).
-
-3. **Les catégories aussi vivent dans la famille.** Chaque catégorie reçoit une
-   variante bleu → violet **stable** (elle suit l'entité, pas son rang dans le
-   graphe). Dans un graphe à barres libellées, l'identité est portée par le libellé
-   et la valeur ; la couleur n'est qu'une aide de reconnaissance, donc la contrainte
-   daltonisme ne s'applique pas à ces variantes (décision du 2026-08-19), seul le
-   contraste ≥ 3:1 sur la surface reste exigé. Variantes en service :
-   `#3987e5 · #c9bcf8 · #7365e0 · #5a9df0 · #9d92f5 · #3576d4 · #8b7ff0`
-   (attribution à la création de la catégorie, réutilisation cyclique acceptée ici
-   puisque la couleur n'est pas le canal d'identité).
-
-La couleur suit **l'entité**, jamais son rang : filtrer ne repeint aucune série.
-Le sens (positif/négatif) n'est jamais porté par la couleur seule (flèches ↑↓ toujours).
+1. **Accent unique, réservé à l'actif** : onglet ou entrée sélectionnée, focus,
+   bouton primaire, fin de sparkline, badge « à résilier ». Jamais décoratif.
+2. **Le cuivre a deux pas, pour deux métiers.** `--primary` `#e2a04c` est une encre
+   d'interface (contrainte WCAG texte) ; `--chart-1` `#c58229` est la marque de
+   graphe (contrainte : bande de luminance sombre L 0,48–0,67, où le pas clair est
+   trop pâle pour qualifier). Même rampe, deux usages, aucune confusion.
+3. **Trois séries de graphe, plafond dur.** `#c58229` cuivre · `#3987e5` bleu acier ·
+   `#d55181` magenta. Validées **en toutes paires** sur la surface `#14171f`, sans
+   avertissement. Un quatrième slot échoue : la meilleure candidate (aqua `#199e70`)
+   tombe à ΔE 1,6 contre le magenta en deutéranopie. Au-delà de trois séries :
+   regrouper ou passer en small multiples — jamais ajouter une teinte.
+4. **Ni vert ni rouge en série.** Ces deux teintes portent le sens (revenu, erreur) :
+   les réutiliser comme identité brouillerait la lecture.
+5. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout delta,
+   position au-dessus/au-dessous de zéro sur les flux, libellé sur tout badge.
+6. **Pas de couleur par catégorie.** Une barre de dépenses porte son identité dans
+   son libellé et sa magnitude dans sa longueur ; la couleur n'encoderait rien.
+   Toutes les barres sont cuivre. (L'ancienne rampe `--cat0…6` attribuait la teinte
+   au *rang*, ce que sa propre règle interdisait : supprimée.)
 
 ## Graphes
 
-- **Interaction par défaut** : crosshair vertical qui aimante le point le plus proche,
-  tooltip unique listant toutes les séries (valeur en gras, nom en secondaire),
-  séries activables par la légende, survol des barres avec lift + tooltip.
-- **Filtres** : une seule rangée au-dessus du contenu (période d'abord, en presets),
-  qui scope tout ce qui est en dessous. Jamais de filtre par graphe.
-- **Brut / net partout où les remboursements existent**, les deux lectures toujours
-  accessibles ; les virements internes n'apparaissent jamais dans les dépenses.
-- **Marques** : lignes 2px, points de fin r4 avec anneau surface 2px, labels directs en
-  fin de ligne (anticollision), barres ≤ 24px à bout arrondi 4px sur baseline commune,
-  valeurs dans une colonne alignée à droite, grille hairline pleine et discrète, ticks
-  arrondis au format français (`13,5k`).
-- **Légende dès deux séries** ; une série seule n'en a pas (le titre suffit).
-- **Tuiles de stats** : label, valeur, delta signé vs période nommée, sparkline 12
-  points (gris estompé, dernier segment et point en accent). Un seul chiffre héro par vue.
+- **Une seule rangée de filtres**, au-dessus du contenu, qui scope tout ce qui suit.
+  Jamais de contrôle de période par graphe. Le sélecteur écrit dans l'URL, donc une
+  vue cadrée se partage, se recharge et se défait au bouton retour.
+- **Une fenêtre nommée dans le titre** peut différer de la période de la page quand
+  la forme l'exige (« 12 derniers mois » pour un graphe mensuel) : c'est déclaré,
+  pas subi.
+- **Rien n'est dessiné avant mesure du conteneur.** Une largeur devinée pousse les
+  marques hors cadre au lieu de les mettre à l'échelle ; la place est réservée par
+  `minHeight` pour éviter le saut.
+- **Le futur se voit.** Au-delà d'aujourd'hui, une courbe ne fait que prolonger le
+  dernier solde connu : elle passe en **pointillés**, son aire s'arrête, son point de
+  fin devient creux, et un **drapeau d'un mot** (« projection ») marque la frontière
+  sur une verticale pointillée. Un mois encore en cours est **hachuré** derrière un
+  drapeau « en cours » : inachevé n'est pas petit.
+- **Brut et net ensemble** : la part pleine est le net, la part translucide accolée
+  (2px de respiration) est ce qui est revenu en remboursement. Pleine + translucide
+  = brut.
+- **Interaction** : crosshair aimanté au point le plus proche, tooltip unique listant
+  toutes les séries, légende dès deux séries, labels directs en fin de ligne
+  (anticollision). Un mois du graphe de flux est un vrai contrôle (rôle, tabulation,
+  Entrée/Espace) qui cadre la page dessus.
+- **Marques** : lignes 2px, points de fin r4 avec anneau de la couleur du fond,
+  barres ≤ 24px à bout arrondi, grille en filet discret, ticks au format français
+  (`13,5k`).
+- **Tuiles de stats** : label, valeur, delta signé contre une fenêtre **nommée**,
+  sparkline 12 points (gris estompé, dernier segment et point en accent). **Un seul
+  chiffre héro par vue.** Une tuile qui mène quelque part porte une flèche
+  ↗ dans son coin haut droit, à taille d'icône.
 
-## Composants
+## Densité et conteneurs
 
-La base est **shadcn/ui** (style new-york), installée par le CLI dans
-`apps/web/src/components/ui/`. On n'y reproduit plus de composants à la main : un
-besoin nouveau passe d'abord par `shadcn add`. Ces fichiers nous appartiennent
-(modèle shadcn) ; les divergences volontaires avec le registre sont locales et
-motivées par ce document :
+- **La carte n'est pas le conteneur par défaut.** Elle sert un objet réellement
+  détachable (le bloc de connexion). Le titre d'une page, sa rangée de filtres, ses
+  listes et ses tuiles vivent sur le fond de page ; ce sont les **filets** et
+  l'**espacement** qui séparent (`Rows`, `StatRow`, `Section`).
+- Header de page collant (56px), rangée de filtres collante juste dessous.
+- Argent : `font-mono` + `tabular-nums` (classe `.tabular`) dans toute colonne de
+  chiffres. Geist pour l'interface, Geist Mono pour les montants et les axes.
 
-- `card` : densité du projet (paddings 16/20px, gap 12px), rayon 12px, titre 13px,
-  description en encre estompée.
-- `tabs` : l'onglet actif porte l'accent (fond page + texte `primary`), la version
-  du registre (`input/30` sur `muted`) étant illisible sur cette palette.
+## Saisie
 
-Usages fixés :
+- **Un panneau latéral** (`EntrySheet`) déclenché par un bouton `+ …` en haut à
+  droite. La liste reste visible derrière ; le panneau **reste ouvert après un
+  envoi réussi** et les champs se vident, parce que déclarer se fait par salves.
+  Un accusé discret confirme (`successLabel`).
+- **Les montants se formatent pendant la frappe** (`AmountInput`) : `2000000`
+  devient `2 000 000` avant la fin de la saisie, quand un zéro de trop est encore
+  bon marché à voir. Le champ visible porte le texte groupé, un champ caché porte la
+  valeur machine ; le serveur ne devine jamais ce qu'un espace voulait dire.
+- **Corriger est aussi accessible que saisir** : un menu `⋯` en fin de ligne ouvre
+  la correction dans le même panneau, ou la suppression derrière une confirmation.
+  Une correction ne touche jamais les liens d'origine (échéance, pointage, avance) —
+  le panneau le dit quand la ligne en porte un.
+- Select Radix partout, y compris dans les formulaires à server actions. Calendar +
+  Popover pour les dates, locale `fr`. Tabs comme segmented control pour les choix
+  exclusifs.
+- **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
+  ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
+  « tous » côté contrôle. Une URL bricolée ne casse pas la page.
 
-- Tabs comme segmented control pour les choix exclusifs (type de mouvement, période,
-  connexion/inscription) ; Toggle pour les chips de comptes, avec pastille de couleur.
-- Select Radix partout, y compris dans les formulaires à server actions (le champ
-  nommé part dans le `FormData`) ; les champs optionnels gardent un item visible qui
-  remet le placeholder.
-- Calendar + Popover pour toute saisie de date, locale `fr`.
-- NavigationMenu pour la navigation ; Avatar + DropdownMenu pour le compte, la
-  déconnexion en variante `destructive`.
-- Badges des jugements d'abonnements : `essentiel` secondary (discret), `réductible`
-  outline (contour), `à résilier` default (plein accent).
-- Focus visible hérité de shadcn (`ring` accent) ; `prefers-reduced-motion` respecté.
+## Écran vide
+
+Le vide d'une application déclarative est un **chemin**, pas un avis. La vue
+d'ensemble affiche trois pas ordonnés, chacun disant ce qu'il débloque, cochés à
+mesure, avec l'appel à l'action sur le prochain pas ouvert seulement — et la voie
+MCP mentionnée pour qui préfère déclarer en langage naturel.
+
+## Identité
+
+Marque **abaque** : trois tiges, une perle active par tige, décalées pour qu'on lise
+un compte et non un motif. Les tiges héritent de `currentColor`, les perles portent
+le cuivre — c'est ce qui la rend reconnaissable à 16px. Deux exemplaires à garder
+synchronisés : `components/logo.tsx` (dans l'interface) et `app/icon.svg` (onglet,
+sur son propre fond puisqu'un favicon n'hérite d'aucune encre). Wordmark
+`abacus` + underscore en cuivre.
 
 ## Reste ouvert
 
-- **Densité** : aérée (comme la maquette) ou resserrée ; à trancher sur les premiers
-  écrans réels avec de vraies données.
-- Le thème clair, si un jour un utilisateur le réclame : re-valider la famille de
-  variantes sur la surface claire avant tout.
+- **Densité** : à resserrer ou non une fois l'historique réel saisi.
+- **Thème clair** : si un utilisateur le réclame, revalider la famille de séries sur
+  la surface claire avant tout.
+- **Projection** au sens de la SPEC (échéances à venir, moyennes constatées) : le
+  balisage visuel du futur existe déjà, la vue dédiée reste à faire.
