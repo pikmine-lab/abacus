@@ -142,12 +142,10 @@ référence, historisé).
 écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
 son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
 est la somme des échéances non réglées. Réviser l'échéancier d'un financement déjà
-créé reste à faire.
+créé reste à faire (#13).
 
-**Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
-en base), multi-devise (V2, schéma prêt), vue projection de la SPEC, vue freelance par
-activité, sauvegardes Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface
-MCP en session réelle, densité UI à trancher sur données réelles (DESIGN.md).
+**Reste à faire** : dans les [issues du dépôt](https://github.com/pikmine-lab/abacus/issues),
+qui portent chacune son intention et son pourquoi. Ne pas maintenir de seconde liste ici.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès
