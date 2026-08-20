@@ -80,6 +80,8 @@ export default async function OverviewPage({
   const active = commitments.filter((c) => !c.cancelledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription' && c.direction === 'outgoing')
   const financings = active.filter((c) => c.kind === 'financing')
+  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
+  const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
 
   if (accounts.length === 0 || firstDay === null) {
     const steps: Step[] = [
@@ -231,21 +233,30 @@ export default async function OverviewPage({
         {(pending.length > 0 || staleChecks.length > 0 || claims > 0) && (
           <Section title="À faire" description="ce qui attend une décision de ta part">
             <Rows>
-              {pending.length > 0 && (
-                <Link
-                  href="/depenses-recurrentes?de=accueil"
-                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                >
-                  <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
-                  <span className="text-[13px]">
-                    {pending.length} échéance{pending.length > 1 ? 's' : ''} à confirmer
-                  </span>
-                  <span className="text-[11.5px] text-faint">
-                    attendue{pending.length > 1 ? 's' : ''} depuis le {frDate(pending[0]!.dueOn)}
-                  </span>
-                  <RowArrow />
-                </Link>
-              )}
+              {/* One line per direction: an occurrence to confirm lives on the
+                  page of its own kind, and a single link could only guess. */}
+              {[
+                { items: pendingOut, href: '/depenses-recurrentes', noun: 'prélèvement' },
+                { items: pendingIn, href: '/revenus-recurrents', noun: 'versement' },
+              ]
+                .filter((group) => group.items.length > 0)
+                .map((group) => (
+                  <Link
+                    key={group.href}
+                    href={`${group.href}?de=accueil`}
+                    className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
+                  >
+                    <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
+                    <span className="text-[13px]">
+                      {group.items.length} {group.noun}
+                      {group.items.length > 1 ? 's' : ''} à confirmer
+                    </span>
+                    <span className="text-[11.5px] text-faint">
+                      attendu{group.items.length > 1 ? 's' : ''} depuis le {frDate(group.items[0]!.dueOn)}
+                    </span>
+                    <RowArrow />
+                  </Link>
+                ))}
               {staleChecks.length > 0 && (
                 <Link
                   href="/comptes?de=accueil"

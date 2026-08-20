@@ -5,14 +5,12 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { BalanceCheckForm } from '@/components/balance-check-form'
+import { AccountRowActions } from '@/components/account-row-actions'
 import { EntrySheet } from '@/components/entry-sheet'
-import { ActionForm, Field, FormSelect, SubmitButton } from '@/components/forms'
+import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { closeAccountAction, createAccountAction } from '@/lib/actions'
+import { createAccountAction } from '@/lib/actions'
 import { daysBetween, eur, freshness } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -51,9 +49,7 @@ export default async function AccountsPage() {
       description="Ton montage bancaire réel, un compte à la fois. Un compte clos garde son historique."
     >
       <ActionForm action={createAccountAction} successLabel="Compte créé">
-        <Field label="Nom">
-          <Input name="name" required placeholder="Courant principal" />
-        </Field>
+        <TextField name="name" label="Nom" placeholder="Courant principal" />
         <Field label="Type">
           <FormSelect
             name="behavior"
@@ -65,9 +61,7 @@ export default async function AccountsPage() {
             ]}
           />
         </Field>
-        <Field label="Établissement (optionnel)">
-          <Input name="institution" placeholder="Nom de la banque" />
-        </Field>
+        <TextField name="institution" label="Établissement (optionnel)" placeholder="Nom de la banque" />
         <SubmitButton className="self-start">Créer le compte</SubmitButton>
       </ActionForm>
     </EntrySheet>
@@ -126,18 +120,14 @@ export default async function AccountsPage() {
                   {open
                     .filter((s) => s.account.behavior === behavior)
                     .map(({ account, check }) => (
-                      <div key={account.id} className="flex flex-col gap-2 py-3">
-                        <div className="flex flex-wrap items-baseline gap-2">
-                          <span className="text-[13px] font-medium">{account.name}</span>
-                          {account.institution && (
-                            <span className="text-[11px] text-faint">{account.institution}</span>
-                          )}
-                          <span className="ml-auto font-mono text-[14px] font-semibold tabular">
-                            {eur(Number(account.balance), 2)}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <BalanceCheckForm accountId={account.id} />
+                      <div key={account.id} className="flex items-center gap-3 py-3">
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <span className="text-[13px] font-medium">{account.name}</span>
+                            {account.institution && (
+                              <span className="text-[11px] text-faint">{account.institution}</span>
+                            )}
+                          </div>
                           <span
                             className={`text-[11.5px] ${
                               check && check.gap !== 0 ? 'text-destructive' : 'text-faint'
@@ -149,18 +139,15 @@ export default async function AccountsPage() {
                                 : `écart de ${eur(check.gap, 2)} au dernier pointage`
                               : 'jamais pointé'}
                           </span>
-                          <form action={closeAccountAction} className="ml-auto">
-                            <input type="hidden" name="accountId" value={account.id} />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="submit"
-                              className="h-7 text-[12px] text-muted-foreground hover:text-destructive"
-                            >
-                              Clore
-                            </Button>
-                          </form>
                         </div>
+                        <span className="ml-auto shrink-0 font-mono text-[14px] font-semibold tabular">
+                          {eur(Number(account.balance), 2)}
+                        </span>
+                        <AccountRowActions
+                          accountId={account.id}
+                          name={account.name}
+                          computedBalance={Number(account.balance)}
+                        />
                       </div>
                     ))}
                 </Rows>

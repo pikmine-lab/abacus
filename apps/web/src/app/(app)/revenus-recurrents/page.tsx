@@ -10,10 +10,11 @@ import {
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { CommitmentRow, PendingOccurrences } from '@/components/commitment-blocks'
+import { CommitmentRow } from '@/components/commitment-blocks'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { PendingOccurrences } from '@/components/pending-occurrences'
 import { StatRow, StatTile } from '@/components/stats'
 import { eur, frDate } from '@/lib/utils'
 
@@ -101,7 +102,16 @@ export default async function RecurringIncomePage({
             title="Versements à confirmer"
             description="corrige le montant s’il diffère : c’est comme ça qu’on voit une prime ou une hausse"
           >
-            <PendingOccurrences pending={pendingIn} retour={PATH} />
+            <PendingOccurrences
+              retour={PATH}
+              items={pendingIn.map((p) => ({
+                commitmentId: p.commitment.id,
+                label: p.commitment.label,
+                dueOn: p.dueOn,
+                amount: Number(p.commitment.amount),
+                incoming: true,
+              }))}
+            />
           </Section>
         )}
 
@@ -115,7 +125,7 @@ export default async function RecurringIncomePage({
               {[...active]
                 .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
                 .map((c) => (
-                  <CommitmentRow key={c.id} commitment={c} retour={PATH} showJudgment={false} />
+                  <CommitmentRow key={c.id} commitment={c} showJudgment={false} />
                 ))}
             </Rows>
           )}

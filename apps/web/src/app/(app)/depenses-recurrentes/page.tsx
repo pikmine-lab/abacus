@@ -10,10 +10,11 @@ import {
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { CommitmentRow, PendingOccurrences } from '@/components/commitment-blocks'
+import { CommitmentRow } from '@/components/commitment-blocks'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { PendingOccurrences } from '@/components/pending-occurrences'
 import { StatRow, StatTile } from '@/components/stats'
 import { eur, frDate } from '@/lib/utils'
 
@@ -131,7 +132,16 @@ export default async function RecurringExpensesPage({
             title="Échéances à confirmer"
             description="confirmer crée le mouvement réel · passer avance sans mouvement (mois offert)"
           >
-            <PendingOccurrences pending={pendingOut} retour={PATH} />
+            <PendingOccurrences
+              retour={PATH}
+              items={pendingOut.map((p) => ({
+                commitmentId: p.commitment.id,
+                label: p.commitment.label,
+                dueOn: p.dueOn,
+                amount: Number(p.commitment.amount),
+                incoming: false,
+              }))}
+            />
           </Section>
         )}
 
@@ -146,7 +156,7 @@ export default async function RecurringExpensesPage({
               {[...subscriptions]
                 .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
                 .map((c) => (
-                  <CommitmentRow key={c.id} commitment={c} retour={PATH} showJudgment />
+                  <CommitmentRow key={c.id} commitment={c} showJudgment />
                 ))}
             </Rows>
           )}
@@ -156,7 +166,7 @@ export default async function RecurringExpensesPage({
           <Section title="Financements en cours" description="s’éteignent seuls à la dernière échéance">
             <Rows>
               {financings.map((c) => (
-                <CommitmentRow key={c.id} commitment={c} retour={PATH} showJudgment={false} />
+                <CommitmentRow key={c.id} commitment={c} showJudgment={false} />
               ))}
             </Rows>
           </Section>
