@@ -141,10 +141,13 @@ type CountedState = FormState & { n: number }
 export function ActionForm({
   action,
   className,
+  successLabel,
   children,
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>
   className?: string
+  /** Acknowledgement kept in place, so entering several in a row stays fluid. */
+  successLabel?: string
   children: React.ReactNode
 }) {
   const [state, formAction] = useActionState(
@@ -160,6 +163,12 @@ export function ActionForm({
     <form action={formAction} key={state.n} className={cn('flex flex-col gap-3', className)}>
       {children}
       {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+      {successLabel && state.ok && state.n > 0 && (
+        <p aria-live="polite" className="text-xs text-good">
+          ✓ {successLabel}
+          {state.n > 1 ? ` (${state.n})` : ''}
+        </p>
+      )}
     </form>
   )
 }

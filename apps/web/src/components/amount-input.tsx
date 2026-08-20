@@ -1,0 +1,103 @@
+'use client'
+
+import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+
+/**
+ * Money entry that groups thousands as you type: "2000000" reads back as
+ * "2 000 000" before you have finished typing it, which is when a misplaced
+ * zero is still cheap to notice.
+ *
+ * The visible field carries the formatted text and the form carries a plain
+ * machine value in a hidden input, so the server never has to guess what a
+ * space or a comma meant.
+ */
+
+/** Narrow no-break space, as toLocaleString('fr-FR') uses for groups. */
+const GROUP = ' '
+
+function groupDigits(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, GROUP)
+}
+
+/** Keeps only digits and one decimal comma, capped at two decimals. */
+function normalizeTyped(raw: string): { integer: string; decimals: string | null } {
+  const cleaned = raw.replace(/[^\d,.]/g, '').replace(/\./g, ',')
+  const [first, ...rest] = cleaned.split(',')
+  const integer = (first ?? '').replace(/^0+(?=\d)/, '')
+  if (rest.length === 0) return { integer, decimals: null }
+  return { integer, decimals: rest.join('').slice(0, 2) }
+}
+
+function format({ integer, decimals }: { integer: string; decimals: string | null }): string {
+  const head = groupDigits(integer)
+  if (decimals === null) return head
+  return `${head === '' ? '0' : head},${decimals}`
+}
+
+function toMachine({ integer, decimals }: { integer: string; decimals: string | null }): string {
+  if (integer === '' && !decimals) return ''
+  return `${integer === '' ? '0' : integer}${decimals ? `.${decimals}` : ''}`
+}
+
+/** How many digits sit left of the caret — the anchor a reformat must preserve. */
+function digitsBefore(value: string, caret: number): number {
+  return (value.slice(0, caret).match(/\d/g) ?? []).length
+}
+
+function caretAfterDigits(formatted: string, count: number): number {
+  if (count === 0) return 0
+  let seen = 0
+  for (let i = 0; i < formatted.length; i++) {
+    if (/\d/.test(formatted[i]!)) {
+      seen++
+      if (seen === count) return i + 1
+    }
+  }
+  return formatted.length
+}
+
+export function AmountInput({
+  name,
+  defaultValue = '',
+  className,
+  ...props
+}: Omit<React.ComponentProps<typeof Input>, 'name' | 'defaultValue' | 'value' | 'onChange'> & {
+  name: string
+  /** Plain number as text, e.g. "15.99". */
+  defaultValue?: string | number
+}) {
+  const initial = normalizeTyped(String(defaultValue).replace('.', ','))
+  const [text, setText] = useState(() => format(initial))
+  const parts = normalizeTyped(text)
+
+  return (
+    <>
+      <input type="hidden" name={name} value={toMachine(parts)} />
+      <Input
+        inputMode="decimal"
+        autoComplete="off"
+        value={text}
+        onChange={(e) => {
+          const field = e.target
+          const raw = field.value
+          const typedCaret = field.selectionStart ?? raw.length
+          const next = format(normalizeTyped(raw))
+          // Typing at the end stays at the end. Counting digits alone would put
+          // the caret before a just-typed decimal comma, and the next keystroke
+          // would land on the wrong side of it.
+          const caret =
+            typedCaret >= raw.length ? next.length : caretAfterDigits(next, digitsBefore(raw, typedCaret))
+          setText(next)
+          // Write the formatted value and the caret straight away: React then
+          // re-renders the same string, so the caret is never pushed to the end.
+          field.value = next
+          field.setSelectionRange(caret, caret)
+        }}
+        className={cn('text-right font-mono tabular', className)}
+        {...props}
+      />
+    </>
+  )
+}

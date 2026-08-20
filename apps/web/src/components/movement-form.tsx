@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { declareMovementAction } from '@/lib/actions'
+import { correctMovementAction, declareMovementAction } from '@/lib/actions'
 import { eur } from '@/lib/utils'
 
 interface Option {
@@ -24,6 +25,22 @@ const TYPES = [
   { value: 'transfer', label: 'Virement' },
 ] as const
 
+/** An existing movement being corrected, flattened for the form fields. */
+export interface MovementDraft {
+  id: string
+  type: 'expense' | 'income' | 'transfer'
+  happenedOn: string
+  amount: string
+  accountId: string
+  toAccountId?: string
+  actorName?: string
+  categoryId?: string
+  activityId?: string
+  note?: string
+  /** Origin the form must not silently break (échéance, ajustement, avance). */
+  origin?: string
+}
+
 export function MovementForm({
   accounts,
   actors,
@@ -31,6 +48,7 @@ export function MovementForm({
   activities,
   advances,
   today,
+  draft,
 }: {
   accounts: Option[]
   actors: Option[]
@@ -38,15 +56,27 @@ export function MovementForm({
   activities: Option[]
   advances: Advance[]
   today: string
+  /** Present when correcting an existing movement instead of declaring one. */
+  draft?: MovementDraft
 }) {
-  const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense')
+  const [type, setType] = useState<'expense' | 'income' | 'transfer'>(draft?.type ?? 'expense')
   const [advanceOpen, setAdvanceOpen] = useState(false)
 
   const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
+  const editing = draft !== undefined
 
   return (
-    <ActionForm action={declareMovementAction}>
+    <ActionForm
+      action={editing ? correctMovementAction : declareMovementAction}
+      successLabel={editing ? 'Mouvement corrigé' : 'Mouvement déclaré'}
+    >
       <input type="hidden" name="type" value={type} />
+      {draft && <input type="hidden" name="movementId" value={draft.id} />}
+      {draft?.origin && (
+        <p className="rounded-md border border-border bg-secondary/40 px-2.5 py-2 text-[11.5px] text-muted-foreground">
+          {draft.origin} Corriger le montant ou la date ici ne défait pas ce lien.
+        </p>
+      )}
       <Tabs value={type} onValueChange={(v) => setType(v as typeof type)}>
         <TabsList className="w-full">
           {TYPES.map((t) => (
@@ -59,20 +89,32 @@ export function MovementForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date">
-          <DateField name="date" defaultValue={today} />
+          <DateField name="date" defaultValue={draft?.happenedOn ?? today} />
         </Field>
         <Field label="Montant (€)">
-          <Input name="amount" required inputMode="decimal" placeholder="12,50" />
+          <AmountInput name="amount" required placeholder="12,50" defaultValue={draft?.amount ?? ''} />
         </Field>
       </div>
 
       <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'}>
-        <FormSelect name="accountId" required placeholder="Choisir un compte" options={accountOptions} />
+        <FormSelect
+          name="accountId"
+          required
+          placeholder="Choisir un compte"
+          options={accountOptions}
+          defaultValue={draft?.accountId ?? ''}
+        />
       </Field>
 
       {type === 'transfer' ? (
         <Field label="Vers le compte">
-          <FormSelect name="toAccountId" required placeholder="Choisir un compte" options={accountOptions} />
+          <FormSelect
+            name="toAccountId"
+            required
+            placeholder="Choisir un compte"
+            options={accountOptions}
+            defaultValue={draft?.toAccountId ?? ''}
+          />
         </Field>
       ) : (
         <>
@@ -83,6 +125,7 @@ export function MovementForm({
               list="actors-list"
               placeholder="Carrefour, ACME, URSSAF…"
               autoComplete="off"
+              defaultValue={draft?.actorName ?? ''}
             />
           </Field>
           <datalist id="actors-list">
@@ -97,13 +140,15 @@ export function MovementForm({
                 name="categoryId"
                 noneLabel="(aucune)"
                 options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                defaultValue={draft?.categoryId ?? ''}
               />
             </Field>
             <Field label="Activité">
               <FormSelect
                 name="activityId"
-                noneLabel="héritée de l’acteur"
+                noneLabel={editing ? '(aucune)' : 'héritée de l’acteur'}
                 options={activities.map((a) => ({ value: a.id, label: a.name }))}
+                defaultValue={draft?.activityId ?? ''}
               />
             </Field>
           </div>
@@ -111,10 +156,10 @@ export function MovementForm({
       )}
 
       <Field label="Note (optionnelle)">
-        <Input name="note" placeholder="" />
+        <Input name="note" placeholder="" defaultValue={draft?.note ?? ''} />
       </Field>
 
-      {type === 'expense' && (
+      {type === 'expense' && !editing && (
         <div>
           <button
             type="button"
@@ -132,7 +177,7 @@ export function MovementForm({
         </div>
       )}
 
-      {type === 'income' && advances.length > 0 && (
+      {type === 'income' && !editing && advances.length > 0 && (
         <Field label="Rembourse une avance (optionnel)">
           <FormSelect
             name="refundsMovementId"
@@ -145,7 +190,7 @@ export function MovementForm({
         </Field>
       )}
 
-      <SubmitButton className="self-start">Déclarer</SubmitButton>
+      <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Déclarer'}</SubmitButton>
     </ActionForm>
   )
 }

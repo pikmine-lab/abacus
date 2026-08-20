@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createFinancingAction, createSubscriptionAction, setJudgmentAction } from '@/lib/actions'
@@ -14,18 +13,33 @@ interface Option {
   name: string
 }
 
+const PERIOD_OPTIONS = [
+  { value: 'week', label: 'Hebdomadaire' },
+  { value: 'month', label: 'Mensuelle' },
+  { value: 'year', label: 'Annuelle' },
+]
+
+/**
+ * Recurring commitments, one form per direction. Money going out and money
+ * coming in are not two settings of one thing: an outgoing one can be a
+ * financing plan and carries a judgment ("what do I cut?"), an incoming one
+ * can be neither.
+ */
 export function NewCommitmentForm({
+  direction,
   accounts,
   actors,
   categories,
   today,
 }: {
+  direction: 'outgoing' | 'incoming'
   accounts: Option[]
   actors: Option[]
   categories: Option[]
   today: string
 }) {
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
+  const outgoing = direction === 'outgoing'
 
   const shared = (
     <>
@@ -35,10 +49,16 @@ export function NewCommitmentForm({
         ))}
       </datalist>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Acteur (qui prélève)">
-          <Input name="actor" required list="commitment-actors" placeholder="Netflix" autoComplete="off" />
+        <Field label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}>
+          <Input
+            name="actor"
+            required
+            list="commitment-actors"
+            placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
+            autoComplete="off"
+          />
         </Field>
-        <Field label="Compte prélevé">
+        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'}>
           <FormSelect
             name="accountId"
             required
@@ -62,72 +82,79 @@ export function NewCommitmentForm({
     </>
   )
 
+  if (!outgoing)
+    return (
+      <ActionForm action={createSubscriptionAction} successLabel="Revenu récurrent créé">
+        <input type="hidden" name="direction" value="incoming" />
+        <Field label="Nom">
+          <Input name="label" required placeholder="Salaire, loyer perçu…" />
+        </Field>
+        {shared}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Montant par période (€)">
+            <AmountInput name="amount" required placeholder="2 400" />
+          </Field>
+          <Field label="Périodicité">
+            <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
+          </Field>
+        </div>
+        <SubmitButton className="self-start">Créer</SubmitButton>
+      </ActionForm>
+    )
+
   return (
     <div>
       <Tabs value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
         <TabsList className="w-full">
-          <TabsTrigger value="subscription">Abonnement / récurrent</TabsTrigger>
+          <TabsTrigger value="subscription">Abonnement</TabsTrigger>
           <TabsTrigger value="financing">Paiement en X fois</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {kind === 'subscription' ? (
-        <ActionForm action={createSubscriptionAction} className="mt-3">
+        <ActionForm action={createSubscriptionAction} className="mt-3" successLabel="Abonnement créé">
+          <input type="hidden" name="direction" value="outgoing" />
           <Field label="Nom">
             <Input name="label" required placeholder="Netflix" />
           </Field>
           {shared}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Montant par période (€)">
-              <Input name="amount" required inputMode="decimal" placeholder="15,99" />
+              <AmountInput name="amount" required placeholder="15,99" />
             </Field>
             <Field label="Périodicité">
-              <FormSelect
-                name="periodUnit"
-                defaultValue="month"
-                options={[
-                  { value: 'week', label: 'Hebdomadaire' },
-                  { value: 'month', label: 'Mensuelle' },
-                  { value: 'year', label: 'Annuelle' },
-                ]}
-              />
+              <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Jugement">
-              <FormSelect
-                name="judgment"
-                noneLabel="à juger plus tard"
-                options={[
-                  { value: 'essential', label: 'essentiel' },
-                  { value: 'reducible', label: 'réductible' },
-                  { value: 'to_cancel', label: 'à résilier' },
-                ]}
-              />
-            </Field>
-            <Label className="flex items-end gap-2 pb-2 text-xs font-normal text-muted-foreground">
-              <Checkbox name="incoming" />
-              revenu récurrent (salaire…)
-            </Label>
-          </div>
-          <SubmitButton className="self-start">Créer l’engagement</SubmitButton>
+          <Field label="Jugement">
+            <FormSelect
+              name="judgment"
+              noneLabel="à juger plus tard"
+              options={[
+                { value: 'essential', label: 'essentiel' },
+                { value: 'reducible', label: 'réductible' },
+                { value: 'to_cancel', label: 'à résilier' },
+              ]}
+            />
+          </Field>
+          <SubmitButton className="self-start">Créer l’abonnement</SubmitButton>
         </ActionForm>
       ) : (
-        <ActionForm action={createFinancingAction} className="mt-3">
+        <ActionForm action={createFinancingAction} className="mt-3" successLabel="Financement créé">
           <Field label="Ce qui est financé">
             <Input name="label" required placeholder="Canapé en 4x" />
           </Field>
           {shared}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Montant d’une échéance (€)">
-              <Input name="installmentAmount" required inputMode="decimal" placeholder="250" />
+              <AmountInput name="installmentAmount" required placeholder="250" />
             </Field>
             <Field label="Nombre d’échéances">
               <Input name="installmentsTotal" required inputMode="numeric" placeholder="4" />
             </Field>
           </div>
           <Field label="Montant total, si différent de N × échéance (frais)">
-            <Input name="totalAmount" inputMode="decimal" placeholder="optionnel" />
+            <AmountInput name="totalAmount" placeholder="optionnel" />
           </Field>
           <SubmitButton className="self-start">Créer le financement</SubmitButton>
         </ActionForm>

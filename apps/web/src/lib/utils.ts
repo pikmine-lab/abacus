@@ -11,3 +11,62 @@ export function eur(value: number | string, decimals = 0): string {
     maximumFractionDigits: decimals,
   })} €`
 }
+
+/** Compact money for axis ticks and dense tiles: "13,5 k €" rather than "13 500 €". */
+export function eurShort(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 10_000) return `${(value / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} k €`
+  return eur(value)
+}
+
+/** Signed amount, sign always spelled out: it is the reading, not decoration. */
+export function eurSigned(value: number, decimals = 0): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
+  return `${sign}${eur(Math.abs(value), decimals)}`
+}
+
+export function frDate(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y!.slice(2)}`
+}
+
+export function frDateLong(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y!, m! - 1, d!).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function utcDay(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number)
+  return Date.UTC(y!, m! - 1, d!)
+}
+
+/** Whole days between two calendar dates, both read as plain days (no timezone). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((utcDay(to) - utcDay(from)) / 86_400_000)
+}
+
+/** Freshness of a check or a due date, said the way a person would say it. */
+export function freshness(iso: string, todayIso: string): string {
+  const d = daysBetween(iso, todayIso)
+  if (d < 0) return `dans ${-d} jour${d < -1 ? 's' : ''}`
+  if (d === 0) return 'aujourd’hui'
+  if (d === 1) return 'hier'
+  if (d < 30) return `il y a ${d} jours`
+  const months = Math.round(d / 30)
+  return months <= 1 ? 'il y a un mois' : `il y a ${months} mois`
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Accepts a URL parameter only if it could be an id. Filters come from the
+ * address bar, where a stale link or a hand-edited value would otherwise reach
+ * Postgres and fail the whole page on a cast error.
+ */
+export function idParam(value: string | undefined): string | undefined {
+  return value && UUID.test(value) ? value : undefined
+}
