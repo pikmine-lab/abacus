@@ -1,16 +1,17 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toggle } from '@/components/ui/toggle'
-import { eur } from '@/lib/utils'
+import { eur, frDateLong } from '@/lib/utils'
 
 /**
  * Account balances over time — the reference chart of DESIGN.md: 2px family
  * lines, hairline grid, crosshair snapping to the nearest day, one tooltip
  * listing every visible series, direct end labels on wide screens.
- * At most three series at once (the family separates by luminance).
+ *
+ * It has no period control of its own: the page's filter row scopes it, like
+ * everything else below that row. The account toggles are the legend, not a
+ * filter — three series at once is the validated ceiling of the palette.
  */
 
 interface Account {
@@ -23,12 +24,6 @@ interface Row {
   balance: number
 }
 
-const RANGES = [
-  { days: 30, label: '30 j' },
-  { days: 90, label: '90 j' },
-  { days: 182, label: '6 m' },
-  { days: 365, label: '12 m' },
-]
 const SLOT_VARS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)']
 const MAX_ACTIVE = 3
 
@@ -43,10 +38,18 @@ function frMonth(iso: string): string {
   return label.replace('.', '')
 }
 
-export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Row[] }) {
+export function BalanceChart({
+  accounts,
+  rows,
+  today,
+}: {
+  accounts: Account[]
+  rows: Row[]
+  /** Boundary between what happened and what is merely extrapolated. */
+  today: string
+}) {
   const wrapRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(900)
-  const [rangeDays, setRangeDays] = useState(90)
+  const [width, setWidth] = useState(0)
   const [slots, setSlots] = useState<Map<string, number>>(
     () => new Map(accounts.slice(0, MAX_ACTIVE).map((a, i) => [a.id, i])),
   )
@@ -62,10 +65,14 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
     return () => ro.disconnect()
   }, [])
 
-  const days = useMemo(() => {
-    const all = [...new Set(rows.map((r) => r.day))].sort()
-    return all.slice(Math.max(0, all.length - rangeDays))
-  }, [rows, rangeDays])
+  const days = useMemo(() => [...new Set(rows.map((r) => r.day))].sort(), [rows])
+
+  // Beyond today the series only carries the last known balance forward: it is
+  // a projection, and it says so rather than passing for measured history.
+  const lastPast = useMemo(() => {
+    const index = days.findIndex((d) => d > today)
+    return index === -1 ? days.length - 1 : Math.max(0, index - 1)
+  }, [days, today])
 
   const byAccount = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
@@ -91,9 +98,15 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
     })
   }
 
-  const H = 260
+  if (days.length < 2)
+    return (
+      <p className="py-6 text-[13px] text-faint">Pas encore assez d’historique pour tracer une courbe.</p>
+    )
+
+  const hasFuture = lastPast < days.length - 1
+  const H = 250
   const narrow = width < 520
-  const M = { t: 12, r: narrow ? 14 : 150, b: 24, l: 44 }
+  const M = { t: 12, r: narrow ? 14 : 150, b: 24, l: 46 }
   const active = accounts.filter((a) => slots.has(a.id))
   const series = active.map((a) => ({
     ...a,
@@ -114,13 +127,16 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
   const yTicks: number[] = []
   for (let v = Math.ceil(y0 / tickStep) * tickStep; v <= y1; v += tickStep) yTicks.push(v)
 
+  // Day labels on short windows, month labels beyond: the tick has to stay
+  // readable, and repeating "août" eight times says nothing.
+  const byDay = days.length <= 45
   const xTicks: { i: number; label: string }[] = []
-  let prevMonth = ''
+  let previous = ''
   const every = Math.max(1, Math.round(days.length / (narrow ? 4 : 8)))
   for (let i = 0; i < days.length; i += every) {
-    const label = rangeDays <= 30 ? frDay(days[i]!) : frMonth(days[i]!)
-    if (label === prevMonth) continue
-    prevMonth = label
+    const label = byDay ? frDay(days[i]!) : frMonth(days[i]!)
+    if (label === previous) continue
+    previous = label
     xTicks.push({ i, label })
   }
 
@@ -140,59 +156,44 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
     setHover(Math.max(0, Math.min(days.length - 1, idx)))
   }
 
-  const tooltipLeft = hover === null ? 0 : Math.min(Math.max(X(hover) + 14, 0), Math.max(0, width - 190))
+  const tooltipLeft = hover === null ? 0 : Math.min(Math.max(X(hover) + 14, 0), Math.max(0, width - 200))
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Soldes des comptes</CardTitle>
-        <CardDescription>point quotidien · calculé depuis les mouvements déclarés</CardDescription>
-        <CardAction>
-          <Tabs value={String(rangeDays)} onValueChange={(v) => setRangeDays(Number(v))}>
-            <TabsList className="h-8">
-              {RANGES.map((r) => (
-                <TabsTrigger key={r.days} value={String(r.days)} className="text-xs">
-                  {r.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </CardAction>
-      </CardHeader>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1">
+        {accounts.map((a) => {
+          const on = slots.has(a.id)
+          return (
+            <Toggle
+              key={a.id}
+              size="sm"
+              pressed={on}
+              onPressedChange={() => toggle(a.id)}
+              title={
+                !on && slots.size >= MAX_ACTIVE ? '3 séries maximum : désactive un compte d’abord' : undefined
+              }
+              className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
+            >
+              <span
+                className="h-0.5 w-3.5 rounded-full"
+                style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
+              />
+              {a.name}
+            </Toggle>
+          )
+        })}
+      </div>
 
-      <CardContent>
-        <div className="flex flex-wrap gap-1">
-          {accounts.map((a) => {
-            const on = slots.has(a.id)
-            return (
-              <Toggle
-                key={a.id}
-                size="sm"
-                pressed={on}
-                onPressedChange={() => toggle(a.id)}
-                title={
-                  !on && slots.size >= MAX_ACTIVE
-                    ? '3 séries maximum : désactive un compte d’abord'
-                    : undefined
-                }
-                className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
-              >
-                <span
-                  className="h-0.5 w-3.5 rounded-full"
-                  style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
-                />
-                {a.name}
-              </Toggle>
-            )
-          })}
-        </div>
-
-        <div
-          ref={wrapRef}
-          className="relative mt-2 touch-pan-y"
-          onPointerMove={onMove}
-          onPointerLeave={() => setHover(null)}
-        >
+      <div
+        ref={wrapRef}
+        className="relative touch-pan-y"
+        style={{ minHeight: H }}
+        onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
+      >
+        {/* Nothing is drawn before the container has been measured: a guessed
+            width pushes the marks out of frame instead of scaling them. */}
+        {width > 0 && (
           <svg width="100%" height={H} role="img" aria-label="Évolution des soldes par compte">
             {yTicks.map((v) => (
               <g key={v}>
@@ -210,6 +211,31 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
               </g>
             ))}
             <line x1={M.l} x2={width - M.r} y1={Y(y0)} y2={Y(y0)} stroke="var(--border)" />
+            {hasFuture && (
+              <g>
+                {/* The flag marks where measured history stops. One word, no essay. */}
+                <line
+                  x1={X(lastPast)}
+                  x2={X(lastPast)}
+                  y1={M.t}
+                  y2={H - M.b}
+                  stroke="var(--faint)"
+                  strokeDasharray="2 3"
+                />
+                <rect
+                  x={X(lastPast) + 1}
+                  y={M.t}
+                  width={62}
+                  height={14}
+                  rx={3}
+                  fill="var(--secondary)"
+                  stroke="var(--border)"
+                />
+                <text x={X(lastPast) + 6} y={M.t + 10} fontSize={9.5} fill="var(--muted-foreground)">
+                  projection
+                </text>
+              </g>
+            )}
             {xTicks.map((t) => (
               <text
                 key={t.i}
@@ -224,31 +250,54 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
               </text>
             ))}
             {series.map((s) => {
-              const pts = s.values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
+              const point = (v: number, i: number) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`
+              // Measured history is solid; past today the line only carries the
+              // last known balance forward, so it is drawn as what it is.
+              const past = s.values
+                .slice(0, lastPast + 1)
+                .map((v, i) => point(v, i))
+                .join(' ')
+              const future = hasFuture
+                ? s.values
+                    .slice(lastPast)
+                    .map((v, i) => point(v, i + lastPast))
+                    .join(' ')
+                : ''
               const last = s.values[s.values.length - 1] ?? 0
               return (
                 <g key={s.id}>
                   {s.slot === 0 && (
                     <polygon
-                      points={`${M.l},${Y(y0)} ${pts} ${X(days.length - 1)},${Y(y0)}`}
+                      points={`${M.l},${Y(y0)} ${past} ${X(lastPast)},${Y(y0)}`}
                       fill={SLOT_VARS[0]}
-                      opacity={0.07}
+                      opacity={0.08}
                     />
                   )}
                   <polyline
-                    points={pts}
+                    points={past}
                     fill="none"
                     stroke={SLOT_VARS[s.slot]}
                     strokeWidth={2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                   />
+                  {future && (
+                    <polyline
+                      points={future}
+                      fill="none"
+                      stroke={SLOT_VARS[s.slot]}
+                      strokeWidth={2}
+                      strokeDasharray="3 4"
+                      strokeLinecap="round"
+                      opacity={0.75}
+                    />
+                  )}
                   <circle
                     cx={X(days.length - 1)}
                     cy={Y(last)}
                     r={4}
-                    fill={SLOT_VARS[s.slot]}
-                    stroke="var(--card)"
+                    fill={hasFuture ? 'var(--background)' : SLOT_VARS[s.slot]}
+                    stroke={SLOT_VARS[s.slot]}
                     strokeWidth={2}
                   />
                 </g>
@@ -276,33 +325,33 @@ export function BalanceChart({ accounts, rows }: { accounts: Account[]; rows: Ro
                     cy={Y(s.values[hover] ?? 0)}
                     r={4.5}
                     fill={SLOT_VARS[s.slot]}
-                    stroke="var(--card)"
+                    stroke="var(--background)"
                     strokeWidth={2}
                   />
                 ))}
               </g>
             )}
           </svg>
+        )}
 
-          {hover !== null && days[hover] && (
-            <div
-              className="pointer-events-none absolute top-3 z-10 min-w-42 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
-              style={{ left: tooltipLeft }}
-            >
-              <p className="text-[11px] text-faint">{frDay(days[hover])}</p>
-              {series.map((s) => (
-                <p key={s.id} className="flex items-center gap-2 py-px text-xs">
-                  <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />
-                  <span className="text-muted-foreground">{s.name}</span>
-                  <span className="ml-auto pl-3 font-mono font-semibold tabular-nums">
-                    {eur(s.values[hover] ?? 0)}
-                  </span>
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        {hover !== null && days[hover] && (
+          <div
+            className="pointer-events-none absolute top-3 z-10 min-w-44 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
+            style={{ left: tooltipLeft }}
+          >
+            <p className="text-[11px] text-faint">{frDateLong(days[hover])}</p>
+            {series.map((s) => (
+              <p key={s.id} className="flex items-center gap-2 py-px text-xs">
+                <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />
+                <span className="text-muted-foreground">{s.name}</span>
+                <span className="ml-auto pl-3 font-mono font-semibold tabular">
+                  {eur(s.values[hover] ?? 0)}
+                </span>
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
