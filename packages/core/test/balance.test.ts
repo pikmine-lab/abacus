@@ -92,14 +92,22 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
   assert.equal(open[0]!.refunded, '50.00')
 
   // Gross keeps the full outflow; net deducts only what actually came back.
+  // The row also carries the grouping id and the movement count, so a report
+  // line can link to the movements behind it.
   const breakdown = await spendingBreakdown(user, '2026-04-01', '2026-04-30', 'category')
-  assert.deepEqual([...breakdown], [{ label: 'Dining', gross: '120.00', net: '70.00' }])
+  assert.deepEqual(
+    [...breakdown],
+    [{ key: dining.id, label: 'Dining', gross: '120.00', net: '70.00', count: '2' }],
+  )
 
   // "They will never pay the rest": the claim closes, the expense stays whole.
   await closeAdvance(user, advance.id)
   assert.deepEqual([...(await outstandingAdvances(user))], [])
   const after = await spendingBreakdown(user, '2026-04-01', '2026-04-30', 'category')
-  assert.deepEqual([...after], [{ label: 'Dining', gross: '120.00', net: '70.00' }])
+  assert.deepEqual(
+    [...after],
+    [{ key: dining.id, label: 'Dining', gross: '120.00', net: '70.00', count: '2' }],
+  )
 })
 
 test('balance series runs the daily cumulative sum per account', async () => {
