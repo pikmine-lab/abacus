@@ -62,11 +62,14 @@ export function AmountInput({
   name,
   defaultValue = '',
   className,
+  onValueChange,
   ...props
 }: Omit<React.ComponentProps<typeof Input>, 'name' | 'defaultValue' | 'value' | 'onChange'> & {
   name: string
   /** Plain number as text, e.g. "15.99". */
   defaultValue?: string | number
+  /** Receives the machine value ("2000000.55"), for callers that react to it. */
+  onValueChange?: (value: string) => void
 }) {
   const initial = normalizeTyped(String(defaultValue).replace('.', ','))
   const [text, setText] = useState(() => format(initial))
@@ -90,6 +93,7 @@ export function AmountInput({
           const caret =
             typedCaret >= raw.length ? next.length : caretAfterDigits(next, digitsBefore(raw, typedCaret))
           setText(next)
+          onValueChange?.(toMachine(normalizeTyped(next)))
           // Write the formatted value and the caret straight away: React then
           // re-renders the same string, so the caret is never pushed to the end.
           field.value = next

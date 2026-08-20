@@ -111,14 +111,17 @@ api-key de Better Auth, et se créent depuis l'écran **Réglages**. Côté Clau
 ## État (2026-08-20)
 
 **En production** sur `abacus.payangar.dev` : auth multi-utilisateur, serveur MCP
-(16 outils), déploiement continu opérationnel (validé de bout en bout par PR).
+(17 outils), déploiement continu opérationnel (validé de bout en bout par PR).
 
 **Interface refondue le 2026-08-20** (voir `DESIGN.md`, qui a été réécrit) : navigation
 latérale pliable groupée par question posée, palette bleu-nuit / cuivre mesurée, saisie
 sortie des pages de lecture vers un panneau latéral, engagements coupés en dépenses et
 revenus récurrents, période pilotable depuis l'URL sur toutes les vues, filtres complets
 sur les mouvements, correction et suppression d'un mouvement, écran d'accueil guidé,
-identité (marque abaque + favicon).
+identité (marque abaque + favicon). Les cas d'usage ouverts dans l'UI existent aussi
+côté MCP : `fix_movement` (corriger ou supprimer une déclaration erronée) et, sur
+`confirm_due_movements`, la qualification d'un écart (ponctuel ou nouveau montant de
+référence, historisé).
 
 **Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
 en base), multi-devise (V2, schéma prêt), vue projection de la SPEC, vue freelance par

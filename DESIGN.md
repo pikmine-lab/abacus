@@ -147,13 +147,44 @@ de page.
   devient `2 000 000` avant la fin de la saisie, quand un zéro de trop est encore
   bon marché à voir. Le champ visible porte le texte groupé, un champ caché porte la
   valeur machine ; le serveur ne devine jamais ce qu'un espace voulait dire.
-- **Corriger est aussi accessible que saisir** : un menu `⋯` en fin de ligne ouvre
-  la correction dans le même panneau, ou la suppression derrière une confirmation.
-  Une correction ne touche jamais les liens d'origine (échéance, pointage, avance) —
-  le panneau le dit quand la ligne en porte un.
+- **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais
+  étalées dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne
+  doivent pas concurrencer ses chiffres. Vaut pour les mouvements (corriger,
+  supprimer), les engagements (changer le montant, résilier) et les comptes
+  (pointer, clore). Ce qui reste dans la ligne n'est pas une action mais un
+  attribut : le jugement d'un abonnement se change d'un geste pendant la revue
+  « que couper ? ».
+- **Corriger est aussi accessible que saisir** : la correction s'ouvre dans le même
+  panneau que la déclaration, la suppression derrière une confirmation. Une
+  correction ne touche jamais les liens d'origine (échéance, pointage, avance) — le
+  panneau le dit quand la ligne en porte un.
+- **Confirmer une échéance n'est pas un oui/non.** Le montant est modifiable sur
+  place, parce que la réalité diverge en routine : un salaire bouge avec le nombre
+  de jours ouvrés, une prime tombe, un abonnement grimpe. Dès que le montant saisi
+  diffère, une seule question apparaît — *est-ce le nouveau montant habituel ?* —
+  parce que c'est la seule chose que l'app ne peut pas déduire, et que la réponse
+  tranche entre un mois exceptionnel et un changement de prix historisé. Les deux
+  écritures partent dans la même transaction.
+- **Un plan à échéances se déclare par son total.** Le montant par échéance est la
+  division, affichée à mesure plutôt que demandée : c'est le chiffre qu'on saisit de
+  travers. Il ne devient modifiable que sur demande, car la division tombe rarement
+  juste (1 000 € en 3, c'est 333,33 puis 333,34) et seul le contrat dit où va le
+  reste. Le restant dû reste exact quoi qu'il arrive : il se dérive du total, jamais
+  d'une somme d'échéances arrondies.
+- **Sa progression se lit dans un anneau** portant le pourcentage payé. Pas
+  « 9/24 » : à 24 échéances le texte ne tient plus dans l'anneau, alors que le
+  compte exact a toute la place dans la ligne juste à côté.
 - Select Radix partout, y compris dans les formulaires à server actions. Calendar +
   Popover pour les dates, locale `fr`. Tabs comme segmented control pour les choix
   exclusifs.
+- **La validation est la nôtre, pas celle du navigateur.** Les formulaires sont en
+  `noValidate` : `required` sur un Select Radix n'a pas d'input natif à valider, et
+  le navigateur ancrait sa bulle sur un champ que l'utilisateur n'éditait même pas.
+  Chaque action renvoie ses messages **par champ** ; le formulaire les diffuse par
+  contexte et le champ concerné les affiche, en rouge, avec son libellé et son
+  contour. Une saisie refusée n'est jamais perdue : les champs texte tiennent leur
+  valeur en état, car React réinitialise un champ non contrôlé dès qu'une action se
+  termine — ce qui est juste après un succès et faux après une erreur.
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
   ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
   « tous » côté contrôle. Une URL bricolée ne casse pas la page.

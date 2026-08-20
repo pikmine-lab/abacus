@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
-import { Input } from '@/components/ui/input'
+import { FinancingAmountFields } from '@/components/financing-fields'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createFinancingAction, createSubscriptionAction, setJudgmentAction } from '@/lib/actions'
@@ -49,16 +49,14 @@ export function NewCommitmentForm({
         ))}
       </datalist>
       <div className="grid grid-cols-2 gap-3">
-        <Field label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}>
-          <Input
-            name="actor"
-            required
-            list="commitment-actors"
-            placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
-            autoComplete="off"
-          />
-        </Field>
-        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'}>
+        <TextField
+          name="actor"
+          label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}
+          list="commitment-actors"
+          placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
+          autoComplete="off"
+        />
+        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
           <FormSelect
             name="accountId"
             required
@@ -68,7 +66,7 @@ export function NewCommitmentForm({
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Première échéance">
+        <Field label="Première échéance" name="firstDueOn">
           <DateField name="firstDueOn" defaultValue={today} />
         </Field>
         <Field label="Catégorie">
@@ -86,13 +84,11 @@ export function NewCommitmentForm({
     return (
       <ActionForm action={createSubscriptionAction} successLabel="Revenu récurrent créé">
         <input type="hidden" name="direction" value="incoming" />
-        <Field label="Nom">
-          <Input name="label" required placeholder="Salaire, loyer perçu…" />
-        </Field>
+        <TextField name="label" label="Nom" placeholder="Salaire, loyer perçu…" />
         {shared}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Montant par période (€)">
-            <AmountInput name="amount" required placeholder="2 400" />
+          <Field label="Montant par période (€)" name="amount">
+            <AmountInput name="amount" placeholder="2 400" />
           </Field>
           <Field label="Périodicité">
             <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
@@ -114,13 +110,11 @@ export function NewCommitmentForm({
       {kind === 'subscription' ? (
         <ActionForm action={createSubscriptionAction} className="mt-3" successLabel="Abonnement créé">
           <input type="hidden" name="direction" value="outgoing" />
-          <Field label="Nom">
-            <Input name="label" required placeholder="Netflix" />
-          </Field>
+          <TextField name="label" label="Nom" placeholder="Netflix" />
           {shared}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Montant par période (€)">
-              <AmountInput name="amount" required placeholder="15,99" />
+            <Field label="Montant par période (€)" name="amount">
+              <AmountInput name="amount" placeholder="15,99" />
             </Field>
             <Field label="Périodicité">
               <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
@@ -141,21 +135,9 @@ export function NewCommitmentForm({
         </ActionForm>
       ) : (
         <ActionForm action={createFinancingAction} className="mt-3" successLabel="Financement créé">
-          <Field label="Ce qui est financé">
-            <Input name="label" required placeholder="Canapé en 4x" />
-          </Field>
+          <TextField name="label" label="Ce qui est financé" placeholder="Canapé en 4x" />
           {shared}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Montant d’une échéance (€)">
-              <AmountInput name="installmentAmount" required placeholder="250" />
-            </Field>
-            <Field label="Nombre d’échéances">
-              <Input name="installmentsTotal" required inputMode="numeric" placeholder="4" />
-            </Field>
-          </div>
-          <Field label="Montant total, si différent de N × échéance (frais)">
-            <AmountInput name="totalAmount" placeholder="optionnel" />
-          </Field>
+          <FinancingAmountFields />
           <SubmitButton className="self-start">Créer le financement</SubmitButton>
         </ActionForm>
       )}

@@ -27,8 +27,46 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 export interface FormState {
+  /** Message that belongs to the form as a whole (a rejected domain rule). */
   error?: string
+  /** Messages that belong to one field each, keyed by its input name. */
+  fields?: Record<string, string>
   ok?: boolean
+}
+
+/**
+ * What a field must be for the form to make sense. Validation lives here, not
+ * in HTML `required`: a Radix Select has no native validatable input, so the
+ * browser used to anchor its bubble on some other field entirely — and native
+ * bubbles break out of the interface anyway.
+ */
+type FieldKind = 'text' | 'amount' | 'count' | 'date'
+
+interface FieldRule {
+  name: string
+  kind?: FieldKind
+}
+
+function checkFields(formData: FormData, rules: FieldRule[]): Record<string, string> | null {
+  const errors: Record<string, string> = {}
+  for (const { name, kind = 'text' } of rules) {
+    const raw = str(formData, name)
+    if (raw === '') {
+      errors[name] = 'À renseigner.'
+      continue
+    }
+    if (kind === 'amount') {
+      const value = num(formData, name)
+      if (!Number.isFinite(value)) errors[name] = 'Montant invalide.'
+      else if (value <= 0) errors[name] = 'Doit être supérieur à zéro.'
+    }
+    if (kind === 'count') {
+      const value = num(formData, name)
+      if (!Number.isInteger(value) || value < 2) errors[name] = 'Au moins 2 échéances.'
+    }
+    if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) errors[name] = 'Date invalide.'
+  }
+  return Object.keys(errors).length > 0 ? errors : null
 }
 
 const FR: Record<string, string> = {
@@ -116,9 +154,21 @@ function errorRedirect(formData: FormData, message: string): never {
   redirect(`${back}?erreur=${encodeURIComponent(message)}`)
 }
 
+/** The fields a movement needs, which depend on the kind being declared. */
+function movementRules(type: string): FieldRule[] {
+  return [
+    { name: 'date', kind: 'date' },
+    { name: 'amount', kind: 'amount' },
+    { name: 'accountId' },
+    type === 'transfer' ? { name: 'toAccountId' } : { name: 'actor' },
+  ]
+}
+
 export async function declareMovementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const type = str(formData, 'type')
+  const invalid = checkFields(formData, movementRules(type))
+  if (invalid) return { fields: invalid }
   try {
     const accountId = str(formData, 'accountId')
     const actorName = opt(formData, 'actor')
@@ -161,6 +211,8 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
 export async function correctMovementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const type = str(formData, 'type')
+  const invalid = checkFields(formData, movementRules(type))
+  if (invalid) return { fields: invalid }
   try {
     const accountId = str(formData, 'accountId')
     const actorName = opt(formData, 'actor')
@@ -218,6 +270,11 @@ export async function deleteMovementAction(_prev: FormState, formData: FormData)
 
 export async function recordBalanceCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  // A real balance can legitimately be zero or negative, so only its shape is
+  // checked here.
+  const raw = str(formData, 'balance')
+  if (raw === '') return { fields: { balance: 'À renseigner.' } }
+  if (!Number.isFinite(num(formData, 'balance'))) return { fields: { balance: 'Montant invalide.' } }
   try {
     await recordBalanceCheck(userId, str(formData, 'accountId'), num(formData, 'balance'))
   } catch (e) {
@@ -229,6 +286,8 @@ export async function recordBalanceCheckAction(_prev: FormState, formData: FormD
 
 export async function createAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
   try {
     await createAccount({
       userId,
@@ -243,14 +302,27 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
   return { ok: true }
 }
 
-export async function closeAccountAction(formData: FormData): Promise<void> {
+export async function closeAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  await closeAccount(userId, str(formData, 'accountId'))
+  try {
+    await closeAccount(userId, str(formData, 'accountId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
   refreshAll()
+  return { ok: true }
 }
 
 export async function createSubscriptionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [
+    { name: 'label' },
+    { name: 'actor' },
+    { name: 'accountId' },
+    { name: 'amount', kind: 'amount' },
+    { name: 'firstDueOn', kind: 'date' },
+  ])
+  if (invalid) return { fields: invalid }
   try {
     await createSubscription(userId, {
       label: str(formData, 'label'),
@@ -273,15 +345,25 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
 
 export async function createFinancingAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [
+    { name: 'label' },
+    { name: 'actor' },
+    { name: 'accountId' },
+    { name: 'totalAmount', kind: 'amount' },
+    { name: 'installmentsTotal', kind: 'count' },
+    { name: 'firstDueOn', kind: 'date' },
+  ])
+  if (invalid) return { fields: invalid }
   try {
     await createFinancing(userId, {
       label: str(formData, 'label'),
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
       accountId: str(formData, 'accountId'),
-      installmentAmount: num(formData, 'installmentAmount'),
+      totalAmount: num(formData, 'totalAmount'),
       installmentsTotal: num(formData, 'installmentsTotal'),
       firstDueOn: str(formData, 'firstDueOn'),
-      totalAmount: opt(formData, 'totalAmount') ? num(formData, 'totalAmount') : undefined,
+      // Only sent when the user asked to adjust an uneven split.
+      installmentAmount: opt(formData, 'installmentAmount') ? num(formData, 'installmentAmount') : undefined,
       categoryId: opt(formData, 'categoryId'),
     })
   } catch (e) {
@@ -296,6 +378,10 @@ export async function confirmOccurrenceAction(formData: FormData): Promise<void>
   try {
     await confirmNextOccurrence(userId, str(formData, 'commitmentId'), {
       amount: opt(formData, 'amount') ? num(formData, 'amount') : undefined,
+      happenedOn: opt(formData, 'date'),
+      // "It is the new normal": historises the change instead of treating it
+      // as a one-off month.
+      updateReference: formData.get('nouveauMontant') !== null,
     })
   } catch (e) {
     errorRedirect(formData, frError(e))
@@ -321,24 +407,28 @@ export async function setJudgmentAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
-export async function changePriceAction(formData: FormData): Promise<void> {
+export async function changePriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'amount', kind: 'amount' }])
+  if (invalid) return { fields: invalid }
   try {
     await changeAmount(userId, str(formData, 'commitmentId'), num(formData, 'amount'))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    return { error: frError(e) }
   }
   refreshAll()
+  return { ok: true }
 }
 
-export async function cancelCommitmentAction(formData: FormData): Promise<void> {
+export async function cancelCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   try {
     await cancelCommitment(userId, str(formData, 'commitmentId'))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    return { error: frError(e) }
   }
   refreshAll()
+  return { ok: true }
 }
 
 export async function closeAdvanceAction(formData: FormData): Promise<void> {
@@ -349,6 +439,8 @@ export async function closeAdvanceAction(formData: FormData): Promise<void> {
 
 export async function createCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
   try {
     await createCategory(userId, str(formData, 'name'), opt(formData, 'group'))
   } catch (e) {
@@ -360,6 +452,8 @@ export async function createCategoryAction(_prev: FormState, formData: FormData)
 
 export async function createActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
   try {
     await createActor(userId, { name: str(formData, 'name') })
   } catch (e) {
@@ -371,6 +465,8 @@ export async function createActorAction(_prev: FormState, formData: FormData): P
 
 export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
   try {
     await createActivity(userId, str(formData, 'name'))
   } catch (e) {

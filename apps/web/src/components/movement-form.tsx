@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
-import { Input } from '@/components/ui/input'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correctMovementAction, declareMovementAction } from '@/lib/actions'
 import { eur } from '@/lib/utils'
@@ -88,18 +87,17 @@ export function MovementForm({
       </Tabs>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Date">
+        <Field label="Date" name="date">
           <DateField name="date" defaultValue={draft?.happenedOn ?? today} />
         </Field>
-        <Field label="Montant (€)">
-          <AmountInput name="amount" required placeholder="12,50" defaultValue={draft?.amount ?? ''} />
+        <Field label="Montant (€)" name="amount">
+          <AmountInput name="amount" placeholder="12,50" defaultValue={draft?.amount ?? ''} />
         </Field>
       </div>
 
-      <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'}>
+      <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'} name="accountId">
         <FormSelect
           name="accountId"
-          required
           placeholder="Choisir un compte"
           options={accountOptions}
           defaultValue={draft?.accountId ?? ''}
@@ -107,7 +105,7 @@ export function MovementForm({
       </Field>
 
       {type === 'transfer' ? (
-        <Field label="Vers le compte">
+        <Field label="Vers le compte" name="toAccountId">
           <FormSelect
             name="toAccountId"
             required
@@ -118,16 +116,14 @@ export function MovementForm({
         </Field>
       ) : (
         <>
-          <Field label={type === 'expense' ? 'Payé à (acteur)' : 'Reçu de (acteur)'}>
-            <Input
-              name="actor"
-              required
-              list="actors-list"
-              placeholder="Carrefour, ACME, URSSAF…"
-              autoComplete="off"
-              defaultValue={draft?.actorName ?? ''}
-            />
-          </Field>
+          <TextField
+            name="actor"
+            label={type === 'expense' ? 'Payé à (acteur)' : 'Reçu de (acteur)'}
+            list="actors-list"
+            placeholder="Carrefour, ACME, URSSAF…"
+            autoComplete="off"
+            defaultValue={draft?.actorName ?? ''}
+          />
           <datalist id="actors-list">
             {actors.map((a) => (
               <option key={a.id} value={a.name} />
@@ -155,9 +151,7 @@ export function MovementForm({
         </>
       )}
 
-      <Field label="Note (optionnelle)">
-        <Input name="note" placeholder="" defaultValue={draft?.note ?? ''} />
-      </Field>
+      <TextField name="note" label="Note (optionnelle)" defaultValue={draft?.note ?? ''} />
 
       {type === 'expense' && !editing && (
         <div>
@@ -170,9 +164,15 @@ export function MovementForm({
             {advanceOpen ? '− Avance pour quelqu’un' : '+ Avance pour quelqu’un (à rembourser)'}
           </button>
           {advanceOpen && (
-            <Field label="Qui doit rembourser ?" className="mt-2">
-              <Input name="expectedRefundFrom" list="actors-list" placeholder="Alex" autoComplete="off" />
-            </Field>
+            <div className="mt-2">
+              <TextField
+                name="expectedRefundFrom"
+                label="Qui doit rembourser ?"
+                list="actors-list"
+                placeholder="Alex"
+                autoComplete="off"
+              />
+            </div>
           )}
         </div>
       )}
