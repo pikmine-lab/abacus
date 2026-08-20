@@ -63,6 +63,21 @@ toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon
 Les identifiants `abacus:abacus@127.0.0.1:5544` sont locaux et jetables, ce ne sont pas
 des secrets. Tout le reste passe par `DATABASE_URL`.
 
+## Suivi par issues
+
+Toute intention sur ce dépôt se trace en issue GitHub, même quand personne ne l'attaque
+tout de suite. Le code dit ce qui est fait, l'issue est le seul endroit qui garde le
+pourquoi, ce qui a été écarté et ce qui a causé quoi. Quand Pierre décrit une
+fonctionnalité ou un bug qu'il ne traite pas dans la session, proposer de le tracer.
+
+- Avant de travailler un sujet, chercher ses précédents, ouverts comme fermés
+  (`gh issue list --state all --search …`) : la décision a peut-être déjà été prise.
+- L'issue porte le quoi et le pourquoi, Todoist porte le quand. Une tâche qui double une
+  issue la référence, elle ne recopie pas son contenu.
+- Branche `<type>/<numéro>-<slug>`, la PR close l'issue.
+
+La skill `issue-tracking` détaille la rédaction, les types et les liens.
+
 ## Flux de travail (depuis le 2026-08-19)
 
 **`main` = production, déploiement continu.** Chaque commit sur `main` déclenche
@@ -126,14 +141,7 @@ référence, historisé).
 **Échéanciers de financement** (2026-08-20) : un financement porte un échéancier
 écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
 son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
-est la somme des échéances non réglées. Réviser l'échéancier d'un financement déjà
-créé reste à faire.
-
-**Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
-en base), multi-devise (V2, schéma prêt), vue projection de la SPEC, vue freelance par
-activité, sauvegardes Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface
-MCP en session réelle, densité UI à trancher sur données réelles (DESIGN.md).
+est la somme des échéances non réglées.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
-recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès
-que re-saisir l'historique ferait mal.
+recollectables. Risque assumé au démarrage (décision du 2026-08-19).
