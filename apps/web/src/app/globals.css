@@ -5,44 +5,65 @@
 
 /* Design tokens from DESIGN.md, mapped onto the shadcn/ui vocabulary.
    Single committed dark theme: values live on :root and <html> carries the
-   dark class so dark: styles apply regardless of the OS preference. */
+   dark class so dark: styles apply regardless of the OS preference.
+
+   Every value below was measured, not eyeballed: chart series against the
+   data-viz checks (OKLCH lightness band, chroma floor, CVD ΔE, contrast on
+   the card surface), interface inks against WCAG on the page background.
+   DESIGN.md records the numbers. */
 :root {
-  --radius: 0.75rem;
-  --background: #0a0a0b;
-  --foreground: #f4f4f5;
-  --card: #141417;
-  --card-foreground: #f4f4f5;
-  --popover: #141417;
-  --popover-foreground: #f4f4f5;
-  --primary: #3987e5;
-  --primary-foreground: #ffffff;
-  --secondary: #1c1c20;
-  --secondary-foreground: #f4f4f5;
-  --muted: #1c1c20;
-  --muted-foreground: #a1a1aa;
-  --accent: #1c1c20;
-  --accent-foreground: #f4f4f5;
-  --destructive: #e66767;
-  --border: #26262b;
-  --input: #26262b;
-  --ring: #3987e5;
-  /* Ink levels and semantics beyond the shadcn set. */
-  --faint: #7c7c85;
-  --grid: #222227;
-  --good: #0ca30c;
-  /* Chart series (DESIGN.md slots s1-s3): the accent family, blue → violet,
-     luminance-separated. */
-  --chart-1: #3987e5;
-  --chart-2: #c9bcf8;
-  --chart-3: #7365e0;
-  /* Per-category variants, same family, stable per entity. */
-  --cat0: #3987e5;
-  --cat1: #c9bcf8;
-  --cat2: #7365e0;
-  --cat3: #5a9df0;
-  --cat4: #9d92f5;
-  --cat5: #3576d4;
-  --cat6: #8b7ff0;
+  --radius: 0.625rem;
+
+  /* Grounds — desaturated blue-night, never neutral gray. */
+  --background: #0c0e13;
+  --card: #14171f;
+  --popover: #14171f;
+  --secondary: #1a1e28;
+  --muted: #1a1e28;
+  --accent: #1a1e28;
+  --border: #212734;
+  /* Field outlines carry more contrast than hairlines: a control has to read
+     as a control at rest, and the copper focus ring does the rest. */
+  --input: #3d4557;
+
+  /* Inks — three levels, all AA on the page background. */
+  --foreground: #e8eaf0;
+  --card-foreground: #e8eaf0;
+  --popover-foreground: #e8eaf0;
+  --secondary-foreground: #e8eaf0;
+  --accent-foreground: #e8eaf0;
+  --muted-foreground: #98a1b3;
+  --faint: #79839a;
+
+  /* Copper accent, two steps of one ramp: the light step is interface ink
+     (8.6:1 on the page), the dark step is the chart mark (inside the dark
+     lightness band, where the light one is too pale to qualify). */
+  --primary: #e2a04c;
+  --primary-foreground: #17120a;
+  --ring: #e2a04c;
+
+  /* Semantics. Sign is never carried by color alone — arrows always. */
+  --good: #4ec27a;
+  --destructive: #e5686b;
+
+  /* Chart series: copper, steel blue, magenta. Validated as a set against
+     the dark surface #14171f on ALL pairs (the strictest list), no warnings.
+     Three is a hard ceiling: any fourth hue collides under deuteranopia. */
+  --chart-1: #c58229;
+  --chart-2: #3987e5;
+  --chart-3: #d55181;
+  --grid: #1c212c;
+
+  /* Sidebar recedes behind the page so the content reads as the front plane. */
+  --sidebar: #090b0f;
+  --sidebar-foreground: #98a1b3;
+  --sidebar-primary: #e2a04c;
+  --sidebar-primary-foreground: #17120a;
+  --sidebar-accent: #171b24;
+  --sidebar-accent-foreground: #e8eaf0;
+  --sidebar-border: #1a1f2a;
+  --sidebar-ring: #e2a04c;
+
   color-scheme: dark;
 }
 
@@ -71,6 +92,14 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --radius-sm: calc(var(--radius) - 4px);
@@ -86,5 +115,9 @@
   body {
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Money is read in columns, so its digits must line up everywhere. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }

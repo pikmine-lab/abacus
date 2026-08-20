@@ -11,9 +11,12 @@ import {
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  financingSchedule,
+  listCommitmentsWithProgress,
   pendingOccurrences,
   skipNextOccurrence,
 } from '../src/services/commitments.ts'
+import { deleteMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -115,7 +118,7 @@ test('a financing stops at its last installment and derives its total', async ()
     label: 'Sofa x4',
     actorId: store.id,
     accountId: account.id,
-    installmentAmount: 250,
+    totalAmount: 1000,
     installmentsTotal: 4,
     firstDueOn: '2026-01-15',
   })
@@ -151,4 +154,145 @@ test('an incoming commitment (salary) confirms into an income', async () => {
   assert.equal(movement.kind, 'income')
   assert.equal(movement.sourceActorId, employer.id)
   assert.equal(movement.targetAccountId, account.id)
+})
+
+test('the default schedule spreads the rounding onto the last installment', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+
+  // 1000 in 3 is not divisible: the plan must still add up to 1000 exactly.
+  const financing = await createFinancing(user, {
+    label: 'Vélo en 3x',
+    actorId: store.id,
+    accountId: account.id,
+    totalAmount: 1000,
+    installmentsTotal: 3,
+    firstDueOn: '2026-03-10',
+  })
+  const schedule = await financingSchedule(user, financing.id)
+  assert.deepEqual(
+    schedule.map((i) => [i.dueOn, i.amount]),
+    [
+      ['2026-03-10', '333.33'],
+      ['2026-04-10', '333.33'],
+      ['2026-05-10', '333.34'],
+    ],
+  )
+  const sum = schedule.reduce((total, i) => total + Math.round(Number(i.amount) * 100), 0)
+  assert.equal(sum, 100000)
+})
+
+test('an uneven schedule is stored as given and drives the occurrences', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+
+  // A real plan: a bigger deposit, then two irregular dates.
+  const financing = await createFinancing(user, {
+    label: 'Cuisine',
+    actorId: store.id,
+    accountId: account.id,
+    totalAmount: 3000,
+    installmentsTotal: 3,
+    firstDueOn: '2026-02-01',
+    installments: [
+      { dueOn: '2026-02-01', amount: 1500 },
+      { dueOn: '2026-03-05', amount: 900 },
+      { dueOn: '2026-05-20', amount: 600 },
+    ],
+  })
+
+  // Each occurrence is expected for its own amount, not for an average.
+  const pending = await pendingOccurrences(user, '2026-12-31')
+  assert.deepEqual(
+    pending.filter((p) => p.commitment.id === financing.id).map((p) => [p.dueOn, p.amount]),
+    [
+      ['2026-02-01', 1500],
+      ['2026-03-05', 900],
+      ['2026-05-20', 600],
+    ],
+  )
+
+  // Confirming the deposit leaves exactly what the plan still owes.
+  const movement = await confirmNextOccurrence(user, financing.id)
+  assert.equal(movement.amount, '1500.00')
+  assert.equal(movement.happenedOn, '2026-02-01')
+  const [tracked] = (await listCommitmentsWithProgress(user)).filter((c) => c.id === financing.id)
+  assert.equal(tracked!.progress!.paidInstallments, 1)
+  assert.equal(tracked!.progress!.remainingDue, 1500)
+  assert.equal(tracked!.progress!.nextAmount, 900)
+  assert.equal(tracked!.nextDueOn, '2026-03-05')
+
+  // A written installment is owed: it cannot be skipped like a free month.
+  await assert.rejects(
+    skipNextOccurrence(user, financing.id),
+    (e: DomainError) => e.code === 'cannot_skip_financing',
+  )
+})
+
+test('a schedule that does not add up to the total is refused', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+
+  await assert.rejects(
+    createFinancing(user, {
+      label: 'Faux plan',
+      actorId: store.id,
+      accountId: account.id,
+      totalAmount: 1000,
+      installmentsTotal: 2,
+      firstDueOn: '2026-01-10',
+      installments: [
+        { dueOn: '2026-01-10', amount: 400 },
+        { dueOn: '2026-02-10', amount: 400 },
+      ],
+    }),
+    (e: DomainError) => e.code === 'schedule_sum_mismatch',
+  )
+
+  await assert.rejects(
+    createFinancing(user, {
+      label: 'Mauvais compte',
+      actorId: store.id,
+      accountId: account.id,
+      totalAmount: 800,
+      installmentsTotal: 3,
+      firstDueOn: '2026-01-10',
+      installments: [
+        { dueOn: '2026-01-10', amount: 400 },
+        { dueOn: '2026-02-10', amount: 400 },
+      ],
+    }),
+    (e: DomainError) => e.code === 'schedule_length_mismatch',
+  )
+})
+
+test('deleting a confirmed installment puts it back on the plan', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+  const financing = await createFinancing(user, {
+    label: 'Écran en 2x',
+    actorId: store.id,
+    accountId: account.id,
+    totalAmount: 600,
+    installmentsTotal: 2,
+    firstDueOn: '2026-04-10',
+  })
+
+  const paid = await confirmNextOccurrence(user, financing.id)
+  let tracked = (await listCommitmentsWithProgress(user)).find((c) => c.id === financing.id)!
+  assert.equal(tracked.progress!.paidInstallments, 1)
+  assert.equal(tracked.nextDueOn, '2026-05-10')
+
+  // Confirmed by mistake: removing the movement owes the installment again and
+  // moves the plan back onto it, instead of skipping it silently.
+  await deleteMovement(user, paid.id)
+  tracked = (await listCommitmentsWithProgress(user)).find((c) => c.id === financing.id)!
+  assert.equal(tracked.progress!.paidInstallments, 0)
+  assert.equal(tracked.progress!.remainingDue, 600)
+  assert.equal(tracked.nextDueOn, '2026-04-10')
+  assert.equal((await pendingOccurrences(user, '2026-12-31')).length, 2)
 })

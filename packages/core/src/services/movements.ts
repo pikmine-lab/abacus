@@ -1,13 +1,18 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { realignNextDue } from '../db/datasources/installments.ts'
 import {
+  deleteMovementRow,
   getMovement,
   insertMovement,
   listMovements as listMovementsDs,
   listOutstandingAdvances,
   type MovementFilters,
+  type MovementSelection,
+  selectionTotals as selectionTotalsDs,
   setRefundClosed,
+  updateMovementRow,
 } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import type { Account, Actor, Movement } from '../domain/types.ts'
@@ -53,6 +58,21 @@ export async function declareMovementIn(
   userId: string,
   input: DeclareMovementInput,
 ): Promise<Movement> {
+  const activityId = await checkMovement(tx, userId, input)
+  return await insertMovement(tx, { ...input, userId, activityId })
+}
+
+/**
+ * The domain rules a movement must satisfy, whether it is being declared or
+ * corrected: exactly one endpoint per side, at least one owned account, no
+ * category on a transfer, no writing onto a closed account, a refund pointing
+ * at a real advance. Returns the activity to store (inherited unless set).
+ */
+async function checkMovement(
+  tx: Executor,
+  userId: string,
+  input: DeclareMovementInput,
+): Promise<string | null> {
   if ((input.sourceAccountId ? 1 : 0) + (input.sourceActorId ? 1 : 0) !== 1)
     throw new DomainError('bad_source', 'A movement needs exactly one source: an account or an actor')
   if ((input.targetAccountId ? 1 : 0) + (input.targetActorId ? 1 : 0) !== 1)
@@ -92,9 +112,7 @@ export async function declareMovementIn(
 
   // Inherited from the actor at write time on purpose: history stays stable,
   // reclassifying it later is an explicit action.
-  const activityId = input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
-
-  return await insertMovement(tx, { ...input, userId, activityId })
+  return input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
 }
 
 export async function declareMovement(userId: string, input: DeclareMovementInput): Promise<Movement> {
@@ -102,8 +120,126 @@ export async function declareMovement(userId: string, input: DeclareMovementInpu
   return await sql.begin(async (tx) => declareMovementIn(tx, userId, input))
 }
 
+export type { MovementFilters, MovementSelection }
+
+/** Fields a correction may touch; anything absent keeps its current value. */
+export interface CorrectMovementInput {
+  happenedOn?: string
+  amount?: number
+  sourceAccountId?: string | null
+  sourceActorId?: string | null
+  targetAccountId?: string | null
+  targetActorId?: string | null
+  categoryId?: string | null
+  activityId?: string | null
+  note?: string | null
+}
+
+const CORRECTABLE = [
+  'happenedOn',
+  'amount',
+  'sourceAccountId',
+  'sourceActorId',
+  'targetAccountId',
+  'targetActorId',
+  'categoryId',
+  'activityId',
+  'note',
+] as const
+
+/**
+ * Corrects a declared movement. A declarative ledger is only as good as the
+ * user's ability to fix a typo, so this exists: but it is a correction, not a
+ * rewrite: the origin links (commitment, balance check, advance and refund
+ * links) are never touched here, and the merged result must satisfy the same
+ * domain rules as a fresh declaration.
+ *
+ * The stored activity is not re-inherited from a changed actor: history stays
+ * stable unless the activity is set explicitly (same rule as declaration).
+ */
+export async function correctMovement(
+  userId: string,
+  id: string,
+  input: CorrectMovementInput,
+): Promise<Movement> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const current = await getMovement(tx, userId, id)
+    if (!current) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+
+    const merged: DeclareMovementInput = {
+      happenedOn: input.happenedOn ?? current.happenedOn,
+      amount: input.amount ?? Number(current.amount),
+      sourceAccountId: pick(input, current, 'sourceAccountId'),
+      sourceActorId: pick(input, current, 'sourceActorId'),
+      targetAccountId: pick(input, current, 'targetAccountId'),
+      targetActorId: pick(input, current, 'targetActorId'),
+      categoryId: pick(input, current, 'categoryId'),
+      note: pick(input, current, 'note'),
+      // Explicit null keeps "no activity" from being re-inherited.
+      activityId: input.activityId !== undefined ? input.activityId : current.activityId,
+      expectedRefundFromActorId: current.expectedRefundFromActorId ?? undefined,
+      refundsMovementId: current.refundsMovementId ?? undefined,
+    }
+    const activityId = await checkMovement(tx, userId, merged)
+
+    const row: Record<string, unknown> = { activityId }
+    for (const key of CORRECTABLE) {
+      if (key === 'activityId') continue
+      row[key] = merged[key] ?? null
+    }
+    const updated = await updateMovementRow(tx, userId, id, row)
+    if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+    return updated
+  })
+}
+
+function pick(
+  input: CorrectMovementInput,
+  current: Movement,
+  key: 'sourceAccountId' | 'sourceActorId' | 'targetAccountId' | 'targetActorId' | 'categoryId' | 'note',
+): string | undefined {
+  const value = input[key] !== undefined ? input[key] : current[key]
+  return value ?? undefined
+}
+
+/**
+ * Removes a declared movement. Refused while another movement refunds it: the
+ * refund would be left pointing at nothing, and the user has to decide which
+ * of the two is wrong.
+ *
+ * When the movement settled a financing installment, that installment becomes
+ * owed again (the foreign key frees it) and the plan's cursor is moved back
+ * onto it, so what is due reappears instead of being silently skipped.
+ */
+export async function deleteMovement(userId: string, id: string): Promise<void> {
+  const sql = db()
+  await sql.begin(async (tx) => {
+    const movement = await getMovement(tx, userId, id)
+    if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+    const [refund] = await tx<{ id: string }[]>`
+      select id from movement where refunds_movement_id = ${id} limit 1
+    `
+    if (refund)
+      throw new DomainError(
+        'refunded_movement',
+        'A refund is linked to this movement: delete the refund first',
+      )
+    await deleteMovementRow(tx, userId, id)
+    if (movement.commitmentId) await realignNextDue(tx, movement.commitmentId)
+  })
+}
+
 export async function listMovements(userId: string, filters: MovementFilters = {}): Promise<Movement[]> {
   return await listMovementsDs(db(), userId, filters)
+}
+
+/** What the current filter selects, in one row: count and per-kind totals. */
+export async function selectionTotals(
+  userId: string,
+  filters: MovementFilters = {},
+): Promise<MovementSelection> {
+  return await selectionTotalsDs(db(), userId, filters)
 }
 
 export async function outstandingAdvances(userId: string): Promise<(Movement & { refunded: string })[]> {

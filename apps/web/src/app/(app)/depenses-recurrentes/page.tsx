@@ -1,0 +1,191 @@
+import { auth } from '@abacus/core/auth'
+import { today } from '@abacus/core/domain/period'
+import { listAccounts } from '@abacus/core/services/accounts'
+import { listActors } from '@abacus/core/services/actors'
+import { listCategories } from '@abacus/core/services/catalog'
+import {
+  listCommitmentsWithProgress,
+  monthlyEquivalent,
+  pendingOccurrences,
+} from '@abacus/core/services/commitments'
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { CommitmentRow } from '@/components/commitment-blocks'
+import { NewCommitmentForm } from '@/components/commitment-forms'
+import { EntrySheet } from '@/components/entry-sheet'
+import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { PendingOccurrences } from '@/components/pending-occurrences'
+import { StatRow, StatTile } from '@/components/stats'
+import { eur, frDate } from '@/lib/utils'
+
+export const dynamic = 'force-dynamic'
+
+export const metadata = { title: 'Dépenses récurrentes' }
+
+const PATH = '/depenses-recurrentes'
+
+export default async function RecurringExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erreur?: string }>
+}) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) redirect('/login')
+  const userId = session.user.id
+  const { erreur } = await searchParams
+
+  const [commitments, pending, accounts, actors, categories] = await Promise.all([
+    // Cancelled ones included: a subscription's history is the point of the
+    // event log, and "what did I cut this year" is a real question.
+    listCommitmentsWithProgress(userId, false),
+    pendingOccurrences(userId),
+    listAccounts(userId),
+    listActors(userId),
+    listCategories(userId),
+  ])
+
+  const outgoing = commitments.filter((c) => c.direction === 'outgoing')
+  const active = outgoing.filter((c) => !c.cancelledOn)
+  const subscriptions = active.filter((c) => c.kind === 'subscription')
+  const financings = active.filter((c) => c.kind === 'financing')
+  const cancelled = outgoing.filter((c) => c.cancelledOn)
+  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
+
+  const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  const remainingDue = financings.reduce((sum, c) => sum + (c.progress?.remainingDue ?? 0), 0)
+  const toCancel = subscriptions.filter((c) => c.judgment === 'to_cancel')
+  const reducible = subscriptions.filter((c) => c.judgment === 'reducible')
+  const savable = [...toCancel, ...reducible].reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  const unjudged = subscriptions.filter((c) => !c.judgment).length
+  const savableHint = [
+    toCancel.length > 0 ? `${toCancel.length} à résilier` : null,
+    reducible.length > 0 ? `${reducible.length} réductible${reducible.length > 1 ? 's' : ''}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <>
+      <PageHeader title="Dépenses récurrentes" description="ce qui part tout seul, tous les mois">
+        <EntrySheet
+          label="Ajouter"
+          title="Nouvelle dépense récurrente"
+          description="Un abonnement à durée ouverte, ou un paiement en X fois qui s’éteindra de lui-même."
+        >
+          <NewCommitmentForm
+            direction="outgoing"
+            accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
+            actors={actors.map((a) => ({ id: a.id, name: a.name }))}
+            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            today={today()}
+          />
+        </EntrySheet>
+      </PageHeader>
+
+      <PageBody>
+        {erreur && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
+            {erreur}
+          </p>
+        )}
+
+        <StatRow>
+          <StatTile
+            hero
+            label="Coût mensuel engagé"
+            value={eur(monthlyCost, 2)}
+            hint={`${eur(monthlyCost * 12)} par an`}
+          />
+          <StatTile
+            label="Abonnements actifs"
+            value={String(subscriptions.length)}
+            hint={
+              cancelled.length > 0
+                ? `${cancelled.length} résilié${cancelled.length > 1 ? 's' : ''} dans l’historique`
+                : undefined
+            }
+          />
+          <StatTile
+            label="Financements"
+            value={financings.length > 0 ? eur(remainingDue) : 'aucun'}
+            hint={
+              financings.length > 0
+                ? `restant dû sur ${financings.length} financement${financings.length > 1 ? 's' : ''}`
+                : 'aucun paiement en cours'
+            }
+          />
+          <StatTile
+            label="Économie possible"
+            value={savable > 0 ? `${eur(savable, 2)}/mois` : 'aucune'}
+            hint={
+              savable > 0
+                ? savableHint
+                : unjudged > 0
+                  ? `juge tes ${unjudged} abonnements pour voir ce qui est coupable`
+                  : 'tout est jugé essentiel'
+            }
+          />
+        </StatRow>
+
+        {pendingOut.length > 0 && (
+          <Section
+            title="Échéances à confirmer"
+            description="confirmer crée le mouvement réel · passer avance sans mouvement (mois offert)"
+          >
+            <PendingOccurrences
+              retour={PATH}
+              items={pendingOut.map((p) => ({
+                commitmentId: p.commitment.id,
+                label: p.commitment.label,
+                dueOn: p.dueOn,
+                amount: Number(p.commitment.amount),
+                incoming: false,
+              }))}
+            />
+          </Section>
+        )}
+
+        <Section
+          title="Abonnements"
+          description={`${subscriptions.length} actif${subscriptions.length > 1 ? 's' : ''} · le jugement prépare la revue « que couper ? »`}
+        >
+          {subscriptions.length === 0 ? (
+            <EmptyLine>Aucun abonnement déclaré. Le bouton « Ajouter » est en haut à droite.</EmptyLine>
+          ) : (
+            <Rows>
+              {[...subscriptions]
+                .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
+                .map((c) => (
+                  <CommitmentRow key={c.id} commitment={c} showJudgment />
+                ))}
+            </Rows>
+          )}
+        </Section>
+
+        {financings.length > 0 && (
+          <Section title="Financements en cours" description="s’éteignent seuls à la dernière échéance">
+            <Rows>
+              {financings.map((c) => (
+                <CommitmentRow key={c.id} commitment={c} showJudgment={false} />
+              ))}
+            </Rows>
+          </Section>
+        )}
+
+        {cancelled.length > 0 && (
+          <Section title="Résiliés" description="gardés pour l’historique des prix">
+            <Rows>
+              {cancelled.map((c) => (
+                <div key={c.id} className="flex items-baseline gap-3 py-2 text-faint">
+                  <span className="text-[12.5px]">{c.label}</span>
+                  <span className="text-[11px]">résilié le {frDate(c.cancelledOn!)}</span>
+                  <span className="ml-auto font-mono text-[12.5px] tabular">{eur(Number(c.amount), 2)}</span>
+                </div>
+              ))}
+            </Rows>
+          </Section>
+        )}
+      </PageBody>
+    </>
+  )
+}

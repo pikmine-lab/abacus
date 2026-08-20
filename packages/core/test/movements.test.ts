@@ -4,7 +4,7 @@ import type { DomainError } from '../src/domain/errors.ts'
 import { closeAccount, createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createActivity, createCategory } from '../src/services/catalog.ts'
-import { declareMovement } from '../src/services/movements.ts'
+import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -142,4 +142,77 @@ test('scopes every reference to the user', async () => {
     }),
     (e: DomainError) => e.code === 'actor_not_found',
   )
+})
+
+test('correcting a movement re-derives its kind and keeps its origin links', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const friend = await createActor(user, { name: 'Friend' })
+  const dining = await createCategory(user, 'Dining')
+
+  const advance = await declareMovement(user, {
+    happenedOn: '2026-02-10',
+    amount: 90,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    categoryId: dining.id,
+    expectedRefundFromActorId: friend.id,
+    note: 'diner',
+  })
+
+  // A typo on the amount and the date, nothing else.
+  const fixed = await correctMovement(user, advance.id, { amount: 95.5, happenedOn: '2026-02-11' })
+  assert.equal(fixed.amount, '95.50')
+  assert.equal(fixed.happenedOn, '2026-02-11')
+  assert.equal(fixed.kind, 'expense')
+  assert.equal(fixed.categoryId, dining.id)
+  assert.equal(fixed.note, 'diner')
+  // The advance link is not part of a correction and must survive it.
+  assert.equal(fixed.expectedRefundFromActorId, friend.id)
+
+  // Reclassifying the counterparty keeps the row valid and re-derives nothing
+  // it should not: an expense stays an expense when the actor changes.
+  const other = await createActor(user, { name: 'Other shop' })
+  const moved = await correctMovement(user, advance.id, { targetActorId: other.id })
+  assert.equal(moved.targetActorId, other.id)
+  assert.equal(moved.kind, 'expense')
+
+  // Turning it into an internal transfer is refused: the advance link on it
+  // only makes sense for an expense.
+  await assert.rejects(
+    correctMovement(user, advance.id, { targetActorId: null, targetAccountId: savings.id }),
+    (e: Error) =>
+      /movement_advance_is_expense|transfer_has_no_category/.test(e.message + (e as DomainError).code),
+  )
+})
+
+test('a movement can be deleted unless a refund points at it', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const friend = await createActor(user, { name: 'Friend' })
+
+  const advance = await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 60,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    expectedRefundFromActorId: friend.id,
+  })
+  const refund = await declareMovement(user, {
+    happenedOn: '2026-03-05',
+    amount: 60,
+    sourceActorId: friend.id,
+    targetAccountId: checking.id,
+    refundsMovementId: advance.id,
+  })
+
+  await assert.rejects(deleteMovement(user, advance.id), (e: DomainError) => e.code === 'refunded_movement')
+
+  // Removing the refund first frees the advance.
+  await deleteMovement(user, refund.id)
+  await deleteMovement(user, advance.id)
+  assert.equal((await listMovements(user)).length, 0)
 })

@@ -1,157 +1,281 @@
 import { auth } from '@abacus/core/auth'
+import type { MovementKind } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
-import { listMovements, outstandingAdvances } from '@abacus/core/services/movements'
+import { listMovements, outstandingAdvances, selectionTotals } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { ActionForm, SubmitButton } from '@/components/forms'
+import { EntrySheet } from '@/components/entry-sheet'
+import { MovementFilters } from '@/components/movement-filters'
 import { MovementForm } from '@/components/movement-form'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { createActivityAction, createCategoryAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { MovementRowActions } from '@/components/movement-row-actions'
+import { FilterBar, PageBody, PageHeader } from '@/components/page-shell'
+import { PeriodPicker } from '@/components/period-picker'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { closeAdvanceAction } from '@/lib/actions'
+import { resolvePeriod } from '@/lib/period'
+import { eur, frDate, idParam } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-function frDate(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y!.slice(2)}`
-}
+export const metadata = { title: 'Mouvements' }
 
-export default async function MovementsPage() {
+const KINDS: MovementKind[] = ['expense', 'income', 'transfer']
+const PAGE_SIZE = 100
+
+export default async function MovementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+  const params = await searchParams
+  // A ledger opens on a window wide enough to hold something, not on the
+  // first day of the month.
+  const period = resolvePeriod(params, today(), '90j')
 
-  const [movements, accounts, actors, categories, activities, advances] = await Promise.all([
-    listMovements(userId, { limit: 60 }),
+  const limit = Number(params.limite) > 0 ? Math.min(Number(params.limite), 1000) : PAGE_SIZE
+
+  // The vocabulary first: a filter naming something this user does not own
+  // (a stale link, a deleted category) is dropped rather than silently
+  // returning an empty list the controls cannot explain.
+  const [accounts, actors, categories, activities, advances] = await Promise.all([
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
     outstandingAdvances(userId),
   ])
+  const known = (id: string | undefined, among: { id: string }[]) =>
+    id && among.some((entry) => entry.id === id) ? id : undefined
+
+  const filters = {
+    from: period.from,
+    to: period.to,
+    kind: KINDS.includes(params.type as MovementKind) ? (params.type as MovementKind) : undefined,
+    accountId: known(idParam(params.compte), accounts),
+    categoryId: known(idParam(params.categorie), categories),
+    actorId: known(idParam(params.acteur), actors),
+    activityId: known(idParam(params.activite), activities),
+    search: params.q,
+    advancesOnly: params.avances === '1',
+  }
+
+  const [movements, selection] = await Promise.all([
+    listMovements(userId, { ...filters, limit }),
+    selectionTotals(userId, filters),
+  ])
 
   const accountName = new Map(accounts.map((a) => [a.id, a.name]))
   const actorName = new Map(actors.map((a) => [a.id, a.name]))
   const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-
-  function describe(m: (typeof movements)[number]): { who: string; detail: string } {
-    if (m.kind === 'transfer')
-      return {
-        who: `${accountName.get(m.sourceAccountId!)} → ${accountName.get(m.targetAccountId!)}`,
-        detail: 'virement interne',
-      }
-    if (m.kind === 'expense')
-      return {
-        who: actorName.get(m.targetActorId!) ?? '?',
-        detail: `${accountName.get(m.sourceAccountId!)}${m.categoryId ? ` · ${categoryName.get(m.categoryId)}` : ''}`,
-      }
-    return {
-      who: actorName.get(m.sourceActorId!) ?? '?',
-      detail: `${accountName.get(m.targetAccountId!)}${m.categoryId ? ` · ${categoryName.get(m.categoryId)}` : ''}`,
-    }
+  const count = Number(selection.count)
+  const openAccounts = accounts.filter((a) => !a.closedOn)
+  const options = {
+    accounts: openAccounts.map((a) => ({ id: a.id, name: a.name })),
+    actors: actors.map((a) => ({ id: a.id, name: a.name })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+    activities: activities.map((a) => ({ id: a.id, name: a.name })),
   }
 
   return (
-    <main className="grid items-start gap-3 lg:grid-cols-[1fr_1.4fr]">
-      <div className="flex flex-col gap-3 lg:order-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Déclarer un mouvement</CardTitle>
-            <CardDescription>dépense, revenu ou virement entre tes comptes (neutre)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MovementForm
-              accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-              actors={actors.map((a) => ({ id: a.id, name: a.name }))}
-              categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-              activities={activities.map((a) => ({ id: a.id, name: a.name }))}
-              advances={advances.map((a) => ({
-                id: a.id,
-                happenedOn: frDate(a.happenedOn),
-                amount: Number(a.amount),
-                remaining: Math.round((Number(a.amount) - Number(a.refunded)) * 100) / 100,
-              }))}
-              today={today()}
-            />
-          </CardContent>
-        </Card>
+    <>
+      <PageHeader title="Mouvements" description="dépenses, revenus et virements entre tes comptes">
+        <EntrySheet
+          label="Déclarer"
+          title="Déclarer un mouvement"
+          description="Le panneau reste ouvert : enchaîne les déclarations, les champs se vident à chaque fois."
+        >
+          <MovementForm
+            {...options}
+            advances={advances.map((a) => ({
+              id: a.id,
+              happenedOn: frDate(a.happenedOn),
+              amount: Number(a.amount),
+              remaining: Math.round((Number(a.amount) - Number(a.refunded)) * 100) / 100,
+            }))}
+            today={today()}
+          />
+        </EntrySheet>
+      </PageHeader>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Catégories et activités</CardTitle>
-            <CardDescription>
-              ton vocabulaire : catégories pour la nature, activités pour la sphère (ex. Freelance)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-2 text-xs text-faint">
-                {categories.map((c) => c.name).join(' · ') || 'aucune'}
-              </p>
-              <ActionForm action={createCategoryAction} className="flex-row gap-2">
-                <Input name="name" required placeholder="Nouvelle catégorie" className="h-8 text-[13px]" />
-                <SubmitButton variant="outline" size="sm">
-                  Ajouter
-                </SubmitButton>
-              </ActionForm>
-            </div>
-            <div>
-              <p className="mb-2 text-xs text-faint">
-                {activities.map((a) => a.name).join(' · ') || 'aucune'}
-              </p>
-              <ActionForm action={createActivityAction} className="flex-row gap-2">
-                <Input name="name" required placeholder="Nouvelle activité" className="h-8 text-[13px]" />
-                <SubmitButton variant="outline" size="sm">
-                  Ajouter
-                </SubmitButton>
-              </ActionForm>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <FilterBar>
+        <PeriodPicker period={period} />
+        <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
+        <MovementFilters
+          accounts={options.accounts}
+          categories={options.categories}
+          actors={options.actors}
+          activities={options.activities}
+        />
+      </FilterBar>
 
-      <Card className="lg:order-1">
-        <CardHeader>
-          <CardTitle>Mouvements</CardTitle>
-          <CardDescription>
-            {movements.length} derniers · les virements internes ne comptent jamais en dépense
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col">
-          {movements.length === 0 && <p className="text-sm text-faint">Rien de déclaré pour l’instant.</p>}
-          {movements.map((m) => {
-            const { who, detail } = describe(m)
-            return (
-              <div
-                key={m.id}
-                className="flex items-baseline gap-3 border-b border-grid py-2.5 last:border-b-0"
-              >
-                <span className="w-14 shrink-0 font-mono text-[11px] text-faint">{frDate(m.happenedOn)}</span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm">{who}</p>
-                  <p className="truncate text-[11px] text-faint">
-                    {detail}
-                    {m.note ? ` · ${m.note}` : ''}
-                    {m.expectedRefundFromActorId && !m.refundClosed ? ' · avance' : ''}
-                  </p>
-                </div>
-                <span
-                  className={`ml-auto shrink-0 font-mono text-sm tabular-nums ${
-                    m.kind === 'income' ? 'text-good' : m.kind === 'transfer' ? 'text-faint' : ''
-                  }`}
-                >
-                  {m.kind === 'income' ? '+' : m.kind === 'expense' ? '−' : '⇄ '}
-                  {eur(Number(m.amount), 2)}
-                </span>
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-    </main>
+      <PageBody className="gap-4">
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[12.5px]">
+          <span className="text-muted-foreground">
+            <span className="font-semibold tabular text-foreground">{count}</span> mouvement
+            {count > 1 ? 's' : ''}
+          </span>
+          {Number(selection.expense) > 0 && (
+            <span className="text-faint">
+              dépenses{' '}
+              <span className="font-mono tabular text-muted-foreground">{eur(selection.expense)}</span>
+            </span>
+          )}
+          {Number(selection.income) > 0 && (
+            <span className="text-faint">
+              revenus <span className="font-mono tabular text-muted-foreground">{eur(selection.income)}</span>
+            </span>
+          )}
+          {Number(selection.transfer) > 0 && (
+            <span className="text-faint">
+              virements{' '}
+              <span className="font-mono tabular text-muted-foreground">{eur(selection.transfer)}</span>
+            </span>
+          )}
+        </div>
+
+        {movements.length === 0 ? (
+          <p className="py-8 text-center text-[13px] text-faint">
+            Rien ne correspond à cette sélection. Élargis la période ou efface les filtres.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-20">Date</TableHead>
+                <TableHead>Contrepartie</TableHead>
+                <TableHead className="hidden sm:table-cell">Compte</TableHead>
+                <TableHead className="hidden md:table-cell">Catégorie</TableHead>
+                <TableHead className="w-28 text-right">Montant</TableHead>
+                <TableHead className="w-9 sr-only">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {movements.map((m) => {
+                const isTransfer = m.kind === 'transfer'
+                const isIncome = m.kind === 'income'
+                const counterparty = isTransfer
+                  ? `${accountName.get(m.sourceAccountId!) ?? '?'} → ${accountName.get(m.targetAccountId!) ?? '?'}`
+                  : (actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!) ?? '?')
+                const account = isTransfer
+                  ? 'virement interne'
+                  : (accountName.get((isIncome ? m.targetAccountId : m.sourceAccountId)!) ?? '?')
+                const pendingAdvance = m.expectedRefundFromActorId && !m.refundClosed
+                const origin = m.commitmentId
+                  ? 'Ce mouvement vient d’une échéance confirmée.'
+                  : m.balanceCheckId
+                    ? 'Ce mouvement est un ajustement de pointage.'
+                    : pendingAdvance
+                      ? 'Ce mouvement est une avance en attente de remboursement.'
+                      : undefined
+                return (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-mono text-[11.5px] text-faint">
+                      {frDate(m.happenedOn)}
+                    </TableCell>
+                    <TableCell className="max-w-0">
+                      <span className="block truncate text-[13px]">{counterparty}</span>
+                      {(m.note || pendingAdvance) && (
+                        <span className="block truncate text-[11px] text-faint">
+                          {m.note}
+                          {m.note && pendingAdvance ? ' · ' : ''}
+                          {pendingAdvance && (
+                            <>
+                              {`avance à rembourser par ${actorName.get(m.expectedRefundFromActorId!) ?? '?'} · `}
+                              <form action={closeAdvanceAction} className="inline">
+                                <input type="hidden" name="movementId" value={m.id} />
+                                <Button
+                                  type="submit"
+                                  variant="link"
+                                  className="h-auto p-0 text-[11px] text-faint underline-offset-2 hover:text-destructive"
+                                >
+                                  solder
+                                </Button>
+                              </form>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden text-[12px] text-muted-foreground sm:table-cell">
+                      {account}
+                    </TableCell>
+                    <TableCell className="hidden text-[12px] text-muted-foreground md:table-cell">
+                      {m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-mono text-[13px] tabular ${
+                        isIncome ? 'text-good' : isTransfer ? 'text-faint' : ''
+                      }`}
+                    >
+                      {isIncome ? '+' : isTransfer ? '' : '−'}
+                      {eur(Number(m.amount), 2)}
+                    </TableCell>
+                    <TableCell className="pr-1 pl-0 text-right">
+                      <MovementRowActions
+                        {...options}
+                        today={today()}
+                        label={`${frDate(m.happenedOn)} · ${counterparty} · ${eur(Number(m.amount), 2)}`}
+                        draft={{
+                          id: m.id,
+                          type: m.kind,
+                          happenedOn: m.happenedOn,
+                          amount: Number(m.amount).toFixed(2),
+                          accountId: (isIncome ? m.targetAccountId : m.sourceAccountId) ?? '',
+                          toAccountId: isTransfer ? (m.targetAccountId ?? undefined) : undefined,
+                          actorName: isTransfer
+                            ? undefined
+                            : actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!),
+                          categoryId: m.categoryId ?? undefined,
+                          activityId: m.activityId ?? undefined,
+                          note: m.note ?? undefined,
+                          origin,
+                        }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
+
+        {count > movements.length && (
+          <MoreLink params={params} limit={limit} shown={movements.length} total={count} />
+        )}
+      </PageBody>
+    </>
+  )
+}
+
+/** Plain link, so "show more" costs no client state and survives a reload. */
+function MoreLink({
+  params,
+  limit,
+  shown,
+  total,
+}: {
+  params: Record<string, string | undefined>
+  limit: number
+  shown: number
+  total: number
+}) {
+  const next = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][],
+  )
+  next.set('limite', String(limit + PAGE_SIZE))
+  return (
+    <a
+      href={`?${next}`}
+      className="self-start text-[12.5px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
+    >
+      Afficher plus ({shown} sur {total})
+    </a>
   )
 }

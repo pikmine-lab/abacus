@@ -1,111 +1,177 @@
 import { auth } from '@abacus/core/auth'
+import type { AccountBehavior } from '@abacus/core/domain'
+import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { BalanceCheckForm } from '@/components/balance-check-form'
-import { ActionForm, Field, FormSelect, SubmitButton } from '@/components/forms'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { closeAccountAction, createAccountAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { AccountRowActions } from '@/components/account-row-actions'
+import { EntrySheet } from '@/components/entry-sheet'
+import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { StatRow, StatTile } from '@/components/stats'
+import { createAccountAction } from '@/lib/actions'
+import { daysBetween, eur, freshness } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-const BEHAVIOR_LABEL = { payment: 'courant', savings: 'épargne', investment: 'investissement' }
+export const metadata = { title: 'Comptes' }
+
+const STALE_CHECK_DAYS = 45
+
+const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
+  payment: { label: 'Comptes courants', blurb: 'portent les mouvements du quotidien' },
+  savings: { label: 'Épargne', blurb: 'virements et intérêts' },
+  investment: { label: 'Investissement', blurb: 'opérations et positions arrivent en V2' },
+}
+const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
 
 export default async function AccountsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+  const now = today()
 
   const accounts = await listAccounts(userId)
   const checks = await Promise.all(accounts.map((a) => latestCheck(userId, a.id)))
+  const state = accounts.map((account, i) => ({ account, check: checks[i] }))
+
+  const open = state.filter((s) => !s.account.closedOn)
+  const closed = state.filter((s) => s.account.closedOn)
+  const wealth = open.reduce((sum, s) => sum + Number(s.account.balance), 0)
+  const gaps = open.filter((s) => s.check && s.check.gap !== 0)
+  const toCheck = open.filter((s) => !s.check || daysBetween(s.check.check.checkedOn, now) > STALE_CHECK_DAYS)
+
+  const newAccountForm = (
+    <EntrySheet
+      label="Ajouter un compte"
+      title="Nouveau compte"
+      description="Ton montage bancaire réel, un compte à la fois. Un compte clos garde son historique."
+    >
+      <ActionForm action={createAccountAction} successLabel="Compte créé">
+        <TextField name="name" label="Nom" placeholder="Courant principal" />
+        <Field label="Type">
+          <FormSelect
+            name="behavior"
+            defaultValue="payment"
+            options={[
+              { value: 'payment', label: 'Courant' },
+              { value: 'savings', label: 'Épargne (livret)' },
+              { value: 'investment', label: 'Investissement' },
+            ]}
+          />
+        </Field>
+        <TextField name="institution" label="Établissement (optionnel)" placeholder="Nom de la banque" />
+        <SubmitButton className="self-start">Créer le compte</SubmitButton>
+      </ActionForm>
+    </EntrySheet>
+  )
 
   return (
-    <main className="grid items-start gap-3 lg:grid-cols-[1.55fr_1fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Comptes</CardTitle>
-          <CardDescription>
-            le pointage compare le solde réel (lu dans ta banque) au solde calculé : c’est le garde-fou du
-            déclaratif
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col">
-          {accounts.length === 0 && (
-            <p className="text-sm text-faint">Aucun compte : crée le premier ci-contre.</p>
-          )}
-          {accounts.map((account, i) => {
-            const check = checks[i]
-            return (
-              <div key={account.id} className="border-b border-grid py-3 last:border-b-0">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-medium">{account.name}</span>
-                  <span className="text-[11px] text-faint">
-                    {BEHAVIOR_LABEL[account.behavior]}
-                    {account.institution ? ` · ${account.institution}` : ''}
-                    {account.closedOn ? ` · clos le ${account.closedOn}` : ''}
-                  </span>
-                  <span className="ml-auto font-mono text-sm font-semibold tabular-nums">
-                    {eur(Number(account.balance), 2)}
-                  </span>
-                </div>
-                {!account.closedOn && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <BalanceCheckForm accountId={account.id} />
-                    <span className="text-[11px] text-faint">
-                      {check
-                        ? check.gap === 0
-                          ? `pointé le ${check.check.checkedOn} · aucun écart`
-                          : `dernier pointage : écart de ${eur(check.gap, 2)}`
-                        : 'jamais pointé'}
-                    </span>
-                    <form action={closeAccountAction} className="ml-auto">
-                      <input type="hidden" name="accountId" value={account.id} />
-                      <Button variant="ghost" size="sm" type="submit">
-                        Clore
-                      </Button>
-                    </form>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
+    <>
+      <PageHeader title="Comptes" description="soldes calculés, confrontés à la réalité par le pointage">
+        {newAccountForm}
+      </PageHeader>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Nouveau compte</CardTitle>
-          <CardDescription>ton montage bancaire réel, un compte à la fois</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ActionForm action={createAccountAction}>
-            <Field label="Nom">
-              <Input name="name" required placeholder="Fortuneo courant" />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Type">
-                <FormSelect
-                  name="behavior"
-                  defaultValue="payment"
-                  options={[
-                    { value: 'payment', label: 'Courant' },
-                    { value: 'savings', label: 'Épargne (livret)' },
-                    { value: 'investment', label: 'Investissement' },
-                  ]}
-                />
-              </Field>
-              <Field label="Établissement (optionnel)">
-                <Input name="institution" placeholder="Fortuneo" />
-              </Field>
-            </div>
-            <SubmitButton className="self-start">Créer le compte</SubmitButton>
-          </ActionForm>
-        </CardContent>
-      </Card>
-    </main>
+      <PageBody>
+        {accounts.length === 0 ? (
+          <EmptyLine>
+            Aucun compte pour l’instant. Tout part de là : le bouton est en haut à droite.
+          </EmptyLine>
+        ) : (
+          <>
+            <StatRow>
+              <StatTile
+                hero
+                label="Patrimoine"
+                value={eur(wealth)}
+                hint={`${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`}
+              />
+              <StatTile
+                label="Écarts de pointage"
+                value={
+                  gaps.length > 0
+                    ? eur(
+                        gaps.reduce((s, g) => s + Math.abs(g.check!.gap), 0),
+                        2,
+                      )
+                    : 'aucun'
+                }
+                hint={
+                  gaps.length > 0
+                    ? `sur ${gaps.length} compte${gaps.length > 1 ? 's' : ''} : un mouvement manque`
+                    : 'le calculé colle au réel'
+                }
+              />
+              <StatTile
+                label="À pointer"
+                value={String(toCheck.length)}
+                hint={
+                  toCheck.length > 0
+                    ? `jamais pointés ou plus vieux que ${STALE_CHECK_DAYS} jours`
+                    : 'tout est frais'
+                }
+              />
+            </StatRow>
+
+            {ORDER.filter((behavior) => open.some((s) => s.account.behavior === behavior)).map((behavior) => (
+              <Section key={behavior} title={BEHAVIOR[behavior].label} description={BEHAVIOR[behavior].blurb}>
+                <Rows>
+                  {open
+                    .filter((s) => s.account.behavior === behavior)
+                    .map(({ account, check }) => (
+                      <div key={account.id} className="flex items-center gap-3 py-3">
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <span className="text-[13px] font-medium">{account.name}</span>
+                            {account.institution && (
+                              <span className="text-[11px] text-faint">{account.institution}</span>
+                            )}
+                          </div>
+                          <span
+                            className={`text-[11.5px] ${
+                              check && check.gap !== 0 ? 'text-destructive' : 'text-faint'
+                            }`}
+                          >
+                            {check
+                              ? check.gap === 0
+                                ? `pointé ${freshness(check.check.checkedOn, now)} · aucun écart`
+                                : `écart de ${eur(check.gap, 2)} au dernier pointage`
+                              : 'jamais pointé'}
+                          </span>
+                        </div>
+                        <span className="ml-auto shrink-0 font-mono text-[14px] font-semibold tabular">
+                          {eur(Number(account.balance), 2)}
+                        </span>
+                        <AccountRowActions
+                          accountId={account.id}
+                          name={account.name}
+                          computedBalance={Number(account.balance)}
+                        />
+                      </div>
+                    ))}
+                </Rows>
+              </Section>
+            ))}
+
+            {closed.length > 0 && (
+              <Section title="Comptes clos" description="l’historique survit au montage bancaire du moment">
+                <Rows>
+                  {closed.map(({ account }) => (
+                    <div key={account.id} className="flex items-baseline gap-3 py-2 text-faint">
+                      <span className="text-[12.5px]">{account.name}</span>
+                      <span className="text-[11px]">clos le {account.closedOn}</span>
+                      <span className="ml-auto font-mono text-[12.5px] tabular">
+                        {eur(Number(account.balance), 2)}
+                      </span>
+                    </div>
+                  ))}
+                </Rows>
+              </Section>
+            )}
+          </>
+        )}
+      </PageBody>
+    </>
   )
 }

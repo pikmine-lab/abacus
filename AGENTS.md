@@ -105,22 +105,34 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 
 Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, auth
 `Authorization: Bearer <clé d'API>`). Les clés sont par utilisateur, gérées par le plugin
-api-key de Better Auth ; pas encore d'écran pour les créer : passer par
-`auth.api.createApiKey({ body: { name, userId } })` côté serveur. Côté Claude :
+api-key de Better Auth, et se créent depuis l'écran **Réglages**. Côté Claude :
 `claude mcp add --transport http abacus https://abacus-mcp.payangar.dev/mcp --header "Authorization: Bearer <clé>"`.
 
 ## État (2026-08-20)
 
-**En production** sur `abacus.payangar.dev` : auth multi-utilisateur, tableau de bord
-(KPI, graphe de soldes interactif, dépenses brut/net, échéances), pages Mouvements /
-Abonnements / Comptes avec saisie déclarative complète, serveur MCP (16 outils), UI
-migrée sur les vrais composants shadcn/ui, déploiement continu opérationnel (validé de
-bout en bout par PR).
+**En production** sur `abacus.payangar.dev` : auth multi-utilisateur, serveur MCP
+(17 outils), déploiement continu opérationnel (validé de bout en bout par PR).
+
+**Interface refondue le 2026-08-20** (voir `DESIGN.md`, qui a été réécrit) : navigation
+latérale pliable groupée par question posée, palette bleu-nuit / cuivre mesurée, saisie
+sortie des pages de lecture vers un panneau latéral, engagements coupés en dépenses et
+revenus récurrents, période pilotable depuis l'URL sur toutes les vues, filtres complets
+sur les mouvements, correction et suppression d'un mouvement, écran d'accueil guidé,
+identité (marque abaque + favicon). Les cas d'usage ouverts dans l'UI existent aussi
+côté MCP : `fix_movement` (corriger ou supprimer une déclaration erronée) et, sur
+`confirm_due_movements`, la qualification d'un écart (ponctuel ou nouveau montant de
+référence, historisé).
+
+**Échéanciers de financement** (2026-08-20) : un financement porte un échéancier
+écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
+son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
+est la somme des échéances non réglées. Réviser l'échéancier d'un financement déjà
+créé reste à faire.
 
 **Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
-en base), écran de création de clés d'API MCP, multi-devise (V2, schéma prêt), sauvegardes
-Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface MCP en session réelle,
-densité UI à trancher sur données réelles (DESIGN.md).
+en base), multi-devise (V2, schéma prêt), vue projection de la SPEC, vue freelance par
+activité, sauvegardes Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface
+MCP en session réelle, densité UI à trancher sur données réelles (DESIGN.md).
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19) ; à mettre en place dès
