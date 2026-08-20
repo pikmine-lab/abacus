@@ -1,0 +1,65 @@
+# Bootstrapping a worktree for parallel development. `pre-start` and
+# `post-start` fire only when a worktree is created, so everything here is
+# one-time setup for a new branch. Inert for anyone not using worktrunk.
+
+[step.copy-ignored]
+# pnpm's node_modules is a symlink farm pointing back inside the source
+# worktree, so copying it leaves dangling links. A fresh install hardlinks from
+# the pnpm store and takes about a second. The Next build cache is rebuilt on
+# first request and is not worth carrying over either.
+exclude = ["node_modules/", ".next/"]
+
+[[pre-start]]
+ignored-files = "wt step copy-ignored"
+
+[[pre-start]]
+submodules = "git submodule update --init --recursive"
+
+[[pre-start]]
+deps = "ni --frozen-lockfile"
+
+[[pre-start]]
+# Cloning the dev database brings its data along, which this model needs: every
+# movement is entered by hand, so an empty database means no functional
+# validation. TEMPLATE requires no open connection to the source database.
+# The compose file is resolved from the primary worktree: the dev database is a
+# shared resource owned by it, and a branch predating this file would not
+# carry the pinned project name.
+database = """
+docker compose -f {{ primary_worktree_path }}/compose.dev.yml exec -T db \
+  psql -U abacus -d postgres \
+  -c 'CREATE DATABASE abacus_{{ branch | sanitize_db }} TEMPLATE abacus'
+"""
+
+[[pre-start]]
+# Ask portless for this worktree's URL rather than spelling it out: the scheme
+# and the proxy port belong to the local portless setup, not here. Stored as a
+# branch variable so every consumer below agrees on one value.
+dev-url = """
+wt config state vars set dev-url="$(portless get {{ branch | sanitize }}.abacus)"
+"""
+
+[[pre-start]]
+# PUBLIC_URL matters as much as DATABASE_URL here: Better Auth validates the
+# base URL, so leaving the source worktree's value breaks sign-in in this one.
+env = """
+sed -i \
+  -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql://abacus:abacus@127.0.0.1:5544/abacus_{{ branch | sanitize_db }}#' \
+  -e 's#^PUBLIC_URL=.*#PUBLIC_URL={{ vars["dev-url"] }}#' \
+  apps/web/.env.local
+"""
+
+[post-start]
+# portless names the route instead of allocating a port, and `wt step tether`
+# kills the dev server when the worktree is removed.
+web = "wt step tether -- portless {{ branch | sanitize }}.abacus pnpm --filter @abacus/web dev"
+
+[list]
+url = '{{ vars["dev-url"] }}'
+
+[pre-remove]
+database = """
+docker compose -f {{ primary_worktree_path }}/compose.dev.yml exec -T db \
+  psql -U abacus -d postgres \
+  -c 'DROP DATABASE IF EXISTS abacus_{{ branch | sanitize_db }}'
+"""

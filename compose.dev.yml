@@ -2,6 +2,12 @@
 # socle: same image, same per-app role/database layout, same extensions.
 # Never points at anything remote; production is only reachable through
 # DATABASE_URL provided by the host.
+
+# The project name is pinned so the container and its volume stay the same
+# whatever directory compose runs from. Without it, a checkout in a directory
+# named otherwise gets its own empty database.
+name: abacus
+
 services:
   db:
     image: pgvector/pgvector:pg16
