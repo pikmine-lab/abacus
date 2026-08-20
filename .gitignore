@@ -3,6 +3,13 @@ node_modules/
 out/
 dist/
 
+# Written by Next.js, and not the same twice: `next dev` points it at
+# .next/dev/types while `next build` points it at .next/types, so a tracked copy
+# flips with whichever ran last. Next's own docs say to keep it out of version
+# control. Alongside it, the incremental typecheck cache.
+next-env.d.ts
+*.tsbuildinfo
+
 # This repository is public: no secret may ever be committed.
 # Runtime configuration arrives through Dokploy environment variables.
 .env
