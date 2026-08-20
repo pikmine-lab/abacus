@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Field } from '@/components/forms'
+import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -43,8 +44,9 @@ export default function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
+          <Logo className="size-7 text-faint" />
           <p className="font-mono text-[15px] font-semibold">
-            abacus<span className="text-faint">_</span>
+            abacus<span className="text-primary">_</span>
           </p>
           <CardDescription className="text-muted-foreground">
             Finances personnelles, déclaratives.

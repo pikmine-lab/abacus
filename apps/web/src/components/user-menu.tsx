@@ -1,10 +1,9 @@
 'use client'
 
-import { KeyRoundIcon, LogOutIcon } from 'lucide-react'
+import { LogOutIcon, SettingsIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,31 +11,30 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar'
 import { authClient } from '@/lib/auth-client'
 
 export function UserMenu({ name }: { name: string }) {
   const router = useRouter()
+  const { isMobile } = useSidebar()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <span className="hidden sm:inline">{name}</span>
-          <Avatar className="size-7">
-            <AvatarFallback className="bg-accent text-[11px] font-semibold text-foreground">
+        <SidebarMenuButton size="lg" tooltip={name} className="text-sidebar-foreground">
+          <Avatar className="size-6 shrink-0 rounded-md">
+            <AvatarFallback className="rounded-md bg-secondary text-[11px] font-semibold text-foreground">
               {name.charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-        </Button>
+          <span className="truncate">{name}</span>
+        </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      {/* Anchored to the side on desktop so it never covers the nav it came from. */}
+      <DropdownMenuContent side={isMobile ? 'bottom' : 'right'} align="end" className="min-w-44">
         <DropdownMenuItem asChild>
-          <Link href="/cles-api">
-            <KeyRoundIcon />
-            Clés d’API
+          <Link href="/reglages">
+            <SettingsIcon />
+            Réglages
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
