@@ -18,8 +18,8 @@ const JUDGMENT = {
 export type CommitmentWithProgress = Commitment & { progress: FinancingProgress | null }
 
 /**
- * One recurring commitment. The row is something to read — what it costs, when
- * it falls next, how far a plan has run — and its actions live in the menu at
+ * One recurring commitment. The row is something to read: what it costs, when
+ * it falls next, how far a plan has run, and its actions live in the menu at
  * the end rather than spread across it.
  *
  * The judgment stays in the row because it is an attribute, not an action, and

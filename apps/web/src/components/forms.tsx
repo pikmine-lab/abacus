@@ -55,7 +55,7 @@ export function Field({
 
 /**
  * A text field that survives a rejected submit. React resets uncontrolled
- * inputs once a form action settles — which is right after a success and wrong
+ * inputs once a form action settles, which is right after a success and wrong
  * after a validation error, where retyping everything is the punishment for one
  * missing select. Holding the value in state keeps it; the form's key still
  * clears it on success by remounting.
@@ -133,7 +133,16 @@ function fromIsoDay(iso: string): Date {
   return new Date(y!, m! - 1, d!)
 }
 
-export function DateField({ name, defaultValue }: { name: string; defaultValue?: string }) {
+export function DateField({
+  name,
+  defaultValue,
+  onValueChange,
+}: {
+  name: string
+  defaultValue?: string
+  /** Receives the day as "YYYY-MM-DD", for callers that derive from it. */
+  onValueChange?: (day: string) => void
+}) {
   const [date, setDate] = useState<Date | undefined>(defaultValue ? fromIsoDay(defaultValue) : undefined)
   const [open, setOpen] = useState(false)
   return (
@@ -158,6 +167,7 @@ export function DateField({ name, defaultValue }: { name: string; defaultValue?:
             defaultMonth={date}
             onSelect={(d) => {
               setDate(d)
+              if (d) onValueChange?.(toIsoDay(d))
               setOpen(false)
             }}
           />

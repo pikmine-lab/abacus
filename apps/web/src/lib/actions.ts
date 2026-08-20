@@ -37,7 +37,7 @@ export interface FormState {
 /**
  * What a field must be for the form to make sense. Validation lives here, not
  * in HTML `required`: a Radix Select has no native validatable input, so the
- * browser used to anchor its bubble on some other field entirely — and native
+ * browser used to anchor its bubble on some other field entirely, and native
  * bubbles break out of the interface anyway.
  */
 type FieldKind = 'text' | 'amount' | 'count' | 'date'
@@ -129,7 +129,7 @@ async function actorIdFromName(userId: string, name: string): Promise<string> {
 /**
  * Every declaration moves a balance, a total or a due date, so every view is
  * stale afterwards. Listing the routes beats revalidating a tag per entity for
- * an app of this size — but it does have to list them all.
+ * an app of this size: but it does have to list them all.
  */
 function refreshAll() {
   for (const path of [
@@ -206,7 +206,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
 /**
  * Corrects a declared movement. Same shape as the declaration form, so the
  * endpoints are rebuilt from the chosen type rather than patched field by
- * field — a dépense turned into a virement has to lose its actor.
+ * field: a dépense turned into a virement has to lose its actor.
  */
 export async function correctMovementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
@@ -343,6 +343,21 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
   return { ok: true }
 }
 
+/**
+ * The schedule as edited line by line, or undefined when the editor was left
+ * closed. Dates and amounts arrive as parallel lists in contractual order,
+ * which is the order the rows were rendered in.
+ */
+function scheduleFrom(formData: FormData): { dueOn: string; amount: number }[] | undefined {
+  const dates = formData.getAll('installmentDueOn').map(String)
+  const amounts = formData.getAll('installmentAmount').map(String)
+  if (dates.length === 0 || dates.length !== amounts.length) return undefined
+  return dates.map((dueOn, index) => ({
+    dueOn,
+    amount: Number(amounts[index]!.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.')),
+  }))
+}
+
 export async function createFinancingAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [
@@ -362,8 +377,9 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
       totalAmount: num(formData, 'totalAmount'),
       installmentsTotal: num(formData, 'installmentsTotal'),
       firstDueOn: str(formData, 'firstDueOn'),
-      // Only sent when the user asked to adjust an uneven split.
-      installmentAmount: opt(formData, 'installmentAmount') ? num(formData, 'installmentAmount') : undefined,
+      // Present only when the schedule editor was opened; otherwise the plan
+      // is generated from the total.
+      installments: scheduleFrom(formData),
       categoryId: opt(formData, 'categoryId'),
     })
   } catch (e) {

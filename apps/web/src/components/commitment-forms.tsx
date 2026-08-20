@@ -41,7 +41,7 @@ export function NewCommitmentForm({
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
   const outgoing = direction === 'outgoing'
 
-  const shared = (
+  const shared = (withFirstDue: boolean) => (
     <>
       <datalist id="commitment-actors">
         {actors.map((a) => (
@@ -66,9 +66,11 @@ export function NewCommitmentForm({
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Première échéance" name="firstDueOn">
-          <DateField name="firstDueOn" defaultValue={today} />
-        </Field>
+        {withFirstDue && (
+          <Field label="Première échéance" name="firstDueOn">
+            <DateField name="firstDueOn" defaultValue={today} />
+          </Field>
+        )}
         <Field label="Catégorie">
           <FormSelect
             name="categoryId"
@@ -85,7 +87,7 @@ export function NewCommitmentForm({
       <ActionForm action={createSubscriptionAction} successLabel="Revenu récurrent créé">
         <input type="hidden" name="direction" value="incoming" />
         <TextField name="label" label="Nom" placeholder="Salaire, loyer perçu…" />
-        {shared}
+        {shared(true)}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Montant par période (€)" name="amount">
             <AmountInput name="amount" placeholder="2 400" />
@@ -111,7 +113,7 @@ export function NewCommitmentForm({
         <ActionForm action={createSubscriptionAction} className="mt-3" successLabel="Abonnement créé">
           <input type="hidden" name="direction" value="outgoing" />
           <TextField name="label" label="Nom" placeholder="Netflix" />
-          {shared}
+          {shared(true)}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Montant par période (€)" name="amount">
               <AmountInput name="amount" placeholder="15,99" />
@@ -136,8 +138,8 @@ export function NewCommitmentForm({
       ) : (
         <ActionForm action={createFinancingAction} className="mt-3" successLabel="Financement créé">
           <TextField name="label" label="Ce qui est financé" placeholder="Canapé en 4x" />
-          {shared}
-          <FinancingAmountFields />
+          {shared(false)}
+          <FinancingAmountFields today={today} />
           <SubmitButton className="self-start">Créer le financement</SubmitButton>
         </ActionForm>
       )}
