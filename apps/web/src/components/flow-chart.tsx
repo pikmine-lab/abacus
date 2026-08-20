@@ -7,7 +7,7 @@ import { eur } from '@/lib/utils'
 /**
  * Income against spending, month by month, mirrored around zero. Direction is
  * carried by the side of the axis a bar sits on, never by color alone, so the
- * two hues only have to be told apart — not decoded.
+ * two hues only have to be told apart, not decoded.
  *
  * Each spending bar shows both readings at once, as DESIGN.md requires: the
  * solid part is net, the translucent part above it is what came back as a
@@ -206,7 +206,7 @@ export function FlowChart({
                 // Each month is a real control: reachable by Tab, activated by
                 // Enter or Space, and named for a screen reader. A <button> is not
                 // valid inside <svg>, so the role carries it.
-                // biome-ignore lint/a11y/useSemanticElements: see above — no HTML button can live inside an SVG group.
+                // biome-ignore lint/a11y/useSemanticElements: see above, no HTML button can live inside an SVG group.
                 <g
                   key={r.month}
                   role="button"

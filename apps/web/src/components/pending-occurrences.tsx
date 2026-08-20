@@ -23,12 +23,12 @@ export interface PendingItem {
 
 /**
  * Expected occurrences awaiting a decision. Confirming is not a yes/no: the
- * amount is editable in place because reality diverges routinely — a salary
+ * amount is editable in place because reality diverges routinely: a salary
  * moves with the number of working days, a bonus lands, a subscription creeps
  * up. Recording the truth always wins over the expectation.
  *
- * Once the entered amount differs, one question appears — is this the new
- * normal? — because that is the only thing the app cannot infer, and the
+ * Once the entered amount differs, one question appears, is this the new
+ * normal? Because that is the only thing the app cannot infer, and the
  * answer decides between a one-off month and a historised price change.
  */
 export function PendingOccurrences({
@@ -96,7 +96,7 @@ function PendingRow({ item, retour }: { item: PendingItem; retour: string }) {
                 <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
                   {eurSigned(gap, 2)}
                 </span>{' '}
-                — c’est le nouveau montant habituel
+                : c’est le nouveau montant habituel
               </span>
             </Label>
           )}

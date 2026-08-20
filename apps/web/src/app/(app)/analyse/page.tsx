@@ -132,7 +132,7 @@ export default async function AnalysisPage({
           ) : (
             <StatTile
               label="Plus gros poste"
-              value={rows[0] ? eur(rows[0].gross) : '—'}
+              value={rows[0] ? eur(rows[0].gross) : 'aucune'}
               hint={rows[0]?.label ?? 'rien sur cette période'}
             />
           )}

@@ -22,8 +22,8 @@ import { eur } from '@/lib/utils'
 
 /**
  * Life-cycle actions of a recurring commitment. Changing the amount is
- * historised on purpose — that log is what lets the app say "+40 % in two
- * years" — so it happens in a panel that says so, not in a field sitting in
+ * historised on purpose: that log is what lets the app say "+40 % in two
+ * years". So it happens in a panel that says so, not in a field sitting in
  * the row.
  */
 export function CommitmentRowActions({

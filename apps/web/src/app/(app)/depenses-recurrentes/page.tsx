@@ -107,7 +107,7 @@ export default async function RecurringExpensesPage({
           />
           <StatTile
             label="Financements"
-            value={financings.length > 0 ? eur(remainingDue) : '—'}
+            value={financings.length > 0 ? eur(remainingDue) : 'aucun'}
             hint={
               financings.length > 0
                 ? `restant dû sur ${financings.length} financement${financings.length > 1 ? 's' : ''}`
@@ -116,7 +116,7 @@ export default async function RecurringExpensesPage({
           />
           <StatTile
             label="Économie possible"
-            value={savable > 0 ? `${eur(savable, 2)}/mois` : '—'}
+            value={savable > 0 ? `${eur(savable, 2)}/mois` : 'aucune'}
             hint={
               savable > 0
                 ? savableHint

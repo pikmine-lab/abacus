@@ -51,7 +51,7 @@ export function PageBody({ className, children }: { className?: string; children
 
 /**
  * A titled block on the page ground. `href` turns the title into a way out
- * toward the page that owns the detail — a dashboard block that shows
+ * toward the page that owns the detail: a dashboard block that shows
  * subscriptions has to lead to subscriptions.
  */
 export function Section({
@@ -81,7 +81,7 @@ export function Section({
 
 /**
  * The way out of a block toward the page that owns the detail. One shape for
- * every such link — top-right of its block, arrow at icon size — so "this
+ * every such link (top-right of its block, arrow at icon size), so "this
  * leads somewhere" is always the same signal.
  */
 export function SectionLink({ href, children }: { href: string; children: React.ReactNode }) {

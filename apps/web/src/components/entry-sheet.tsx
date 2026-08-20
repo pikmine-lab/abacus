@@ -16,8 +16,8 @@ import {
  * Entry lives in a side panel, never in the page: reading and declaring are
  * two different jobs, and the list has to keep the room.
  *
- * The panel deliberately stays open after a successful submit — the forms
- * clear their own fields — because declaring the day's expenses is a burst of
+ * The panel deliberately stays open after a successful submit, because the forms
+ * clear their own fields, and declaring the day's expenses is a burst of
  * five, not one. Escape and the close button end the burst.
  */
 export function EntrySheet({

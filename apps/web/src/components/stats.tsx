@@ -5,7 +5,7 @@ import { cn, eur } from '@/lib/utils'
 /**
  * A 12-point trend, drawn small and quiet: grey line, last segment and end
  * point in the accent so the eye lands on "now". Decorative in the sense that
- * the exact values are read elsewhere — never the only place a number lives.
+ * the exact values are read elsewhere, never the only place a number lives.
  */
 function Sparkline({ points, className }: { points: number[]; className?: string }) {
   if (points.length < 2) return null

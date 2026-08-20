@@ -4,7 +4,7 @@ import { eur } from '@/lib/utils'
 /**
  * Ranked magnitudes: one bar per category, actor or activity. Identity is
  * carried by the label and magnitude by the length, so every bar wears the
- * same copper — a hue per row would encode nothing and DESIGN.md's "color
+ * same copper: a hue per row would encode nothing and DESIGN.md's "color
  * follows the entity" cannot hold when the entity has no stored color.
  *
  * The solid part is net, the translucent tail is what came back as a linked

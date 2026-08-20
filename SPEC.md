@@ -1,4 +1,4 @@
-# Spec — abacus, application de gestion de finances personnelles
+# Spec abacus : application de gestion de finances personnelles
 
 > Slug : `abacus` (dépôt `pikmine-lab/abacus`, base/rôle `abacus`, `abacus.payangar.dev`).
 > Statut : cadrage validé le 2026-08-19. Ce document est la référence du modèle.

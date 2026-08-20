@@ -112,7 +112,7 @@ export function MovementRowActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer ce mouvement ?</AlertDialogTitle>
             <AlertDialogDescription>
-              {label} — les soldes et les analyses seront recalculés sans lui. Rien ne le restaure : il faudra
+              {label}. Les soldes et les analyses seront recalculés sans lui, Rien ne le restaure : il faudra
               le redéclarer.
             </AlertDialogDescription>
           </AlertDialogHeader>

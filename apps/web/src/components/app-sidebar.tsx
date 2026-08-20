@@ -92,7 +92,7 @@ export function AppSidebar({ userName }: { userName: string }) {
                   <SidebarMenuItem key={item.href}>
                     {'soon' in item && item.soon ? (
                       <SidebarMenuButton
-                        tooltip={`${item.label} — arrive en V2`}
+                        tooltip={`${item.label} (arrive en V2)`}
                         aria-disabled
                         className="cursor-default text-faint hover:bg-transparent hover:text-faint"
                       >

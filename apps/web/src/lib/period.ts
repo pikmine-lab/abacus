@@ -2,7 +2,7 @@ import { today } from '@abacus/core/domain/period'
 
 /**
  * The period a view is scoped to, resolved from the URL so it survives a
- * reload, a shared link and the back button — and so server components can
+ * reload, a shared link and the back button, and so server components can
  * read it without any client state. One row of filters scopes everything
  * below it (DESIGN.md); this is where that row's meaning lives.
  */
@@ -145,7 +145,7 @@ export function resolvePeriod(
 
 /**
  * The window a period is compared against: the same length, immediately
- * before. Null for "tout", which has nothing before it — a delta against an
+ * before. Null for "tout", which has nothing before it: a delta against an
  * empty window would read as a collapse rather than as "no comparison".
  */
 export function previousWindow(period: Period): { from: string; to: string; label: string } | null {

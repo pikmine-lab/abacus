@@ -22,8 +22,8 @@ import { eur } from '@/lib/utils'
 
 /**
  * Actions on an account, folded into one menu. Pointing a balance opens a
- * panel that states what the gesture means — comparing the bank's figure to
- * the computed one — because that comparison is the guardrail of a declarative
+ * panel that states what the gesture means, comparing the bank's figure to
+ * the computed one, because that comparison is the guardrail of a declarative
  * ledger, not a data-entry chore.
  */
 export function AccountRowActions({

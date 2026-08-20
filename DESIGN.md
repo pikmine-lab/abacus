@@ -1,4 +1,4 @@
-# Design — refonte validée le 2026-08-20
+# Design : refonte validée le 2026-08-20
 
 Ce document fixe les règles de l'interface. Il remplace la direction du 2026-08-19
 (gris purs, accent bleu, empilement de cartes, navigation horizontale), abandonnée
@@ -60,9 +60,9 @@ de page.
 
 | Rôle | Valeur | Token | Mesure |
 |---|---|---|---|
-| Page | `#0c0e13` | `--background` | — |
-| Surface (carte, popover) | `#14171f` | `--card`, `--popover` | — |
-| Lavis (survol, actif) | `#1a1e28` | `--muted`, `--accent`, `--secondary` | — |
+| Page | `#0c0e13` | `--background` | : |
+| Surface (carte, popover) | `#14171f` | `--card`, `--popover` | : |
+| Lavis (survol, actif) | `#1a1e28` | `--muted`, `--accent`, `--secondary` | : |
 | Filet | `#212734` | `--border` | décoratif |
 | Contour de champ | `#3d4557` | `--input` | 2:1 sur la page |
 | Encre principale | `#e8eaf0` | `--foreground` | 16,1:1 |
@@ -72,7 +72,7 @@ de page.
 | Encre sur accent | `#17120a` | `--primary-foreground` | 8,3:1 |
 | Positif | `#4ec27a` | `--good` | 8,6:1 |
 | Négatif / erreur | `#e5686b` | `--destructive` | 6,0:1 |
-| Grille de graphe | `#1c212c` | `--grid` | — |
+| Grille de graphe | `#1c212c` | `--grid` | : |
 
 ### Les règles qui gouvernent la couleur
 
@@ -86,7 +86,7 @@ de page.
    `#d55181` magenta. Validées **en toutes paires** sur la surface `#14171f`, sans
    avertissement. Un quatrième slot échoue : la meilleure candidate (aqua `#199e70`)
    tombe à ΔE 1,6 contre le magenta en deutéranopie. Au-delà de trois séries :
-   regrouper ou passer en small multiples — jamais ajouter une teinte.
+   regrouper ou passer en small multiples : jamais ajouter une teinte.
 4. **Ni vert ni rouge en série.** Ces deux teintes portent le sens (revenu, erreur) :
    les réutiliser comme identité brouillerait la lecture.
 5. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout delta,
@@ -127,6 +127,22 @@ de page.
   chiffre héro par vue.** Une tuile qui mène quelque part porte une flèche
   ↗ dans son coin haut droit, à taille d'icône.
 
+## Composants
+
+**Un besoin d'interface passe d'abord par le système, jamais par un élément
+natif.** La base est shadcn/ui (style new-york), installée par son CLI dans
+`apps/web/src/components/ui/`. Une date se saisit avec `Calendar` + `Popover`,
+un choix exclusif avec `Tabs`, une liste déroulante avec `Select` Radix, une
+confirmation destructive avec `AlertDialog`, un panneau avec `Sheet`. Un
+`<input type="date">` ou un `<select>` du navigateur casse la palette, ignore
+le thème et ne se comporte pas comme le reste : si un composant manque, il
+s'ajoute par `shadcn add` avant d'écrire l'écran. La règle vaut aussi quand le
+cas paraît trop petit pour mériter le composant (une ligne d'échéancier, un
+champ dans un tableau) : c'est précisément là que les écarts s'accumulent.
+
+Ces fichiers nous appartiennent (modèle shadcn) ; les divergences volontaires
+avec le registre sont locales et motivées, en commentaire, sur place.
+
 ## Densité et conteneurs
 
 - **La carte n'est pas le conteneur par défaut.** Elle sert un objet réellement
@@ -156,24 +172,33 @@ de page.
   « que couper ? ».
 - **Corriger est aussi accessible que saisir** : la correction s'ouvre dans le même
   panneau que la déclaration, la suppression derrière une confirmation. Une
-  correction ne touche jamais les liens d'origine (échéance, pointage, avance) — le
+  correction ne touche jamais les liens d'origine (échéance, pointage, avance) : le
   panneau le dit quand la ligne en porte un.
 - **Confirmer une échéance n'est pas un oui/non.** Le montant est modifiable sur
   place, parce que la réalité diverge en routine : un salaire bouge avec le nombre
   de jours ouvrés, une prime tombe, un abonnement grimpe. Dès que le montant saisi
-  diffère, une seule question apparaît — *est-ce le nouveau montant habituel ?* —
+  diffère, une seule question apparaît : *est-ce le nouveau montant habituel ?*,
   parce que c'est la seule chose que l'app ne peut pas déduire, et que la réponse
   tranche entre un mois exceptionnel et un changement de prix historisé. Les deux
   écritures partent dans la même transaction.
-- **Un plan à échéances se déclare par son total.** Le montant par échéance est la
-  division, affichée à mesure plutôt que demandée : c'est le chiffre qu'on saisit de
-  travers. Il ne devient modifiable que sur demande, car la division tombe rarement
-  juste (1 000 € en 3, c'est 333,33 puis 333,34) et seul le contrat dit où va le
-  reste. Le restant dû reste exact quoi qu'il arrive : il se dérive du total, jamais
-  d'une somme d'échéances arrondies.
+- **Un plan à échéances se déclare par son total**, et l'échéancier qui en découle
+  est **écrit**, pas dérivé : montants égaux à une période d'intervalle, le centime
+  d'arrondi sur la dernière ligne. Il s'affiche en résumé (« 3 échéances de
+  333,33 €, la dernière de 333,34 € ») plutôt que d'être demandé, parce que c'est
+  le chiffre qu'on saisit de travers.
+- **Chaque échéance est ajustable, date et montant**, sur demande (« Ajuster chaque
+  échéance »). Un vrai plan est rarement régulier : un acompte plus gros, un premier
+  mois au prorata, une date repoussée d'un week-end, un arrondi que le vendeur a mis
+  sur la deuxième ligne. Quelle ligne diffère n'est pas devinable, donc **toutes**
+  sont modifiables dès qu'on le demande, et l'écart avec le total dû s'affiche en
+  direct. Le restant dû est la **somme de ce qui reste**, jamais une soustraction
+  qu'un arrondi pourrait fausser.
 - **Sa progression se lit dans un anneau** portant le pourcentage payé. Pas
   « 9/24 » : à 24 échéances le texte ne tient plus dans l'anneau, alors que le
   compte exact a toute la place dans la ligne juste à côté.
+- **Une échéance écrite ne se « passe » pas** : elle est due. Elle se confirme, ou
+  le financement se clôt. Passer reste réservé aux abonnements (mois offert,
+  service en pause).
 - Select Radix partout, y compris dans les formulaires à server actions. Calendar +
   Popover pour les dates, locale `fr`. Tabs comme segmented control pour les choix
   exclusifs.
@@ -184,7 +209,7 @@ de page.
   contexte et le champ concerné les affiche, en rouge, avec son libellé et son
   contour. Une saisie refusée n'est jamais perdue : les champs texte tiennent leur
   valeur en état, car React réinitialise un champ non contrôlé dès qu'une action se
-  termine — ce qui est juste après un succès et faux après une erreur.
+  termine : ce qui est juste après un succès et faux après une erreur.
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
   ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
   « tous » côté contrôle. Une URL bricolée ne casse pas la page.
@@ -193,14 +218,14 @@ de page.
 
 Le vide d'une application déclarative est un **chemin**, pas un avis. La vue
 d'ensemble affiche trois pas ordonnés, chacun disant ce qu'il débloque, cochés à
-mesure, avec l'appel à l'action sur le prochain pas ouvert seulement — et la voie
+mesure, avec l'appel à l'action sur le prochain pas ouvert seulement : et la voie
 MCP mentionnée pour qui préfère déclarer en langage naturel.
 
 ## Identité
 
 Marque **abaque** : trois tiges, une perle active par tige, décalées pour qu'on lise
 un compte et non un motif. Les tiges héritent de `currentColor`, les perles portent
-le cuivre — c'est ce qui la rend reconnaissable à 16px. Deux exemplaires à garder
+le cuivre : c'est ce qui la rend reconnaissable à 16px. Deux exemplaires à garder
 synchronisés : `components/logo.tsx` (dans l'interface) et `app/icon.svg` (onglet,
 sur son propre fond puisqu'un favicon n'hérite d'aucune encre). Wordmark
 `abacus` + underscore en cuivre.

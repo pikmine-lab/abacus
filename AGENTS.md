@@ -123,6 +123,12 @@ côté MCP : `fix_movement` (corriger ou supprimer une déclaration erronée) et
 `confirm_due_movements`, la qualification d'un écart (ponctuel ou nouveau montant de
 référence, historisé).
 
+**Échéanciers de financement** (2026-08-20) : un financement porte un échéancier
+écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
+son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
+est la somme des échéances non réglées. Réviser l'échéancier d'un financement déjà
+créé reste à faire.
+
 **Reste à faire** : V2 placements (opérations, positions, cours automatiques : schéma déjà
 en base), multi-devise (V2, schéma prêt), vue projection de la SPEC, vue freelance par
 activité, sauvegardes Postgres (déclencheur documenté dans SPEC.md), éprouver l'interface

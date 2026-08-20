@@ -5,13 +5,13 @@ import { Toggle } from '@/components/ui/toggle'
 import { eur, frDateLong } from '@/lib/utils'
 
 /**
- * Account balances over time — the reference chart of DESIGN.md: 2px family
+ * Account balances over time, the reference chart of DESIGN.md: 2px family
  * lines, hairline grid, crosshair snapping to the nearest day, one tooltip
  * listing every visible series, direct end labels on wide screens.
  *
  * It has no period control of its own: the page's filter row scopes it, like
  * everything else below that row. The account toggles are the legend, not a
- * filter — three series at once is the validated ceiling of the palette.
+ * filter: three series at once is the validated ceiling of the palette.
  */
 
 interface Account {

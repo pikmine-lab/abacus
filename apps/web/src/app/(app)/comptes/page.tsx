@@ -95,7 +95,7 @@ export default async function AccountsPage() {
                         gaps.reduce((s, g) => s + Math.abs(g.check!.gap), 0),
                         2,
                       )
-                    : '—'
+                    : 'aucun'
                 }
                 hint={
                   gaps.length > 0

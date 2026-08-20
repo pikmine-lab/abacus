@@ -41,7 +41,7 @@ function toMachine({ integer, decimals }: { integer: string; decimals: string | 
   return `${integer === '' ? '0' : integer}${decimals ? `.${decimals}` : ''}`
 }
 
-/** How many digits sit left of the caret — the anchor a reformat must preserve. */
+/** How many digits sit left of the caret, the anchor a reformat must preserve. */
 function digitsBefore(value: string, caret: number): number {
   return (value.slice(0, caret).match(/\d/g) ?? []).length
 }
