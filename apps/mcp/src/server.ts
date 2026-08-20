@@ -17,7 +17,9 @@ import {
 } from '@abacus/core/services/commitments'
 import {
   closeAdvance,
+  correctMovement,
   declareMovement,
+  deleteMovement,
   listMovements,
   outstandingAdvances,
 } from '@abacus/core/services/movements'
@@ -68,6 +70,15 @@ const GUIDANCE: Record<string, string> = {
   alias_taken: 'This alias already resolves to an actor: pick another one or merge the actors.',
   merge_self: 'An actor cannot be merged into itself.',
   not_a_subscription: 'Only subscriptions carry a judgment (essential / reducible / to_cancel).',
+  movement_not_found:
+    'No such movement for this user. Get a current id from list_movements: an id from an earlier answer may already be gone.',
+  refunded_movement:
+    'Another movement refunds this one, so deleting it would leave that refund pointing at nothing. Delete the refund first, or correct this movement instead.',
+  financing_needs_amount: 'A financing needs its total amount (totalAmount) over N installments.',
+  bad_source: 'A movement needs exactly one source: an owned account or an external actor, never both.',
+  bad_target: 'A movement needs exactly one target: an owned account or an external actor, never both.',
+  no_owned_account:
+    "A movement must touch at least one of the user's own accounts. Actor-to-actor is not something this app records.",
 }
 
 function toFailure(e: unknown): ToolResult {
@@ -469,19 +480,21 @@ export function buildServer(userId: string): McpServer {
     'declare_financing',
     {
       description:
-        'Declares an installment purchase (financing): a total amount paid in N installments. The remaining due is derived from confirmed installments (see list_commitments) and the financing settles itself at the last one. Only specify totalAmount when fees make it differ from N × installment. Installments are then confirmed through confirm_due_movements.',
+        'Declares an installment purchase (financing): a total amount paid in N installments. Give the total and the number of installments — the per-installment amount is derived by division. The remaining due is derived from confirmed installments (see list_commitments) and the financing settles itself at the last one. Installments are then confirmed through confirm_due_movements.',
       inputSchema: z.object({
         label: z.string().describe('What is being financed (e.g. "Sofa x4")'),
         actor: z.string().describe('The creditor (store, payment provider)'),
         account: z.string().describe('Account debited at each installment'),
-        installmentAmount: z.number().positive().describe('Amount of one installment'),
+        totalAmount: z.number().positive().describe('Total owed across every installment'),
         installmentsTotal: z.number().int().min(2).describe('Total number of installments'),
         firstDueOn: isoDate.describe('First installment date'),
-        totalAmount: z
+        installmentAmount: z
           .number()
           .positive()
           .optional()
-          .describe('Only when different from N × installment (fees)'),
+          .describe(
+            'Only when the installments are not simply the total divided by their count (uneven split, fees)',
+          ),
         periodUnit: z
           .enum(['week', 'month', 'year'])
           .optional()
@@ -508,6 +521,8 @@ export function buildServer(userId: string): McpServer {
           commitmentId: commitment.id,
           label: commitment.label,
           totalAmount: Number(commitment.totalAmount),
+          installmentsTotal: commitment.installmentsTotal,
+          installmentAmount: Number(commitment.amount),
           nextDueOn: commitment.nextDueOn,
         })
       }),
@@ -560,7 +575,7 @@ export function buildServer(userId: string): McpServer {
     'confirm_due_movements',
     {
       description:
-        'Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service). The amount can be corrected when reality differed: that is how silent price bumps get noticed; report the difference to the user and suggest manage_subscription change_price. Always prefer this tool over declare_movements for a subscription debit, otherwise the occurrence stays pending.',
+        'Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service). When reality differed, pass the real amount — recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. Always prefer this tool over declare_movements for a subscription debit, otherwise the occurrence stays pending.',
       inputSchema: z.object({
         items: z
           .array(
@@ -572,6 +587,12 @@ export function buildServer(userId: string): McpServer {
                 .positive()
                 .optional()
                 .describe('confirm: the real amount when it differs from the expected one'),
+              amountIsTheNewNorm: z
+                .boolean()
+                .optional()
+                .describe(
+                  'confirm + amount: true when that amount replaces the expected one from now on (a raise, a price increase). It updates the commitment and records a dated price change, so the history shows when it moved. Leave it out or false for a one-off month, which changes nothing for the next occurrences.',
+                ),
               date: isoDate.optional().describe('confirm: the real date when it differs from the due date'),
             }),
           )
@@ -587,18 +608,23 @@ export function buildServer(userId: string): McpServer {
             const updated = await skipNextOccurrence(userId, commitment.id)
             results.push({ commitment: commitment.label, skipped: true, nextDueOn: updated.nextDueOn })
           } else {
+            const expected = Number(commitment.amount)
             const movement = await confirmNextOccurrence(userId, commitment.id, {
               amount: item.amount,
               happenedOn: item.date,
+              updateReference: item.amountIsTheNewNorm,
             })
-            const expected = Number(commitment.amount)
+            const diverged = item.amount !== undefined && item.amount !== expected
             results.push({
               commitment: commitment.label,
               movementId: movement.id,
               amount: Number(movement.amount),
-              ...(item.amount !== undefined && item.amount !== expected
+              ...(diverged
                 ? {
-                    warning: `Expected ${expected} €: report the difference to the user and consider manage_subscription change_price.`,
+                    expected,
+                    reference: item.amountIsTheNewNorm
+                      ? `Updated to ${item.amount} € and recorded as a dated price change.`
+                      : `Left at ${expected} €, treated as a one-off. Pass amountIsTheNewNorm if it is permanent.`,
                   }
                 : {}),
             })
@@ -803,6 +829,88 @@ export function buildServer(userId: string): McpServer {
         if (!a.name) return fail('create requires name.')
         const category = await createCategory(userId, a.name, a.group)
         return ok({ categoryId: category.id, name: category.name })
+      }),
+  )
+
+  server.registerTool(
+    'fix_movement',
+    {
+      description:
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first — this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the advance or refund links. Deleting is not how you undo a confirmed occurrence — the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links.',
+      inputSchema: z.object({
+        movement: z.string().describe('Id of the movement, from list_movements'),
+        action: z.enum(['correct', 'delete']),
+        date: isoDate.optional().describe('correct: the real date'),
+        amount: z.number().positive().optional().describe('correct: the real amount, always positive'),
+        type: z
+          .enum(['expense', 'income', 'transfer'])
+          .optional()
+          .describe(
+            'correct: required when the endpoints change. expense: account → actor; income: actor → account; transfer: account → account',
+          ),
+        account: z
+          .string()
+          .optional()
+          .describe('correct: the owned account — paying (expense, transfer) or receiving (income)'),
+        toAccount: z.string().optional().describe('correct, transfer only: the receiving account'),
+        actor: z
+          .string()
+          .optional()
+          .describe('correct, expense/income only: the external counterparty. Must already exist'),
+        category: z
+          .string()
+          .optional()
+          .describe(
+            'correct: exact name of an existing category, or "none" to clear it. Never on a transfer',
+          ),
+        activity: z.string().optional().describe('correct: existing activity name, or "none" to clear it'),
+        note: z.string().optional().describe('correct: free note, or "none" to clear it'),
+      }),
+    },
+    async (f) =>
+      run(async () => {
+        if (f.action === 'delete') {
+          await deleteMovement(userId, f.movement)
+          return ok({ movementId: f.movement, deleted: true })
+        }
+        const clearable = (value: string | undefined) =>
+          value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
+        const endpoints: Record<string, string | null> = {}
+        if (f.type) {
+          if (!f.account) return fail('correct with a type requires account.')
+          const account = (await requireAccountByName(userId, f.account)).id
+          if (f.type === 'transfer') {
+            if (!f.toAccount) return fail('correct to a transfer requires toAccount.')
+            endpoints.sourceAccountId = account
+            endpoints.targetAccountId = (await requireAccountByName(userId, f.toAccount)).id
+            endpoints.sourceActorId = null
+            endpoints.targetActorId = null
+          } else {
+            if (!f.actor) return fail(`correct to an ${f.type} requires actor.`)
+            const actor = (await requireActorByName(userId, f.actor)).actor.id
+            const expense = f.type === 'expense'
+            endpoints.sourceAccountId = expense ? account : null
+            endpoints.targetActorId = expense ? actor : null
+            endpoints.sourceActorId = expense ? null : actor
+            endpoints.targetAccountId = expense ? null : account
+          }
+        }
+        const category = clearable(f.category)
+        const activity = clearable(f.activity)
+        const movement = await correctMovement(userId, f.movement, {
+          happenedOn: f.date,
+          amount: f.amount,
+          ...endpoints,
+          categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
+          activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
+          note: clearable(f.note),
+        })
+        return ok({
+          movementId: movement.id,
+          date: movement.happenedOn,
+          amount: Number(movement.amount),
+          kind: movement.kind,
+        })
       }),
   )
 

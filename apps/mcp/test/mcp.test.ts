@@ -136,15 +136,26 @@ test('subscription lifecycle through the MCP surface', async () => {
   })
   assert.equal(overview.monthlyCommittedCost, 13.49)
 
-  // The real debit was higher: confirm with the observed amount, get a warning.
-  const confirmed = (
+  // The real debit was higher. Confirmed without qualifying it, the divergence
+  // is a one-off: the reference amount is left alone and the answer says so.
+  const oneOff = (
     await call(client, 'confirm_due_movements', {
       items: [{ commitment: 'Netflix', action: 'confirm', amount: 15.99 }],
     })
-  ).json() as { results: { warning?: string }[] }
-  assert.match(confirmed.results[0]!.warning!, /change_price/)
+  ).json() as { results: { amount: number; expected?: number; reference?: string }[] }
+  assert.equal(oneOff.results[0]!.amount, 15.99)
+  assert.equal(oneOff.results[0]!.expected, 13.49)
+  assert.match(oneOff.results[0]!.reference!, /one-off/)
+  assert.equal(((await call(client, 'list_commitments')).json() as { amount: number }[])[0]!.amount, 13.49)
 
-  await call(client, 'manage_subscription', { action: 'change_price', commitment: 'Netflix', amount: 15.99 })
+  // Said to be the new norm, the same gesture also moves the reference and
+  // records it, so the price history shows when it changed.
+  const permanent = (
+    await call(client, 'confirm_due_movements', {
+      items: [{ commitment: 'Netflix', action: 'confirm', amount: 15.99, amountIsTheNewNorm: true }],
+    })
+  ).json() as { results: { reference?: string }[] }
+  assert.match(permanent.results[0]!.reference!, /Updated/)
   await call(client, 'manage_subscription', {
     action: 'set_judgment',
     commitment: 'Netflix',
@@ -172,14 +183,19 @@ test('financing tracked to settlement through the MCP surface', async () => {
   const client = await clientFor(user)
   await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
 
-  await call(client, 'declare_financing', {
-    label: 'Canapé en 4x',
-    actor: 'BigStore',
-    account: 'Courant',
-    installmentAmount: 250,
-    installmentsTotal: 4,
-    firstDueOn: '2026-08-05',
-  })
+  // Stated the way the contract states it: a total over N installments.
+  const financing = (
+    await call(client, 'declare_financing', {
+      label: 'Canapé en 4x',
+      actor: 'BigStore',
+      account: 'Courant',
+      totalAmount: 1000,
+      installmentsTotal: 4,
+      firstDueOn: '2026-08-05',
+    })
+  ).json() as { installmentAmount: number; totalAmount: number }
+  assert.equal(financing.totalAmount, 1000)
+  assert.equal(financing.installmentAmount, 250)
 
   await call(client, 'confirm_due_movements', {
     items: [
@@ -195,4 +211,59 @@ test('financing tracked to settlement through the MCP surface', async () => {
   }[]
   assert.equal(commitments[0]!.paidInstallments, '2/4')
   assert.equal(commitments[0]!.remainingDue, 500)
+})
+
+test('a mistyped movement is repaired through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 90,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Carrefour',
+        category: 'Courses',
+      },
+    ],
+  })
+  const [declared] = (await call(client, 'list_movements')).json() as { id: string; amount: number }[]
+
+  // A typo on the amount: corrected in place, everything else untouched.
+  const fixed = (
+    await call(client, 'fix_movement', { movement: declared!.id, action: 'correct', amount: 79.9 })
+  ).json() as { amount: number; kind: string }
+  assert.equal(fixed.amount, 79.9)
+  assert.equal(fixed.kind, 'expense')
+
+  // It was not an expense at all but a transfer between two owned accounts:
+  // the kind is re-derived and the category cannot survive it.
+  const retyped = (
+    await call(client, 'fix_movement', {
+      movement: declared!.id,
+      action: 'correct',
+      type: 'transfer',
+      account: 'Courant',
+      toAccount: 'Livret',
+      category: 'none',
+    })
+  ).json() as { kind: string }
+  assert.equal(retyped.kind, 'transfer')
+
+  // An unknown id is guidance, not a stack trace.
+  const missing = await call(client, 'fix_movement', {
+    movement: '00000000-0000-0000-0000-000000000000',
+    action: 'delete',
+  })
+  assert.equal(missing.isError, true)
+  assert.match(missing.text, /list_movements/)
+
+  await call(client, 'fix_movement', { movement: declared!.id, action: 'delete' })
+  assert.deepEqual((await call(client, 'list_movements')).json(), [])
 })

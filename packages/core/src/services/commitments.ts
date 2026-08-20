@@ -71,21 +71,38 @@ export interface FinancingInput {
   accountId: string
   categoryId?: string
   activityId?: string
-  installmentAmount: number
   installmentsTotal: number
-  /** Defaults to installmentAmount x installmentsTotal; set it when fees make it differ. */
+  /**
+   * What is owed in total. Given this, the per-installment amount is derived,
+   * because that is the number a contract states and the one the remaining due
+   * is computed from.
+   */
   totalAmount?: number
+  /**
+   * Only when the plan does not divide evenly (and the user cares) or when
+   * fees make the installments differ from total / count. Derived otherwise.
+   */
+  installmentAmount?: number
   periodUnit?: PeriodUnit
   periodCount?: number
   firstDueOn: string
 }
 
+/**
+ * A payment plan is stated as a total over N installments, so that is what is
+ * asked. The per-installment amount is derived by division, rounded to the
+ * cent; the remaining due stays exact regardless, since it is derived from the
+ * total minus what was actually paid — the rounding never accumulates.
+ */
 export async function createFinancing(userId: string, input: FinancingInput): Promise<Commitment> {
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
-    const total =
-      input.totalAmount ?? Math.round(input.installmentAmount * input.installmentsTotal * 100) / 100
+    if (input.totalAmount === undefined && input.installmentAmount === undefined)
+      throw new DomainError('financing_needs_amount', 'A financing needs a total or an installment amount')
+    const installmentAmount =
+      input.installmentAmount ?? Math.round((input.totalAmount! / input.installmentsTotal) * 100) / 100
+    const total = input.totalAmount ?? Math.round(installmentAmount * input.installmentsTotal * 100) / 100
     const commitment = await insertCommitment(tx, {
       userId,
       kind: 'financing',
@@ -95,14 +112,14 @@ export async function createFinancing(userId: string, input: FinancingInput): Pr
       accountId: input.accountId,
       categoryId: input.categoryId ?? null,
       activityId: input.activityId ?? null,
-      amount: input.installmentAmount,
+      amount: installmentAmount,
       periodUnit: input.periodUnit ?? 'month',
       periodCount: input.periodCount ?? 1,
       nextDueOn: input.firstDueOn,
       installmentsTotal: input.installmentsTotal,
       totalAmount: total,
     })
-    await insertCommitmentEvent(tx, commitment.id, today(), 'created', input.installmentAmount)
+    await insertCommitmentEvent(tx, commitment.id, today(), 'created', installmentAmount)
     return commitment
   })
 }
@@ -253,11 +270,18 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
  * commitment, in one transaction. Amount and date can be overridden when
  * reality differed (that divergence is how silent price bumps get noticed,
  * but recording the truth always wins).
+ *
+ * `updateReference` says the divergence is not a one-off: the commitment's
+ * amount becomes the confirmed one and a dated price_changed event records it.
+ * A salary moves for a month (a short month, a bonus) or for good (a raise),
+ * and only the person confirming knows which — so it is asked, not guessed.
+ * Both writes share this transaction: a recorded raise without its movement,
+ * or the reverse, would be worse than either.
  */
 export async function confirmNextOccurrence(
   userId: string,
   id: string,
-  overrides: { amount?: number; happenedOn?: string } = {},
+  overrides: { amount?: number; happenedOn?: string; updateReference?: boolean } = {},
 ): Promise<Movement> {
   const sql = db()
   return await sql.begin(async (tx) => {
@@ -281,9 +305,14 @@ export async function confirmNextOccurrence(
       activityId: commitment.activityId,
       commitmentId: commitment.id,
     })
+    const confirmedAmount = overrides.amount ?? Number(commitment.amount)
+    const becomesTheNorm = overrides.updateReference === true && confirmedAmount !== Number(commitment.amount)
     await updateCommitment(tx, userId, id, {
       nextDueOn: addPeriod(commitment.nextDueOn, commitment.periodUnit, commitment.periodCount),
+      ...(becomesTheNorm ? { amount: confirmedAmount } : {}),
     })
+    if (becomesTheNorm)
+      await insertCommitmentEvent(tx, id, movement.happenedOn, 'price_changed', confirmedAmount)
     return movement
   })
 }
