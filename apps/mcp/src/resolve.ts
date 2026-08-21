@@ -1,9 +1,10 @@
-import type { Account, Activity, Actor, Category, Commitment } from '@abacus/core/domain'
+import type { Account, Activity, Actor, Asset, Category, Commitment } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { createActor, resolveActor } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { listCommitments } from '@abacus/core/services/commitments'
+import { listAssets } from '@abacus/core/services/investments'
 
 /**
  * Every tool takes names, never ids: the AI on the other side sees the user's
@@ -90,4 +91,16 @@ export async function requireCommitment(userId: string, labelOrId: string): Prom
     'commitment_not_found',
     `No commitment "${labelOrId}". Active commitments: ${active.map((c) => c.label).join(', ') || 'none'}.`,
   )
+}
+
+/** Holdings are addressed by the name the user gave them, like everything else. */
+export async function requireAssetByName(userId: string, name: string): Promise<Asset> {
+  const assets = await listAssets(userId)
+  const asset = byName(assets, name)
+  if (!asset)
+    throw new DomainError(
+      'asset_not_found',
+      `No asset named "${name}". Held assets: ${assets.map((a) => a.name).join(', ') || 'none'}. Declare it with manage_assets before recording an operation on it.`,
+    )
+  return asset
 }

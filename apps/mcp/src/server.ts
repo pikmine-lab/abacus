@@ -40,6 +40,14 @@ import {
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
 import {
+  declareAsset,
+  editAsset,
+  listAssets,
+  listOperations,
+  portfolio,
+  recordOperations,
+} from '@abacus/core/services/investments'
+import {
   closeAdvance,
   correctMovement,
   declareMovement,
@@ -54,6 +62,7 @@ import {
   requireAccountByName,
   requireActivityByName,
   requireActorByName,
+  requireAssetByName,
   requireCategoryByName,
   requireCommitment,
 } from './resolve.ts'
@@ -66,7 +75,7 @@ import {
  */
 
 const INSTRUCTIONS = `abacus manages the user's personal finances, fully declaratively (no bank connection: the user tells you what happened, you record it).
-Model: every movement goes from a source to a target; between two owned accounts it is an internal transfer (neutral, never an expense), to an external actor an expense, from an actor an income. Actors (merchants, clients, organizations) are normalized through aliases: never create a duplicate without checking the suggestions first. Amounts are always positive, in euros. Balance checks (record_balance_check) are the safety net of declarative bookkeeping: suggest one when the latest is older than two weeks. Start with get_overview when you take over without context.`
+Model: every movement goes from a source to a target; between two owned accounts it is an internal transfer (neutral, never an expense), to an external actor an expense, from an actor an income. Actors (merchants, clients, organizations) are normalized through aliases: never create a duplicate without checking the suggestions first. Amounts are always positive, in euros. Balance checks (record_balance_check) are the safety net of declarative bookkeeping: suggest one when the latest is older than two weeks. Investment accounts split those two logics: money reaching or leaving them is a movement, what happens inside them (buy, sell, dividend, fee) is an operation (record_investment_operations), and a purchase is never an expense. Start with get_overview when you take over without context.`
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
 
@@ -145,6 +154,19 @@ const GUIDANCE: Record<string, string> = {
     'No such balance check for this user. Get a current id from manage_balance_checks with action list.',
   check_already_settled:
     'An adjustment already settles this check. Correct or delete that movement with fix_movement, or correct the check itself with manage_balance_checks.',
+  not_an_investment_account:
+    'Only an investment account carries operations. Money reaching or leaving that account is a plain movement (declare_movements); what happens inside it is an operation.',
+  oversold:
+    'That would sell more than the account holds. Check the quantity, and check the account: a holding bought on one account cannot be sold from another.',
+  needs_quantity: 'A buy or a sell needs the quantity it moved, not just the amount.',
+  unexpected_quantity:
+    'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
+  needs_asset: 'This operation is about an asset: name the one it concerns.',
+  no_operations: 'There is nothing to record: pass at least one operation.',
+  asset_exists:
+    'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
+  // asset_not_found stays out on purpose, like the other name resolutions: the
+  // resolver's own message lists what is held, which is what unblocks the call.
 }
 
 /** Optional text fields where the AI clears a value by passing "none". */
@@ -1338,6 +1360,199 @@ export function buildServer(userId: string): McpServer {
         const target = await requireActivityByName(userId, a.name)
         const updated = await editActivity(userId, target.id, a.newName)
         return ok({ activityId: updated.id, name: updated.name })
+      }),
+  )
+
+  server.registerTool(
+    'manage_assets',
+    {
+      description:
+        'Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). A listed one names where its price comes from and its reference there: source "yahoo" with a Yahoo Finance symbol ("CW8.PA", "AAPL"), or "coingecko" with a CoinGecko id ("bitcoin"). That instrument is shared with the other users of this application, so get the reference exactly right and never invent one; it also keeps the description of whoever declared it first. Actions: list, create, rename. Omit the source for something priced by hand. One instrument can only be held under one name: a second name for it would split the position in half.',
+      inputSchema: z.object({
+        action: z.enum(['list', 'create', 'rename']),
+        name: z.string().optional().describe('create: the name to hold it under; rename: the asset to rename'),
+        newName: z.string().optional().describe('rename: the corrected name'),
+        source: z
+          .enum(['yahoo', 'coingecko'])
+          .optional()
+          .describe('create: where its price comes from. Omit for an asset priced by hand'),
+        reference: z
+          .string()
+          .optional()
+          .describe('create: its reference at that source: a Yahoo symbol ("CW8.PA") or a CoinGecko id ("bitcoin")'),
+        kind: z
+          .enum(['security', 'crypto'])
+          .optional()
+          .describe('create: what it is, required as soon as a source is given'),
+        description: z
+          .string()
+          .optional()
+          .describe('create: the instrument\'s own name ("Amundi MSCI World"). Defaults to name'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        if (a.action === 'list') {
+          const assets = await listAssets(userId)
+          return ok(
+            assets.map((asset) => ({
+              name: asset.name,
+              pricing: asset.instrument
+                ? {
+                    source: asset.instrument.priceSource,
+                    reference: asset.instrument.priceSourceRef,
+                    description: asset.instrument.name,
+                  }
+                : 'priced by hand',
+            })),
+          )
+        }
+        if (!a.name) return fail(`${a.action} requires name.`)
+        if (a.action === 'rename') {
+          if (!a.newName) return fail('rename requires newName: the corrected name.')
+          const target = await requireAssetByName(userId, a.name)
+          const renamed = await editAsset(userId, target.id, a.newName)
+          return ok({ assetId: renamed.id, name: renamed.name })
+        }
+        if (a.source && !a.reference)
+          return fail(
+            `create with source ${a.source} requires reference: its symbol or id at that source. Omit both for an asset priced by hand.`,
+          )
+        if (a.source && !a.kind)
+          return fail('create with a source requires kind: security or crypto.')
+        const asset = await declareAsset(userId, {
+          name: a.name,
+          instrument: a.source
+            ? {
+                kind: a.kind!,
+                priceSource: a.source,
+                priceSourceRef: a.reference!,
+                name: a.description ?? a.name,
+              }
+            : undefined,
+        })
+        return ok({ assetId: asset.id, name: asset.name, pricedByHand: asset.instrumentId === null })
+      }),
+  )
+
+  server.registerTool(
+    'record_investment_operations',
+    {
+      description:
+        'Records what happens inside an investment account: a purchase, a sale, a dividend received, account fees. Not for moving money in or out of that account: funding a PEA or taking cash back out is a plain internal transfer (declare_movements), and buying inside it is an operation. That separation is the model, not a detail: a purchase is not an expense, it changes the form of the money. Amounts are always positive and are what really left or entered the account, order fees included, so the average cost matches the broker\'s. Assets are named, and must exist (manage_assets). Unlike declare_movements, the batch is one declaration: if a line is refused nothing is recorded, because a purchase and the fee that came with it are one event.',
+      inputSchema: z.object({
+        operations: z
+          .array(
+            z.object({
+              date: isoDate,
+              account: z.string().describe('Investment account name (a PEA, a securities account, a crypto account)'),
+              type: z
+                .enum(['buy', 'sell', 'dividend', 'fee'])
+                .describe(
+                  'buy/sell: moves a quantity of an asset; dividend: cash paid by an asset; fee: account fees (custody), not order fees, which belong in the buy amount',
+                ),
+              asset: z
+                .string()
+                .optional()
+                .describe('Asset name. Required for buy, sell and dividend; omit on account fees'),
+              quantity: z.number().positive().optional().describe('buy/sell only: how many units moved'),
+              amount: z
+                .number()
+                .positive()
+                .describe('What left or entered the account, order fees included, always positive'),
+              note: z.string().optional(),
+            }),
+          )
+          .min(1),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const resolved = await Promise.all(
+          a.operations.map(async (o) => {
+            const account = await requireAccountByName(userId, o.account)
+            const asset = o.asset ? await requireAssetByName(userId, o.asset) : undefined
+            return {
+              accountId: account.id,
+              assetId: asset?.id,
+              type: o.type,
+              quantity: o.quantity,
+              amount: o.amount,
+              operatedOn: o.date,
+              note: o.note,
+            }
+          }),
+        )
+        const recorded = await recordOperations(userId, resolved)
+        return ok({
+          recorded: recorded.length,
+          operations: recorded.map((o) => ({
+            id: o.id,
+            date: o.operatedOn,
+            type: o.type,
+            quantity: o.quantity ?? undefined,
+            amount: Number(o.amount),
+          })),
+        })
+      }),
+  )
+
+  server.registerTool(
+    'get_portfolio',
+    {
+      description:
+        'What the user holds, account by account: the cash sitting on each investment account, and every position with the quantity held, its weighted average cost per unit and what it cost in total, order fees included. Nothing here is valued at a market price: there is no price in the model yet, so never state or estimate what a holding is worth today, nor any gain. Use list_movements for the money that funded these accounts, and record_investment_operations to declare what happened inside them.',
+      inputSchema: z.object({
+        account: z.string().optional().describe('Restrict to one investment account, by name'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const wanted = a.account ? await requireAccountByName(userId, a.account) : null
+        const held = await portfolio(userId)
+        const accounts = wanted ? held.filter((h) => h.account.id === wanted.id) : held
+        return ok({
+          valuation: 'none: prices are not part of the model yet, only what was paid',
+          accounts: accounts.map((h) => ({
+            account: h.account.name,
+            cash: Number(h.cash),
+            costBasis: Number(h.costBasis),
+            positions: h.positions.map((p) => ({
+              asset: p.assetName,
+              quantity: Number(p.quantity),
+              averageCost: Number(p.averageCost),
+              costBasis: Number(p.costBasis),
+            })),
+          })),
+        })
+      }),
+  )
+
+  server.registerTool(
+    'list_investment_operations',
+    {
+      description:
+        'The operations declared on the investment accounts, most recent first: what was bought, sold, received as a dividend or paid in fees. Read it to check what is already recorded before declaring more, or to find the operation behind a position.',
+      inputSchema: z.object({
+        account: z.string().optional().describe('Restrict to one investment account, by name'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const account = a.account ? await requireAccountByName(userId, a.account) : undefined
+        const operations = await listOperations(userId, account?.id)
+        const assets = new Map((await listAssets(userId)).map((as) => [as.id, as.name]))
+        return ok(
+          operations.map((o) => ({
+            id: o.id,
+            date: o.operatedOn,
+            type: o.type,
+            asset: o.assetId ? assets.get(o.assetId) : undefined,
+            quantity: o.quantity ?? undefined,
+            amount: Number(o.amount),
+            note: o.note ?? undefined,
+          })),
+        )
       }),
   )
 

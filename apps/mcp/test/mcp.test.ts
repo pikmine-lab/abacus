@@ -701,3 +701,84 @@ test('spending reads back by category group through the MCP surface', async () =
     { categoryGroup: '(none)', gross: 10, net: 10 },
   ])
 })
+
+test('investments: funding is a movement, what happens inside is an operation', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'PEA', behavior: 'investment' })
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Monde',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+    description: 'Amundi MSCI World',
+  })
+
+  await call(client, 'declare_movements', {
+    movements: [{ date: '2026-01-02', amount: 5000, type: 'transfer', account: 'Courant', toAccount: 'PEA' }],
+  })
+  const recorded = await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-05', account: 'PEA', type: 'buy', asset: 'Monde', quantity: 5, amount: 3000 },
+      { date: '2026-01-05', account: 'PEA', type: 'fee', amount: 12 },
+      { date: '2026-02-10', account: 'PEA', type: 'dividend', asset: 'Monde', amount: 40 },
+    ],
+  })
+  assert.equal((recorded.json() as { recorded: number }).recorded, 3)
+
+  const held = await call(client, 'get_portfolio')
+  assert.deepEqual(held.json(), {
+    valuation: 'none: prices are not part of the model yet, only what was paid',
+    accounts: [
+      {
+        account: 'PEA',
+        cash: 2028, // 5000 - 3000 - 12 + 40
+        costBasis: 3000,
+        positions: [{ asset: 'Monde', quantity: 5, averageCost: 600, costBasis: 3000 }],
+      },
+    ],
+  })
+
+  // The purchase is nowhere near the expenses: it is not one.
+  const spending = await call(client, 'analyze_spending', {
+    from: '2026-01-01',
+    to: '2026-12-31',
+    groupBy: 'category',
+  })
+  assert.equal((spending.json() as unknown[]).length, 0)
+
+  // What the interface must refuse, and say why.
+  const onChecking = await call(client, 'record_investment_operations', {
+    operations: [{ date: '2026-01-05', account: 'Courant', type: 'fee', amount: 5 }],
+  })
+  assert.ok(onChecking.isError)
+  assert.match(onChecking.text, /Only an investment account carries operations/)
+
+  const tooMany = await call(client, 'record_investment_operations', {
+    operations: [{ date: '2026-03-05', account: 'PEA', type: 'sell', asset: 'Monde', quantity: 9, amount: 100 }],
+  })
+  assert.ok(tooMany.isError)
+  assert.match(tooMany.text, /sell more than the account holds/)
+
+  const unknown = await call(client, 'record_investment_operations', {
+    operations: [{ date: '2026-03-05', account: 'PEA', type: 'buy', asset: 'Nasdaq', quantity: 1, amount: 100 }],
+  })
+  assert.ok(unknown.isError)
+  assert.match(unknown.text, /No asset named "Nasdaq"/)
+
+  // One instrument, one holding: a second name for it would split the position.
+  const twice = await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'World',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+  })
+  assert.ok(twice.isError)
+  assert.match(twice.text, /would split the position/)
+
+  const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
+  assert.equal((operations.json() as unknown[]).length, 3)
+})
