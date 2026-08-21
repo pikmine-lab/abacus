@@ -24,6 +24,7 @@ import {
   setJudgment,
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
+import { declareAsset, editAsset, recordOperations } from '@abacus/core/services/investments'
 import {
   closeAdvance,
   correctMovement,
@@ -119,6 +120,13 @@ const FR: Record<string, string> = {
     'Un remboursement est déjà lié à cette avance : supprime-le avant de retirer la créance.',
   advance_below_refunds: 'La part attendue est déjà dépassée par ce qui a été remboursé.',
   advance_settled: 'Cette avance est déjà remboursée en entier.',
+  not_an_investment_account:
+    'Seul un compte d’investissement porte des opérations. Alimenter ce compte est un virement.',
+  oversold: 'Tu vends plus que ce compte détient. Vérifie la quantité, et le compte.',
+  needs_quantity: 'Un achat ou une vente porte une quantité.',
+  needs_asset: 'Indique l’actif concerné.',
+  asset_exists: 'Ce nom est pris, ou tu détiens déjà cet instrument sous un autre nom.',
+  asset_not_found: 'Cet actif n’existe plus.',
 }
 
 /**
@@ -187,6 +195,7 @@ function refreshAll() {
     '/recurring-expenses',
     '/recurring-income',
     '/accounts',
+    '/investments',
     '/settings',
   ])
     revalidatePath(path)
@@ -859,4 +868,84 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
     headers: await headers(),
   })
   revalidatePath('/connect-ai')
+}
+
+/**
+ * What the user holds. A listed asset names where its price comes from; without
+ * a source it is priced by hand, and nothing more is asked.
+ */
+export async function declareAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const source = opt(formData, 'source')
+  const invalid = checkFields(
+    formData,
+    source ? [{ name: 'name' }, { name: 'reference' }] : [{ name: 'name' }],
+  )
+  if (invalid) return { fields: invalid }
+  try {
+    await declareAsset(userId, {
+      name: str(formData, 'name'),
+      instrument: source
+        ? {
+            kind: str(formData, 'kind') as 'security' | 'crypto',
+            priceSource: source as 'yahoo' | 'coingecko',
+            priceSourceRef: str(formData, 'reference'),
+            name: opt(formData, 'description') ?? str(formData, 'name'),
+          }
+        : undefined,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function renameAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editAsset(userId, str(formData, 'assetId'), str(formData, 'name'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * One operation per submit: the panel stays open and empties itself, because
+ * declaring happens in bursts. The batch API exists for the MCP, which receives
+ * a whole session at once.
+ */
+export async function recordOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const type = str(formData, 'type') as 'buy' | 'sell' | 'dividend' | 'fee'
+  const trade = type === 'buy' || type === 'sell'
+  const rules: FieldRule[] = [
+    { name: 'operatedOn', kind: 'date' },
+    { name: 'amount', kind: 'amount' },
+  ]
+  if (trade) rules.push({ name: 'quantity', kind: 'amount' })
+  if (type !== 'fee') rules.push({ name: 'assetId' })
+  const invalid = checkFields(formData, rules)
+  if (invalid) return { fields: invalid }
+  try {
+    await recordOperations(userId, [
+      {
+        accountId: str(formData, 'accountId'),
+        assetId: opt(formData, 'assetId'),
+        type,
+        quantity: trade ? num(formData, 'quantity') : undefined,
+        amount: num(formData, 'amount'),
+        operatedOn: str(formData, 'operatedOn'),
+        note: opt(formData, 'note'),
+      },
+    ])
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
 }

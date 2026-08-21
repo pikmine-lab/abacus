@@ -25,7 +25,7 @@ const STALE_CHECK_DAYS = 45
 const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
   payment: { label: 'Comptes courants', blurb: 'portent les mouvements du quotidien' },
   savings: { label: 'Épargne', blurb: 'virements et intérêts' },
-  investment: { label: 'Investissement', blurb: 'opérations et positions arrivent en V2' },
+  investment: { label: 'Investissement', blurb: 'espèces ici, positions dans Placements' },
 }
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
 

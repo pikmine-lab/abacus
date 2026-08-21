@@ -27,7 +27,7 @@ question posée, jamais à plat :
 |---|---|
 | Suivi | Vue d'ensemble · Mouvements · Analyse |
 | Engagements | Dépenses récurrentes · Revenus récurrents |
-| Patrimoine | Comptes · Placements (V2, désactivé et marqué) |
+| Patrimoine | Comptes · Placements |
 | (pied) | Réglages · compte utilisateur |
 
 - **Le menu du compte porte ce qui n'est pas une question sur l'argent** : brancher une
@@ -303,6 +303,16 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   contour. Une saisie refusée n'est jamais perdue : les champs texte tiennent leur
   valeur en état, car React réinitialise un champ non contrôlé dès qu'une action se
   termine : ce qui est juste après un succès et faux après une erreur.
+- **Un placement se déclare en deux gestes, parce que ce sont deux choses.** Ce qu'on
+  détient (un actif, avec la source de son cours) se déclare une fois ; ce qui se passe
+  dessus (achat, vente, dividende, frais) se déclare à chaque fois. Le panneau d'opération
+  dit ce qu'il ne fait pas, parce que c'est là qu'on se trompe : alimenter le compte ou en
+  sortir de l'argent est un virement, à déclarer dans les mouvements.
+- **Un chiffre négatif n'est pas une valeur, c'est une déclaration qui manque.** Des
+  espèces négatives sur un compte d'investissement veulent dire qu'un achat est entré sans
+  le virement qui l'a financé : la tuile le dit (« un virement d'alimentation manque »)
+  plutôt que d'afficher un montant sous un libellé qui devient faux. Vaut partout où une
+  somme calculée peut passer sous zéro sans que la réalité l'ait fait.
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
   ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
   « tous » côté contrôle. Une URL bricolée ne casse pas la page.

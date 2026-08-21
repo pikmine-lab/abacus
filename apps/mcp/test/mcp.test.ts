@@ -757,13 +757,17 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.match(onChecking.text, /Only an investment account carries operations/)
 
   const tooMany = await call(client, 'record_investment_operations', {
-    operations: [{ date: '2026-03-05', account: 'PEA', type: 'sell', asset: 'Monde', quantity: 9, amount: 100 }],
+    operations: [
+      { date: '2026-03-05', account: 'PEA', type: 'sell', asset: 'Monde', quantity: 9, amount: 100 },
+    ],
   })
   assert.ok(tooMany.isError)
   assert.match(tooMany.text, /sell more than the account holds/)
 
   const unknown = await call(client, 'record_investment_operations', {
-    operations: [{ date: '2026-03-05', account: 'PEA', type: 'buy', asset: 'Nasdaq', quantity: 1, amount: 100 }],
+    operations: [
+      { date: '2026-03-05', account: 'PEA', type: 'buy', asset: 'Nasdaq', quantity: 1, amount: 100 },
+    ],
   })
   assert.ok(unknown.isError)
   assert.match(unknown.text, /No asset named "Nasdaq"/)

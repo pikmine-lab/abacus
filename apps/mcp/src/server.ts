@@ -159,8 +159,7 @@ const GUIDANCE: Record<string, string> = {
   oversold:
     'That would sell more than the account holds. Check the quantity, and check the account: a holding bought on one account cannot be sold from another.',
   needs_quantity: 'A buy or a sell needs the quantity it moved, not just the amount.',
-  unexpected_quantity:
-    'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
+  unexpected_quantity: 'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
   needs_asset: 'This operation is about an asset: name the one it concerns.',
   no_operations: 'There is nothing to record: pass at least one operation.',
   asset_exists:
@@ -1370,7 +1369,10 @@ export function buildServer(userId: string): McpServer {
         'Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). A listed one names where its price comes from and its reference there: source "yahoo" with a Yahoo Finance symbol ("CW8.PA", "AAPL"), or "coingecko" with a CoinGecko id ("bitcoin"). That instrument is shared with the other users of this application, so get the reference exactly right and never invent one; it also keeps the description of whoever declared it first. Actions: list, create, rename. Omit the source for something priced by hand. One instrument can only be held under one name: a second name for it would split the position in half.',
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'rename']),
-        name: z.string().optional().describe('create: the name to hold it under; rename: the asset to rename'),
+        name: z
+          .string()
+          .optional()
+          .describe('create: the name to hold it under; rename: the asset to rename'),
         newName: z.string().optional().describe('rename: the corrected name'),
         source: z
           .enum(['yahoo', 'coingecko'])
@@ -1379,7 +1381,9 @@ export function buildServer(userId: string): McpServer {
         reference: z
           .string()
           .optional()
-          .describe('create: its reference at that source: a Yahoo symbol ("CW8.PA") or a CoinGecko id ("bitcoin")'),
+          .describe(
+            'create: its reference at that source: a Yahoo symbol ("CW8.PA") or a CoinGecko id ("bitcoin")',
+          ),
         kind: z
           .enum(['security', 'crypto'])
           .optional()
@@ -1418,8 +1422,7 @@ export function buildServer(userId: string): McpServer {
           return fail(
             `create with source ${a.source} requires reference: its symbol or id at that source. Omit both for an asset priced by hand.`,
           )
-        if (a.source && !a.kind)
-          return fail('create with a source requires kind: security or crypto.')
+        if (a.source && !a.kind) return fail('create with a source requires kind: security or crypto.')
         const asset = await declareAsset(userId, {
           name: a.name,
           instrument: a.source
@@ -1439,13 +1442,15 @@ export function buildServer(userId: string): McpServer {
     'record_investment_operations',
     {
       description:
-        'Records what happens inside an investment account: a purchase, a sale, a dividend received, account fees. Not for moving money in or out of that account: funding a PEA or taking cash back out is a plain internal transfer (declare_movements), and buying inside it is an operation. That separation is the model, not a detail: a purchase is not an expense, it changes the form of the money. Amounts are always positive and are what really left or entered the account, order fees included, so the average cost matches the broker\'s. Assets are named, and must exist (manage_assets). Unlike declare_movements, the batch is one declaration: if a line is refused nothing is recorded, because a purchase and the fee that came with it are one event.',
+        "Records what happens inside an investment account: a purchase, a sale, a dividend received, account fees. Not for moving money in or out of that account: funding a PEA or taking cash back out is a plain internal transfer (declare_movements), and buying inside it is an operation. That separation is the model, not a detail: a purchase is not an expense, it changes the form of the money. Amounts are always positive and are what really left or entered the account, order fees included, so the average cost matches the broker's. Assets are named, and must exist (manage_assets). Unlike declare_movements, the batch is one declaration: if a line is refused nothing is recorded, because a purchase and the fee that came with it are one event.",
       inputSchema: z.object({
         operations: z
           .array(
             z.object({
               date: isoDate,
-              account: z.string().describe('Investment account name (a PEA, a securities account, a crypto account)'),
+              account: z
+                .string()
+                .describe('Investment account name (a PEA, a securities account, a crypto account)'),
               type: z
                 .enum(['buy', 'sell', 'dividend', 'fee'])
                 .describe(

@@ -253,5 +253,24 @@ reste estompé qui se nomme, et le survol relie l'arc à sa ligne de légende (`
 `groupBy: categoryGroup`. Le groupe n'entre pas dans Analyse : sans entité derrière lui,
 ses lignes n'auraient rien à cliquer, là où toutes les autres mènent aux mouvements.
 
+**Les placements** (2026-08-21, issue #9) : un compte d'investissement porte des opérations
+(achat, vente, dividende, frais de compte), qui donnent des positions avec quantité, PRU en
+moyenne pondérée et prix de revient. UI *Placements*, MCP `manage_assets`,
+`record_investment_operations`, `get_portfolio`, `list_investment_operations`.
+
+Deux frontières tiennent la suite :
+
+- **un mouvement porte l'argent jusqu'au compte, une opération dit ce qui se passe
+  dedans.** Un achat ne peut pas être un mouvement : la nature est dérivée des extrémités,
+  donc il tomberait en dépense, alors qu'acheter un titre ne dépense rien. Le solde d'un
+  compte d'investissement est donc ses espèces, mouvements et opérations ensemble ;
+- **un cours n'appartient à personne.** `instrument` et ses cours sont partagés par tous
+  les utilisateurs (migration `0007`, qui refait ce que `0002` avait posé de travers) ;
+  seul un cours saisi à la main reste privé, parce que c'est une déclaration. Corollaire à
+  ne pas perdre : la table partagée ne sert jamais d'autocomplétion, sinon elle dirait à
+  chacun ce que les autres détiennent.
+
+Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

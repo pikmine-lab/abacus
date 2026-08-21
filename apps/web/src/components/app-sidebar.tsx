@@ -53,7 +53,7 @@ const GROUPS = [
     label: 'Patrimoine',
     items: [
       { href: '/accounts', label: 'Comptes', icon: LandmarkIcon },
-      { href: '/placements', label: 'Placements', icon: ChartCandlestickIcon, soon: true },
+      { href: '/investments', label: 'Placements', icon: ChartCandlestickIcon },
     ],
   },
 ] as const
