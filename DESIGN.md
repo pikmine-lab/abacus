@@ -30,6 +30,10 @@ question posée, jamais à plat :
 | Patrimoine | Comptes · Placements (V2, désactivé et marqué) |
 | (pied) | Réglages · compte utilisateur |
 
+- **Le menu du compte porte ce qui n'est pas une question sur l'argent** : brancher une
+  IA, réglages, déconnexion. Un groupe de la barre répond à « qu'est-ce qui s'est passé »,
+  « à quoi suis-je engagé », « qu'est-ce que je possède » ; « comment je donne accès à mon
+  agent » n'a rien à y faire.
 - **Repliée**, seules les icônes restent ; le libellé passe en tooltip
   (`SidebarMenuButton tooltip=`). Les icônes ne changent pas de taille en pliant :
   le wordmark force `!size-6` contre le `[&>svg]:size-4` du bouton.
@@ -220,6 +224,39 @@ Le vide d'une application déclarative est un **chemin**, pas un avis. La vue
 d'ensemble affiche trois pas ordonnés, chacun disant ce qu'il débloque, cochés à
 mesure, avec l'appel à l'action sur le prochain pas ouvert seulement : et la voie
 MCP mentionnée pour qui préfère déclarer en langage naturel.
+
+## Ce qu'on écrit à l'écran
+
+Le texte est le dernier recours, pas le premier réflexe : un écran qui doit s'expliquer
+est un écran mal découpé.
+
+1. **Ce qui peut être montré n'est pas écrit.** Une structure se lit d'un coup d'œil
+   (pas numérotés, exemples en pastilles, ✓ / ✗, bloc de code), une phrase demande d'être
+   lue en entier. Un exemple entre guillemets vaut mieux qu'une description de ce que
+   l'app sait faire.
+2. **Le fait le plus utile d'abord, et une seule fois.** Ce qui décide de l'action ouvre
+   le bloc ; ce qui l'explique n'y revient pas. Deux formulations du même fait sur un
+   écran valent zéro.
+3. **Ce qui ne change pas l'action de l'utilisateur reste dans le dépôt** : le motif
+   technique d'une limite, le détail d'un drapeau, le rappel d'une évidence. La limite
+   elle-même se dit, parce qu'elle change ce que l'utilisateur va faire.
+
+Un libellé fait deux à cinq mots, une explication tient en une phrase. Au-delà, c'est le
+découpage de l'écran qu'il faut revoir, pas la phrase qu'il faut raccourcir.
+
+## Raccordement d'une IA
+
+- **Une clé nue n'est pas une connexion** : l'écran livre la commande complète, clé
+  incluse, en deux formes (CLI Claude Code, bloc `mcpServers` pour les clients à fichier).
+  Le geste attendu est de brancher un agent, pas de ranger un secret.
+- **Deux pas numérotés**, comme au premier lancement : créer la clé, coller la commande.
+  Avant création, le bloc porte une clé factice et le badge « aperçu » ; la forme se voit
+  sans qu'une phrase l'annonce, et rien n'est mémorisé du client choisi puisque la
+  commande entière n'existe que le temps où la clé est visible.
+- **Le bloc de code s'enroule, il ne défile pas**, et la commande se coupe sur ses propres
+  arguments : une commande à moitié copiée coûte plus cher qu'une commande longue.
+- **Où la clé marche, et où elle ne marche pas**, se lit en deux lignes ✓ / ✗. Le motif
+  (les connecteurs de l'application Claude veulent un OAuth) appartient au dépôt.
 
 ## Identité
 
