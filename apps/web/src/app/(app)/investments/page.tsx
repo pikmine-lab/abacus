@@ -7,10 +7,12 @@ import {
   listOperations,
   portfolio,
   refreshQuotes,
+  valuation,
 } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { BalanceChart } from '@/components/balance-chart'
 import { EntrySheet } from '@/components/entry-sheet'
 import {
   type AssetEntry,
@@ -18,21 +20,15 @@ import {
   AssetRows,
   FollowForm,
   OperationForm,
+  OperationRows,
 } from '@/components/investment-forms'
-import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
 import { eur, eurSigned, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Placements' }
-
-const OPERATIONS = {
-  buy: 'Achat',
-  sell: 'Vente',
-  dividend: 'Dividende',
-  fee: 'Frais',
-} as const
 
 /** Quantities are not money: they keep their own precision, trailing zeros cut. */
 function quantity(value: string): string {
@@ -63,15 +59,23 @@ export default async function InvestmentsPage() {
   // is down leaves the stored price in place.
   await refreshQuotes(userId)
 
-  const [accounts, held, assets, operations, quotes] = await Promise.all([
+  const now = today()
+  const yearAgo = `${Number(now.slice(0, 4)) - 1}${now.slice(4)}`
+  // The curve starts at the first operation when that is later than a year ago:
+  // twelve months of flat zero say nothing and squeeze the part that does.
+  const firstOperation = (await listOperations(userId)).at(-1)?.operatedOn
+  const from = firstOperation && firstOperation > yearAgo ? firstOperation : yearAgo
+  const [accounts, held, assets, operations, quotes, series] = await Promise.all([
     listAccounts(userId),
     portfolio(userId),
     listAssets(userId),
     listOperations(userId),
     assetPrices(userId),
+    valuation(userId, from, now),
   ])
   const investmentAccounts = accounts.filter((a) => a.behavior === 'investment' && !a.closedOn)
   const assetNames = new Map(assets.map((a) => [a.id, a.name]))
+  const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
 
   const value = held.reduce((sum, h) => sum + Number(h.value), 0)
   const cash = held.reduce((sum, h) => sum + Number(h.cash), 0)
@@ -117,7 +121,7 @@ export default async function InvestmentsPage() {
         <OperationForm
           accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
           assets={assetEntries}
-          today={today()}
+          today={now}
         />
       </EntrySheet>
     </>
@@ -173,6 +177,29 @@ export default async function InvestmentsPage() {
               />
             </StatRow>
 
+            {series.some((p) => Number(p.holdings) > 0) && (
+              <Section
+                title="Valorisation"
+                description={`depuis le ${frDate(from)}, contre les apports : l’écart entre les deux courbes est la performance`}
+              >
+                <BalanceChart
+                  lines={[
+                    { id: 'value', name: 'Valorisation' },
+                    { id: 'contributions', name: 'Apports' },
+                  ]}
+                  rows={series.flatMap((point) => [
+                    {
+                      day: point.day,
+                      lineId: 'value',
+                      balance: Number(point.cash) + Number(point.holdings),
+                    },
+                    { day: point.day, lineId: 'contributions', balance: Number(point.contributions) },
+                  ])}
+                  today={now}
+                />
+              </Section>
+            )}
+
             {held.map(({ account, positions, cash: accountCash, value: accountValue }) => (
               <Section
                 key={account.id}
@@ -198,20 +225,25 @@ export default async function InvestmentsPage() {
                         <span className="w-[4.5rem] text-right">Cours</span>
                         <span className="w-[5.5rem] text-right">Valorisation</span>
                         <span className="w-[5.5rem] text-right">+/− value</span>
-                        <span className="w-7" />
+                        <span className="w-11" />
                       </div>
                       {positions.map((position) => {
                         const stamp = priceStamp(position.pricedAt, position.manualPrice)
                         const gain = position.gain === null ? null : Number(position.gain)
                         return (
-                          <div key={position.assetId} className="flex items-center gap-3 py-2">
-                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                              <span className="truncate text-[12.5px]">{position.assetName}</span>
+                          <div key={position.assetId} className="group flex items-center gap-3 py-2">
+                            <Link
+                              href={`/investments/${position.assetId}?from=investments`}
+                              className="flex min-w-0 flex-1 flex-col gap-0.5"
+                            >
+                              <span className="truncate text-[12.5px] group-hover:text-primary">
+                                {position.assetName}
+                              </span>
                               <span className="truncate text-[11px] text-faint">
                                 PRU {eur(Number(position.averageCost), 2)}
                                 {stamp ? ` · ${stamp}` : ' · aucun cours connu'}
                               </span>
-                            </span>
+                            </Link>
                             <span className="tabular w-14 text-right text-[12.5px]">
                               {quantity(position.quantity)}
                             </span>
@@ -229,6 +261,7 @@ export default async function InvestmentsPage() {
                               {/* The arrow carries the direction; color reinforces it. */}
                               {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
                             </span>
+                            <RowArrow />
                             <AssetMenu id={position.assetId} name={position.assetName} />
                           </div>
                         )
@@ -249,30 +282,20 @@ export default async function InvestmentsPage() {
               {operations.length === 0 ? (
                 <EmptyLine>Rien de déclaré pour l’instant.</EmptyLine>
               ) : (
-                <Rows>
-                  {operations.slice(0, 30).map((operation) => (
-                    <div key={operation.id} className="flex items-center gap-3 py-2">
-                      <span className="tabular w-20 shrink-0 text-[11.5px] text-faint">
-                        {frDate(operation.operatedOn)}
-                      </span>
-                      <span className="w-20 shrink-0 text-[12px] text-muted-foreground">
-                        {OPERATIONS[operation.type]}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[12.5px]">
-                        {operation.assetId ? assetNames.get(operation.assetId) : 'frais de compte'}
-                        {operation.note && <span className="text-faint"> · {operation.note}</span>}
-                      </span>
-                      {operation.quantity && (
-                        <span className="tabular w-20 text-right text-[11.5px] text-faint">
-                          {quantity(operation.quantity)}
-                        </span>
-                      )}
-                      <span className="tabular w-[5.5rem] text-right text-[12.5px]">
-                        {eur(Number(operation.amount), 2)}
-                      </span>
-                    </div>
-                  ))}
-                </Rows>
+                <OperationRows
+                  operations={operations.slice(0, 30).map((operation) => ({
+                    id: operation.id,
+                    type: operation.type,
+                    operatedOn: operation.operatedOn,
+                    quantity: operation.quantity,
+                    amount: operation.amount,
+                    note: operation.note,
+                    accountId: operation.accountId,
+                    accountName: accountNames.get(operation.accountId) ?? '',
+                    assetName: operation.assetId ? (assetNames.get(operation.assetId) ?? null) : null,
+                  }))}
+                  accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
+                />
               )}
             </Section>
           </>

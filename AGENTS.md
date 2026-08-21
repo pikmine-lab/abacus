@@ -294,6 +294,18 @@ saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
   relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
   il est gardé quand l'utilisateur le saisit.
 
+**La courbe** (migration `0009`) : un an de clôtures quotidiennes par instrument, récupéré
+d'un appel (256 points, 27 Ko, 186 ms mesurés) au premier passage, puis complété par la
+clôture du jour à chaque rafraîchissement. La vue trace la valorisation contre les apports
+nets, l'écart entre les deux étant la performance. Un placement mène à sa propre page
+(`/investments/[assetId]`) : cours en courbe, valorisation, opérations. `BalanceChart` a été
+généralisé pour ça (ses props parlent de `lines`, plus de comptes) plutôt que dupliqué.
+
+**Une opération se corrige et se supprime** (UI : menu de la ligne ; MCP :
+`fix_investment_operation`). Le garde-fou n'est pas la quantité finale mais la **quantité
+courante minimale** : réduire un achat peut rendre une vente postérieure impossible, et
+c'est cette séquence qui est vérifiée avant de valider.
+
 **Suivre sans détenir** : un actif sans opération est un actif suivi. Rien ne le marque en
 base, l'absence de position suffit, et un achat en fait une position sans redéclaration.
 

@@ -330,8 +330,8 @@ export default async function OverviewPage({
           action={<SectionLink href="/accounts?from=overview">Comptes</SectionLink>}
         >
           <BalanceChart
-            accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-            rows={series.map((r) => ({ day: r.day, accountId: r.accountId, balance: Number(r.balance) }))}
+            lines={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
+            rows={series.map((r) => ({ day: r.day, lineId: r.accountId, balance: Number(r.balance) }))}
             today={now}
           />
         </Section>

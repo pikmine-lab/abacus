@@ -19,6 +19,7 @@ const ORIGINS: Record<string, { label: string; href: string }> = {
   expenses: { label: 'Dépenses récurrentes', href: '/recurring-expenses' },
   income: { label: 'Revenus récurrents', href: '/recurring-income' },
   accounts: { label: 'Comptes', href: '/accounts' },
+  investments: { label: 'Placements', href: '/investments' },
 }
 
 export function BackLink() {

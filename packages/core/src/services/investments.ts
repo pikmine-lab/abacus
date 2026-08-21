@@ -1,22 +1,33 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount, listAccountsWithBalance } from '../db/datasources/accounts.ts'
 import {
+  assetHistory as assetHistoryDs,
   assetPrices as assetPricesDs,
+  deleteOperationRow,
   findAssetByInstrument,
   getAsset,
+  getOperation,
+  hasPriceHistory,
   heldQuantity,
   insertAsset,
   insertOperation,
+  insertPriceHistory,
   instrumentsToRefresh,
   listAssets as listAssetsDs,
   listInstruments,
   listOperations as listOperationsDs,
+  lowestRunningQuantity,
   movementsNetPerAccount,
   type NewInstrument,
   positions as positionsDs,
   updateAssetRow,
+  updateOperationRow,
+  upsertAssetPrice,
+  upsertClose,
   upsertInstrument,
   upsertQuote,
+  type ValuationPoint,
+  valuationSeries,
 } from '../db/datasources/investments.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import type {
@@ -27,7 +38,14 @@ import type {
   InvestmentOperationType,
   Position,
 } from '../domain/types.ts'
-import { CLOSED_FRESHNESS_MS, type Fetcher, FRESHNESS_MS, fetchQuote } from '../prices/sources.ts'
+import {
+  CLOSED_FRESHNESS_MS,
+  type Fetcher,
+  FRESHNESS_MS,
+  fetchHistory,
+  fetchQuote,
+  type HistoryFetcher,
+} from '../prices/sources.ts'
 
 export interface DeclareAssetInput {
   name: string
@@ -184,12 +202,29 @@ export async function listOperations(userId: string, accountId?: string): Promis
  * night and be an hour stale exactly when a screen opens; refreshing on read
  * is fresh precisely when someone is looking.
  */
-export async function refreshQuotes(userId: string, fetcher: Fetcher = fetchQuote): Promise<void> {
+export async function refreshQuotes(
+  userId: string,
+  fetcher: Fetcher = fetchQuote,
+  history: HistoryFetcher = fetchHistory,
+): Promise<void> {
   const sql = db()
   const candidates = await instrumentsToRefresh(sql, userId)
   const now = Date.now()
   await Promise.all(
     candidates.map(async (candidate) => {
+      // The backfill is checked before anything is written, and outside the
+      // freshness bound: a fresh spot price says nothing about whether the year
+      // behind it was ever fetched, and writing today's close first would make
+      // the history look like it already existed.
+      try {
+        if (!(await hasPriceHistory(sql, candidate.instrumentId))) {
+          const past = await history(candidate.priceSource, candidate.priceSourceRef)
+          await insertPriceHistory(sql, candidate.instrumentId, past)
+        }
+      } catch {
+        // No history is a missing curve, not a broken page.
+      }
+
       const bound = candidate.marketOpen === false ? CLOSED_FRESHNESS_MS : FRESHNESS_MS[candidate.priceSource]
       if (candidate.fetchedAt && now - candidate.fetchedAt.getTime() < bound) return
       try {
@@ -199,6 +234,7 @@ export async function refreshQuotes(userId: string, fetcher: Fetcher = fetchQuot
         // rather than mixing units.
         if (quote.currency !== 'EUR') return
         await upsertQuote(sql, candidate.instrumentId, quote)
+        await upsertClose(sql, candidate.instrumentId, quote.quotedAt.toISOString().slice(0, 10), quote.price)
       } catch {
         // Deliberately silent: the caller is a read, and the stored price stands.
       }
@@ -225,6 +261,9 @@ export async function setManualPrice(
     manualPrice: String(price),
     manualPricedOn: pricedOn,
   })
+  // Revaluing an SCPI once a year is a history too, and two points already draw
+  // a line: the curve should not start the day the app was opened.
+  await upsertAssetPrice(db(), assetId, pricedOn, String(price))
   return updated!
 }
 
@@ -286,6 +325,22 @@ export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
   )
 }
 
+/**
+ * The daily worth of the whole portfolio, against the money put into it. The
+ * period is the caller's: the same window the rest of the app is scoped to.
+ */
+export async function valuation(userId: string, from: string, to: string): Promise<ValuationPoint[]> {
+  return await valuationSeries(db(), userId, from, to)
+}
+
+/** The price history of one asset, for its own view. */
+export async function assetHistory(
+  userId: string,
+  assetId: string,
+): Promise<{ quotedOn: string; price: string }[]> {
+  return await assetHistoryDs(db(), userId, assetId)
+}
+
 /** The last known price of each asset, followed ones included. */
 export async function assetPrices(userId: string): Promise<Map<string, string | null>> {
   return await assetPricesDs(db(), userId)
@@ -309,5 +364,108 @@ export async function holdingsValue(userId: string): Promise<{ value: number; un
   return {
     value: held.reduce((sum, p) => sum + Number(p.value ?? 0), 0),
     unpriced: held.filter((p) => p.value === null).length,
+  }
+}
+
+export interface CorrectOperationInput {
+  accountId?: string
+  quantity?: number
+  amount?: number
+  operatedOn?: string
+  note?: string | null
+}
+
+/**
+ * Corrects a declared operation. A wrong amount is not a detail here: it feeds
+ * the weighted average cost, so it would misstate the holding for as long as it
+ * is held, which is why this exists at all.
+ *
+ * What cannot change is what would make it another operation entirely: its type
+ * (a purchase is not a sale) and its asset. Those are corrected by deleting this
+ * one and declaring the right one, which is the honest way to say it never
+ * happened.
+ */
+export async function correctOperation(
+  userId: string,
+  id: string,
+  input: CorrectOperationInput,
+): Promise<InvestmentOperation> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const before = await requireOperation(tx, userId, id)
+    const trade = before.type === 'buy' || before.type === 'sell'
+    if (input.quantity !== undefined && !trade)
+      throw new DomainError('unexpected_quantity', 'Only a buy or a sell moves a quantity')
+    if (input.quantity !== undefined && !(input.quantity > 0))
+      throw new DomainError('needs_quantity', 'A quantity is always positive')
+    if (input.amount !== undefined && !(input.amount > 0))
+      throw new DomainError('bad_amount', 'An amount is always positive')
+
+    if (input.accountId && input.accountId !== before.accountId) {
+      const account = await getAccount(tx, userId, input.accountId)
+      if (!account) throw new DomainError('account_not_found', `No account ${input.accountId} for this user`)
+      if (account.behavior !== 'investment')
+        throw new DomainError(
+          'not_an_investment_account',
+          `"${account.name}" is not an investment account: only those carry operations`,
+        )
+    }
+
+    const patch: Record<string, unknown> = {}
+    if (input.accountId) patch.accountId = input.accountId
+    if (input.quantity !== undefined) patch.quantity = String(input.quantity)
+    if (input.amount !== undefined) patch.amount = String(input.amount)
+    if (input.operatedOn) patch.operatedOn = input.operatedOn
+    if (input.note !== undefined) patch.note = input.note
+    const after = Object.keys(patch).length > 0 ? await updateOperationRow(tx, userId, id, patch) : before
+    await assertHoldingStaysPositive(tx, userId, before, after!)
+    return after!
+  })
+}
+
+/** Removes an operation that never happened. */
+export async function deleteOperation(userId: string, id: string): Promise<void> {
+  const sql = db()
+  await sql.begin(async (tx) => {
+    const before = await requireOperation(tx, userId, id)
+    await deleteOperationRow(tx, userId, id)
+    await assertHoldingStaysPositive(tx, userId, before, before)
+  })
+}
+
+async function requireOperation(tx: Executor, userId: string, id: string): Promise<InvestmentOperation> {
+  const operation = await getOperation(tx, userId, id)
+  if (!operation) throw new DomainError('operation_not_found', `No operation ${id} for this user`)
+  return operation
+}
+
+/**
+ * Refuses a change that would have a holding sell what it never held, at any
+ * point of its history: the transaction is rolled back rather than leaving an
+ * average cost computed on an impossible sequence. Both the operation as it was
+ * and as it becomes are checked, since a correction can move it from one holding
+ * to another and break the one it left behind.
+ */
+async function assertHoldingStaysPositive(
+  tx: Executor,
+  userId: string,
+  before: InvestmentOperation,
+  after: InvestmentOperation,
+): Promise<void> {
+  const touched = new Map<string, { accountId: string; assetId: string }>()
+  for (const operation of [before, after]) {
+    if (!operation.assetId) continue
+    touched.set(`${operation.accountId}:${operation.assetId}`, {
+      accountId: operation.accountId,
+      assetId: operation.assetId,
+    })
+  }
+  for (const { accountId, assetId } of touched.values()) {
+    const lowest = Number(await lowestRunningQuantity(tx, userId, accountId, assetId))
+    if (lowest < 0)
+      throw new DomainError(
+        'oversold',
+        'That would leave a sale selling more than was held at the time: correct the sale first',
+      )
   }
 }

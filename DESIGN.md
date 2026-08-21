@@ -49,7 +49,7 @@ question posée, jamais à plat :
 
 ### Revenir en arrière
 
-Les liens qui traversent les pages se taguent `?de=<clé>`. `BackLink` lit ce tag et
+Les liens qui traversent les pages se taguent `?from=<clé>`. `BackLink` lit ce tag et
 affiche un retour nommé dans le header. Il **repasse par l'historique**
 (`router.back()`), donc la période et les filtres de la page quittée sont retrouvés
 intacts ; il ne retombe sur la route nue que sans historique (lien collé).
@@ -326,6 +326,25 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   dit, avec la voie sûre en premier (l'ISIN, affiché par la banque).
 - **Ce que l'application ne sait pas encore tenir** (une devise étrangère) reste visible et
   **désactivé, avec sa devise** : disparaître sans un mot se lirait « pas trouvé ».
+- **Un portefeuille se lit en courbe, pas en chiffre.** Un nombre dit où on en est, une
+  courbe dit si ça va quelque part : la vue trace la valorisation **contre les apports**,
+  parce que l'écart entre les deux lignes est la performance, rendue visible au lieu d'être
+  affirmée. La fenêtre part de la première opération quand elle est plus récente qu'un an :
+  douze mois de plat à zéro ne disent rien et écrasent la partie qui parle.
+- **Un placement mène à son détail.** Une ligne de position s'ouvre sur sa propre page :
+  son cours en courbe, sa valorisation, ses opérations. Rien n'est un cul-de-sac, et le
+  retour est nommé.
+- **Une courbe ne descend pas à zéro faute de savoir.** Quand aucun cours n'est connu avant
+  un jour donné, le plus ancien connu est reporté en arrière : une chute à zéro dessinerait
+  un krach qui n'a pas eu lieu, ce qui est plus faux qu'une approximation dont la fenêtre
+  est nommée. Le chiffre du moment garde la règle inverse et reste non valorisé, parce qu'il
+  est lu comme exact.
+- **Une opération se corrige et se supprime**, depuis le menu de sa ligne : un montant
+  d'achat saisi de travers n'est pas cosmétique, il nourrit le PRU et fausserait la position
+  aussi longtemps qu'elle est détenue. Le type et l'actif n'y sont pas : les changer ferait
+  une autre opération, donc une suppression et une nouvelle déclaration, ce qui est ce qui
+  s'est passé. Et une correction qui ferait vendre plus que ce qui était détenu à l'époque
+  est refusée en bloc.
 - **Suivre n'est pas détenir.** Un actif sans opération est un actif suivi : son cours
   s'affiche dans « Suivis », et le jour où on en achète il devient une position sans rien
   redéclarer. Aucun drapeau n'est nécessaire, l'absence de position suffit.

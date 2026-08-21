@@ -308,3 +308,236 @@ export async function heldQuantity(
   `
   return row!.quantity
 }
+
+export interface ValuationPoint {
+  day: string
+  /** What the holdings were worth that day, at the last close known by then. */
+  holdings: string
+  /** Cash on the investment accounts that day. */
+  cash: string
+  /** What movements had put in, net of what they had taken out, by that day. */
+  contributions: string
+}
+
+/**
+ * The daily worth of everything held, and the money put in to get there. Two
+ * series rather than one, because the gap between them *is* the performance:
+ * drawn together, a portfolio says whether it is going anywhere, which no
+ * single number does.
+ *
+ * A day's quantity comes from the operations dated up to it, and its price from
+ * the last close known by then, carried forward: a market shut on Sunday has
+ * not lost its value, it simply did not trade. An asset with no price at all
+ * counts as nothing rather than guessed, exactly as it does elsewhere.
+ */
+export async function valuationSeries(
+  tx: Executor,
+  userId: string,
+  from: string,
+  to: string,
+): Promise<ValuationPoint[]> {
+  return await tx<ValuationPoint[]>`
+    with days as (
+      select generate_series(${from}::date, ${to}::date, interval '1 day')::date as day
+    ),
+    trades as (
+      select o.asset_id, a.instrument_id, o.operated_on,
+             sum(case when o.type = 'buy' then o.quantity else -o.quantity end) as delta
+      from investment_operation o
+      join asset a on a.id = o.asset_id
+      where o.user_id = ${userId} and o.type in ('buy', 'sell')
+      group by o.asset_id, a.instrument_id, o.operated_on
+    ),
+    held as (
+      select d.day, t.asset_id, t.instrument_id, sum(t.delta) as quantity
+      from days d
+      join trades t on t.operated_on <= d.day
+      group by d.day, t.asset_id, t.instrument_id
+    ),
+    valued as (
+      select h.day,
+             h.quantity * coalesce(
+               (select p.price from instrument_price p
+                 where p.instrument_id = h.instrument_id and p.quoted_on <= h.day
+                 order by p.quoted_on desc limit 1),
+               (select ap.price from asset_price ap
+                 where ap.asset_id = h.asset_id and ap.quoted_on <= h.day
+                 order by ap.quoted_on desc limit 1),
+               -- Nothing known by that day: the oldest price there is, carried
+               -- backwards. A holding bought before its history starts was not
+               -- worth zero, and drawing it as such would show a climb that
+               -- never happened. Its own manual price is the last resort, for
+               -- what was priced by hand after the fact.
+               (select p.price from instrument_price p
+                 where p.instrument_id = h.instrument_id
+                 order by p.quoted_on limit 1),
+               (select ap.price from asset_price ap
+                 where ap.asset_id = h.asset_id
+                 order by ap.quoted_on limit 1),
+               (select a.manual_price from asset a where a.id = h.asset_id),
+               0
+             ) as value
+      from held h
+      where h.quantity > 0
+    ),
+    -- Cash and contributions both walk the same movements; operations move the
+    -- cash inside the account and never touch what was contributed.
+    flows as (
+      select d.day,
+             coalesce(sum(case when m.target_account_id = a.id then m.amount else -m.amount end), 0) as net
+      from days d
+      cross join account a
+      left join movement m
+        on (m.source_account_id = a.id or m.target_account_id = a.id) and m.happened_on <= d.day
+      where a.user_id = ${userId} and a.behavior = 'investment'
+      group by d.day
+    ),
+    inside as (
+      select d.day,
+             coalesce(sum(case when o.type in ('sell', 'dividend') then o.amount else -o.amount end), 0) as net
+      from days d
+      left join investment_operation o on o.user_id = ${userId} and o.operated_on <= d.day
+      group by d.day
+    )
+    select d.day,
+           coalesce((select sum(v.value) from valued v where v.day = d.day), 0)::numeric(14,2) as holdings,
+           (f.net + i.net)::numeric(14,2) as cash,
+           f.net::numeric(14,2) as contributions
+    from days d
+    join flows f on f.day = d.day
+    join inside i on i.day = d.day
+    order by d.day
+  `
+}
+
+/**
+ * Whether the shared history behind that instrument goes back far enough to be
+ * one. Existence is the wrong question: every refresh writes the close of the
+ * day it read, so a single row would pass for a year of history and the
+ * backfill would never run.
+ */
+export async function hasPriceHistory(tx: Executor, instrumentId: string): Promise<boolean> {
+  const [row] = await tx<{ deep: boolean }[]>`
+    select exists (
+      select 1 from instrument_price
+      where instrument_id = ${instrumentId} and quoted_on < current_date - 30
+    ) as deep
+  `
+  return row!.deep
+}
+
+/** A whole series at once: one statement per instrument, not one per day. */
+export async function insertPriceHistory(
+  tx: Executor,
+  instrumentId: string,
+  history: { quotedOn: string; price: string }[],
+): Promise<void> {
+  if (history.length === 0) return
+  const rows = history.map((h) => ({ instrumentId, quotedOn: h.quotedOn, price: h.price }))
+  await tx`
+    insert into instrument_price ${tx(rows, 'instrumentId', 'quotedOn', 'price')}
+    on conflict (instrument_id, quoted_on) do update set price = excluded.price
+  `
+}
+
+/** The close of one day, written as the spot price is read. */
+export async function upsertClose(
+  tx: Executor,
+  instrumentId: string,
+  quotedOn: string,
+  price: string,
+): Promise<void> {
+  await tx`
+    insert into instrument_price (instrument_id, quoted_on, price)
+    values (${instrumentId}, ${quotedOn}, ${price})
+    on conflict (instrument_id, quoted_on) do update set price = excluded.price
+  `
+}
+
+/** A hand-typed price keeps its own dated history, private to its holder. */
+export async function upsertAssetPrice(
+  tx: Executor,
+  assetId: string,
+  quotedOn: string,
+  price: string,
+): Promise<void> {
+  await tx`
+    insert into asset_price (asset_id, quoted_on, price)
+    values (${assetId}, ${quotedOn}, ${price})
+    on conflict (asset_id, quoted_on) do update set price = excluded.price
+  `
+}
+
+/** The price history of one asset, for its own detail view. */
+export async function assetHistory(
+  tx: Executor,
+  userId: string,
+  assetId: string,
+): Promise<{ quotedOn: string; price: string }[]> {
+  return await tx<{ quotedOn: string; price: string }[]>`
+    select coalesce(p.quoted_on, ap.quoted_on) as quoted_on,
+           coalesce(p.price, ap.price) as price
+    from asset a
+    left join instrument_price p on p.instrument_id = a.instrument_id
+    left join asset_price ap on ap.asset_id = a.id
+    where a.user_id = ${userId} and a.id = ${assetId}
+      and coalesce(p.quoted_on, ap.quoted_on) is not null
+    order by 1
+  `
+}
+
+export async function getOperation(
+  tx: Executor,
+  userId: string,
+  id: string,
+): Promise<InvestmentOperation | undefined> {
+  const [operation] = await tx<InvestmentOperation[]>`
+    select id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
+    from investment_operation where user_id = ${userId} and id = ${id}
+  `
+  return operation
+}
+
+export async function updateOperationRow(
+  tx: Executor,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<InvestmentOperation | undefined> {
+  const [operation] = await tx<InvestmentOperation[]>`
+    update investment_operation set ${tx(patch)}, updated_at = now()
+    where user_id = ${userId} and id = ${id}
+    returning id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
+  `
+  return operation
+}
+
+export async function deleteOperationRow(tx: Executor, userId: string, id: string): Promise<number> {
+  const rows = await tx`delete from investment_operation where user_id = ${userId} and id = ${id}`
+  return rows.count
+}
+
+/**
+ * The lowest the running quantity of a holding ever gets, walking its trades in
+ * order. Checking the final quantity is not enough: correcting a purchase down
+ * can leave a later sale selling what was never held, and the average cost of
+ * every operation after it would be nonsense.
+ */
+export async function lowestRunningQuantity(
+  tx: Executor,
+  userId: string,
+  accountId: string,
+  assetId: string,
+): Promise<string> {
+  const [row] = await tx<{ lowest: string }[]>`
+    select coalesce(min(running), 0)::numeric(20,8) as lowest
+    from (
+      select sum(case when type = 'buy' then quantity else -quantity end)
+               over (order by operated_on, created_at, id) as running
+      from investment_operation
+      where user_id = ${userId} and account_id = ${accountId} and asset_id = ${assetId}
+        and type in ('buy', 'sell')
+    ) walked
+  `
+  return row!.lowest
+}

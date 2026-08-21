@@ -178,6 +178,14 @@ dépense alors qu'acheter un titre ne dépense rien, il change la forme de l'arg
   une ligne de cotation : les places d'un même fonds cotent le même prix à 0,01 % près, donc
   l'application en retient une en euro et le dit. Ce qui identifie sans ambiguïté reste
   l'ISIN, gardé sur l'instrument quand il est connu.
+- **Historique des cours** : une clôture par jour et par instrument, partagée comme
+  l'instrument, complétée d'un an d'un coup à la première apparition. C'est ce qui permet la
+  courbe de valorisation : les quantités viennent des opérations, datées, donc une histoire
+  partagée et un historique d'opérations personnel se multiplient en une courbe propre à
+  chacun. Un cours saisi à la main garde son propre historique, privé.
+- **Une opération se corrige et se supprime** (montant, quantité, date, compte). Le type et
+  l'actif, non : ce serait une autre opération. Une correction qui rendrait une vente
+  impossible à un instant du passé est refusée.
 - **Suivre sans détenir** : un actif sans opération est suivi, son cours est rafraîchi comme
   les autres, et un achat en fait une position sans redéclaration.
 - **Cours automatiques** : actions et ETF via Yahoo Finance (non officiel), crypto via

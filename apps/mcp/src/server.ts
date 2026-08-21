@@ -41,7 +41,9 @@ import {
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
 import {
+  correctOperation,
   declareAsset,
+  deleteOperation,
   editAsset,
   holdingsValue,
   listAssets,
@@ -166,6 +168,8 @@ const GUIDANCE: Record<string, string> = {
   unexpected_quantity: 'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
   needs_asset: 'This operation is about an asset: name the one it concerns.',
   no_operations: 'There is nothing to record: pass at least one operation.',
+  operation_not_found:
+    'No such operation for this user. Get a current id from list_investment_operations: an id from an earlier answer may already be gone.',
   asset_exists:
     'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
   asset_is_quoted:
@@ -1635,6 +1639,45 @@ export function buildServer(userId: string): McpServer {
             note: o.note ?? undefined,
           })),
         )
+      }),
+  )
+
+  server.registerTool(
+    'fix_investment_operation',
+    {
+      description:
+        'Corrects or deletes an operation already declared: a mistyped amount, a wrong quantity, the wrong date or the wrong account. This matters more than it looks: the amount feeds the weighted average cost, so a wrong one misstates the holding for as long as it is held. What cannot be corrected is the type (a purchase is not a sale) and the asset: those are a deletion and a new declaration, because that is what happened. Get the id from list_investment_operations, never from an older answer. A change that would leave a sale selling more than was held at the time is refused: correct the sale first.',
+      inputSchema: z.object({
+        operationId: z.string().describe('Id from list_investment_operations'),
+        action: z.enum(['correct', 'delete']),
+        account: z.string().optional().describe('correct: move it to another investment account, by name'),
+        date: isoDate.optional().describe('correct: the day it really happened'),
+        quantity: z.number().positive().optional().describe('correct: buy/sell only'),
+        amount: z.number().positive().optional().describe('correct: what really left or entered the account'),
+        note: z.string().optional().describe('correct: "none" clears it'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        if (a.action === 'delete') {
+          await deleteOperation(userId, a.operationId)
+          return ok({ deleted: a.operationId })
+        }
+        const account = a.account ? await requireAccountByName(userId, a.account) : undefined
+        const corrected = await correctOperation(userId, a.operationId, {
+          accountId: account?.id,
+          quantity: a.quantity,
+          amount: a.amount,
+          operatedOn: a.date,
+          note: clearable(a.note),
+        })
+        return ok({
+          id: corrected.id,
+          date: corrected.operatedOn,
+          type: corrected.type,
+          quantity: corrected.quantity ?? undefined,
+          amount: Number(corrected.amount),
+        })
       }),
   )
 

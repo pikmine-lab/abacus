@@ -24,7 +24,14 @@ import {
   setJudgment,
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
-import { declareAsset, editAsset, recordOperations } from '@abacus/core/services/investments'
+import {
+  correctOperation,
+  declareAsset,
+  deleteOperation,
+  editAsset,
+  recordOperations,
+  setManualPrice,
+} from '@abacus/core/services/investments'
 import {
   closeAdvance,
   correctMovement,
@@ -122,6 +129,8 @@ const FR: Record<string, string> = {
   advance_settled: 'Cette avance est déjà remboursée en entier.',
   not_an_investment_account:
     'Seul un compte d’investissement porte des opérations. Alimenter ce compte est un virement.',
+  operation_not_found: 'Cette opération n’existe plus.',
+  asset_is_quoted: 'Cet actif prend son cours à sa source : un cours saisi ferait double emploi.',
   oversold: 'Tu vends plus que ce compte détient. Vérifie la quantité, et le compte.',
   needs_quantity: 'Un achat ou une vente porte une quantité.',
   needs_asset: 'Indique l’actif concerné.',
@@ -969,6 +978,64 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
         note: opt(formData, 'note'),
       },
     ])
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Corrects a declared operation. Its type and its asset are not here: changing
+ * either would make it another operation, which is a deletion and a new
+ * declaration, said plainly.
+ */
+export async function correctOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const trade = str(formData, 'trade') === 'true'
+  const rules: FieldRule[] = [
+    { name: 'operatedOn', kind: 'date' },
+    { name: 'amount', kind: 'amount' },
+  ]
+  if (trade) rules.push({ name: 'quantity', kind: 'amount' })
+  const invalid = checkFields(formData, rules)
+  if (invalid) return { fields: invalid }
+  try {
+    await correctOperation(userId, str(formData, 'operationId'), {
+      accountId: opt(formData, 'accountId'),
+      quantity: trade ? num(formData, 'quantity') : undefined,
+      amount: num(formData, 'amount'),
+      operatedOn: str(formData, 'operatedOn'),
+      note: opt(formData, 'note') ?? null,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function deleteOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await deleteOperation(userId, str(formData, 'operationId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** A price for what no source quotes: an SCPI revalued, a flat reappraised. */
+export async function setAssetPriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [
+    { name: 'price', kind: 'amount' },
+    { name: 'pricedOn', kind: 'date' },
+  ])
+  if (invalid) return { fields: invalid }
+  try {
+    await setManualPrice(userId, str(formData, 'assetId'), num(formData, 'price'), str(formData, 'pricedOn'))
   } catch (e) {
     return { error: frError(e) }
   }

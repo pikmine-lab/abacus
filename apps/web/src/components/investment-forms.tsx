@@ -1,11 +1,20 @@
 'use client'
 
-import { CheckIcon, PencilIcon } from 'lucide-react'
+import { CheckIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Command,
   CommandEmpty,
@@ -18,7 +27,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { declareAssetAction, recordOperationAction, renameAssetAction } from '@/lib/actions'
+import {
+  correctOperationAction,
+  declareAssetAction,
+  deleteOperationAction,
+  recordOperationAction,
+  renameAssetAction,
+} from '@/lib/actions'
 
 interface Option {
   id: string
@@ -490,6 +505,151 @@ export function AssetRows({ assets }: { assets: (AssetEntry & { price: string | 
     <Rows>
       {assets.map((asset) => (
         <AssetRow key={asset.id} asset={asset} />
+      ))}
+    </Rows>
+  )
+}
+
+export interface OperationEntry {
+  id: string
+  type: OperationType
+  operatedOn: string
+  quantity: string | null
+  amount: string
+  note: string | null
+  accountId: string
+  accountName: string
+  assetName: string | null
+}
+
+const LABEL: Record<OperationType, string> = {
+  buy: 'Achat',
+  sell: 'Vente',
+  dividend: 'Dividende',
+  fee: 'Frais',
+}
+
+function frDay(iso: string): string {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`
+}
+
+/**
+ * Declared operations, each correctable and deletable from its own menu. A
+ * mistyped purchase amount is not cosmetic: it feeds the weighted average cost,
+ * so it would misstate the holding for as long as it is held.
+ */
+function OperationRow({ operation, accounts }: { operation: OperationEntry; accounts: Option[] }) {
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const trade = operation.type === 'buy' || operation.type === 'sell'
+
+  return (
+    <>
+      <div className="flex items-center gap-3 py-2">
+        <span className="tabular w-20 shrink-0 text-[11.5px] text-faint">{frDay(operation.operatedOn)}</span>
+        <span className="w-20 shrink-0 text-[12px] text-muted-foreground">{LABEL[operation.type]}</span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px]">
+          {operation.assetName ?? 'frais de compte'}
+          {operation.note && <span className="text-faint"> · {operation.note}</span>}
+        </span>
+        {operation.quantity && (
+          <span className="tabular w-20 text-right text-[11.5px] text-faint">
+            {Number(operation.quantity).toLocaleString('fr-FR', { maximumFractionDigits: 8 })}
+          </span>
+        )}
+        <span className="tabular w-24 text-right text-[12.5px]">{amount(operation.amount, '€')}</span>
+        <RowMenu label={`${LABEL[operation.type]} du ${frDay(operation.operatedOn)}`}>
+          <DropdownMenuItem onSelect={() => setEditing(true)}>
+            <PencilIcon />
+            Corriger
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+            <Trash2Icon />
+            Supprimer
+          </DropdownMenuItem>
+        </RowMenu>
+      </div>
+
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">
+              {LABEL[operation.type]} · {operation.assetName ?? 'frais de compte'}
+            </DialogTitle>
+          </DialogHeader>
+          <ActionForm
+            action={correctOperationAction}
+            onSuccess={() => setEditing(false)}
+            successLabel="Opération corrigée"
+          >
+            <input type="hidden" name="operationId" value={operation.id} />
+            <input type="hidden" name="trade" value={String(trade)} />
+            {/* The type and the asset stay out: changing either would make it
+                another operation, which is a deletion and a new declaration. */}
+            <Field label="Compte">
+              <FormSelect
+                name="accountId"
+                defaultValue={operation.accountId}
+                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date" name="operatedOn">
+                <DateField name="operatedOn" defaultValue={operation.operatedOn} />
+              </Field>
+              {trade && (
+                <Field label="Quantité" name="quantity">
+                  <Input
+                    name="quantity"
+                    inputMode="decimal"
+                    defaultValue={operation.quantity ?? ''}
+                    autoComplete="off"
+                  />
+                </Field>
+              )}
+            </div>
+            <Field label="Montant" name="amount">
+              <AmountInput name="amount" defaultValue={operation.amount} />
+            </Field>
+            <TextField name="note" label="Note (optionnel)" defaultValue={operation.note ?? ''} />
+            <SubmitButton className="self-start">Enregistrer</SubmitButton>
+          </ActionForm>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[15px]">Supprimer cette opération ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[12.5px]">
+              {LABEL[operation.type]} du {frDay(operation.operatedOn)}, {amount(operation.amount, '€')} sur{' '}
+              {operation.accountName}. La position et le PRU sont recalculés sans elle.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ActionForm action={deleteOperationAction} onSuccess={() => setDeleting(false)}>
+            <input type="hidden" name="operationId" value={operation.id} />
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <SubmitButton variant="destructive">Supprimer</SubmitButton>
+            </AlertDialogFooter>
+          </ActionForm>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
+
+export function OperationRows({
+  operations,
+  accounts,
+}: {
+  operations: OperationEntry[]
+  accounts: Option[]
+}) {
+  return (
+    <Rows>
+      {operations.map((operation) => (
+        <OperationRow key={operation.id} operation={operation} accounts={accounts} />
       ))}
     </Rows>
   )

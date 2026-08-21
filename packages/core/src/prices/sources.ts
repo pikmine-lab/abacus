@@ -98,7 +98,70 @@ export async function fetchCoinGecko(reference: string): Promise<Quote> {
   return parseCoinGecko(await getJson(url), reference)
 }
 
+/** One day's close, as a source hands it over. */
+export interface HistoricalPrice {
+  quotedOn: string
+  price: string
+}
+
+/**
+ * A year of daily closes, which is what a curve needs and what both sources
+ * give in a single call (256 points in 27 KB, measured 2026-08-21). Anything
+ * older is not worth the call: the app itself is days old, and a holding
+ * declared today has no history of its own before it.
+ */
+export async function fetchYahooHistory(reference: string): Promise<HistoricalPrice[]> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(reference)}?interval=1d&range=1y`
+  return parseYahooHistory(await getJson(url))
+}
+
+export function parseYahooHistory(payload: unknown): HistoricalPrice[] {
+  const result = (
+    payload as {
+      chart?: {
+        result?: {
+          timestamp?: number[]
+          indicators?: { adjclose?: { adjclose?: (number | null)[] }[] }
+        }[]
+      }
+    }
+  )?.chart?.result?.[0]
+  const stamps = result?.timestamp ?? []
+  const closes = result?.indicators?.adjclose?.[0]?.adjclose ?? []
+  const history: HistoricalPrice[] = []
+  for (const [i, stamp] of stamps.entries()) {
+    const close = closes[i]
+    // The running day comes back with a null adjusted close: a day still being
+    // traded has no close yet, and writing zero would draw a cliff.
+    if (typeof close !== 'number' || !Number.isFinite(close)) continue
+    history.push({ quotedOn: new Date(stamp * 1000).toISOString().slice(0, 10), price: String(close) })
+  }
+  return history
+}
+
+export async function fetchCoinGeckoHistory(reference: string): Promise<HistoricalPrice[]> {
+  const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(reference)}/market_chart?vs_currency=eur&days=365&interval=daily`
+  return parseCoinGeckoHistory(await getJson(url))
+}
+
+export function parseCoinGeckoHistory(payload: unknown): HistoricalPrice[] {
+  const prices = (payload as { prices?: [number, number][] })?.prices ?? []
+  const byDay = new Map<string, string>()
+  for (const [ms, price] of prices) {
+    if (typeof price !== 'number' || !Number.isFinite(price)) continue
+    // Crypto trades around the clock and the last point is intraday: one entry
+    // per day, the latest of that day winning.
+    byDay.set(new Date(ms).toISOString().slice(0, 10), String(price))
+  }
+  return [...byDay.entries()].map(([quotedOn, price]) => ({ quotedOn, price }))
+}
+
 export type Fetcher = (source: PriceSource, reference: string) => Promise<Quote>
+
+export type HistoryFetcher = (source: PriceSource, reference: string) => Promise<HistoricalPrice[]>
+
+export const fetchHistory: HistoryFetcher = (source, reference) =>
+  source === 'yahoo' ? fetchYahooHistory(reference) : fetchCoinGeckoHistory(reference)
 
 export const fetchQuote: Fetcher = (source, reference) =>
   source === 'yahoo' ? fetchYahoo(reference) : fetchCoinGecko(reference)
