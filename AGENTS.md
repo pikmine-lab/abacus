@@ -226,5 +226,13 @@ anglais, et le principe « le français s'arrête à ce qui s'affiche » est éc
 Les anciennes adresses ne répondent plus : pas de redirection, rupture assumée pour une
 production de deux jours à un seul utilisateur.
 
+**Le graphe de soldes compare six comptes** (2026-08-21, issue #32) : il s'ouvre sur les
+comptes les mieux garnis et non sur les premiers par ordre alphabétique, n'oppose plus de
+plafond de trois séries, et son label de fin de ligne tient dans le cadre. La palette de
+séries passe de trois à six teintes (`--chart-4..6`), maximum mesuré à côté des trois
+premières : la pire paire tombe dans la bande CVD 6-8, légale uniquement avec un encodage
+secondaire, ce qui fait des labels directs la condition de la palette plutôt qu'un confort.
+D'où le lien entre les trois défauts. `DESIGN.md` § Couleur porte les chiffres.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

@@ -46,12 +46,18 @@
   --good: #4ec27a;
   --destructive: #e5686b;
 
-  /* Chart series: copper, steel blue, magenta. Validated as a set against
-     the dark surface #14171f on ALL pairs (the strictest list), no warnings.
-     Three is a hard ceiling: any fourth hue collides under deuteranopia. */
+  /* Chart series: copper, steel blue, magenta, teal, violet, bronze.
+     Validated as a set against the dark surface #14171f on ALL pairs (the
+     strictest list, and the right one when a legend lets any subset show).
+     Six is the measured maximum beside the first three; the CVD worst pair
+     sits in the 6-8 band, which is legal only because every series carries a
+     direct end label. DESIGN.md § Couleur holds the numbers. */
   --chart-1: #c58229;
   --chart-2: #3987e5;
   --chart-3: #d55181;
+  --chart-4: #08856a;
+  --chart-5: #7d4cc0;
+  --chart-6: #855e02;
   --grid: #1c212c;
 
   /* Sidebar recedes behind the page so the content reads as the front plane. */
@@ -92,6 +98,9 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

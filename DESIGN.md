@@ -86,16 +86,25 @@ de page.
    d'interface (contrainte WCAG texte) ; `--chart-1` `#c58229` est la marque de
    graphe (contrainte : bande de luminance sombre L 0,48–0,67, où le pas clair est
    trop pâle pour qualifier). Même rampe, deux usages, aucune confusion.
-3. **Trois séries de graphe, plafond dur.** `#c58229` cuivre · `#3987e5` bleu acier ·
-   `#d55181` magenta. Validées **en toutes paires** sur la surface `#14171f`, sans
-   avertissement. Un quatrième slot échoue : la meilleure candidate (aqua `#199e70`)
-   tombe à ΔE 1,6 contre le magenta en deutéranopie. Au-delà de trois séries :
-   regrouper ou passer en small multiples : jamais ajouter une teinte.
-4. **Ni vert ni rouge en série.** Ces deux teintes portent le sens (revenu, erreur) :
-   les réutiliser comme identité brouillerait la lecture.
-5. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout delta,
+3. **Six séries de graphe.** `#c58229` cuivre · `#3987e5` bleu acier · `#d55181`
+   magenta · `#08856a` sarcelle · `#7d4cc0` violet · `#855e02` bronze. Validées
+   **en toutes paires** sur la surface `#14171f` : c'est la liste stricte, et la bonne
+   dès qu'une légende laisse afficher n'importe quel sous-ensemble. Six est le maximum
+   mesuré à côté des trois premières, par recherche exhaustive du gamut dans la bande
+   de luminance : aucune septième candidate ne passe, et les teintes de départ n'ont
+   pas bougé.
+4. **Ces six-là se paient en labels.** Leur pire paire tombe à ΔE 6,8 en protanopie,
+   dans la bande 6-8 qui n'est légale qu'avec un encodage secondaire. Les labels
+   directs en fin de ligne sont donc la condition de la palette, pas un confort. Le
+   quatrième slot coûte déjà ce prix et les deux suivants ne coûtent rien de plus : il
+   se paie une fois, en passant de trois à quatre. Au-delà de six séries les teintes se
+   répètent plutôt que de refuser une série, puisque c'est le label qui identifie.
+5. **Ni vert ni rouge en série.** Ces deux teintes portent le sens (revenu, erreur) :
+   les réutiliser comme identité brouillerait la lecture. La sarcelle du slot 4 est
+   mesurée à distance du vert positif, elle ne l'approche pas.
+6. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout delta,
    position au-dessus/au-dessous de zéro sur les flux, libellé sur tout badge.
-6. **Pas de couleur par catégorie.** Une barre de dépenses porte son identité dans
+7. **Pas de couleur par catégorie.** Une barre de dépenses porte son identité dans
    son libellé et sa magnitude dans sa longueur ; la couleur n'encoderait rien.
    Toutes les barres sont cuivre. (L'ancienne rampe `--cat0…6` attribuait la teinte
    au *rang*, ce que sa propre règle interdisait : supprimée.)
@@ -123,6 +132,16 @@ de page.
   toutes les séries, légende dès deux séries, labels directs en fin de ligne
   (anticollision). Un mois du graphe de flux est un vrai contrôle (rôle, tabulation,
   Entrée/Espace) qui cadre la page dessus.
+- **Le label de fin est mesuré, pas estimé.** La marge droite est taillée sur la largeur
+  réelle des labels, dans leur police, et plafonnée au tiers du cadre : un nom qui n'y
+  tient pas est raccourci par nous, jamais par le cadre. Le montant ne se coupe pas, lui,
+  parce qu'un nombre tronqué est un nombre faux. L'anticollision écarte vers le bas puis
+  recale la pile sur les deux bords, sinon la sixième série sort du cadre par le bas ; et
+  au-delà de ce que la hauteur tient, les labels cèdent la place à la légende.
+- **Une sélection par défaut dit quelque chose.** Le graphe de soldes s'ouvre sur les
+  comptes les mieux garnis, autant que la palette en tient, jamais sur les premiers par
+  ordre alphabétique. Il n'oppose pas non plus de plafond : comparer plus de comptes est
+  exactement ce que la vue d'ensemble promet.
 - **Marques** : lignes 2px, points de fin r4 avec anneau de la couleur du fond,
   barres ≤ 24px à bout arrondi, grille en filet discret, ticks au format français
   (`13,5k`).
