@@ -103,7 +103,9 @@ Engagement déclaré, lié à un acteur et à un compte de prélèvement, en deu
 - **Financement** (durée finie) : paiement en X fois. Montant total, nombre d'échéances,
   montant par échéance, achat financé (libellé/acteur). Le **restant dû** est dérivé des
   échéances déjà passées. Pas de modélisation d'intérêts en V1 : les frais éventuels sont
-  simplement dans les montants d'échéance.
+  simplement dans les montants d'échéance. L'échéancier écrit se **révise** après coup, et
+  c'est lui qui fait foi : le montant total suit la somme de ses lignes, ce qui rend
+  exprimables un report, une renégociation ou un solde anticipé.
 
 Les deux formes partagent le même moteur d'échéances et alimentent la projection ; un
 financement s'éteint de lui-même à la dernière échéance.

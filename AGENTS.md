@@ -24,6 +24,12 @@ règles de graphes et usages de composants y sont tranchés, pas ici.
   jamais accès à ce dépôt : les définitions d'outils (noms, descriptions, erreurs) sont son
   seul monde. Une description d'outil se travaille comme une UI ; une erreur de l'IA en
   usage réel se traite comme un défaut d'interface, pas comme un défaut d'IA.
+- **Deux interfaces, un même pouvoir.** Le web et le MCP visent deux acteurs différents,
+  une personne et une IA, mais ouvrent les mêmes cas d'usage : ce qui se déclare, se
+  corrige ou se supprime d'un côté doit pouvoir l'être de l'autre. Une fonctionnalité
+  livrée dans une seule des deux est incomplète, pas « en cours ». Cela ne veut pas dire
+  les mêmes formulaires : chacune parle la langue de son acteur (des noms et une
+  description qui enseigne côté MCP, des listes et des valeurs préremplies côté web).
 - **Intégrité par construction.** La nature d'un mouvement (dépense, revenu, virement
   interne) est une colonne générée depuis ses extrémités ; les règles du modèle sont des
   contraintes SQL, pas des validations applicatives dupliquées.
@@ -142,6 +148,23 @@ référence, historisé).
 écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
 son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
 est la somme des échéances non réglées.
+
+**Révision d'un échéancier** (2026-08-21, issue #13) : ce plan se révise après coup, en
+bloc (UI : « Réviser l'échéancier » dans le menu de la ligne ; MCP :
+`manage_financing_schedule`). L'échéancier fait foi : `total_amount`, le nombre
+d'échéances, le montant nominal et la prochaine échéance sont recalculés depuis ses
+lignes. Une échéance réglée et son mouvement restent synchronisés dans les deux sens :
+montant et date, corriger l'un corrige l'autre, retirer la ligne supprime le mouvement.
+
+**Correction d'un engagement** (2026-08-21) : ce qu'un engagement dit de lui-même se
+corrige (nom, acteur, compte, catégorie, périodicité) : UI « Modifier » dans le menu de
+la ligne, MCP `update_commitment`. La correction vaut pour les échéances à venir ; les
+mouvements déjà déclarés ne sont jamais réécrits, ils constatent ce qui s'est passé sur
+le compte où ça s'est passé. Restent hors correction : le montant, qui est une histoire
+datée (`change_price`), et la direction, qui ferait d'un engagement un autre.
+
+Le chantier « chaque entité se corrige » (comptes, acteurs, catégories, activités,
+pointages) est suivi en issue.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

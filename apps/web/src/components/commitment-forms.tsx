@@ -6,11 +6,23 @@ import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { createFinancingAction, createSubscriptionAction, setJudgmentAction } from '@/lib/actions'
+import {
+  createFinancingAction,
+  createSubscriptionAction,
+  editCommitmentAction,
+  setJudgmentAction,
+} from '@/lib/actions'
 
-interface Option {
+export interface Option {
   id: string
   name: string
+}
+
+/** The references a commitment can point at, for the forms that let it move. */
+export interface CommitmentOptions {
+  accounts: Option[]
+  actors: Option[]
+  categories: Option[]
 }
 
 const PERIOD_OPTIONS = [
@@ -25,6 +37,69 @@ const PERIOD_OPTIONS = [
  * financing plan and carries a judgment ("what do I cut?"), an incoming one
  * can be neither.
  */
+/**
+ * What a commitment says about itself: who bills it, which account it hits,
+ * how it is filed. Shared by declaration and correction, because two copies of
+ * these fields would drift, and the second one would be the one nobody
+ * remembers to fix.
+ */
+function CommitmentIdentityFields({
+  outgoing,
+  accounts,
+  actors,
+  categories,
+  defaults,
+  beforeCategory,
+}: {
+  outgoing: boolean
+  accounts: Option[]
+  actors: Option[]
+  categories: Option[]
+  defaults?: { actor?: string; accountId?: string; categoryId?: string }
+  /** Sits next to the category, on the row where the first due date belongs. */
+  beforeCategory?: React.ReactNode
+}) {
+  return (
+    <>
+      <datalist id="commitment-actors">
+        {actors.map((a) => (
+          <option key={a.id} value={a.name} />
+        ))}
+      </datalist>
+      <div className="grid grid-cols-2 gap-3">
+        <TextField
+          name="actor"
+          label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}
+          defaultValue={defaults?.actor ?? ''}
+          list="commitment-actors"
+          placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
+          autoComplete="off"
+        />
+        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
+          <FormSelect
+            name="accountId"
+            required
+            placeholder="Choisir"
+            defaultValue={defaults?.accountId}
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {beforeCategory}
+        <Field label="Catégorie">
+          <FormSelect
+            name="categoryId"
+            noneLabel="(aucune)"
+            defaultValue={defaults?.categoryId}
+            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+          />
+        </Field>
+      </div>
+    </>
+  )
+}
+
 export function NewCommitmentForm({
   direction,
   accounts,
@@ -42,44 +117,19 @@ export function NewCommitmentForm({
   const outgoing = direction === 'outgoing'
 
   const shared = (withFirstDue: boolean) => (
-    <>
-      <datalist id="commitment-actors">
-        {actors.map((a) => (
-          <option key={a.id} value={a.name} />
-        ))}
-      </datalist>
-      <div className="grid grid-cols-2 gap-3">
-        <TextField
-          name="actor"
-          label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}
-          list="commitment-actors"
-          placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
-          autoComplete="off"
-        />
-        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
-          <FormSelect
-            name="accountId"
-            required
-            placeholder="Choisir"
-            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-          />
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {withFirstDue && (
+    <CommitmentIdentityFields
+      outgoing={outgoing}
+      accounts={accounts}
+      actors={actors}
+      categories={categories}
+      beforeCategory={
+        withFirstDue ? (
           <Field label="Première échéance" name="firstDueOn">
             <DateField name="firstDueOn" defaultValue={today} />
           </Field>
-        )}
-        <Field label="Catégorie">
-          <FormSelect
-            name="categoryId"
-            noneLabel="(aucune)"
-            options={categories.map((c) => ({ value: c.id, label: c.name }))}
-          />
-        </Field>
-      </div>
-    </>
+        ) : undefined
+      }
+    />
   )
 
   if (!outgoing)
@@ -144,6 +194,51 @@ export function NewCommitmentForm({
         </ActionForm>
       )}
     </div>
+  )
+}
+
+/**
+ * Corrects an existing commitment. The amount is deliberately absent: a price
+ * change is dated history and has its own panel, and a financing's installment
+ * amount comes from its schedule.
+ *
+ * The movements already declared are not rewritten: they say what happened, on
+ * the account it happened on. The panel says so rather than letting someone
+ * discover it afterwards.
+ */
+export function EditCommitmentForm({
+  commitmentId,
+  incoming,
+  defaults,
+  options,
+  onDone,
+}: {
+  commitmentId: string
+  incoming: boolean
+  defaults: { label: string; actor: string; accountId: string; categoryId: string; periodUnit: string }
+  options: CommitmentOptions
+  onDone?: () => void
+}) {
+  return (
+    <ActionForm action={editCommitmentAction} onSuccess={onDone} successLabel="Engagement corrigé">
+      <input type="hidden" name="commitmentId" value={commitmentId} />
+      <TextField name="label" label="Nom" defaultValue={defaults.label} />
+      <CommitmentIdentityFields
+        outgoing={!incoming}
+        accounts={options.accounts}
+        actors={options.actors}
+        categories={options.categories}
+        defaults={defaults}
+      />
+      <Field label="Périodicité">
+        <FormSelect name="periodUnit" defaultValue={defaults.periodUnit} options={PERIOD_OPTIONS} />
+      </Field>
+      <p className="text-[11.5px] text-faint">
+        La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur compte et
+        leur acteur : ils disent ce qui s’est passé.
+      </p>
+      <SubmitButton className="self-start">Enregistrer</SubmitButton>
+    </ActionForm>
   )
 }
 

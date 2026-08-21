@@ -11,12 +11,14 @@ import {
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
   pendingOccurrences,
+  reviseSchedule,
   skipNextOccurrence,
 } from '../src/services/commitments.ts'
-import { deleteMovement } from '../src/services/movements.ts'
+import { correctMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -295,4 +297,258 @@ test('deleting a confirmed installment puts it back on the plan', async () => {
   assert.equal(tracked.progress!.remainingDue, 600)
   assert.equal(tracked.nextDueOn, '2026-04-10')
   assert.equal((await pendingOccurrences(user, '2026-12-31')).length, 2)
+})
+
+async function financingFixture(user: string) {
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+  const financing = await createFinancing(user, {
+    label: 'Cuisine',
+    actorId: store.id,
+    accountId: account.id,
+    totalAmount: 3000,
+    installmentsTotal: 3,
+    firstDueOn: '2026-02-01',
+    installments: [
+      { dueOn: '2026-02-01', amount: 1500 },
+      { dueOn: '2026-03-05', amount: 900 },
+      { dueOn: '2026-04-05', amount: 600 },
+    ],
+  })
+  return { account, store, financing }
+}
+
+async function trackedFinancing(user: string, id: string) {
+  return (await listCommitmentsWithProgress(user)).find((c) => c.id === id)!
+}
+
+test('revising a schedule moves a date, changes an amount, and the total follows', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  const schedule = await financingSchedule(user, financing.id)
+
+  // The last installment is pushed back a month and renegotiated down.
+  await reviseSchedule(user, financing.id, [
+    { id: schedule[0]!.id, dueOn: schedule[0]!.dueOn, amount: 1500 },
+    { id: schedule[1]!.id, dueOn: schedule[1]!.dueOn, amount: 900 },
+    { id: schedule[2]!.id, dueOn: '2026-05-05', amount: 400 },
+  ])
+
+  const revised = await financingSchedule(user, financing.id)
+  assert.deepEqual(
+    revised.map((i) => [i.position, i.dueOn, i.amount]),
+    [
+      [1, '2026-02-01', '1500.00'],
+      [2, '2026-03-05', '900.00'],
+      [3, '2026-05-05', '400.00'],
+    ],
+  )
+
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.totalAmount, '2800.00')
+  assert.equal(tracked.progress!.remainingDue, 2800)
+  assert.equal(tracked.nextDueOn, '2026-02-01')
+})
+
+test('revising adds and drops installments, and renumbers what is left', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  const schedule = await financingSchedule(user, financing.id)
+
+  // The second installment is dropped and a new one is added at the end.
+  await reviseSchedule(user, financing.id, [
+    { id: schedule[0]!.id, dueOn: schedule[0]!.dueOn, amount: 1500 },
+    { id: schedule[2]!.id, dueOn: schedule[2]!.dueOn, amount: 600 },
+    { dueOn: '2026-05-05', amount: 250 },
+  ])
+
+  const revised = await financingSchedule(user, financing.id)
+  assert.deepEqual(
+    revised.map((i) => [i.position, i.dueOn, i.amount]),
+    [
+      [1, '2026-02-01', '1500.00'],
+      [2, '2026-04-05', '600.00'],
+      [3, '2026-05-05', '250.00'],
+    ],
+  )
+
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.installmentsTotal, 3)
+  assert.equal(tracked.totalAmount, '2350.00')
+  assert.equal(tracked.progress!.remainingDue, 2350)
+  assert.equal((await pendingOccurrences(user, '2026-12-31')).length, 3)
+})
+
+test('revising a settled installment corrects the movement that paid it', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  const paid = await confirmNextOccurrence(user, financing.id)
+  const schedule = await financingSchedule(user, financing.id)
+
+  // The deposit really was 1 400: the plan and the movement say so together.
+  await reviseSchedule(
+    user,
+    financing.id,
+    schedule.map((i) => ({ id: i.id, dueOn: i.dueOn, amount: i.position === 1 ? 1400 : Number(i.amount) })),
+  )
+
+  const movements = await listMovements(user, { commitmentId: financing.id })
+  assert.equal(movements[0]!.id, paid.id)
+  assert.equal(movements[0]!.amount, '1400.00')
+
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.progress!.paidTotal, '1400.00')
+  assert.equal(tracked.totalAmount, '2900.00')
+  assert.equal(tracked.progress!.remainingDue, 1500)
+})
+
+test('dropping a settled installment deletes the movement that paid it', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  await confirmNextOccurrence(user, financing.id)
+  const schedule = await financingSchedule(user, financing.id)
+
+  // That first installment was never owed: the line and its movement go together.
+  await reviseSchedule(
+    user,
+    financing.id,
+    schedule
+      .filter((i) => i.position > 1)
+      .map((i) => ({ id: i.id, dueOn: i.dueOn, amount: Number(i.amount) })),
+  )
+
+  assert.equal((await listMovements(user, { commitmentId: financing.id })).length, 0)
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.progress!.paidInstallments, 0)
+  assert.equal(tracked.totalAmount, '1500.00')
+  assert.equal(tracked.progress!.remainingDue, 1500)
+  assert.equal(tracked.nextDueOn, '2026-03-05')
+})
+
+test('correcting the movement of an installment realigns the plan', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  const paid = await confirmNextOccurrence(user, financing.id)
+
+  // Typed 1 500 instead of 1 450: correcting the movement corrects the plan.
+  await correctMovement(user, paid.id, { amount: 1450 })
+
+  const schedule = await financingSchedule(user, financing.id)
+  assert.equal(schedule[0]!.amount, '1450.00')
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.progress!.paidTotal, '1450.00')
+  assert.equal(tracked.totalAmount, '2950.00')
+})
+
+test('a schedule revision refuses what would leave no plan at all', async () => {
+  const user = await seedUser()
+  const { financing, account, store } = await financingFixture(user)
+  const subscription = await createSubscription(user, {
+    label: 'Netflix',
+    actorId: store.id,
+    accountId: account.id,
+    amount: 13.49,
+    periodUnit: 'month',
+    firstDueOn: '2026-05-01',
+  })
+
+  await assert.rejects(
+    reviseSchedule(user, financing.id, []),
+    (e: DomainError) => e.code === 'schedule_empty',
+  )
+  await assert.rejects(
+    reviseSchedule(user, subscription.id, [{ dueOn: '2026-06-01', amount: 10 }]),
+    (e: DomainError) => e.code === 'not_a_financing',
+  )
+})
+
+test('a settled installment and its movement keep the same date, edited from either side', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+  const paid = await confirmNextOccurrence(user, financing.id)
+
+  // Debited two days late: the settled line says the payment, not the intent.
+  await correctMovement(user, paid.id, { happenedOn: '2026-02-03' })
+  let schedule = await financingSchedule(user, financing.id)
+  assert.equal(schedule[0]!.dueOn, '2026-02-03')
+
+  // And back from the schedule side: the movement follows.
+  await reviseSchedule(
+    user,
+    financing.id,
+    schedule.map((i) => ({
+      id: i.id,
+      dueOn: i.position === 1 ? '2026-02-05' : i.dueOn,
+      amount: Number(i.amount),
+    })),
+  )
+  schedule = await financingSchedule(user, financing.id)
+  assert.equal(schedule[0]!.dueOn, '2026-02-05')
+  const movements = await listMovements(user, { commitmentId: financing.id })
+  assert.equal(movements[0]!.happenedOn, '2026-02-05')
+
+  // The plan's cursor still points at the first unpaid installment.
+  const tracked = await trackedFinancing(user, financing.id)
+  assert.equal(tracked.nextDueOn, '2026-03-05')
+})
+
+test('editing a commitment corrects what it says, not the movements it produced', async () => {
+  const user = await seedUser()
+  const { subscription, account } = await subscriptionFixture(user)
+  const other = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
+  const provider = await createActor(user, { name: 'Netflix SAS' })
+  const movement = await confirmNextOccurrence(user, subscription.id)
+
+  const edited = await editCommitment(user, subscription.id, {
+    label: 'Netflix Standard',
+    actorId: provider.id,
+    accountId: other.id,
+    periodCount: 2,
+  })
+  assert.equal(edited.label, 'Netflix Standard')
+  assert.equal(edited.actorId, provider.id)
+  assert.equal(edited.accountId, other.id)
+  assert.equal(edited.periodCount, 2)
+  // The amount has its own dated history: an edit never touches it.
+  assert.equal(edited.amount, '13.49')
+
+  // What already happened, happened on the account it happened on.
+  const [past] = await listMovements(user, { commitmentId: subscription.id })
+  assert.equal(past!.id, movement.id)
+  assert.equal(past!.sourceAccountId, account.id)
+
+  // The next occurrence, though, follows the correction.
+  const confirmed = await confirmNextOccurrence(user, subscription.id)
+  assert.equal(confirmed.sourceAccountId, other.id)
+  assert.equal(confirmed.targetActorId, provider.id)
+})
+
+test('editing a commitment refuses a reference that is not the user’s', async () => {
+  const user = await seedUser()
+  const other = await seedUser('user-2')
+  const { subscription } = await subscriptionFixture(user)
+  const theirAccount = await createAccount({ userId: other, name: 'Theirs', behavior: 'payment' })
+
+  await assert.rejects(
+    editCommitment(user, subscription.id, { accountId: theirAccount.id }),
+    (e: DomainError) => e.code === 'account_not_found',
+  )
+  await assert.rejects(
+    editCommitment(user, subscription.id, { accountId: '00000000-0000-0000-0000-000000000000' }),
+    (e: DomainError) => e.code === 'account_not_found',
+  )
+})
+
+test('a financing takes no lock-in date: it ends at its last installment', async () => {
+  const user = await seedUser()
+  const { financing } = await financingFixture(user)
+
+  await assert.rejects(
+    editCommitment(user, financing.id, { engagedUntil: '2027-01-01' }),
+    (e: DomainError) => e.code === 'financing_has_no_lock_in',
+  )
+  // Its label and creditor stay correctable, like any other commitment.
+  const edited = await editCommitment(user, financing.id, { label: 'Cuisine équipée' })
+  assert.equal(edited.label, 'Cuisine équipée')
+  assert.equal((await financingSchedule(user, financing.id)).length, 3)
 })

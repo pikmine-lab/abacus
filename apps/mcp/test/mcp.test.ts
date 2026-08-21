@@ -171,6 +171,29 @@ test('subscription lifecycle through the MCP surface', async () => {
   assert.equal(commitments[0]!.monthlyEquivalent, 15.99)
   assert.equal(commitments[0]!.judgment, 'reducible')
 
+  // Renamed and moved to another account: a correction, not a price change.
+  // The movements already recorded keep the account they happened on.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Second', behavior: 'payment' })
+  const corrected = (
+    await call(client, 'update_commitment', {
+      commitment: 'Netflix',
+      label: 'Netflix Standard',
+      account: 'Second',
+      periodUnit: 'year',
+    })
+  ).json() as { label: string; every: string; note: string }
+  assert.equal(corrected.label, 'Netflix Standard')
+  assert.equal(corrected.every, '1 year')
+  assert.match(corrected.note, /already recorded are unchanged/)
+  const onOldAccount = (
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Courant' })
+  ).json() as unknown[]
+  const onNewAccount = (
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Second' })
+  ).json() as unknown[]
+  assert.equal(onOldAccount.length, 2)
+  assert.equal(onNewAccount.length, 0)
+
   // Errors come back as guidance, not stack traces.
   const unknown = await call(client, 'confirm_due_movements', {
     items: [{ commitment: 'Spotify', action: 'confirm' }],
@@ -220,6 +243,43 @@ test('financing tracked to settlement through the MCP surface', async () => {
   }[]
   assert.equal(commitments[0]!.paidInstallments, '2/4')
   assert.equal(commitments[0]!.remainingDue, 500)
+
+  // The store pushes the last installment back and knocks 50 off it: the plan
+  // is revised as a whole, from the ids it just read.
+  interface ScheduleView {
+    totalAmount: number
+    installments: { id: string; position: number; dueOn: string; amount: number; status: string }[]
+  }
+  const shown = (
+    await call(client, 'manage_financing_schedule', { action: 'show', commitment: 'Canapé en 4x' })
+  ).json() as ScheduleView
+  assert.deepEqual(
+    shown.installments.map((i) => i.status),
+    ['paid', 'paid', 'due', 'due'],
+  )
+
+  const revised = (
+    await call(client, 'manage_financing_schedule', {
+      action: 'revise',
+      commitment: 'Canapé en 4x',
+      installments: shown.installments.map((i) => ({
+        id: i.id,
+        dueOn: i.position === 4 ? '2026-12-05' : i.dueOn,
+        amount: i.position === 4 ? 200 : i.amount,
+      })),
+    })
+  ).json() as ScheduleView
+  assert.equal(revised.totalAmount, 950)
+  assert.deepEqual(revised.installments[3], {
+    id: shown.installments[3]!.id,
+    position: 4,
+    dueOn: '2026-12-05',
+    amount: 200,
+    status: 'due',
+  })
+
+  const after = (await call(client, 'list_commitments')).json() as { remainingDue: number }[]
+  assert.equal(after[0]!.remainingDue, 450)
 })
 
 test('a mistyped movement is repaired through the MCP surface', async () => {

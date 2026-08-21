@@ -174,6 +174,12 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   panneau que la déclaration, la suppression derrière une confirmation. Une
   correction ne touche jamais les liens d'origine (échéance, pointage, avance) : le
   panneau le dit quand la ligne en porte un.
+- **Un engagement se corrige comme il se déclare** : « Modifier », dans le menu de la
+  ligne, ouvre un panneau qui reprend les champs de la déclaration (nom, acteur, compte,
+  catégorie, périodicité), préremplis avec ce qu'ils valent. Le montant n'y est pas : il
+  est daté et historisé, il garde son geste propre. Et une correction ne réécrit pas les
+  mouvements déjà déclarés, qui disent ce qui s'est passé sur le compte où ça s'est passé :
+  le panneau le dit plutôt que de laisser le découvrir après.
 - **Confirmer une échéance n'est pas un oui/non.** Le montant est modifiable sur
   place, parce que la réalité diverge en routine : un salaire bouge avec le nombre
   de jours ouvrés, une prime tombe, un abonnement grimpe. Dès que le montant saisi
@@ -193,6 +199,14 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   sont modifiables dès qu'on le demande, et l'écart avec le total dû s'affiche en
   direct. Le restant dû est la **somme de ce qui reste**, jamais une soustraction
   qu'un arrondi pourrait fausser.
+- **Un échéancier écrit se révise après coup** (« Réviser l'échéancier », dans le menu de
+  la ligne, dans un panneau parce qu'un plan a autant de lignes qu'il a d'échéances). Le
+  panneau montre le plan entier, échéances déjà payées comprises, et c'est le plan entier
+  qui repart : son ordre est l'ordre contractuel, et le total dû est la somme de ses lignes,
+  donc un report, une renégociation ou un solde anticipé s'écrivent ici plutôt que d'exiger
+  un nouveau financement. Une échéance payée porte ce qui est réellement sorti du compte :
+  corriger son montant corrige son mouvement, la retirer supprime ce mouvement, et le
+  panneau l'annonce avant l'envoi.
 - **Sa progression se lit dans un anneau** portant le pourcentage payé. Pas
   « 9/24 » : à 24 échéances le texte ne tient plus dans l'anneau, alors que le
   compte exact a toute la place dans la ligne juste à côté.

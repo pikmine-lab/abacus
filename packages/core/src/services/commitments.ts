@@ -11,17 +11,23 @@ import {
   updateCommitment,
 } from '../db/datasources/commitments.ts'
 import {
+  deleteInstallments,
   dueInstallments,
   insertInstallments,
   listInstallments,
+  listInstallmentsForUpdate,
+  type NewInstallment,
   nextPendingInstallment,
+  resyncFinancing,
   scheduleProgress,
   settleInstallment,
+  shiftPositions,
+  updateInstallmentPlan,
 } from '../db/datasources/installments.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
 import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
-import { declareMovementIn } from './movements.ts'
+import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
 
 async function requireRefs(tx: Executor, userId: string, actorId: string, accountId: string): Promise<void> {
   if (!(await getActor(tx, userId, actorId)))
@@ -259,6 +265,70 @@ export async function changeAmount(
   })
 }
 
+/**
+ * What a commitment says about itself, once it exists. Everything a person can
+ * mistype when declaring it is here: its label, who bills it, which account it
+ * hits, how it is filed, how often it falls.
+ *
+ * Two things stay out on purpose. The amount, because a price change is dated
+ * history (changeAmount) and a financing's nominal amount derives from its
+ * schedule. And the direction, because an expense turned income is not the
+ * same commitment corrected, it is another one: its own past movements would
+ * contradict it.
+ */
+export interface CommitmentEdit {
+  label?: string
+  actorId?: string
+  accountId?: string
+  categoryId?: string | null
+  activityId?: string | null
+  periodUnit?: PeriodUnit
+  periodCount?: number
+  engagedUntil?: string | null
+}
+
+const EDITABLE = [
+  'label',
+  'actorId',
+  'accountId',
+  'categoryId',
+  'activityId',
+  'periodUnit',
+  'periodCount',
+  'engagedUntil',
+] as const
+
+/**
+ * Corrects an existing commitment. The movements it already produced are left
+ * alone: they state what happened, on the account it happened on, and rewriting
+ * them would move balances that were checked against a real bank. The
+ * correction takes effect from the next occurrence.
+ */
+export async function editCommitment(userId: string, id: string, input: CommitmentEdit): Promise<Commitment> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const commitment = await getCommitmentForUpdate(tx, userId, id)
+    if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
+    if (input.actorId !== undefined || input.accountId !== undefined)
+      await requireRefs(
+        tx,
+        userId,
+        input.actorId ?? commitment.actorId,
+        input.accountId ?? commitment.accountId,
+      )
+    if (commitment.kind === 'financing' && input.engagedUntil)
+      throw new DomainError(
+        'financing_has_no_lock_in',
+        'A financing ends at its last installment: it carries no lock-in date',
+      )
+
+    const patch: Record<string, unknown> = {}
+    for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
+    if (Object.keys(patch).length === 0) return commitment
+    return (await updateCommitment(tx, userId, id, patch))!
+  })
+}
+
 export async function setJudgment(
   userId: string,
   id: string,
@@ -396,9 +466,13 @@ export async function confirmNextOccurrence(
     const confirmedAmount = overrides.amount ?? expected
 
     if (installment) {
-      // The schedule records what was really paid, so the remaining due: the
-      // sum of the unpaid lines: stays exact without recomputing anything.
-      await settleInstallment(tx, installment.id, movement.id, confirmedAmount)
+      // The schedule records what was really paid, and when: the remaining due
+      // (the sum of the unpaid lines) stays exact without recomputing anything,
+      // and a settled line reads as the payment it was.
+      await settleInstallment(tx, installment.id, movement.id, {
+        amount: confirmedAmount,
+        on: movement.happenedOn,
+      })
       const next = await nextPendingInstallment(tx, commitment.id)
       await updateCommitment(tx, userId, id, { nextDueOn: next?.dueOn ?? installment.dueOn })
       return movement
@@ -445,4 +519,99 @@ export async function financingSchedule(userId: string, id: string) {
   const commitment = await getCommitment(sql, userId, id)
   if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
   return await listInstallments(sql, id)
+}
+
+/** One line of a revised plan: an installment being kept, or a new one. */
+export interface ScheduleRevisionLine {
+  /** Id of the installment this line keeps. Omitted for an added one. */
+  id?: string
+  dueOn: string
+  amount: number
+}
+
+/**
+ * Rewrites the plan of an existing financing: a date pushed back, a
+ * renegotiated amount, an installment added or dropped. A written plan that
+ * cannot be corrected is worse than no plan at all, because the remaining due
+ * derives from it and would stay wrong forever.
+ *
+ * The revision is the whole plan, not a patch: the caller sends the lines it
+ * wants, keeping an id for each one it keeps, and their order becomes the
+ * contractual order. What that implies:
+ *
+ * - the total owed follows the plan (it is its sum), so a settlement or a
+ *   commercial gesture is expressible instead of requiring a new financing;
+ * - a settled installment carries what really left the account, so revising
+ *   its amount corrects its movement too, and dropping the line deletes that
+ *   movement: a plan without the installment must not keep what paid it;
+ * - everything the financing derives (installment count, total, nominal
+ *   amount, next due date) is recomputed from the rows, once, at the end.
+ */
+export async function reviseSchedule(
+  userId: string,
+  id: string,
+  lines: ScheduleRevisionLine[],
+): Promise<Commitment> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const commitment = await getCommitmentForUpdate(tx, userId, id)
+    if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
+    if (commitment.kind !== 'financing')
+      throw new DomainError('not_a_financing', 'Only a financing carries a written schedule')
+    if (lines.length === 0)
+      throw new DomainError(
+        'schedule_empty',
+        'A financing keeps at least one installment: close it instead of emptying its plan',
+      )
+
+    const current = await listInstallmentsForUpdate(tx, id)
+    const known = new Map(current.map((installment) => [installment.id, installment]))
+    const kept = new Set<string>()
+    for (const line of lines) {
+      if (line.id === undefined) continue
+      if (!known.has(line.id))
+        throw new DomainError('installment_not_found', `No installment ${line.id} in this financing`)
+      if (kept.has(line.id))
+        throw new DomainError('installment_repeated', `Installment ${line.id} appears twice in the revision`)
+      kept.add(line.id)
+    }
+
+    // A dropped line takes its movement with it: leaving the movement behind
+    // would keep charging an installment the plan no longer has.
+    const dropped = current.filter((installment) => !kept.has(installment.id))
+    for (const installment of dropped)
+      if (installment.movementId) await deleteMovementIn(tx, userId, installment.movementId)
+    await deleteInstallments(
+      tx,
+      dropped.map((installment) => installment.id),
+    )
+
+    // Positions are renumbered from the given order, so the old ones are moved
+    // out of the way first: the (commitment, position) unique index is checked
+    // row by row, not at commit time.
+    const highest = current.reduce((max, installment) => Math.max(max, installment.position), 0)
+    await shiftPositions(tx, id, highest + lines.length)
+
+    const added: NewInstallment[] = []
+    for (const [index, line] of lines.entries()) {
+      const position = index + 1
+      if (line.id === undefined) {
+        added.push({ position, dueOn: line.dueOn, amount: line.amount })
+        continue
+      }
+      await updateInstallmentPlan(tx, line.id, { position, dueOn: line.dueOn, amount: line.amount })
+      const existing = known.get(line.id)!
+      // A settled line and its movement say the same thing, whichever side is
+      // edited: revising one carries the correction over to the other.
+      if (existing.movementId && (Number(existing.amount) !== line.amount || existing.dueOn !== line.dueOn))
+        await correctMovementIn(tx, userId, existing.movementId, {
+          amount: line.amount,
+          happenedOn: line.dueOn,
+        })
+    }
+    await insertInstallments(tx, id, added)
+
+    await resyncFinancing(tx, id)
+    return (await getCommitment(tx, userId, id))!
+  })
 }

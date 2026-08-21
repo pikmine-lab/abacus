@@ -1,7 +1,11 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
-import { realignNextDue } from '../db/datasources/installments.ts'
+import {
+  alignInstallmentOnMovement,
+  installmentByMovement,
+  resyncFinancing,
+} from '../db/datasources/installments.ts'
 import {
   deleteMovementRow,
   getMovement,
@@ -163,35 +167,61 @@ export async function correctMovement(
   input: CorrectMovementInput,
 ): Promise<Movement> {
   const sql = db()
-  return await sql.begin(async (tx) => {
-    const current = await getMovement(tx, userId, id)
-    if (!current) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+  return await sql.begin(async (tx) => await correctMovementIn(tx, userId, id, input))
+}
 
-    const merged: DeclareMovementInput = {
-      happenedOn: input.happenedOn ?? current.happenedOn,
-      amount: input.amount ?? Number(current.amount),
-      sourceAccountId: pick(input, current, 'sourceAccountId'),
-      sourceActorId: pick(input, current, 'sourceActorId'),
-      targetAccountId: pick(input, current, 'targetAccountId'),
-      targetActorId: pick(input, current, 'targetActorId'),
-      categoryId: pick(input, current, 'categoryId'),
-      note: pick(input, current, 'note'),
-      // Explicit null keeps "no activity" from being re-inherited.
-      activityId: input.activityId !== undefined ? input.activityId : current.activityId,
-      expectedRefundFromActorId: current.expectedRefundFromActorId ?? undefined,
-      refundsMovementId: current.refundsMovementId ?? undefined,
-    }
-    const activityId = await checkMovement(tx, userId, merged)
+/**
+ * Transaction-aware variant, so a schedule revision can correct the movements
+ * of the installments it touches inside its own transaction.
+ */
+export async function correctMovementIn(
+  tx: Executor,
+  userId: string,
+  id: string,
+  input: CorrectMovementInput,
+): Promise<Movement> {
+  const current = await getMovement(tx, userId, id)
+  if (!current) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
 
-    const row: Record<string, unknown> = { activityId }
-    for (const key of CORRECTABLE) {
-      if (key === 'activityId') continue
-      row[key] = merged[key] ?? null
-    }
-    const updated = await updateMovementRow(tx, userId, id, row)
-    if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
-    return updated
-  })
+  const merged: DeclareMovementInput = {
+    happenedOn: input.happenedOn ?? current.happenedOn,
+    amount: input.amount ?? Number(current.amount),
+    sourceAccountId: pick(input, current, 'sourceAccountId'),
+    sourceActorId: pick(input, current, 'sourceActorId'),
+    targetAccountId: pick(input, current, 'targetAccountId'),
+    targetActorId: pick(input, current, 'targetActorId'),
+    categoryId: pick(input, current, 'categoryId'),
+    note: pick(input, current, 'note'),
+    // Explicit null keeps "no activity" from being re-inherited.
+    activityId: input.activityId !== undefined ? input.activityId : current.activityId,
+    expectedRefundFromActorId: current.expectedRefundFromActorId ?? undefined,
+    refundsMovementId: current.refundsMovementId ?? undefined,
+  }
+  const activityId = await checkMovement(tx, userId, merged)
+
+  const row: Record<string, unknown> = { activityId }
+  for (const key of CORRECTABLE) {
+    if (key === 'activityId') continue
+    row[key] = merged[key] ?? null
+  }
+  const updated = await updateMovementRow(tx, userId, id, row)
+  if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+
+  // A settled financing installment says what its movement says: the amount
+  // debited and the day it was debited. Correcting one corrects the other, or
+  // the plan drifts away from what actually left the account.
+  const settled = await installmentByMovement(tx, id)
+  if (
+    settled &&
+    (Number(settled.amount) !== Number(updated.amount) || settled.dueOn !== updated.happenedOn)
+  ) {
+    await alignInstallmentOnMovement(tx, settled.id, {
+      amount: Number(updated.amount),
+      on: updated.happenedOn,
+    })
+    await resyncFinancing(tx, settled.commitmentId)
+  }
+  return updated
 }
 
 function pick(
@@ -214,20 +244,23 @@ function pick(
  */
 export async function deleteMovement(userId: string, id: string): Promise<void> {
   const sql = db()
-  await sql.begin(async (tx) => {
-    const movement = await getMovement(tx, userId, id)
-    if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
-    const [refund] = await tx<{ id: string }[]>`
-      select id from movement where refunds_movement_id = ${id} limit 1
-    `
-    if (refund)
-      throw new DomainError(
-        'refunded_movement',
-        'A refund is linked to this movement: delete the refund first',
-      )
-    await deleteMovementRow(tx, userId, id)
-    if (movement.commitmentId) await realignNextDue(tx, movement.commitmentId)
-  })
+  await sql.begin(async (tx) => await deleteMovementIn(tx, userId, id))
+}
+
+/**
+ * Transaction-aware variant, so dropping an installment from a plan can drop
+ * the movement that paid it in the same transaction.
+ */
+export async function deleteMovementIn(tx: Executor, userId: string, id: string): Promise<void> {
+  const movement = await getMovement(tx, userId, id)
+  if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+  const [refund] = await tx<{ id: string }[]>`
+    select id from movement where refunds_movement_id = ${id} limit 1
+  `
+  if (refund)
+    throw new DomainError('refunded_movement', 'A refund is linked to this movement: delete the refund first')
+  await deleteMovementRow(tx, userId, id)
+  if (movement.commitmentId) await resyncFinancing(tx, movement.commitmentId)
 }
 
 export async function listMovements(userId: string, filters: MovementFilters = {}): Promise<Movement[]> {
