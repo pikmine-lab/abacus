@@ -280,9 +280,22 @@ sous-estimer. Deux chiffres, chacun disant sa méthode : plus-value latente (hor
 et frais) et performance (dividendes et frais compris, contre les apports nets).
 
 **Trouver un actif** se fait par nom, fournisseur, ticker ou ISIN (`search_instruments` côté
-MCP, un champ de recherche côté web) : les références ne se saisissent pas de mémoire. La
-devise réelle des premiers résultats est vérifiée en demandant leur cours, ce qui évite de
-coder une liste de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10.
+MCP, un champ de recherche dans le panneau de déclaration côté web) : les références ne se
+saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
+
+- **un résultat est un fonds, pas une cotation.** Les places d'un même ETF cotent à 0,01 %
+  près (709,07 / 709,10 / 709,16 € le 2026-08-21), donc le regroupement se fait sur le nom
+  canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
+  en euro sans faire choisir ;
+- **la devise réelle est vérifiée en demandant le cours**, ce qui évite de coder une liste
+  de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10 ;
+- **ce qui départage deux trackers d'un même indice** (l'émetteur, capitalisant ou
+  distribuant) est extrait du nom du fonds, et le cours affiché sert à recouper avec le
+  relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
+  il est gardé quand l'utilisateur le saisit.
+
+**Suivre sans détenir** : un actif sans opération est un actif suivi. Rien ne le marque en
+base, l'absence de position suffit, et un achat en fait une position sans redéclaration.
 
 Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
 

@@ -1412,6 +1412,12 @@ export function buildServer(userId: string): McpServer {
           .string()
           .optional()
           .describe('create: the instrument\'s own name ("Amundi MSCI World"). Defaults to name'),
+        isin: z
+          .string()
+          .optional()
+          .describe(
+            'create: its ISIN when known, the one unambiguous identifier of a fund. Pass what search_instruments returned, or what the user read in their bank',
+          ),
       }),
     },
     async (a) =>
@@ -1426,6 +1432,7 @@ export function buildServer(userId: string): McpServer {
                     source: asset.instrument.priceSource,
                     reference: asset.instrument.priceSourceRef,
                     description: asset.instrument.name,
+                    isin: asset.instrument.isin ?? undefined,
                   }
                 : asset.manualPrice
                   ? `priced by hand: ${asset.manualPrice} on ${asset.manualPricedOn}`
@@ -1460,6 +1467,7 @@ export function buildServer(userId: string): McpServer {
                 priceSource: a.source,
                 priceSourceRef: a.reference!,
                 name: a.description ?? a.name,
+                isin: a.isin,
               }
             : undefined,
         })

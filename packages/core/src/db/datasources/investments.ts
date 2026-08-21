@@ -58,6 +58,19 @@ export async function getAsset(tx: Executor, userId: string, id: string): Promis
   return asset
 }
 
+/** What this user already holds or follows on that instrument, if anything. */
+export async function findAssetByInstrument(
+  tx: Executor,
+  userId: string,
+  instrumentId: string,
+): Promise<Asset | undefined> {
+  const [asset] = await tx<Asset[]>`
+    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
+    where user_id = ${userId} and instrument_id = ${instrumentId}
+  `
+  return asset
+}
+
 export async function listAssets(tx: Executor, userId: string): Promise<Asset[]> {
   return await tx<Asset[]>`
     select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
@@ -237,6 +250,21 @@ export async function movementsNetPerAccount(tx: Executor, userId: string): Prom
     group by a.id
   `
   return new Map(rows.map((r) => [r.accountId, r.net]))
+}
+
+/**
+ * The last known price of every asset this user has, held or merely followed.
+ * A followed asset has no position, so the positions query never sees it, and
+ * its price is exactly what makes following useful.
+ */
+export async function assetPrices(tx: Executor, userId: string): Promise<Map<string, string | null>> {
+  const rows = await tx<{ assetId: string; price: string | null }[]>`
+    select a.id as asset_id, coalesce(q.price, a.manual_price) as price
+    from asset a
+    left join instrument_quote q on q.instrument_id = a.instrument_id
+    where a.user_id = ${userId}
+  `
+  return new Map(rows.map((r) => [r.assetId, r.price]))
 }
 
 export interface RefreshCandidate {

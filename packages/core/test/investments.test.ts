@@ -208,13 +208,22 @@ test('two users holding the same ETF share one instrument, under their own names
   assert.equal(theirs!.instrument!.name, 'Amundi MSCI World')
 })
 
-test('the same instrument twice under two names would split a position', async () => {
+test('declaring the same instrument again returns the holding already there', async () => {
   const user = await seedUser()
-  await declareAsset(user, { name: 'World', instrument: WORLD })
-  await assert.rejects(
-    declareAsset(user, { name: 'Monde', instrument: WORLD }),
-    (e: DomainError) => e.code === 'asset_exists',
-  )
+  const first = await declareAsset(user, { name: 'World', instrument: WORLD })
+  // One instrument is one holding: a second name would split the position in
+  // half. Rather than refuse, this hands back what exists, which is what makes
+  // "declare the asset and the operation together" safe to retry.
+  const again = await declareAsset(user, { name: 'Monde', instrument: WORLD })
+  assert.equal(again.id, first.id)
+  assert.equal(again.name, 'World')
+  assert.equal((await listAssets(user)).length, 1)
+})
+
+test('two hand-priced assets cannot share a name', async () => {
+  const user = await seedUser()
+  await declareAsset(user, { name: 'SCPI' })
+  await assert.rejects(declareAsset(user, { name: 'SCPI' }), (e: DomainError) => e.code === 'asset_exists')
 })
 
 test('an asset priced by hand needs no instrument', async () => {

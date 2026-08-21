@@ -918,6 +918,11 @@ export async function renameAssetAction(_prev: FormState, formData: FormData): P
  * One operation per submit: the panel stays open and empties itself, because
  * declaring happens in bursts. The batch API exists for the MCP, which receives
  * a whole session at once.
+ *
+ * The asset may not exist yet: looking for what one bought belongs to the moment
+ * one declares the purchase, not to a separate errand beforehand. Declaring it
+ * is idempotent, so a rejected line can be corrected and sent again without
+ * tripping over the asset it already created.
  */
 export async function recordOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
@@ -928,14 +933,35 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
     { name: 'amount', kind: 'amount' },
   ]
   if (trade) rules.push({ name: 'quantity', kind: 'amount' })
-  if (type !== 'fee') rules.push({ name: 'assetId' })
+  const source = opt(formData, 'source')
+  const picked = opt(formData, 'reference')
+  if (type !== 'fee' && !picked) rules.push({ name: 'assetId' })
   const invalid = checkFields(formData, rules)
   if (invalid) return { fields: invalid }
+
+  let assetId = opt(formData, 'assetId')
+  if (picked) {
+    try {
+      const asset = await declareAsset(userId, {
+        name: str(formData, 'assetName'),
+        instrument: {
+          kind: str(formData, 'kind') as 'security' | 'crypto',
+          priceSource: source as 'yahoo' | 'coingecko',
+          priceSourceRef: picked,
+          name: opt(formData, 'description') ?? str(formData, 'assetName'),
+          isin: opt(formData, 'isin') ?? null,
+        },
+      })
+      assetId = asset.id
+    } catch (e) {
+      return { error: frError(e) }
+    }
+  }
   try {
     await recordOperations(userId, [
       {
         accountId: str(formData, 'accountId'),
-        assetId: opt(formData, 'assetId'),
+        assetId,
         type,
         quantity: trade ? num(formData, 'quantity') : undefined,
         amount: num(formData, 'amount'),

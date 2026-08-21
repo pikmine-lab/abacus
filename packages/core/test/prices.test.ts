@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
-import { parseGeckoSearch, parseYahooSearch } from '../src/prices/search.ts'
+import { issuerOf, parseGeckoSearch, parseYahooSearch, payoutOf } from '../src/prices/search.ts'
 import { parseCoinGecko, parseYahoo, type Quote } from '../src/prices/sources.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import {
@@ -67,8 +67,8 @@ test('a CoinGecko answer parses in euros, and crypto never closes', () => {
   assert.equal(quote.marketOpen, true)
 })
 
-test('search keeps what can be held, and orders coins by market cap', () => {
-  const securities = parseYahooSearch({
+test('search keeps only what can be held', () => {
+  const listings = parseYahooSearch({
     quotes: [
       {
         symbol: 'CW8.PA',
@@ -81,13 +81,14 @@ test('search keeps what can be held, and orders coins by market cap', () => {
       { symbol: 'AAPL', shortname: 'Apple', quoteType: 'EQUITY', exchDisp: 'NASDAQ' },
     ],
   })
-  // An index is not something one holds, so it does not turn up as a candidate.
+  // An index is not something one holds, so it never turns up as a candidate.
   assert.deepEqual(
-    securities.map((h) => h.reference),
+    listings.map((l) => l.symbol),
     ['CW8.PA', 'AAPL'],
   )
-  assert.equal(securities[0]!.venue, 'Paris')
+})
 
+test('coins come back ordered by market cap', () => {
   const coins = parseGeckoSearch({
     coins: [
       { id: 'bitcoin-cash-sv', symbol: 'bsv', name: 'Bitcoin SV', market_cap_rank: 120 },
@@ -99,7 +100,18 @@ test('search keeps what can be held, and orders coins by market cap', () => {
     coins.map((h) => h.reference),
     ['bitcoin', 'bitcoin-cash-sv', 'dog-bitcoin'],
   )
-  assert.equal(coins[0]!.name, 'Bitcoin (BTC)')
+})
+
+test('what tells two trackers of the same index apart is read off their names', () => {
+  assert.equal(issuerOf('iShares Core S&P 500 UCITS ETF USD (Acc)'), 'iShares')
+  assert.equal(issuerOf('Amundi Index Solutions - Amundi MSCI World'), 'Amundi')
+  assert.equal(payoutOf('iShares Core S&P 500 UCITS ETF USD (Acc)'), 'accumulating')
+  assert.equal(payoutOf('Vanguard S&P 500 UCITS ETF USD Accumulation'), 'accumulating')
+  assert.equal(payoutOf('iShares Core S&P 500 UCITS ETF USD Dist'), 'distributing')
+  // "Inc" is Incorporated far more often than Income: reading it as a payout
+  // policy turned Apple Inc. into a distributing fund.
+  assert.equal(payoutOf('Apple Inc.'), null)
+  assert.equal(payoutOf('Apple Hospitality REIT, Inc.'), null)
 })
 
 /** A fetcher that counts its calls, so the freshness bound can be observed. */

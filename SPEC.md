@@ -172,10 +172,14 @@ dépense alors qu'acheter un titre ne dépense rien, il change la forme de l'arg
   l'autocomplétion, qui passe par la recherche de la source : la liste de nos instruments
   dirait à chacun ce que les autres détiennent.
 - **Trouver un actif** se fait par ce qu'on en sait : un nom, un fournisseur, un ticker,
-  un ISIN, un nom de crypto. Les deux sources se cherchent d'un même geste, et une référence
-  ne se saisit jamais de mémoire : un ticker inventé donne un actif dont le cours ne bougera
-  jamais. Un même fonds étant coté sur plusieurs places, chaque résultat dit sa place et son
-  cours, seule façon de désigner celle qu'on détient.
+  un ISIN, un nom de crypto, et au moment où on déclare l'opération. Les deux sources se
+  cherchent d'un même geste, et une référence ne se saisit jamais de mémoire : un ticker
+  inventé donne un actif dont le cours ne bougera jamais. Un résultat est un **fonds**, pas
+  une ligne de cotation : les places d'un même fonds cotent le même prix à 0,01 % près, donc
+  l'application en retient une en euro et le dit. Ce qui identifie sans ambiguïté reste
+  l'ISIN, gardé sur l'instrument quand il est connu.
+- **Suivre sans détenir** : un actif sans opération est suivi, son cours est rafraîchi comme
+  les autres, et un achat en fait une position sans redéclaration.
 - **Cours automatiques** : actions et ETF via Yahoo Finance (non officiel), crypto via
   CoinGecko. Rafraîchis **à la lecture**, fraîcheur bornée par source, aucun appel hors
   séance : rien n'est planifié, parce qu'un planificateur rafraîchirait la nuit et serait

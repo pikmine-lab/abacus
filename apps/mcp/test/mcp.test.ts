@@ -808,7 +808,8 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.ok(unknown.isError)
   assert.match(unknown.text, /No asset named "Nasdaq"/)
 
-  // One instrument, one holding: a second name for it would split the position.
+  // One instrument is one holding, so declaring it again hands back what is
+  // already there under its own name instead of splitting the position in half.
   const twice = await call(client, 'manage_assets', {
     action: 'create',
     name: 'World',
@@ -816,8 +817,8 @@ test('investments: funding is a movement, what happens inside is an operation', 
     reference: 'CW8.PA',
     kind: 'security',
   })
-  assert.ok(twice.isError)
-  assert.match(twice.text, /would split the position/)
+  assert.ok(!twice.isError, twice.text)
+  assert.equal((twice.json() as { name: string }).name, 'Monde')
 
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
   assert.equal((operations.json() as unknown[]).length, 4)

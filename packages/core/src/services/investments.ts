@@ -1,6 +1,8 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount, listAccountsWithBalance } from '../db/datasources/accounts.ts'
 import {
+  assetPrices as assetPricesDs,
+  findAssetByInstrument,
   getAsset,
   heldQuantity,
   insertAsset,
@@ -34,22 +36,30 @@ export interface DeclareAssetInput {
 }
 
 /**
- * Declares what the user holds. The instrument behind it is shared with every
- * other user, so it is looked up by its identity before being created: holding
- * the same ETF as someone else must not duplicate the thing whose price we read.
+ * Declares what the user holds, or follows: an asset with no operation on it is
+ * simply one being watched, and buying some later turns it into a position with
+ * nothing to redeclare.
+ *
+ * The instrument behind it is shared with every other user, so it is looked up
+ * by its identity before being created: holding the same ETF as someone else
+ * must not duplicate the thing whose price we read. And declaring the same
+ * instrument twice **returns what is already there** rather than failing: one
+ * instrument is one holding (two names would split a position in half), so the
+ * second declaration has nothing left to do. That also makes declaring an asset
+ * and an operation together safe to retry.
  */
 export async function declareAsset(userId: string, input: DeclareAssetInput): Promise<Asset> {
   const sql = db()
   return await sql.begin(async (tx) => {
     const instrument = input.instrument ? await upsertInstrument(tx, input.instrument) : null
+    if (instrument) {
+      const existing = await findAssetByInstrument(tx, userId, instrument.id)
+      if (existing) return existing
+    }
     try {
       return await insertAsset(tx, userId, input.name, instrument?.id ?? null)
     } catch (e) {
-      rethrowUnique(
-        e,
-        'asset_exists',
-        `You already hold "${input.name}", or that instrument under another name`,
-      )
+      rethrowUnique(e, 'asset_exists', `You already hold something named "${input.name}"`)
     }
   })
 }
@@ -274,6 +284,11 @@ export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
       }
     }),
   )
+}
+
+/** The last known price of each asset, followed ones included. */
+export async function assetPrices(userId: string): Promise<Map<string, string | null>> {
+  return await assetPricesDs(db(), userId)
 }
 
 export async function positions(userId: string, accountId?: string): Promise<Position[]> {

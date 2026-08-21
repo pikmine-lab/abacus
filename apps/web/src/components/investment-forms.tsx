@@ -1,6 +1,6 @@
 'use client'
 
-import { PencilIcon } from 'lucide-react'
+import { CheckIcon, PencilIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -17,7 +17,6 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { declareAssetAction, recordOperationAction, renameAssetAction } from '@/lib/actions'
 
@@ -29,8 +28,27 @@ interface Option {
 export interface AssetEntry {
   id: string
   name: string
-  /** Where its price will come from, once prices exist. Absent: priced by hand. */
+  /** Where its price comes from. Absent: priced by hand. */
   pricing: string | null
+  /** The only unambiguous identifier of a fund, when it is known. */
+  isin: string | null
+  followed: boolean
+}
+
+export interface InstrumentHit {
+  source: 'yahoo' | 'coingecko'
+  reference: string
+  name: string
+  issuer: string | null
+  payout: 'accumulating' | 'distributing' | null
+  kind: 'security' | 'crypto'
+  typeLabel: string
+  venue: string | null
+  isin: string | null
+  price: string | null
+  currency: string | null
+  available: boolean
+  otherVenues: number
 }
 
 const TYPES = [
@@ -42,109 +60,43 @@ const TYPES = [
 
 type OperationType = (typeof TYPES)[number]['value']
 
-/**
- * What happens inside an investment account. Funding the account is not here:
- * that is a transfer, declared with the movements, and the panel says so rather
- * than letting it be looked for.
- */
-export function OperationForm({
-  accounts,
-  assets,
-  today,
-}: {
-  accounts: Option[]
-  assets: Option[]
-  today: string
-}) {
-  const [type, setType] = useState<OperationType>('buy')
-  const trade = type === 'buy' || type === 'sell'
+const PAYOUT = { accumulating: 'capitalisant', distributing: 'distribuant' } as const
 
-  return (
-    <ActionForm action={recordOperationAction} successLabel="Opération déclarée">
-      <input type="hidden" name="type" value={type} />
-      <Tabs value={type} onValueChange={(v) => setType(v as OperationType)}>
-        <TabsList className="w-full">
-          {TYPES.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      <Field label="Compte">
-        <FormSelect
-          name="accountId"
-          defaultValue={accounts[0]?.id}
-          options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-        />
-      </Field>
-
-      {type !== 'fee' && (
-        <Field label="Actif" name="assetId">
-          <FormSelect
-            name="assetId"
-            defaultValue={assets[0]?.id}
-            options={assets.map((a) => ({ value: a.id, label: a.name }))}
-          />
-        </Field>
-      )}
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Date" name="operatedOn">
-          <DateField name="operatedOn" defaultValue={today} />
-        </Field>
-        {trade && (
-          <Field label="Quantité" name="quantity">
-            <Input name="quantity" inputMode="decimal" placeholder="12,5" autoComplete="off" />
-          </Field>
-        )}
-      </div>
-
-      <Field
-        label={
-          type === 'buy'
-            ? 'Montant débité, frais d’ordre compris'
-            : type === 'sell'
-              ? 'Montant crédité'
-              : type === 'dividend'
-                ? 'Montant reçu'
-                : 'Montant des frais'
-        }
-        name="amount"
-      >
-        <AmountInput name="amount" />
-      </Field>
-
-      <TextField name="note" label="Note (optionnel)" placeholder="" />
-      <SubmitButton className="self-start">Déclarer</SubmitButton>
-    </ActionForm>
-  )
+function amount(value: string, currency: string | null): string {
+  return `${Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${currency ?? ''}`.trim()
 }
 
-export interface InstrumentHit {
-  source: 'yahoo' | 'coingecko'
-  reference: string
-  name: string
-  kind: 'security' | 'crypto'
-  typeLabel: string
-  venue: string | null
-  price: string | null
-  currency: string | null
-  available: boolean
+/** A default worth keeping: the fund's own name minus what every fund repeats. */
+function shortName(name: string): string {
+  return name
+    .replace(/\s+(UCITS\s+)?ETF\b.*$/i, '')
+    .replace(/\s+-\s+.*$/, '')
+    .trim()
+    .slice(0, 40)
 }
 
 /**
- * Finding what one holds, by whatever they know it as: a name ("msci world"),
- * a provider ("amundi"), a symbol ("CW8.PA"), an ISIN, a coin. Nobody knows a
- * Yahoo symbol by heart, so typing one was never the interface.
+ * Finding what one holds, by whatever they know it as: a name ("s&p 500"), a
+ * provider ("amundi"), a ticker, an ISIN, a coin. Nobody knows a Yahoo ticker by
+ * heart, so typing one was never the interface.
  *
- * Each hit shows its venue and its current price, because that is what tells
- * three listings of the same fund apart, and what confirms the right one was
- * picked. A hit priced in another currency stays visible but unselectable, with
- * its currency shown: disappearing without a word would read as "not found".
+ * One line is one fund, not one line of quotation, and it carries what actually
+ * tells two trackers of the same index apart: who runs it, whether it pays out
+ * or accumulates, and its price. The price is the point, because it is the one
+ * number that can be compared against a broker's statement, and that comparison
+ * is the only way to be certain this is the same holding. What no venue quotes
+ * in euros stays visible and disabled, with its currency: vanishing would read
+ * as "not found".
  */
-function InstrumentSearch({ onPick }: { onPick: (hit: InstrumentHit) => void }) {
+function InstrumentSearch({
+  known,
+  onPickKnown,
+  onPickNew,
+}: {
+  known: AssetEntry[]
+  onPickKnown?: (asset: AssetEntry) => void
+  onPickNew: (hit: InstrumentHit) => void
+}) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<InstrumentHit[]>([])
   const [searching, setSearching] = useState(false)
@@ -177,30 +129,39 @@ function InstrumentSearch({ onPick }: { onPick: (hit: InstrumentHit) => void }) 
     }
   }, [query])
 
+  const term = query.trim().toLowerCase()
+  const mine = onPickKnown
+    ? known.filter((a) => term.length === 0 || a.name.toLowerCase().includes(term))
+    : []
   const securities = hits.filter((h) => h.kind === 'security')
   const coins = hits.filter((h) => h.kind === 'crypto')
 
-  const group = (label: string, items: InstrumentHit[]) =>
+  const found = (label: string, items: InstrumentHit[]) =>
     items.length > 0 && (
       <CommandGroup heading={label}>
         {items.map((hit) => (
           <CommandItem
             key={`${hit.source}:${hit.reference}`}
-            value={`${hit.reference} ${hit.name}`}
+            value={`new:${hit.reference}`}
             disabled={!hit.available}
-            onSelect={() => hit.available && onPick(hit)}
+            onSelect={() => hit.available && onPickNew(hit)}
             className="items-start gap-3"
           >
-            <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate">{hit.name}</span>
               <span className="truncate text-[11px] text-faint">
-                {[hit.reference, hit.venue ?? hit.typeLabel].filter(Boolean).join(' · ')}
+                {[
+                  hit.issuer,
+                  hit.payout ? PAYOUT[hit.payout] : null,
+                  hit.venue ?? hit.typeLabel,
+                  hit.otherVenues > 0 ? `+${hit.otherVenues} places` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </span>
             <span className="tabular shrink-0 text-[11.5px] text-muted-foreground">
-              {hit.price
-                ? `${Number(hit.price).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${hit.currency}`
-                : (hit.currency ?? '')}
+              {hit.price ? amount(hit.price, hit.currency) : (hit.currency ?? '')}
             </span>
           </CommandItem>
         ))}
@@ -212,33 +173,231 @@ function InstrumentSearch({ onPick }: { onPick: (hit: InstrumentHit) => void }) 
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Nom, symbole, ISIN, fournisseur…"
+        placeholder="Nom, ISIN, symbole, fournisseur…"
         autoFocus
       />
-      {query.trim().length >= 2 && (
-        <CommandList className="mt-1">
-          <CommandEmpty>{searching ? 'Recherche…' : 'Rien trouvé.'}</CommandEmpty>
-          {group('Titres et ETF', securities)}
-          {group('Cryptos', coins)}
-        </CommandList>
-      )}
+      {/* Said once, where it is needed: the ISIN is in the broker's app and it
+          is the only thing about a fund that cannot be mistaken. */}
+      <p className="px-0.5 pt-1.5 text-[11px] text-faint">
+        Le plus sûr : colle l’ISIN, affiché par ta banque. Sinon, le cours doit coller à ton relevé.
+      </p>
+      <CommandList className="mt-1.5">
+        {query.trim().length >= 2 && <CommandEmpty>{searching ? 'Recherche…' : 'Rien trouvé.'}</CommandEmpty>}
+        {mine.length > 0 && onPickKnown && (
+          <CommandGroup heading="Déjà à toi">
+            {mine.map((asset) => (
+              <CommandItem
+                key={asset.id}
+                value={`known:${asset.id}`}
+                onSelect={() => onPickKnown(asset)}
+                className="items-start gap-3"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate">{asset.name}</span>
+                  <span className="truncate text-[11px] text-faint">
+                    {[asset.isin, asset.pricing ?? 'cours saisi à la main', asset.followed ? 'suivi' : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {found('Titres et ETF', securities)}
+        {found('Cryptos', coins)}
+      </CommandList>
     </Command>
   )
 }
 
+/** What was picked, shown back, so a wrong pick is caught before sending. */
+function Picked({ hit, onChange }: { hit: InstrumentHit; onChange: () => void }) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
+      <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-good" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[12.5px]">{hit.name}</span>
+        <span className="text-[11px] text-faint">
+          {[
+            hit.isin,
+            hit.issuer,
+            hit.payout ? PAYOUT[hit.payout] : null,
+            hit.venue,
+            hit.price ? amount(hit.price, hit.currency) : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onChange}
+        className="shrink-0 text-[11.5px] text-muted-foreground hover:text-primary"
+      >
+        Changer
+      </button>
+    </div>
+  )
+}
+
+/** The hidden fields that carry a freshly picked instrument to the server. */
+function PickedFields({ hit, name }: { hit: InstrumentHit; name: string }) {
+  return (
+    <>
+      <input type="hidden" name="source" value={hit.source} />
+      <input type="hidden" name="reference" value={hit.reference} />
+      <input type="hidden" name="kind" value={hit.kind} />
+      <input type="hidden" name="description" value={hit.name} />
+      <input type="hidden" name="assetName" value={name} />
+      {hit.isin && <input type="hidden" name="isin" value={hit.isin} />}
+    </>
+  )
+}
+
 /**
- * A holding: the instrument it follows, or nothing when its price is typed by
- * hand. The instrument is shared with the other users of the application, so it
- * is picked from its source rather than described from memory.
+ * What happens inside an investment account. Looking the asset up lives here,
+ * not in an errand beforehand: one searches for what one bought at the moment
+ * one declares having bought it, and an unknown asset is created by the same
+ * gesture.
+ *
+ * Funding the account is still not here, and the panel says so: that is a
+ * transfer, declared with the movements.
  */
-export function AssetForm() {
+export function OperationForm({
+  accounts,
+  assets,
+  today,
+}: {
+  accounts: Option[]
+  assets: AssetEntry[]
+  today: string
+}) {
+  const [type, setType] = useState<OperationType>('buy')
+  const [known, setKnown] = useState<AssetEntry | null>(assets[0] ?? null)
+  const [picked, setPicked] = useState<InstrumentHit | null>(null)
+  const [name, setName] = useState('')
+  const [choosing, setChoosing] = useState(assets.length === 0)
+  const trade = type === 'buy' || type === 'sell'
+  const needsAsset = type !== 'fee'
+
+  return (
+    <ActionForm action={recordOperationAction} successLabel="Opération déclarée">
+      <input type="hidden" name="type" value={type} />
+      <Tabs value={type} onValueChange={(v) => setType(v as OperationType)}>
+        <TabsList className="w-full">
+          {TYPES.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      <Field label="Compte">
+        <FormSelect
+          name="accountId"
+          defaultValue={accounts[0]?.id}
+          options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+        />
+      </Field>
+
+      {needsAsset && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">Actif</span>
+          {choosing ? (
+            <InstrumentSearch
+              known={assets}
+              onPickKnown={(asset) => {
+                setKnown(asset)
+                setPicked(null)
+                setChoosing(false)
+              }}
+              onPickNew={(hit) => {
+                setPicked(hit)
+                setKnown(null)
+                setName(shortName(hit.name))
+                setChoosing(false)
+              }}
+            />
+          ) : picked ? (
+            <>
+              <Picked hit={picked} onChange={() => setChoosing(true)} />
+              <PickedFields hit={picked} name={name} />
+              <Field label="Sous quel nom le suivre">
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </Field>
+            </>
+          ) : (
+            known && (
+              <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
+                <input type="hidden" name="assetId" value={known.id} />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-[12.5px]">{known.name}</span>
+                  <span className="truncate text-[11px] text-faint">
+                    {known.isin ?? known.pricing ?? 'cours saisi à la main'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setChoosing(true)}
+                  className="shrink-0 text-[11.5px] text-muted-foreground hover:text-primary"
+                >
+                  Changer
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date" name="operatedOn">
+          <DateField name="operatedOn" defaultValue={today} />
+        </Field>
+        {trade && (
+          <Field label="Quantité" name="quantity">
+            <Input name="quantity" inputMode="decimal" placeholder="12,5" autoComplete="off" />
+          </Field>
+        )}
+      </div>
+
+      <Field
+        label={
+          type === 'buy'
+            ? 'Montant débité, frais d’ordre compris'
+            : type === 'sell'
+              ? 'Montant crédité'
+              : type === 'dividend'
+                ? 'Montant reçu'
+                : 'Montant des frais'
+        }
+        name="amount"
+      >
+        <AmountInput name="amount" />
+      </Field>
+
+      <TextField name="note" label="Note (optionnel)" placeholder="" />
+      <SubmitButton className="self-start" disabled={needsAsset && !known && !picked}>
+        Déclarer
+      </SubmitButton>
+    </ActionForm>
+  )
+}
+
+/**
+ * Following something without holding it: the same search, and an asset with no
+ * operation on it. Buying some later turns it into a position with nothing to
+ * redeclare.
+ */
+export function FollowForm() {
   const [picked, setPicked] = useState<InstrumentHit | null>(null)
   const [byHand, setByHand] = useState(false)
 
   if (!picked && !byHand)
     return (
       <div className="flex flex-col gap-3">
-        <InstrumentSearch onPick={setPicked} />
+        <InstrumentSearch known={[]} onPickNew={setPicked} />
         <button
           type="button"
           onClick={() => setByHand(true)}
@@ -250,21 +409,21 @@ export function AssetForm() {
     )
 
   return (
-    <ActionForm action={declareAssetAction} successLabel="Actif ajouté">
+    <ActionForm action={declareAssetAction} successLabel="Actif suivi">
       {picked && (
         <>
+          <Picked
+            hit={picked}
+            onChange={() => {
+              setPicked(null)
+              setByHand(false)
+            }}
+          />
           <input type="hidden" name="source" value={picked.source} />
           <input type="hidden" name="reference" value={picked.reference} />
           <input type="hidden" name="kind" value={picked.kind} />
           <input type="hidden" name="description" value={picked.name} />
-          <div className="flex flex-col gap-0.5 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
-            <span className="truncate text-[12.5px]">{picked.name}</span>
-            <span className="text-[11px] text-faint">
-              {[picked.reference, picked.venue, picked.price ? `${picked.price} ${picked.currency}` : null]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-          </div>
+          {picked.isin && <input type="hidden" name="isin" value={picked.isin} />}
         </>
       )}
       <TextField
@@ -273,61 +432,34 @@ export function AssetForm() {
         defaultValue={picked ? shortName(picked.name) : ''}
         placeholder="MSCI World"
       />
-      <div className="flex items-center gap-3">
-        <SubmitButton>Ajouter</SubmitButton>
-        <button
-          type="button"
-          onClick={() => {
-            setPicked(null)
-            setByHand(false)
-          }}
-          className="text-[12px] text-muted-foreground hover:text-primary"
-        >
-          Changer
-        </button>
-      </div>
+      <SubmitButton className="self-start">Suivre</SubmitButton>
     </ActionForm>
   )
 }
 
-/** A default worth keeping: the fund's own name minus what every fund repeats. */
-function shortName(name: string): string {
-  return name
-    .replace(/\s+(UCITS\s+)?ETF\b.*$/i, '')
-    .replace(/\s+-\s+.*$/, '')
-    .trim()
-    .slice(0, 40)
-}
-
-function AssetRow({ asset }: { asset: AssetEntry }) {
+/** The rename gesture, wherever an asset is listed: followed, or held. */
+export function AssetMenu({ id, name }: { id: string; name: string }) {
   const [editing, setEditing] = useState(false)
   return (
     <>
-      <div className="flex items-center gap-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-[12.5px]">{asset.name}</span>
-        <span className="max-w-[45%] truncate text-[11.5px] text-faint">
-          {asset.pricing ?? 'cours saisi à la main'}
-        </span>
-        <RowMenu label={asset.name}>
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <PencilIcon />
-            Renommer
-          </DropdownMenuItem>
-        </RowMenu>
-      </div>
+      <RowMenu label={name}>
+        <DropdownMenuItem onSelect={() => setEditing(true)}>
+          <PencilIcon />
+          Renommer
+        </DropdownMenuItem>
+      </RowMenu>
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">{asset.name}</DialogTitle>
+            <DialogTitle className="text-[15px]">{name}</DialogTitle>
           </DialogHeader>
           <ActionForm
             action={renameAssetAction}
             onSuccess={() => setEditing(false)}
             successLabel="Actif renommé"
           >
-            <input type="hidden" name="assetId" value={asset.id} />
-            <TextField name="name" label="Nom" defaultValue={asset.name} />
-            <Label className="text-[11px] text-faint">{asset.pricing ?? 'Cours saisi à la main'}</Label>
+            <input type="hidden" name="assetId" value={id} />
+            <TextField name="name" label="Nom" defaultValue={name} />
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
           </ActionForm>
         </DialogContent>
@@ -336,7 +468,24 @@ function AssetRow({ asset }: { asset: AssetEntry }) {
   )
 }
 
-export function AssetRows({ assets }: { assets: AssetEntry[] }) {
+function AssetRow({ asset }: { asset: AssetEntry & { price: string | null } }) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[12.5px]">{asset.name}</span>
+        <span className="truncate text-[11px] text-faint">
+          {[asset.isin, asset.pricing ?? 'cours saisi à la main'].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+      <span className="tabular shrink-0 text-[12.5px] text-muted-foreground">
+        {asset.price ? amount(asset.price, '€') : '—'}
+      </span>
+      <AssetMenu id={asset.id} name={asset.name} />
+    </div>
+  )
+}
+
+export function AssetRows({ assets }: { assets: (AssetEntry & { price: string | null })[] }) {
   return (
     <Rows>
       {assets.map((asset) => (

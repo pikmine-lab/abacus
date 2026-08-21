@@ -308,15 +308,27 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   dessus (achat, vente, dividende, frais) se déclare à chaque fois. Le panneau d'opération
   dit ce qu'il ne fait pas, parce que c'est là qu'on se trompe : alimenter le compte ou en
   sortir de l'argent est un virement, à déclarer dans les mouvements.
-- **On cherche un actif par ce qu'on en sait, jamais par sa clé.** Personne ne connaît un
-  ticker Yahoo de tête : le champ cherche sur un nom, un fournisseur, un ticker, un ISIN, et
-  les résultats se groupent par nature (titres, cryptos) plutôt que de se mélanger dans un
-  classement commun, où « apple » ferait remonter des jetons avant l'action. Chaque ligne
-  porte **sa place et son cours**, parce qu'un même fonds est coté sur cinq places et que
-  c'est le seul moyen de reconnaître la bonne. Ce que l'application ne sait pas encore tenir
-  (une devise étrangère) reste visible et **désactivé, avec sa devise** : disparaître sans
-  un mot se lirait « pas trouvé ». La sélection remplit tout, et le nom d'affichage est
-  proposé, pas demandé.
+- **On cherche un actif au moment où on déclare l'opération**, pas dans une course
+  préalable : chercher ce qu'on a acheté fait partie du geste d'acheter. Le panneau propose
+  d'abord ce qu'on connaît déjà, et le même champ va chercher le reste ; l'actif inconnu est
+  créé par l'envoi. Déclarer deux fois le même instrument rend celui qui existe au lieu de
+  refuser, sinon une ligne corrigée buterait sur l'actif que sa première tentative a créé.
+- **On cherche par ce qu'on en sait, jamais par une clé.** Personne ne connaît un ticker
+  Yahoo de tête : le champ prend un nom, un fournisseur, un ticker, un ISIN.
+- **Une ligne est un fonds, pas une ligne de cotation.** Le même ETF est coté sur cinq
+  places, qui affichent le même prix à 0,01 % près (mesuré : 709,07 / 709,10 / 709,16 €) :
+  faire choisir la place ajoutait tout le bruit et aucune précision. « s&p 500 ucits » passe
+  ainsi de sept lignes à trois fonds, et les places restantes se comptent (« +2 places »).
+- **Ce qui départage se lit séparément** : l'émetteur, capitalisant ou distribuant, et le
+  cours. Noyés dans un nom long tronqué, ces trois faits n'existaient pas. Le cours est le
+  plus utile des trois, parce que c'est le seul qui se compare au relevé du courtier : et
+  cette comparaison est la seule façon d'être sûr que c'est bien la même ligne. L'écran le
+  dit, avec la voie sûre en premier (l'ISIN, affiché par la banque).
+- **Ce que l'application ne sait pas encore tenir** (une devise étrangère) reste visible et
+  **désactivé, avec sa devise** : disparaître sans un mot se lirait « pas trouvé ».
+- **Suivre n'est pas détenir.** Un actif sans opération est un actif suivi : son cours
+  s'affiche dans « Suivis », et le jour où on en achète il devient une position sans rien
+  redéclarer. Aucun drapeau n'est nécessaire, l'absence de position suffit.
 - **Un cours s'affiche avec son heure.** Le différé de 15 minutes d'Euronext est imposé par
   la licence : la fraîcheur ne se gagne pas, elle se déclare. Un nombre nu serait lu comme
   « maintenant ».
