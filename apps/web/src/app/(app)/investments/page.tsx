@@ -1,7 +1,7 @@
 import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
-import { listAssets, listOperations, portfolio } from '@abacus/core/services/investments'
+import { listAssets, listOperations, portfolio, refreshQuotes } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -9,7 +9,7 @@ import { EntrySheet } from '@/components/entry-sheet'
 import { type AssetEntry, AssetForm, AssetRows, OperationForm } from '@/components/investment-forms'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
-import { eur } from '@/lib/utils'
+import { eur, eurSigned, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,10 +27,29 @@ function quantity(value: string): string {
   return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 8 })
 }
 
+/**
+ * When the price was made, to the minute. Euronext is 15 minutes delayed at
+ * best, imposed by its licence, so freshness cannot be gained: it is declared
+ * instead, and a number without its hour would be read as "now".
+ */
+function priceStamp(at: Date | null, manual: boolean): string | null {
+  if (!at) return null
+  const day = at.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+  if (manual) return `saisi le ${day}`
+  // Bare day and hour: it sits under the name, beside the Cours column, so the
+  // word "cours" would only cost the room the hour needs.
+  return `${day} ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+}
+
 export default async function InvestmentsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+
+  // Prices come from the read, never from a scheduler: whoever opens this page
+  // gets them as fresh as the sources allow. It never throws, and a source that
+  // is down leaves the stored price in place.
+  await refreshQuotes(userId)
 
   const [accounts, held, assets, operations] = await Promise.all([
     listAccounts(userId),
@@ -41,9 +60,17 @@ export default async function InvestmentsPage() {
   const investmentAccounts = accounts.filter((a) => a.behavior === 'investment' && !a.closedOn)
   const assetNames = new Map(assets.map((a) => [a.id, a.name]))
 
-  const costBasis = held.reduce((sum, h) => sum + Number(h.costBasis), 0)
+  const value = held.reduce((sum, h) => sum + Number(h.value), 0)
   const cash = held.reduce((sum, h) => sum + Number(h.cash), 0)
+  const costBasis = held.reduce((sum, h) => sum + Number(h.costBasis), 0)
+  const unpriced = held.reduce((sum, h) => sum + h.unpriced, 0)
   const positionCount = held.reduce((sum, h) => sum + h.positions.length, 0)
+  // Only whole when every position has a price: a partial one would understate
+  // the account, which is worse than saying nothing.
+  const complete = held.every((h) => h.totalReturn !== null)
+  const totalReturn = complete ? held.reduce((sum, h) => sum + Number(h.totalReturn), 0) : null
+  const contributions = held.reduce((sum, h) => sum + Number(h.netContributions), 0)
+  const unrealized = value - cash - costBasis
 
   const assetEntries: AssetEntry[] = assets.map((asset) => ({
     id: asset.id,
@@ -56,7 +83,7 @@ export default async function InvestmentsPage() {
       <EntrySheet
         label="Actif"
         title="Ce que tu détiens"
-        description="Un actif coté porte la référence de sa source de cours. Sans source, son cours se saisit à la main."
+        description="Cherche-le par nom, symbole, ISIN ou fournisseur. Son cours suivra tout seul."
         variant="outline"
       >
         <AssetForm />
@@ -77,10 +104,7 @@ export default async function InvestmentsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Placements"
-        description="quantités et prix de revient ; la valorisation arrive avec les cours"
-      >
+      <PageHeader title="Placements" description="ce que tu détiens, et ce que ça vaut">
         {investmentAccounts.length > 0 && assets.length > 0 && entry}
       </PageHeader>
 
@@ -104,24 +128,34 @@ export default async function InvestmentsPage() {
             <StatRow>
               <StatTile
                 hero
-                label="Prix de revient"
-                value={eur(costBasis)}
-                hint={`${positionCount} position${positionCount > 1 ? 's' : ''}, frais d’ordre compris`}
+                label="Valorisation"
+                value={eur(value)}
+                hint={
+                  unpriced > 0
+                    ? `espèces + positions cotées ; ${unpriced} sans cours`
+                    : 'espèces + positions au dernier cours'
+                }
+                delta={positionCount > 0 ? { value: unrealized, label: 'de plus-value latente' } : undefined}
               />
               <StatTile
-                label="Espèces"
-                value={eur(cash)}
-                // Negative cash is not a holding, it is a missing declaration:
-                // an operation went in without the transfer that funded it.
-                hint={cash < 0 ? 'un virement d’alimentation manque' : 'non investi, sur les comptes'}
+                label="Performance"
+                value={totalReturn === null ? '—' : eurSigned(totalReturn)}
+                // The method is the number: what it includes, and what it is
+                // measured against. Naming the contributions is what makes it
+                // checkable by hand.
+                hint={
+                  totalReturn === null
+                    ? 'un cours manque : le calcul serait sous-estimé'
+                    : `dividendes et frais compris, contre ${eur(contributions)} d’apports`
+                }
               />
             </StatRow>
 
-            {held.map(({ account, positions, cash: accountCash, costBasis: accountCost }) => (
+            {held.map(({ account, positions, cash: accountCash, value: accountValue }) => (
               <Section
                 key={account.id}
                 title={account.name}
-                description={`${eur(Number(accountCost), 2)} investis · ${
+                description={`${eur(Number(accountValue), 2)} · ${
                   Number(accountCash) < 0
                     ? `${eur(-Number(accountCash), 2)} à alimenter`
                     : `${eur(Number(accountCash), 2)} en espèces`
@@ -130,33 +164,58 @@ export default async function InvestmentsPage() {
                 {positions.length === 0 ? (
                   <EmptyLine>Aucune position : rien n’a encore été acheté sur ce compte.</EmptyLine>
                 ) : (
-                  <Rows>
-                    <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
-                      <span className="min-w-0 flex-1">Actif</span>
-                      <span className="w-24 text-right">Quantité</span>
-                      <span className="w-24 text-right">PRU</span>
-                      <span className="w-28 text-right">Prix de revient</span>
-                    </div>
-                    {positions.map((position) => (
-                      <div key={position.assetId} className="flex items-center gap-3 py-2">
-                        <span className="min-w-0 flex-1 truncate text-[12.5px]">{position.assetName}</span>
-                        <span className="tabular w-24 text-right text-[12.5px]">
-                          {quantity(position.quantity)}
-                        </span>
-                        <span className="tabular w-24 text-right text-[12.5px] text-muted-foreground">
-                          {eur(Number(position.averageCost), 2)}
-                        </span>
-                        <span className="tabular w-28 text-right text-[12.5px]">
-                          {eur(Number(position.costBasis), 2)}
-                        </span>
+                  <div className="overflow-x-auto">
+                    {/* Five columns, not six: the average cost and the hour of
+                        the price ride under the name, so the two numbers being
+                        looked for (what it is worth, what it made) are the ones
+                        that always fit. */}
+                    <Rows className="min-w-[30rem]">
+                      <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
+                        <span className="min-w-0 flex-1">Actif</span>
+                        <span className="w-16 text-right">Quantité</span>
+                        <span className="w-20 text-right">Cours</span>
+                        <span className="w-24 text-right">Valorisation</span>
+                        <span className="w-24 text-right">+/− value</span>
                       </div>
-                    ))}
-                  </Rows>
+                      {positions.map((position) => {
+                        const stamp = priceStamp(position.pricedAt, position.manualPrice)
+                        const gain = position.gain === null ? null : Number(position.gain)
+                        return (
+                          <div key={position.assetId} className="flex items-center gap-3 py-2">
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="truncate text-[12.5px]">{position.assetName}</span>
+                              <span className="truncate text-[11px] text-faint">
+                                PRU {eur(Number(position.averageCost), 2)}
+                                {stamp ? ` · ${stamp}` : ' · aucun cours connu'}
+                              </span>
+                            </span>
+                            <span className="tabular w-16 text-right text-[12.5px]">
+                              {quantity(position.quantity)}
+                            </span>
+                            <span className="tabular w-20 text-right text-[12.5px] text-muted-foreground">
+                              {position.price === null ? '—' : eur(Number(position.price), 2)}
+                            </span>
+                            <span className="tabular w-24 text-right text-[12.5px]">
+                              {position.value === null ? '—' : eur(Number(position.value), 2)}
+                            </span>
+                            <span
+                              className={`tabular w-24 text-right text-[12.5px] ${
+                                gain === null ? 'text-faint' : gain >= 0 ? 'text-good' : 'text-destructive'
+                              }`}
+                            >
+                              {/* The arrow carries the direction; color reinforces it. */}
+                              {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </Rows>
+                  </div>
                 )}
               </Section>
             ))}
 
-            <Section title="Ce que tu détiens" description="et d’où viendra son cours">
+            <Section title="Ce que tu détiens" description="et d’où vient son cours">
               <AssetRows assets={assetEntries} />
             </Section>
 
@@ -168,8 +227,7 @@ export default async function InvestmentsPage() {
                   {operations.slice(0, 30).map((operation) => (
                     <div key={operation.id} className="flex items-center gap-3 py-2">
                       <span className="tabular w-20 shrink-0 text-[11.5px] text-faint">
-                        {operation.operatedOn.slice(8, 10)}/{operation.operatedOn.slice(5, 7)}/
-                        {operation.operatedOn.slice(2, 4)}
+                        {frDate(operation.operatedOn)}
                       </span>
                       <span className="w-20 shrink-0 text-[12px] text-muted-foreground">
                         {OPERATIONS[operation.type]}

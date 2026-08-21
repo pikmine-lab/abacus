@@ -703,6 +703,15 @@ test('spending reads back by category group through the MCP surface', async () =
 })
 
 test('investments: funding is a movement, what happens inside is an operation', async () => {
+  // get_portfolio refreshes prices as it runs, and a test must not depend on
+  // Yahoo being up or on what the market did today: the network is cut, which
+  // also asserts that a dead source leaves the read working.
+  const realFetch = globalThis.fetch
+  globalThis.fetch = () => Promise.reject(new Error('no network in tests'))
+  after(() => {
+    globalThis.fetch = realFetch
+  })
+
   const user = await seedUser()
   const client = await clientFor(user)
   await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
@@ -728,18 +737,45 @@ test('investments: funding is a movement, what happens inside is an operation', 
   })
   assert.equal((recorded.json() as { recorded: number }).recorded, 3)
 
-  const held = await call(client, 'get_portfolio')
-  assert.deepEqual(held.json(), {
-    valuation: 'none: prices are not part of the model yet, only what was paid',
-    accounts: [
-      {
-        account: 'PEA',
-        cash: 2028, // 5000 - 3000 - 12 + 40
-        costBasis: 3000,
-        positions: [{ asset: 'Monde', quantity: 5, averageCost: 600, costBasis: 3000 }],
-      },
+  // No price is reachable, so nothing is valued and the return says so rather
+  // than counting the holding as worthless.
+  const unpriced = (await call(client, 'get_portfolio')).json() as {
+    accounts: { cash: number; value: number; totalReturn: number | null; unpricedPositions?: number }[]
+  }
+  assert.equal(unpriced.accounts[0]!.cash, 2028) // 5000 - 3000 - 12 + 40
+  assert.equal(unpriced.accounts[0]!.value, 2028)
+  assert.equal(unpriced.accounts[0]!.totalReturn, null)
+  assert.equal(unpriced.accounts[0]!.unpricedPositions, 1)
+
+  // A hand-typed price only belongs to what no source quotes.
+  const refused = await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'Monde',
+    price: 700,
+    pricedOn: '2026-03-01',
+  })
+  assert.ok(refused.isError)
+  assert.match(refused.text, /its price comes from the market/)
+
+  await call(client, 'manage_assets', { action: 'create', name: 'SCPI' })
+  await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-06', account: 'PEA', type: 'buy', asset: 'SCPI', quantity: 10, amount: 1000 },
     ],
   })
+  const priced = await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 108,
+    pricedOn: '2026-03-01',
+  })
+  assert.deepEqual(priced.json(), { name: 'SCPI', price: 108, on: '2026-03-01' })
+  const withPrice = (await call(client, 'get_portfolio', { account: 'PEA' })).json() as {
+    accounts: { positions: { asset: string; value: number | null; unrealizedGain: number | null }[] }[]
+  }
+  const scpi = withPrice.accounts[0]!.positions.find((p) => p.asset === 'SCPI')
+  assert.equal(scpi!.value, 1080)
+  assert.equal(scpi!.unrealizedGain, 80)
 
   // The purchase is nowhere near the expenses: it is not one.
   const spending = await call(client, 'analyze_spending', {
@@ -784,5 +820,5 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.match(twice.text, /would split the position/)
 
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
-  assert.equal((operations.json() as unknown[]).length, 3)
+  assert.equal((operations.json() as unknown[]).length, 4)
 })

@@ -1,11 +1,19 @@
 'use client'
 
 import { PencilIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -114,49 +122,181 @@ export function OperationForm({
   )
 }
 
+export interface InstrumentHit {
+  source: 'yahoo' | 'coingecko'
+  reference: string
+  name: string
+  kind: 'security' | 'crypto'
+  typeLabel: string
+  venue: string | null
+  price: string | null
+  currency: string | null
+  available: boolean
+}
+
 /**
- * A holding. Its price source is what makes it quotable later; the reference
- * has to be the source's own (a Yahoo symbol, a CoinGecko id), because it is
- * shared with the other users of the application.
+ * Finding what one holds, by whatever they know it as: a name ("msci world"),
+ * a provider ("amundi"), a symbol ("CW8.PA"), an ISIN, a coin. Nobody knows a
+ * Yahoo symbol by heart, so typing one was never the interface.
+ *
+ * Each hit shows its venue and its current price, because that is what tells
+ * three listings of the same fund apart, and what confirms the right one was
+ * picked. A hit priced in another currency stays visible but unselectable, with
+ * its currency shown: disappearing without a word would read as "not found".
+ */
+function InstrumentSearch({ onPick }: { onPick: (hit: InstrumentHit) => void }) {
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<InstrumentHit[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const term = query.trim()
+    if (term.length < 2) {
+      setHits([])
+      return
+    }
+    setSearching(true)
+    // Typing is faster than two third-party APIs: wait for a pause, and let a
+    // newer keystroke abort the request its predecessor started.
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/instruments/search?q=${encodeURIComponent(term)}`, {
+          signal: controller.signal,
+        })
+        setHits(response.ok ? await response.json() : [])
+      } catch {
+        // Aborted or offline: leave the previous hits rather than blanking out.
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [query])
+
+  const securities = hits.filter((h) => h.kind === 'security')
+  const coins = hits.filter((h) => h.kind === 'crypto')
+
+  const group = (label: string, items: InstrumentHit[]) =>
+    items.length > 0 && (
+      <CommandGroup heading={label}>
+        {items.map((hit) => (
+          <CommandItem
+            key={`${hit.source}:${hit.reference}`}
+            value={`${hit.reference} ${hit.name}`}
+            disabled={!hit.available}
+            onSelect={() => hit.available && onPick(hit)}
+            className="items-start gap-3"
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">{hit.name}</span>
+              <span className="truncate text-[11px] text-faint">
+                {[hit.reference, hit.venue ?? hit.typeLabel].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+            <span className="tabular shrink-0 text-[11.5px] text-muted-foreground">
+              {hit.price
+                ? `${Number(hit.price).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${hit.currency}`
+                : (hit.currency ?? '')}
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    )
+
+  return (
+    <Command shouldFilter={false} className="bg-transparent">
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Nom, symbole, ISIN, fournisseur…"
+        autoFocus
+      />
+      {query.trim().length >= 2 && (
+        <CommandList className="mt-1">
+          <CommandEmpty>{searching ? 'Recherche…' : 'Rien trouvé.'}</CommandEmpty>
+          {group('Titres et ETF', securities)}
+          {group('Cryptos', coins)}
+        </CommandList>
+      )}
+    </Command>
+  )
+}
+
+/**
+ * A holding: the instrument it follows, or nothing when its price is typed by
+ * hand. The instrument is shared with the other users of the application, so it
+ * is picked from its source rather than described from memory.
  */
 export function AssetForm() {
-  const [source, setSource] = useState('')
+  const [picked, setPicked] = useState<InstrumentHit | null>(null)
+  const [byHand, setByHand] = useState(false)
+
+  if (!picked && !byHand)
+    return (
+      <div className="flex flex-col gap-3">
+        <InstrumentSearch onPick={setPicked} />
+        <button
+          type="button"
+          onClick={() => setByHand(true)}
+          className="self-start text-[12px] text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+        >
+          Aucune source ne le cote (SCPI, parts non cotées, bien)
+        </button>
+      </div>
+    )
 
   return (
     <ActionForm action={declareAssetAction} successLabel="Actif ajouté">
-      <TextField name="name" label="Nom" placeholder="MSCI World" />
-      <Field label="Cours">
-        <FormSelect
-          name="source"
-          noneLabel="Saisi à la main"
-          onValueChange={setSource}
-          options={[
-            { value: 'yahoo', label: 'Yahoo Finance (action, ETF)' },
-            { value: 'coingecko', label: 'CoinGecko (crypto)' },
-          ]}
-        />
-      </Field>
-      {source !== '' && (
+      {picked && (
         <>
-          <Field label={source === 'yahoo' ? 'Symbole Yahoo' : 'Identifiant CoinGecko'} name="reference">
-            <Input
-              name="reference"
-              placeholder={source === 'yahoo' ? 'CW8.PA' : 'bitcoin'}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </Field>
-          <input type="hidden" name="kind" value={source === 'coingecko' ? 'crypto' : 'security'} />
-          <TextField
-            name="description"
-            label="Nom de l’instrument (optionnel)"
-            placeholder="Amundi MSCI World UCITS ETF"
-          />
+          <input type="hidden" name="source" value={picked.source} />
+          <input type="hidden" name="reference" value={picked.reference} />
+          <input type="hidden" name="kind" value={picked.kind} />
+          <input type="hidden" name="description" value={picked.name} />
+          <div className="flex flex-col gap-0.5 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
+            <span className="truncate text-[12.5px]">{picked.name}</span>
+            <span className="text-[11px] text-faint">
+              {[picked.reference, picked.venue, picked.price ? `${picked.price} ${picked.currency}` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          </div>
         </>
       )}
-      <SubmitButton className="self-start">Ajouter</SubmitButton>
+      <TextField
+        name="name"
+        label="Sous quel nom"
+        defaultValue={picked ? shortName(picked.name) : ''}
+        placeholder="MSCI World"
+      />
+      <div className="flex items-center gap-3">
+        <SubmitButton>Ajouter</SubmitButton>
+        <button
+          type="button"
+          onClick={() => {
+            setPicked(null)
+            setByHand(false)
+          }}
+          className="text-[12px] text-muted-foreground hover:text-primary"
+        >
+          Changer
+        </button>
+      </div>
     </ActionForm>
   )
+}
+
+/** A default worth keeping: the fund's own name minus what every fund repeats. */
+function shortName(name: string): string {
+  return name
+    .replace(/\s+(UCITS\s+)?ETF\b.*$/i, '')
+    .replace(/\s+-\s+.*$/, '')
+    .trim()
+    .slice(0, 40)
 }
 
 function AssetRow({ asset }: { asset: AssetEntry }) {

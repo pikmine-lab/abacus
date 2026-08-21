@@ -308,6 +308,23 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   dessus (achat, vente, dividende, frais) se déclare à chaque fois. Le panneau d'opération
   dit ce qu'il ne fait pas, parce que c'est là qu'on se trompe : alimenter le compte ou en
   sortir de l'argent est un virement, à déclarer dans les mouvements.
+- **On cherche un actif par ce qu'on en sait, jamais par sa clé.** Personne ne connaît un
+  ticker Yahoo de tête : le champ cherche sur un nom, un fournisseur, un ticker, un ISIN, et
+  les résultats se groupent par nature (titres, cryptos) plutôt que de se mélanger dans un
+  classement commun, où « apple » ferait remonter des jetons avant l'action. Chaque ligne
+  porte **sa place et son cours**, parce qu'un même fonds est coté sur cinq places et que
+  c'est le seul moyen de reconnaître la bonne. Ce que l'application ne sait pas encore tenir
+  (une devise étrangère) reste visible et **désactivé, avec sa devise** : disparaître sans
+  un mot se lirait « pas trouvé ». La sélection remplit tout, et le nom d'affichage est
+  proposé, pas demandé.
+- **Un cours s'affiche avec son heure.** Le différé de 15 minutes d'Euronext est imposé par
+  la licence : la fraîcheur ne se gagne pas, elle se déclare. Un nombre nu serait lu comme
+  « maintenant ».
+- **Un chiffre affiché dit sa méthode**, et la référence contre laquelle il se mesure en
+  fait partie : « dividendes et frais compris, contre 5 000 € d'apports » se vérifie à la
+  main, « performance » ne se vérifie pas. Quand une donnée manque pour un calcul, le
+  chiffre devient un tiret et dit ce qui manque, au lieu d'un total sous-estimé qui a l'air
+  juste.
 - **Un chiffre négatif n'est pas une valeur, c'est une déclaration qui manque.** Des
   espèces négatives sur un compte d'investissement veulent dire qu'un achat est entré sans
   le virement qui l'a financé : la tuile le dit (« un virement d'alimentation manque »)

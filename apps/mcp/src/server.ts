@@ -1,4 +1,5 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import { searchInstruments } from '@abacus/core/prices/search'
 import {
   closeAccount,
   createAccount,
@@ -46,6 +47,8 @@ import {
   listOperations,
   portfolio,
   recordOperations,
+  refreshQuotes,
+  setManualPrice,
 } from '@abacus/core/services/investments'
 import {
   closeAdvance,
@@ -164,6 +167,8 @@ const GUIDANCE: Record<string, string> = {
   no_operations: 'There is nothing to record: pass at least one operation.',
   asset_exists:
     'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
+  asset_is_quoted:
+    'This asset follows a price source, so its price comes from the market: a hand-typed one would be a second answer to the same question. Only an asset declared without a source takes set_price.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
 }
@@ -1366,14 +1371,16 @@ export function buildServer(userId: string): McpServer {
     'manage_assets',
     {
       description:
-        'Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). A listed one names where its price comes from and its reference there: source "yahoo" with a Yahoo Finance symbol ("CW8.PA", "AAPL"), or "coingecko" with a CoinGecko id ("bitcoin"). That instrument is shared with the other users of this application, so get the reference exactly right and never invent one; it also keeps the description of whoever declared it first. Actions: list, create, rename. Omit the source for something priced by hand. One instrument can only be held under one name: a second name for it would split the position in half.',
+        "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's). Omit the source at creation for whatever no source quotes. One instrument can only be held under one name: a second name for it would split the position in half.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'rename']),
+        action: z.enum(['list', 'create', 'rename', 'set_price']),
         name: z
           .string()
           .optional()
-          .describe('create: the name to hold it under; rename: the asset to rename'),
+          .describe('create: the name to hold it under; rename/set_price: the asset concerned'),
         newName: z.string().optional().describe('rename: the corrected name'),
+        price: z.number().nonnegative().optional().describe('set_price: what one unit is worth'),
+        pricedOn: isoDate.optional().describe('set_price: the day that price is from'),
         source: z
           .enum(['yahoo', 'coingecko'])
           .optional()
@@ -1407,7 +1414,9 @@ export function buildServer(userId: string): McpServer {
                     reference: asset.instrument.priceSourceRef,
                     description: asset.instrument.name,
                   }
-                : 'priced by hand',
+                : asset.manualPrice
+                  ? `priced by hand: ${asset.manualPrice} on ${asset.manualPricedOn}`
+                  : 'priced by hand, no price given yet',
             })),
           )
         }
@@ -1417,6 +1426,13 @@ export function buildServer(userId: string): McpServer {
           const target = await requireAssetByName(userId, a.name)
           const renamed = await editAsset(userId, target.id, a.newName)
           return ok({ assetId: renamed.id, name: renamed.name })
+        }
+        if (a.action === 'set_price') {
+          if (a.price === undefined || !a.pricedOn)
+            return fail('set_price requires price and pricedOn: a price is always dated.')
+          const target = await requireAssetByName(userId, a.name)
+          const priced = await setManualPrice(userId, target.id, a.price, a.pricedOn)
+          return ok({ name: priced.name, price: Number(priced.manualPrice), on: priced.manualPricedOn })
         }
         if (a.source && !a.reference)
           return fail(
@@ -1503,10 +1519,41 @@ export function buildServer(userId: string): McpServer {
   )
 
   server.registerTool(
+    'search_instruments',
+    {
+      description:
+        'Finds a listed instrument by anything the user knows it as: a name ("msci world"), a provider ("amundi", "ishares"), a ticker ("CW8.PA"), an ISIN ("FR0010315770"), or a coin name. Always search before declaring a holding with manage_assets: the reference has to be the source\'s exact one, and guessing a ticker creates an asset whose price will never update. Several listings of the same fund exist across venues, so use the venue and the price to pick the one the user actually holds, and ask them when it is not obvious. Results marked unavailable are priced in another currency, which this application cannot hold yet.',
+      inputSchema: z.object({
+        query: z.string().min(2).describe('Name, provider, ticker, ISIN or coin name'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const hits = await searchInstruments(a.query)
+        if (hits.length === 0)
+          return fail(
+            `Nothing found for "${a.query}". Try the provider and the index ("amundi msci world"), the ISIN, or the exact ticker.`,
+          )
+        return ok(
+          hits.map((hit) => ({
+            source: hit.source,
+            reference: hit.reference,
+            name: hit.name,
+            kind: hit.kind,
+            venue: hit.venue ?? undefined,
+            price: hit.price ? Number(hit.price) : undefined,
+            currency: hit.currency ?? undefined,
+            unavailable: hit.available ? undefined : `priced in ${hit.currency}, not holdable yet`,
+          })),
+        )
+      }),
+  )
+
+  server.registerTool(
     'get_portfolio',
     {
       description:
-        'What the user holds, account by account: the cash sitting on each investment account, and every position with the quantity held, its weighted average cost per unit and what it cost in total, order fees included. Nothing here is valued at a market price: there is no price in the model yet, so never state or estimate what a holding is worth today, nor any gain. Use list_movements for the money that funded these accounts, and record_investment_operations to declare what happened inside them.',
+        'What the user holds, account by account: the cash on each investment account, and every position with its quantity, its weighted average cost per unit (PMP, order fees included), what it cost, the last known price with the moment the market made it, what it is worth now and its unrealized gain. Two figures per account state their own method, and reading them any other way makes them wrong: `unrealizedGain` excludes dividends and fees, `totalReturn` includes both and is measured against `netContributions`, what movements put in net of what they took out. A position with no price is valued at nothing rather than estimated, and `totalReturn` then comes back null rather than understated. Prices are refreshed as this tool runs, within what each source allows: Euronext is 15 minutes delayed by licence, so never present a price as live, present it with its hour.',
       inputSchema: z.object({
         account: z.string().optional().describe('Restrict to one investment account, by name'),
       }),
@@ -1514,19 +1561,28 @@ export function buildServer(userId: string): McpServer {
     async (a) =>
       run(async () => {
         const wanted = a.account ? await requireAccountByName(userId, a.account) : null
+        await refreshQuotes(userId)
         const held = await portfolio(userId)
         const accounts = wanted ? held.filter((h) => h.account.id === wanted.id) : held
         return ok({
-          valuation: 'none: prices are not part of the model yet, only what was paid',
           accounts: accounts.map((h) => ({
             account: h.account.name,
             cash: Number(h.cash),
+            value: Number(h.value),
             costBasis: Number(h.costBasis),
+            netContributions: Number(h.netContributions),
+            totalReturn: h.totalReturn === null ? null : Number(h.totalReturn),
+            unpricedPositions: h.unpriced === 0 ? undefined : h.unpriced,
             positions: h.positions.map((p) => ({
               asset: p.assetName,
               quantity: Number(p.quantity),
               averageCost: Number(p.averageCost),
               costBasis: Number(p.costBasis),
+              price: p.price === null ? null : Number(p.price),
+              pricedAt: p.pricedAt?.toISOString() ?? null,
+              pricedByHand: p.manualPrice ? true : undefined,
+              value: p.value === null ? null : Number(p.value),
+              unrealizedGain: p.gain === null ? null : Number(p.gain),
             })),
           })),
         })

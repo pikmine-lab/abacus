@@ -152,6 +152,9 @@ export interface Asset {
   userId: string
   name: string
   instrumentId: string | null
+  /** Set only on an asset with no instrument, and always with its day. */
+  manualPrice: string | null
+  manualPricedOn: string | null
 }
 
 export type InvestmentOperationType = 'buy' | 'sell' | 'dividend' | 'fee'
@@ -173,7 +176,10 @@ export interface InvestmentOperation {
   note: string | null
 }
 
-/** A holding as its operations make it. No price involved: nothing here is valued. */
+/**
+ * A holding as its operations make it, valued when a price is known and left
+ * unvalued when none is: nothing here is ever estimated.
+ */
 export interface Position {
   assetId: string
   assetName: string
@@ -183,4 +189,13 @@ export interface Position {
   averageCost: string
   /** `quantity x averageCost`: the money still committed to this holding. */
   costBasis: string
+  /** Null when no price is known, and then everything below it is null too. */
+  price: string | null
+  /** When the market made that price, never when it was fetched. */
+  pricedAt: Date | null
+  /** Typed by hand, so its day is worth showing rather than its hour. */
+  manualPrice: boolean
+  value: string | null
+  /** `value - costBasis`: unrealized, dividends and account fees excluded. */
+  gain: string | null
 }

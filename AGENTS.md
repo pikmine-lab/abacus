@@ -270,6 +270,20 @@ Deux frontières tiennent la suite :
   ne pas perdre : la table partagée ne sert jamais d'autocomplétion, sinon elle dirait à
   chacun ce que les autres détiennent.
 
+**Les cours** (même issue) : rafraîchis **à la lecture**, jamais par un planificateur, avec
+une borne de fraîcheur par source (15 min sur les titres, 60 s en crypto, 1 h quand la place
+est fermée, ce que la réponse de Yahoo dit elle-même via `currentTradingPeriod`). Un
+rafraîchissement ne casse jamais une lecture : il ne lève pas, et un cours périmé affiché
+avec son heure vaut mieux qu'une page en erreur. Une position sans cours n'est pas valorisée
+à zéro, elle n'est pas valorisée, et la performance du compte se tait plutôt que de se
+sous-estimer. Deux chiffres, chacun disant sa méthode : plus-value latente (hors dividendes
+et frais) et performance (dividendes et frais compris, contre les apports nets).
+
+**Trouver un actif** se fait par nom, fournisseur, ticker ou ISIN (`search_instruments` côté
+MCP, un champ de recherche côté web) : les références ne se saisissent pas de mémoire. La
+devise réelle des premiers résultats est vérifiée en demandant leur cours, ce qui évite de
+coder une liste de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10.
+
 Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas

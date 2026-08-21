@@ -45,14 +45,14 @@ export async function insertAsset(
   const [asset] = await tx<Asset[]>`
     insert into asset (user_id, name, instrument_id)
     values (${userId}, ${name}, ${instrumentId})
-    returning id, user_id, name, instrument_id
+    returning id, user_id, name, instrument_id, manual_price, manual_priced_on
   `
   return asset!
 }
 
 export async function getAsset(tx: Executor, userId: string, id: string): Promise<Asset | undefined> {
   const [asset] = await tx<Asset[]>`
-    select id, user_id, name, instrument_id from asset
+    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
     where user_id = ${userId} and id = ${id}
   `
   return asset
@@ -60,7 +60,7 @@ export async function getAsset(tx: Executor, userId: string, id: string): Promis
 
 export async function listAssets(tx: Executor, userId: string): Promise<Asset[]> {
   return await tx<Asset[]>`
-    select id, user_id, name, instrument_id from asset
+    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
     where user_id = ${userId} order by name
   `
 }
@@ -74,7 +74,7 @@ export async function updateAssetRow(
   const [asset] = await tx<Asset[]>`
     update asset set ${tx(patch)}, updated_at = now()
     where user_id = ${userId} and id = ${id}
-    returning id, user_id, name, instrument_id
+    returning id, user_id, name, instrument_id, manual_price, manual_priced_on
   `
   return asset
 }
@@ -187,10 +187,81 @@ export async function positions(tx: Executor, userId: string, accountId?: string
            a.instrument_id,
            h.quantity::numeric(20,8) as quantity,
            (h.cost / h.quantity)::numeric(18,8) as average_cost,
-           h.cost::numeric(14,2) as cost_basis
+           h.cost::numeric(14,2) as cost_basis,
+           -- A listed asset takes the shared quote, a hand-priced one its own.
+           -- Both stay null when nothing is known: a position is never valued
+           -- by guesswork, and the caller says "no price" instead.
+           coalesce(q.price, a.manual_price) as price,
+           coalesce(q.quoted_at, a.manual_priced_on::timestamptz) as priced_at,
+           (a.manual_price is not null) as manual_price,
+           (h.quantity * coalesce(q.price, a.manual_price))::numeric(14,2) as value,
+           (h.quantity * coalesce(q.price, a.manual_price) - h.cost)::numeric(14,2) as gain
     from held h
     join asset a on a.id = h.asset_id
+    left join instrument_quote q on q.instrument_id = a.instrument_id
     order by a.name
+  `
+}
+
+export interface QuoteRow {
+  price: string
+  currency: string
+  quotedAt: Date
+  marketOpen: boolean
+}
+
+/** One row per instrument, overwritten: only the latest known price is kept. */
+export async function upsertQuote(tx: Executor, instrumentId: string, quote: QuoteRow): Promise<void> {
+  await tx`
+    insert into instrument_quote (instrument_id, price, currency, quoted_at, fetched_at, market_open)
+    values (${instrumentId}, ${quote.price}, ${quote.currency}, ${quote.quotedAt}, now(), ${quote.marketOpen})
+    on conflict (instrument_id) do update
+      set price = excluded.price,
+          currency = excluded.currency,
+          quoted_at = excluded.quoted_at,
+          fetched_at = excluded.fetched_at,
+          market_open = excluded.market_open
+  `
+}
+
+/** What movements put into an investment account, net of what they took out. */
+export async function movementsNetPerAccount(tx: Executor, userId: string): Promise<Map<string, string>> {
+  const rows = await tx<{ accountId: string; net: string }[]>`
+    select a.id as account_id,
+           coalesce(
+             sum(case when m.target_account_id = a.id then m.amount else -m.amount end), 0
+           )::numeric(14,2) as net
+    from account a
+    left join movement m on m.source_account_id = a.id or m.target_account_id = a.id
+    where a.user_id = ${userId} and a.behavior = 'investment'
+    group by a.id
+  `
+  return new Map(rows.map((r) => [r.accountId, r.net]))
+}
+
+export interface RefreshCandidate {
+  instrumentId: string
+  priceSource: Instrument['priceSource']
+  priceSourceRef: string
+  /** When we last asked, which is what the freshness bound reads. */
+  fetchedAt: Date | null
+  /** Null when never fetched; false buys the longer closed-market bound. */
+  marketOpen: boolean | null
+}
+
+/**
+ * The instruments worth a network call: those this user actually holds. An
+ * instrument nobody holds any more is left alone, and the shared table is never
+ * refreshed wholesale on someone's behalf.
+ */
+export async function instrumentsToRefresh(tx: Executor, userId: string): Promise<RefreshCandidate[]> {
+  return await tx<RefreshCandidate[]>`
+    select distinct i.id as instrument_id, i.price_source, i.price_source_ref,
+           q.fetched_at, q.market_open
+    from asset a
+    join instrument i on i.id = a.instrument_id
+    left join instrument_quote q on q.instrument_id = i.id
+    where a.user_id = ${userId}
   `
 }
 

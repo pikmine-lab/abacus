@@ -5,13 +5,16 @@ import {
   heldQuantity,
   insertAsset,
   insertOperation,
+  instrumentsToRefresh,
   listAssets as listAssetsDs,
   listInstruments,
   listOperations as listOperationsDs,
+  movementsNetPerAccount,
   type NewInstrument,
   positions as positionsDs,
   updateAssetRow,
   upsertInstrument,
+  upsertQuote,
 } from '../db/datasources/investments.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import type {
@@ -22,6 +25,7 @@ import type {
   InvestmentOperationType,
   Position,
 } from '../domain/types.ts'
+import { CLOSED_FRESHNESS_MS, type Fetcher, FRESHNESS_MS, fetchQuote } from '../prices/sources.ts'
 
 export interface DeclareAssetInput {
   name: string
@@ -159,35 +163,114 @@ export async function listOperations(userId: string, accountId?: string): Promis
   return await listOperationsDs(db(), userId, accountId)
 }
 
+/**
+ * Brings the prices of what this user holds up to date, within the freshness
+ * bound of each source, and never gets in the way of the read that called it:
+ * a network failure, a rate limit or a source changing its shape all leave the
+ * stored price in place. A stale price shown with its hour beats a page that
+ * fails, so this function does not throw.
+ *
+ * There is no scheduler anywhere, on purpose. An hourly job would refresh at
+ * night and be an hour stale exactly when a screen opens; refreshing on read
+ * is fresh precisely when someone is looking.
+ */
+export async function refreshQuotes(userId: string, fetcher: Fetcher = fetchQuote): Promise<void> {
+  const sql = db()
+  const candidates = await instrumentsToRefresh(sql, userId)
+  const now = Date.now()
+  await Promise.all(
+    candidates.map(async (candidate) => {
+      const bound = candidate.marketOpen === false ? CLOSED_FRESHNESS_MS : FRESHNESS_MS[candidate.priceSource]
+      if (candidate.fetchedAt && now - candidate.fetchedAt.getTime() < bound) return
+      try {
+        const quote = await fetcher(candidate.priceSource, candidate.priceSourceRef)
+        // A price in another currency cannot be added to euros, and converting
+        // it is issue #10, not this one: leave the position unpriced and say so
+        // rather than mixing units.
+        if (quote.currency !== 'EUR') return
+        await upsertQuote(sql, candidate.instrumentId, quote)
+      } catch {
+        // Deliberately silent: the caller is a read, and the stored price stands.
+      }
+    }),
+  )
+}
+
+/** A hand-typed price, for what no source quotes. Dated, because a price is. */
+export async function setManualPrice(
+  userId: string,
+  assetId: string,
+  price: number,
+  pricedOn: string,
+): Promise<Asset> {
+  if (!(price >= 0)) throw new DomainError('bad_amount', 'A price cannot be negative')
+  const asset = await getAsset(db(), userId, assetId)
+  if (!asset) throw new DomainError('asset_not_found', `No asset ${assetId} for this user`)
+  if (asset.instrumentId)
+    throw new DomainError(
+      'asset_is_quoted',
+      `"${asset.name}" takes its price from its source: a hand-typed one would be a second answer`,
+    )
+  const updated = await updateAssetRow(db(), userId, assetId, {
+    manualPrice: String(price),
+    manualPricedOn: pricedOn,
+  })
+  return updated!
+}
+
 export interface PortfolioAccount {
   account: Account
   /**
    * The cash sitting on the account: what movements brought in and out, plus
-   * what operations moved inside it. No holding is valued here, so this is not
-   * the account's worth.
+   * what operations moved inside it. Not the account's worth, which is this
+   * plus what the holdings are worth.
    */
   cash: string
   positions: Position[]
   /** What the holdings of this account cost, order fees included. */
   costBasis: string
+  /** Cash plus every position that has a price. */
+  value: string
+  /** How many positions carry no price, so the value above says how partial it is. */
+  unpriced: number
+  /**
+   * What movements put in, net of what they took out. The reference the whole
+   * account is judged against: everything else that happened (dividends in,
+   * fees out, purchases, sales) stayed inside the account.
+   */
+  netContributions: string
+  /**
+   * `value - netContributions`: what the account made, dividends received and
+   * fees paid included, because both went through its cash. Null while any
+   * position lacks a price, since a partial value would understate it.
+   */
+  totalReturn: string | null
 }
 
 /**
- * What is held, account by account. Nothing is valued: there is no price in the
- * model yet, so a position says its quantity and what it cost, and says only
- * that.
+ * What is held, account by account, valued at the last known price. Prices are
+ * refreshed by `refreshQuotes`, which the interfaces call before reading: this
+ * function only reads, so it never depends on the network.
  */
 export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
   const sql = db()
   const accounts = (await listAccountsWithBalance(sql, userId)).filter((a) => a.behavior === 'investment')
+  const contributions = await movementsNetPerAccount(sql, userId)
   return await Promise.all(
     accounts.map(async (account) => {
       const held = await positionsDs(sql, userId, account.id)
+      const priced = held.filter((p) => p.value !== null)
+      const value = Number(account.balance) + priced.reduce((sum, p) => sum + Number(p.value), 0)
+      const net = Number(contributions.get(account.id) ?? 0)
       return {
         account,
         cash: account.balance,
         positions: held,
         costBasis: held.reduce((sum, p) => sum + Number(p.costBasis), 0).toFixed(2),
+        value: value.toFixed(2),
+        unpriced: held.length - priced.length,
+        netContributions: net.toFixed(2),
+        totalReturn: held.length === priced.length ? (value - net).toFixed(2) : null,
       }
     }),
   )
