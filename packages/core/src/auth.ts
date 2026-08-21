@@ -27,6 +27,13 @@ export const auth = betterAuth({
       schema: {
         apikey: { modelName: 'auth_apikey' },
       },
+      // The plugin defaults to ten requests per twenty-four hours, and its
+      // counter only resets after a whole window without a single request. An
+      // MCP client reconnects, so it never earns that silence: past the tenth
+      // request the key is dead for good. Any finite ceiling carries the same
+      // trap further out, so there is none. Disabling is read before the key
+      // row, which also frees keys carrying the old ceiling.
+      rateLimit: { enabled: false },
     }),
   ],
 })

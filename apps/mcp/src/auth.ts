@@ -12,7 +12,12 @@ export async function verifyApiKeyToken(token: string): Promise<AuthInfo> {
   const userId = key?.userId ?? key?.referenceId
   if (!result.valid || !userId) {
     // The typed error is what turns into a clean 401; anything else is a 500.
-    throw new OAuthError(OAuthErrorCode.InvalidToken, 'Invalid API key')
+    // Better Auth says why it refused (unknown key, disabled, expired); a fixed
+    // "Invalid API key" hid that behind the one cause the AI can act on, and
+    // sent it creating keys that changed nothing. The refusal is the AI's whole
+    // world here, so it carries the real reason.
+    const reason = (result.error as { message?: string } | null)?.message
+    throw new OAuthError(OAuthErrorCode.InvalidToken, reason ?? 'Invalid API key')
   }
   // The bearer gate requires an expiration. API keys may not carry one; the
   // key is re-verified on every request anyway, so a short synthetic window
