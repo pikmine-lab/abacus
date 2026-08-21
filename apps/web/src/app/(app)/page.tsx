@@ -135,6 +135,11 @@ export default async function OverviewPage({
   // which is what this whole feature was for.
   const holdings = await holdingsValue(userId)
   const wealth = accounts.reduce((sum, a) => sum + Number(a.balance), 0) + holdings.value
+  // See the accounts page: negative cash on an investment account is an
+  // undeclared contribution, and the total is short by exactly that.
+  const missingContributions = accounts
+    .filter((a) => a.behavior === 'investment' && Number(a.balance) < 0)
+    .reduce((sum, a) => sum - Number(a.balance), 0)
 
   const series = await balanceSeries(userId, seriesFrom(period, firstDay), period.to)
   const dayTotals = new Map<string, number>()
@@ -194,11 +199,13 @@ export default async function OverviewPage({
                 : undefined
             }
             hint={
-              holdings.value > 0
-                ? `${accounts.filter((a) => !a.closedOn).length} comptes, placements au dernier cours${
-                    holdings.unpriced > 0 ? ` (${holdings.unpriced} sans cours)` : ''
-                  }`
-                : `${accounts.filter((a) => !a.closedOn).length} comptes ouverts`
+              missingContributions > 0
+                ? `${eur(missingContributions)} d’apports non déclarés : pointe les espèces du compte`
+                : holdings.value > 0
+                  ? `${accounts.filter((a) => !a.closedOn).length} comptes, placements au dernier cours${
+                      holdings.unpriced > 0 ? ` (${holdings.unpriced} sans cours)` : ''
+                    }`
+                  : `${accounts.filter((a) => !a.closedOn).length} comptes ouverts`
             }
             spark={wealthSpark}
           />

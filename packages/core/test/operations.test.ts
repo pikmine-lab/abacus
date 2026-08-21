@@ -3,6 +3,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
 import { parseCoinGeckoHistory, parseYahooHistory } from '../src/prices/sources.ts'
 import { createAccount } from '../src/services/accounts.ts'
+import { recordBalanceCheck } from '../src/services/balanceChecks.ts'
 import {
   correctOperation,
   declareAsset,
@@ -203,4 +204,30 @@ test('a year of closes parses, and the running day is skipped', () => {
   })
   assert.equal(gecko.length, 2)
   assert.equal(gecko[1]!.price, '66900')
+})
+
+test('a balance check on an investment account sees its operations', async () => {
+  const user = await seedUser()
+  const account = await pea(user)
+  const world = await declareAsset(user, { name: 'World', instrument: WORLD })
+  // A holding declared without the transfer that funded it: exactly how an
+  // existing portfolio gets typed in, and what leaves the cash deeply negative.
+  await recordOperations(user, [
+    {
+      accountId: account.id,
+      assetId: world.id,
+      type: 'buy',
+      quantity: 8,
+      amount: 4795.1,
+      operatedOn: '2026-08-22',
+    },
+  ])
+
+  // The check is the way out: reality says the cash is 12,50, the computed cash
+  // is minus what was spent, and the gap is the contribution never declared.
+  // Counting movements alone would have reported no gap at all, which is the
+  // one thing a balance check exists to catch.
+  const { check, gap } = await recordBalanceCheck(user, account.id, 12.5, '2026-08-22')
+  assert.equal(check.computedBalance, '-4795.10')
+  assert.equal(gap, 4807.6)
 })

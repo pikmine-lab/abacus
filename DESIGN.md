@@ -358,9 +358,12 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   juste.
 - **Un chiffre négatif n'est pas une valeur, c'est une déclaration qui manque.** Des
   espèces négatives sur un compte d'investissement veulent dire qu'un achat est entré sans
-  le virement qui l'a financé : la tuile le dit (« un virement d'alimentation manque »)
-  plutôt que d'afficher un montant sous un libellé qui devient faux. Vaut partout où une
-  somme calculée peut passer sous zéro sans que la réalité l'ait fait.
+  le virement qui l'a financé, ce qui est exactement ce qui arrive quand on saisit un
+  portefeuille déjà existant. Le total est alors amputé d'autant, donc **il le dit là où il
+  s'affiche** (« 4 795 € d'apports non déclarés : pointe les espèces du compte »), sur le
+  tableau de bord comme sur Comptes, et il nomme la sortie : le pointage. Sans ça, le total
+  a l'air de ne pas compter les placements alors qu'il les compte. Vaut partout où une somme
+  calculée peut passer sous zéro sans que la réalité l'ait fait.
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
   ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
   « tous » côté contrôle. Une URL bricolée ne casse pas la page.

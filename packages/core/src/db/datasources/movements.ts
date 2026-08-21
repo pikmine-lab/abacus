@@ -148,11 +148,25 @@ export async function accountBalance(
   except?: string,
 ): Promise<string> {
   const [row] = await tx<{ balance: string }[]>`
-    select coalesce(sum(case when target_account_id = ${accountId} then amount else -amount end), 0)::numeric(14,2) as balance
-    from movement
-    where (source_account_id = ${accountId} or target_account_id = ${accountId})
-    ${upTo ? tx`and happened_on <= ${upTo}` : tx``}
-    ${except ? tx`and id <> ${except}` : tx``}
+    select (
+      coalesce((
+        select sum(case when target_account_id = ${accountId} then amount else -amount end)
+        from movement
+        where (source_account_id = ${accountId} or target_account_id = ${accountId})
+        ${upTo ? tx`and happened_on <= ${upTo}` : tx``}
+        ${except ? tx`and id <> ${except}` : tx``}
+      ), 0)
+      -- Operations move the cash of an investment account just as movements do,
+      -- and a balance check compares against its cash: without them the check
+      -- would report no gap on an account whose cash is thousands off, which is
+      -- the one thing the check exists to catch.
+      + coalesce((
+        select sum(case when type in ('sell', 'dividend') then amount else -amount end)
+        from investment_operation
+        where account_id = ${accountId}
+        ${upTo ? tx`and operated_on <= ${upTo}` : tx``}
+      ), 0)
+    )::numeric(14,2) as balance
   `
   return row!.balance
 }
