@@ -29,9 +29,13 @@ Pierre est simplement le premier utilisateur.
    réalité : le pointage de solde est le garde-fou de première classe du modèle.
 6. **Multi-utilisateur simple.** Toutes les entités du domaine appartiennent à un
    utilisateur (comptes, acteurs, activités, catégories… rien n'est partagé entre
-   utilisateurs). Pas de multi-tenancy sophistiquée : une colonne de propriété et une
-   authentification sérieuse suffisent. L'authentification n'est pas réinventée : on
-   s'appuie sur une solution existante (voir §5).
+   utilisateurs). **Une seule exception, et c'est celle du principe 1** : un cours de
+   bourse n'est ni déclaré ni possédé, donc l'instrument coté et son historique de cours
+   sont partagés par tous les utilisateurs, quand ce que chacun en détient reste à lui.
+   Les deux exceptions n'en font qu'une : la donnée publique n'appartient à personne. Pas de
+   multi-tenancy sophistiquée : une colonne de propriété et une authentification sérieuse
+   suffisent. L'authentification n'est pas réinventée : on s'appuie sur une solution
+   existante (voir §5).
 
 ## 2. Modèle de domaine
 
@@ -145,11 +149,34 @@ supprimé quand il n'y a plus rien à solder. Supprimer le pointage supprime l'a
 qui n'existait que pour lui.
 
 ### Investissements (comptes de type `investissement`)
-- **Opération** déclarée : achat, vente, dividende, frais, dépôt/retrait d'espèces.
-- **Position** calculée : quantité, PRU, valeur au dernier cours.
-- **Actif** : identifiant (ISIN/ticker/id CoinGecko), source de cours.
-- **Cours automatiques** : actions/ETF via Yahoo Finance ou Boursorama (non officiel),
-  crypto via CoinGecko (plan gratuit). Rafraîchissement quotidien, faible volume.
+Deux logiques cohabitent : **un mouvement porte l'argent jusqu'au compte, une opération dit
+ce qui se passe dedans.** Placer et récupérer sont des virements internes ; acheter est une
+opération, jamais un mouvement, sinon la nature dérivée des extrémités le compterait en
+dépense alors qu'acheter un titre ne dépense rien, il change la forme de l'argent.
+- **Opération** déclarée : achat, vente, dividende, frais de compte. Elle consomme ou
+  recrédite les espèces du compte, et c'est elle qui fait la position. Alimenter le compte
+  ou en sortir de l'argent, à l'inverse, est un mouvement.
+- **Position** calculée : quantité, PRU en moyenne pondérée (frais d'ordre inclus dans le
+  prix de revient, comme la règle fiscale, pour concorder avec le courtier), valeur au
+  dernier cours.
+- **Solde et valeur** : le solde d'un compte d'investissement est ses espèces (mouvements
+  ± opérations), sa valeur est espèces + valorisation des positions, et cette valeur est
+  datée. Un pointage y pointe les espèces, jamais la valorisation : celle-ci vient d'un
+  cours qu'on ne contrôle pas, l'écart serait permanent par construction.
+- **Actif** : ce que l'utilisateur détient, sous le nom qu'il lui donne, rattaché à un
+  **instrument coté partagé** dont l'identité est sa source de cours et sa référence chez
+  elle (`yahoo`/`CW8.PA`, `coingecko`/`bitcoin`). Un même ETF détenu par deux personnes est
+  un seul instrument, donc un cours lu une seule fois pour tout le monde. Un actif sans
+  instrument est valorisé par un cours saisi à la main, qui **reste privé** : un cours
+  déclaré est une déclaration comme une autre. Et l'instrument partagé ne sert jamais à
+  l'autocomplétion, qui passe par la recherche de la source : la liste de nos instruments
+  dirait à chacun ce que les autres détiennent.
+- **Cours automatiques** : actions et ETF via Yahoo Finance (non officiel), crypto via
+  CoinGecko. Rafraîchis **à la lecture**, fraîcheur bornée par source, aucun appel hors
+  séance : rien n'est planifié, parce qu'un planificateur rafraîchirait la nuit et serait
+  périmé pile au moment où l'écran s'ouvre. Sur Euronext, la meilleure fraîcheur gratuite
+  est un différé de 15 min, imposé par la licence de diffusion et non par le fournisseur :
+  l'écran affiche donc l'heure du cours et pas seulement son jour.
 - **Performance à méthode explicite** : chaque chiffre affiché dit comment il est calculé
   (avec/sans dividendes, frais inclus ou non), pour ne plus jamais avoir d'écart inexpliqué
   entre deux outils.
