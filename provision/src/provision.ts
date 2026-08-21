@@ -95,6 +95,7 @@ async function ensureCompose(refs: ComposeRef[], environmentId: string) {
     `DATABASE_URL=${required('DATABASE_URL')}`,
     `BETTER_AUTH_SECRET=${required('BETTER_AUTH_SECRET')}`,
     `PUBLIC_URL=${SPEC.publicUrl}`,
+    `MCP_URL=${SPEC.mcpUrl}`,
   ].join('\n')
 
   const ref = refs.find((c) => c.name === SPEC.service)

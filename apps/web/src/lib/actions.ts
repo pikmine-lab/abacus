@@ -505,7 +505,7 @@ export async function createApiKeyAction(
     body: { name: str(formData, 'name') },
     headers: await headers(),
   })
-  revalidatePath('/reglages')
+  revalidatePath('/brancher-une-ia')
   return { ok: true, key: created.key }
 }
 
@@ -514,5 +514,5 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
     body: { keyId: str(formData, 'keyId') },
     headers: await headers(),
   })
-  revalidatePath('/reglages')
+  revalidatePath('/brancher-une-ia')
 }

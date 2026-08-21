@@ -1,6 +1,6 @@
 'use client'
 
-import { LogOutIcon, SettingsIcon } from 'lucide-react'
+import { LogOutIcon, PlugZapIcon, SettingsIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -31,6 +31,12 @@ export function UserMenu({ name }: { name: string }) {
       </DropdownMenuTrigger>
       {/* Anchored to the side on desktop so it never covers the nav it came from. */}
       <DropdownMenuContent side={isMobile ? 'bottom' : 'right'} align="end" className="min-w-44">
+        <DropdownMenuItem asChild>
+          <Link href="/brancher-une-ia">
+            <PlugZapIcon />
+            Brancher une IA
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/reglages">
             <SettingsIcon />

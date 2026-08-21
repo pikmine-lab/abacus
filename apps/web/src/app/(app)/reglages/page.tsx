@@ -3,42 +3,29 @@ import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { ApiKeyForm } from '@/components/api-key-form'
 import { ActionForm, SubmitButton } from '@/components/forms'
-import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
-import { Button } from '@/components/ui/button'
+import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { Input } from '@/components/ui/input'
-import {
-  createActivityAction,
-  createActorAction,
-  createCategoryAction,
-  deleteApiKeyAction,
-} from '@/lib/actions'
+import { createActivityAction, createActorAction, createCategoryAction } from '@/lib/actions'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Réglages' }
-
-function frDay(d: Date): string {
-  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
-}
 
 export default async function SettingsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
 
-  const [categories, activities, actors, keys] = await Promise.all([
+  const [categories, activities, actors] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
     listActors(userId),
-    auth.api.listApiKeys({ headers: await headers() }),
   ])
-  const apiKeys = keys.apiKeys
 
   return (
     <>
-      <PageHeader title="Réglages" description="ton vocabulaire et tes accès" />
+      <PageHeader title="Réglages" description="ton vocabulaire" />
 
       <PageBody>
         <Section
@@ -108,42 +95,6 @@ export default async function SettingsPage() {
               Ajouter
             </SubmitButton>
           </ActionForm>
-        </Section>
-
-        <Section
-          title="Clés d’API"
-          description="une clé donne à une IA l’accès à tes données par le serveur MCP · une clé par outil, pour les révoquer séparément"
-        >
-          {apiKeys.length === 0 ? (
-            <EmptyLine>Aucune clé.</EmptyLine>
-          ) : (
-            <Rows>
-              {apiKeys.map((key) => (
-                <div key={key.id} className="flex flex-wrap items-center gap-2 py-2.5">
-                  <span className="text-[13px] font-medium">{key.name}</span>
-                  {key.start && <span className="font-mono text-[11px] text-faint">{key.start}…</span>}
-                  <span className="ml-auto text-[11px] text-faint">
-                    créée le {frDay(key.createdAt)}
-                    {key.lastRequest ? ` · utilisée le ${frDay(key.lastRequest)}` : ' · jamais utilisée'}
-                  </span>
-                  <form action={deleteApiKeyAction}>
-                    <input type="hidden" name="keyId" value={key.id} />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="submit"
-                      className="h-7 text-[12px] text-muted-foreground hover:text-destructive"
-                    >
-                      Révoquer
-                    </Button>
-                  </form>
-                </div>
-              ))}
-            </Rows>
-          )}
-          <div className="max-w-md">
-            <ApiKeyForm />
-          </div>
         </Section>
       </PageBody>
     </>

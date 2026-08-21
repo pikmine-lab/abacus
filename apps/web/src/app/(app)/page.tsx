@@ -110,7 +110,7 @@ export default async function OverviewPage({
     return (
       <>
         <PageHeader title="Bienvenue" />
-        <Onboarding steps={steps} apiKeyHref="/reglages" />
+        <Onboarding steps={steps} mcpHref="/brancher-une-ia" />
       </>
     )
   }
