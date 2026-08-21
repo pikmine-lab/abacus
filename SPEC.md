@@ -44,11 +44,16 @@ Le **type de comportement** est la seule typologie en dur, car elle décrit des 
 - `epargne` (livret) : porte des mouvements (virements, intérêts) ; faible volume ;
 - `investissement` (PEA, CTO, crypto) : porte des opérations d'investissement et des positions.
 
-Un compte clos reste en base (l'historique survit au montage bancaire du moment).
+Un compte clos reste en base (l'historique survit au montage bancaire du moment) et se
+réouvre : une clôture par erreur ne doit pas obliger à recréer le compte.
+Nom, établissement et type de comportement se corrigent. Le type cesse de bouger dès que
+le compte porte des opérations d'investissement, que seul ce type peut porter.
 
 ### Acteur
 La contrepartie externe d'un mouvement : commerçant, client, organisme (URSSAF), employeur.
-Champs : nom canonique, alias[], activité optionnelle, notes.
+Champs : nom canonique, alias[], activité optionnelle, notes. Tous se corrigent ; le nom
+corrigé remplace l'ancien, qui cesse de résoudre, parce qu'une faute de frappe doit
+disparaître. Un nom réellement porté se garde en alias, geste distinct et explicite.
 - La normalisation se fait à la déclaration : résolution contre noms canoniques + alias
   (« McDo », « Macdo » → *McDonald's*). L'UI propose l'autocomplétion ; le MCP résout et
   signale les créations d'acteur pour validation.
@@ -119,9 +124,15 @@ financement s'éteint de lui-même à la dernière échéance.
 
 ### Pointage de solde
 Déclaration « solde réel du compte X à la date D : N € ». L'app compare au solde calculé
-depuis les mouvements ; un écart est signalé et peut être soldé par un mouvement
-d'ajustement explicite (catégorisable). Le tableau de bord affiche l'âge du dernier pointage
-par compte.
+depuis les mouvements ; un écart est signalé et peut être soldé par **un** mouvement
+d'ajustement explicite (catégorisable), un seul par pointage. Le tableau de bord affiche
+l'âge du dernier pointage par compte.
+
+Un pointage se corrige (montant lu, date) et se supprime. Le corriger, c'est le refaire :
+le solde calculé est recalculé sur l'historique tel qu'il est alors, pour la date donnée,
+son propre ajustement exclu du calcul. L'ajustement suit l'écart obtenu : réaligné, ou
+supprimé quand il n'y a plus rien à solder. Supprimer le pointage supprime l'ajustement,
+qui n'existait que pour lui.
 
 ### Investissements (comptes de type `investissement`)
 - **Opération** déclarée : achat, vente, dividende, frais, dépôt/retrait d'espèces.

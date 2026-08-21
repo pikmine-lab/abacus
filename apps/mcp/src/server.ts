@@ -1,8 +1,28 @@
 import { DomainError } from '@abacus/core/domain/errors'
-import { closeAccount, createAccount, listAccounts } from '@abacus/core/services/accounts'
-import { addAlias, createActor, listActors, mergeActors } from '@abacus/core/services/actors'
-import { createAdjustment, latestCheck, recordBalanceCheck } from '@abacus/core/services/balanceChecks'
-import { createActivity, createCategory, listActivities, listCategories } from '@abacus/core/services/catalog'
+import {
+  closeAccount,
+  createAccount,
+  editAccount,
+  listAccounts,
+  reopenAccount,
+} from '@abacus/core/services/accounts'
+import { addAlias, createActor, editActor, listActors, mergeActors } from '@abacus/core/services/actors'
+import {
+  correctBalanceCheck,
+  createAdjustment,
+  deleteBalanceCheck,
+  latestCheck,
+  listChecks,
+  recordBalanceCheck,
+} from '@abacus/core/services/balanceChecks'
+import {
+  createActivity,
+  createCategory,
+  editActivity,
+  editCategory,
+  listActivities,
+  listCategories,
+} from '@abacus/core/services/catalog'
 import {
   cancelCommitment,
   changeAmount,
@@ -98,6 +118,22 @@ const GUIDANCE: Record<string, string> = {
   bad_target: 'A movement needs exactly one target: an owned account or an external actor, never both.',
   no_owned_account:
     "A movement must touch at least one of the user's own accounts. Actor-to-actor is not something this app records.",
+  account_exists:
+    'An account already uses that name. Reuse it, or pick another: two accounts cannot share one.',
+  account_has_operations:
+    'This account holds investment operations, which only an investment account can hold: its behavior cannot change. Everything else about it still corrects.',
+  category_exists: 'A category already uses that name. Reuse it instead of creating a variant of it.',
+  activity_exists:
+    'An activity already uses that name. Reuse it: activities partition the finances, duplicates defeat that.',
+  check_not_found:
+    'No such balance check for this user. Get a current id from manage_balance_checks with action list.',
+  check_already_settled:
+    'An adjustment already settles this check. Correct or delete that movement with fix_movement, or correct the check itself with manage_balance_checks.',
+}
+
+/** Optional text fields where the AI clears a value by passing "none". */
+function clearable(value: string | undefined): string | null | undefined {
+  return value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
 }
 
 function toFailure(e: unknown): ToolResult {
@@ -314,7 +350,7 @@ export function buildServer(userId: string): McpServer {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Use it to check what is already declared before an entry, find a specific movement, or answer "how much did I spend at X". For grouped totals, prefer analyze_spending.',
+        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_spending.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -338,12 +374,27 @@ export function buildServer(userId: string): McpServer {
           activityId: f.activity ? (await requireActivityByName(userId, f.activity)).id : undefined,
           limit: f.limit,
         })
+        const [accounts, actors, categories] = await Promise.all([
+          listAccounts(userId),
+          listActors(userId),
+          listCategories(userId),
+        ])
+        const accountName = new Map(accounts.map((a) => [a.id, a.name]))
+        const actorName = new Map(actors.map((a) => [a.id, a.name]))
+        const categoryName = new Map(categories.map((c) => [c.id, c.name]))
         return ok(
           movements.map((m) => ({
             id: m.id,
             date: m.happenedOn,
             kind: m.kind,
             amount: Number(m.amount),
+            // The owned account the money moved on; on a transfer, the one it left.
+            account: accountName.get((m.sourceAccountId ?? m.targetAccountId)!),
+            counterparty:
+              m.kind === 'transfer'
+                ? accountName.get(m.targetAccountId!)
+                : actorName.get((m.sourceActorId ?? m.targetActorId)!),
+            category: m.categoryId ? categoryName.get(m.categoryId) : undefined,
             note: m.note ?? undefined,
           })),
         )
@@ -403,6 +454,73 @@ export function buildServer(userId: string): McpServer {
           note,
         })
         return ok({ movementId: movement.id, kind: movement.kind, amount: Number(movement.amount) })
+      }),
+  )
+
+  server.registerTool(
+    'manage_balance_checks',
+    {
+      description:
+        'Reads and repairs the checks already recorded. Actions: list (per account or all, most recent first, with the gap and the adjustment that settled it), correct (the balance was misread, or read on another day), delete (the check should never have been recorded). Correcting is re-checking: the computed side is recalculated from the history as it stands now, for the date given, so the gap says what a check recorded today would say. The adjustment that settled the old gap follows on its own: realigned on the new gap, removed when nothing is left to settle. Deleting a check removes its adjustment too. Recording a fresh check is record_balance_check, settling a gap is settle_check_gap.',
+      inputSchema: z.object({
+        action: z.enum(['list', 'correct', 'delete']),
+        account: z.string().optional().describe('list: restrict to one account, by name'),
+        check: z
+          .string()
+          .optional()
+          .describe('correct/delete: id of the check, from list or record_balance_check'),
+        balance: z
+          .number()
+          .optional()
+          .describe('correct: the balance as it should have been read (may be negative)'),
+        date: isoDate.optional().describe('correct: the day the balance was actually read'),
+        note: z.string().optional().describe('correct: free note, or "none" to clear it'),
+        limit: z.number().int().min(1).max(200).optional().describe('list: default 50'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        if (a.action === 'list') {
+          const accountId = a.account ? (await requireAccountByName(userId, a.account)).id : undefined
+          const accounts = await listAccounts(userId)
+          const accountName = new Map(accounts.map((acc) => [acc.id, acc.name]))
+          const entries = await listChecks(userId, accountId, a.limit)
+          return ok(
+            entries.map((e) => ({
+              checkId: e.check.id,
+              account: accountName.get(e.check.accountId),
+              on: e.check.checkedOn,
+              declared: Number(e.check.declaredBalance),
+              computed: Number(e.check.computedBalance),
+              gap: e.gap,
+              settledByMovement: e.adjustmentId ?? undefined,
+              note: e.check.note ?? undefined,
+            })),
+          )
+        }
+        if (!a.check) return fail(`${a.action} requires check: the id, from action list.`)
+        if (a.action === 'delete') {
+          await deleteBalanceCheck(userId, a.check)
+          return ok({ checkId: a.check, deleted: true, note: 'Its adjustment, if any, went with it.' })
+        }
+        const corrected = await correctBalanceCheck(userId, a.check, {
+          declaredBalance: a.balance,
+          checkedOn: a.date,
+          note: clearable(a.note),
+        })
+        const ADJUSTMENT = {
+          realigned: 'The adjustment settling this check was realigned on the new gap.',
+          removed: 'Nothing was left to settle: the adjustment was removed.',
+          none: 'No adjustment settles this check.',
+        }
+        return ok({
+          checkId: corrected.check.id,
+          on: corrected.check.checkedOn,
+          declared: Number(corrected.check.declaredBalance),
+          computed: Number(corrected.check.computedBalance),
+          gap: corrected.gap,
+          adjustment: ADJUSTMENT[corrected.adjustment],
+        })
       }),
   )
 
@@ -521,8 +639,6 @@ export function buildServer(userId: string): McpServer {
     async (u) =>
       run(async () => {
         const target = await requireCommitment(userId, u.commitment)
-        const clearable = (value: string | undefined) =>
-          value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
         const category = clearable(u.category)
         const activity = clearable(u.activity)
         const updated = await editCommitment(userId, target.id, {
@@ -832,13 +948,20 @@ export function buildServer(userId: string): McpServer {
     'manage_accounts',
     {
       description:
-        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), close (the account keeps its history, it just stops accepting later movements). Accounts mirror the user's real banking setup: never create one without an explicit request.",
+        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution or the behavior), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). Accounts mirror the user's real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'close']),
-        name: z.string().optional().describe('create/close: account name (e.g. "Fortuneo checking")'),
-        behavior: z.enum(['payment', 'savings', 'investment']).optional().describe('create'),
-        institution: z.string().optional().describe('create: institution, free text'),
-        openedOn: isoDate.optional(),
+        action: z.enum(['list', 'create', 'update', 'close', 'reopen']),
+        name: z
+          .string()
+          .optional()
+          .describe('Every action except list: the account, by name (e.g. "Fortuneo checking")'),
+        newName: z.string().optional().describe('update: the corrected name'),
+        behavior: z.enum(['payment', 'savings', 'investment']).optional().describe('create/update'),
+        institution: z
+          .string()
+          .optional()
+          .describe('create/update: institution, free text, or "none" to clear it'),
+        openedOn: isoDate.optional().describe('create'),
         closedOn: isoDate.optional().describe('close: defaults to today'),
       }),
     },
@@ -869,6 +992,23 @@ export function buildServer(userId: string): McpServer {
           return ok({ accountId: account.id, name: account.name })
         }
         const account = await requireAccountByName(userId, a.name)
+        if (a.action === 'update') {
+          const updated = await editAccount(userId, account.id, {
+            name: a.newName,
+            institution: clearable(a.institution),
+            behavior: a.behavior,
+          })
+          return ok({
+            accountId: updated.id,
+            name: updated.name,
+            behavior: updated.behavior,
+            institution: updated.institution ?? undefined,
+          })
+        }
+        if (a.action === 'reopen') {
+          const reopened = await reopenAccount(userId, account.id)
+          return ok({ accountId: reopened.id, name: reopened.name, closedOn: null })
+        }
         const closed = await closeAccount(userId, account.id, a.closedOn)
         return ok({ accountId: closed.id, closedOn: closed.closedOn })
       }),
@@ -878,14 +1018,18 @@ export function buildServer(userId: string): McpServer {
     'manage_actors',
     {
       description:
-        'Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list, create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to Freelance, passes that sphere to its movements), add_alias ("Macdo" must resolve to McDonald\'s), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias). The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.',
+        'Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list, create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to Freelance, passes that sphere to its movements), update (correct the canonical name, the activity or the note), add_alias ("Macdo" must resolve to McDonald\'s), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias). A corrected name replaces the former one, which stops resolving: that is what fixes a typo. A name that really was in use is kept with add_alias instead. The movements already written keep the activity they were written with. The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.',
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'add_alias', 'merge']),
+        action: z.enum(['list', 'create', 'update', 'add_alias', 'merge']),
         name: z.string().optional().describe('create: canonical name'),
+        newName: z.string().optional().describe('update: the corrected canonical name'),
         aliases: z.array(z.string()).optional().describe('create: initial aliases'),
-        activity: z.string().optional().describe("create: activity passed on to this actor's movements"),
-        note: z.string().optional(),
-        actor: z.string().optional().describe('add_alias: target actor'),
+        activity: z
+          .string()
+          .optional()
+          .describe('create/update: activity passed on to this actor\'s movements, or "none" to detach it'),
+        note: z.string().optional().describe('create/update: free note, or "none" to clear it'),
+        actor: z.string().optional().describe('update/add_alias: target actor'),
         alias: z.string().optional().describe('add_alias: the new alias'),
         keep: z.string().optional().describe('merge: the actor to keep'),
         absorb: z
@@ -917,6 +1061,17 @@ export function buildServer(userId: string): McpServer {
           })
           return ok({ actorId: actor.id, name: actor.name })
         }
+        if (a.action === 'update') {
+          if (!a.actor) return fail('update requires actor: the actor to correct.')
+          const target = (await requireActorByName(userId, a.actor)).actor
+          const activity = clearable(a.activity)
+          const updated = await editActor(userId, target.id, {
+            name: a.newName,
+            activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
+            note: clearable(a.note),
+          })
+          return ok({ actorId: updated.id, name: updated.name })
+        }
         if (a.action === 'add_alias') {
           if (!a.actor || !a.alias) return fail('add_alias requires actor and alias.')
           const target = (await requireActorByName(userId, a.actor)).actor
@@ -939,11 +1094,15 @@ export function buildServer(userId: string): McpServer {
     'manage_categories',
     {
       description:
-        "Manages expense and income categories (the user's vocabulary, flat, with an optional group). Actions: list, create. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category.",
+        "Manages expense and income categories (the user's vocabulary, flat, with an optional group). Actions: list, create, update (rename it, or change its group). Renaming propagates on its own: the movements filed under a category point at it, not at its name. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create']),
-        name: z.string().optional().describe('create'),
-        group: z.string().optional().describe('create: optional group (e.g. "Everyday life")'),
+        action: z.enum(['list', 'create', 'update']),
+        name: z.string().optional().describe('create: the name; update: the category to correct'),
+        newName: z.string().optional().describe('update: the corrected name'),
+        group: z
+          .string()
+          .optional()
+          .describe('create/update: optional group (e.g. "Everyday life"), or "none" to clear it'),
       }),
     },
     async (a) =>
@@ -952,9 +1111,17 @@ export function buildServer(userId: string): McpServer {
           const categories = await listCategories(userId)
           return ok(categories.map((c) => ({ name: c.name, group: c.groupLabel ?? undefined })))
         }
-        if (!a.name) return fail('create requires name.')
-        const category = await createCategory(userId, a.name, a.group)
-        return ok({ categoryId: category.id, name: category.name })
+        if (!a.name) return fail(`${a.action} requires name.`)
+        if (a.action === 'create') {
+          const category = await createCategory(userId, a.name, a.group)
+          return ok({ categoryId: category.id, name: category.name })
+        }
+        const target = await requireCategoryByName(userId, a.name)
+        const updated = await editCategory(userId, target.id, {
+          name: a.newName,
+          groupLabel: clearable(a.group),
+        })
+        return ok({ categoryId: updated.id, name: updated.name, group: updated.groupLabel ?? undefined })
       }),
   )
 
@@ -999,8 +1166,6 @@ export function buildServer(userId: string): McpServer {
           await deleteMovement(userId, f.movement)
           return ok({ movementId: f.movement, deleted: true })
         }
-        const clearable = (value: string | undefined) =>
-          value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
         const endpoints: Record<string, string | null> = {}
         if (f.type) {
           if (!f.account) return fail('correct with a type requires account.')
@@ -1044,10 +1209,11 @@ export function buildServer(userId: string): McpServer {
     'manage_activities',
     {
       description:
-        'Manages activities: the user\'s economic spheres (e.g. "Freelance"). A movement without an activity is personal. An activity attaches to the relevant actors (clients, tax agencies) and passes on to their movements; that is what carries per-activity revenue and charges tracking. Actions: list, create. Create very few: it partitions the finances, it is not a tag system.',
+        'Manages activities: the user\'s economic spheres (e.g. "Freelance"). A movement without an activity is personal. An activity attaches to the relevant actors (clients, tax agencies) and passes on to their movements; that is what carries per-activity revenue and charges tracking. Actions: list, create, update (rename it: what is filed under it stays filed under it). Create very few: it partitions the finances, it is not a tag system.',
       inputSchema: z.object({
-        action: z.enum(['list', 'create']),
-        name: z.string().optional().describe('create'),
+        action: z.enum(['list', 'create', 'update']),
+        name: z.string().optional().describe('create: the name; update: the activity to rename'),
+        newName: z.string().optional().describe('update: the corrected name'),
       }),
     },
     async (a) =>
@@ -1056,9 +1222,15 @@ export function buildServer(userId: string): McpServer {
           const activities = await listActivities(userId)
           return ok(activities.map((act) => act.name))
         }
-        if (!a.name) return fail('create requires name.')
-        const activity = await createActivity(userId, a.name)
-        return ok({ activityId: activity.id, name: activity.name })
+        if (!a.name) return fail(`${a.action} requires name.`)
+        if (a.action === 'create') {
+          const activity = await createActivity(userId, a.name)
+          return ok({ activityId: activity.id, name: activity.name })
+        }
+        if (!a.newName) return fail('update requires newName: the corrected name.')
+        const target = await requireActivityByName(userId, a.name)
+        const updated = await editActivity(userId, target.id, a.newName)
+        return ok({ activityId: updated.id, name: updated.name })
       }),
   )
 

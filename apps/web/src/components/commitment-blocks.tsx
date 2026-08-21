@@ -49,7 +49,10 @@ export function CommitmentRow({
     actor: options.actors.find((a) => a.id === c.actorId)?.name ?? '',
     accountId: c.accountId,
     categoryId: c.categoryId ?? '',
-    periodUnit: c.periodUnit,
+    activityId: c.activityId ?? '',
+    // The periodicity is asked as one question, so it travels as one value.
+    period: `${c.periodUnit}:${c.periodCount}`,
+    engagedUntil: c.engagedUntil ?? '',
   }
   return (
     <div className="flex items-center gap-3 py-3">

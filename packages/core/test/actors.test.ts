@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
-import { addAlias, createActor, mergeActors, resolveActor } from '../src/services/actors.ts'
+import {
+  addAlias,
+  createActor,
+  listActorsWithAliases,
+  mergeActors,
+  resolveActor,
+} from '../src/services/actors.ts'
 import { createActivity } from '../src/services/catalog.ts'
 import { declareMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -55,4 +61,21 @@ test('merging reassigns references and keeps the absorbed name as alias', async 
   const [movement] = await listMovements(user)
   assert.equal(movement!.sourceActorId, keep.id)
   assert.equal((await resolveActor(user, 'ACME Corp')).match?.id, keep.id)
+})
+
+test('an actor is read with the names that also resolve to it', async () => {
+  const user = await seedUser()
+  const freelance = await createActivity(user, 'Freelance')
+  await createActor(user, { name: "McDonald's", aliases: ['Macdo', 'McDo'] })
+  await createActor(user, { name: 'ACME', activityId: freelance.id })
+
+  const listed = await listActorsWithAliases(user)
+  assert.deepEqual(
+    listed.map((a) => [a.name, a.aliases]),
+    [
+      ['ACME', []],
+      ["McDonald's", ['Macdo', 'McDo']],
+    ],
+  )
+  assert.equal(listed[0]!.activityId, freelance.id)
 })

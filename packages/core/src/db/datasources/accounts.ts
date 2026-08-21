@@ -54,3 +54,25 @@ export async function setAccountClosedOn(
   `
   return account
 }
+
+export async function updateAccountRow(
+  tx: Executor,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Account | undefined> {
+  const [account] = await tx<Account[]>`
+    update account set ${tx(patch)}, updated_at = now()
+    where user_id = ${userId} and id = ${id}
+    returning *
+  `
+  return account
+}
+
+/** What makes an investment account's behavior irreversible. */
+export async function countInvestmentOperations(tx: Executor, accountId: string): Promise<number> {
+  const [row] = await tx<{ count: string }[]>`
+    select count(*) as count from investment_operation where account_id = ${accountId}
+  `
+  return Number(row!.count)
+}

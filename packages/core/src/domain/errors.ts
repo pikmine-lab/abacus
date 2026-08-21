@@ -12,3 +12,13 @@ export class DomainError extends Error {
     this.code = code
   }
 }
+
+/**
+ * Rethrows a PostgreSQL unique violation as the domain rule it broke. The
+ * uniqueness of a name is a model constraint, so the caller gets something it
+ * can act on instead of a driver error.
+ */
+export function rethrowUnique(e: unknown, code: string, message: string): never {
+  if ((e as { code?: string }).code === '23505') throw new DomainError(code, message)
+  throw e
+}

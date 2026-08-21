@@ -50,7 +50,14 @@ export function CommitmentRowActions({
   today?: string
   /** References the commitment may point at; enables the correction panel. */
   options?: CommitmentOptions
-  defaults?: { actor: string; accountId: string; categoryId: string; periodUnit: string }
+  defaults?: {
+    actor: string
+    accountId: string
+    categoryId: string
+    activityId: string
+    period: string
+    engagedUntil: string
+  }
 }) {
   const [pricing, setPricing] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -122,6 +129,7 @@ export function CommitmentRowActions({
             {options && defaults && (
               <EditCommitmentForm
                 commitmentId={commitmentId}
+                kind={kind}
                 incoming={incoming}
                 defaults={{ label, ...defaults }}
                 options={options}

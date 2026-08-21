@@ -336,3 +336,177 @@ test('a mistyped movement is repaired through the MCP surface', async () => {
   await call(client, 'fix_movement', { movement: declared!.id, action: 'delete' })
   assert.deepEqual((await call(client, 'list_movements')).json(), [])
 })
+
+test('the whole referential corrects itself through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', {
+    action: 'create',
+    name: 'Curent',
+    behavior: 'payment',
+    institution: 'Banque',
+  })
+  await call(client, 'manage_activities', { action: 'create', name: 'Frelance' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Corses', group: 'Quotidien' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME Crop' })
+
+  const account = (
+    await call(client, 'manage_accounts', {
+      action: 'update',
+      name: 'Curent',
+      newName: 'Courant',
+      behavior: 'savings',
+      institution: 'none',
+    })
+  ).json() as { name: string; behavior: string; institution?: string }
+  assert.deepEqual(account.name, 'Courant')
+  assert.equal(account.behavior, 'savings')
+  assert.equal(account.institution, undefined)
+
+  const activity = (
+    await call(client, 'manage_activities', { action: 'update', name: 'Frelance', newName: 'Freelance' })
+  ).json() as { name: string }
+  assert.equal(activity.name, 'Freelance')
+
+  const category = (
+    await call(client, 'manage_categories', {
+      action: 'update',
+      name: 'Corses',
+      newName: 'Courses',
+      group: 'none',
+    })
+  ).json() as { name: string; group?: string }
+  assert.equal(category.name, 'Courses')
+  assert.equal(category.group, undefined)
+
+  // The actor takes the corrected name and the activity that was missing.
+  const actor = (
+    await call(client, 'manage_actors', {
+      action: 'update',
+      actor: 'ACME Crop',
+      newName: 'ACME Corp',
+      activity: 'Freelance',
+    })
+  ).json() as { name: string }
+  assert.equal(actor.name, 'ACME Corp')
+  assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
+    { name: 'ACME Corp', activity: 'Freelance' },
+  ])
+
+  // A closed account reopens: closing the wrong one is not a dead end.
+  await call(client, 'manage_accounts', { action: 'close', name: 'Courant', closedOn: '2026-07-31' })
+  const reopened = (await call(client, 'manage_accounts', { action: 'reopen', name: 'Courant' })).json() as {
+    closedOn: null
+  }
+  assert.equal(reopened.closedOn, null)
+
+  // A name already taken comes back as guidance.
+  await call(client, 'manage_categories', { action: 'create', name: 'Loyer' })
+  const taken = await call(client, 'manage_categories', {
+    action: 'update',
+    name: 'Courses',
+    newName: 'loyer',
+  })
+  assert.equal(taken.isError, true)
+  assert.match(taken.text, /already uses that name/)
+})
+
+test('a movement reads back with its account and its counterparty', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-01',
+        amount: 40,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Carrefour',
+        category: 'Courses',
+      },
+      { date: '2026-08-02', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-08-03', amount: 200, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
+    ],
+  })
+
+  const rows = (await call(client, 'list_movements')).json() as {
+    kind: string
+    account: string
+    counterparty: string
+    category?: string
+  }[]
+  assert.deepEqual(
+    rows.map((m) => [m.kind, m.account, m.counterparty, m.category]),
+    [
+      ['transfer', 'Courant', 'Livret', undefined],
+      ['income', 'Courant', 'ACME', undefined],
+      ['expense', 'Courant', 'Carrefour', 'Courses'],
+    ],
+  )
+})
+
+test('a balance check is corrected through the MCP surface, adjustment included', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Inconnu' })
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [{ date: '2026-08-01', amount: 1000, type: 'income', account: 'Courant', actor: 'ACME' }],
+  })
+  const check = (
+    await call(client, 'record_balance_check', { account: 'Courant', balance: 950, date: '2026-08-10' })
+  ).json() as { checkId: string }
+  await call(client, 'settle_check_gap', { checkId: check.checkId, actor: 'Inconnu' })
+
+  const listed = (await call(client, 'manage_balance_checks', { action: 'list' })).json() as {
+    checkId: string
+    account: string
+    gap: number
+    settledByMovement?: string
+  }[]
+  assert.equal(listed.length, 1)
+  assert.equal(listed[0]!.account, 'Courant')
+  assert.equal(listed[0]!.gap, -50)
+  assert.ok(listed[0]!.settledByMovement)
+
+  // 900 was the real balance: the gap widens and the adjustment follows.
+  const wider = (
+    await call(client, 'manage_balance_checks', {
+      action: 'correct',
+      check: check.checkId,
+      balance: 900,
+    })
+  ).json() as { gap: number; adjustment: string }
+  assert.equal(wider.gap, -100)
+  assert.match(wider.adjustment, /realigned/)
+  const adjustment = ((await call(client, 'list_movements')).json() as { amount: number }[])[0]
+  assert.equal(adjustment!.amount, 100)
+
+  // Nothing left to settle: the adjustment is removed with the gap.
+  const settled = (
+    await call(client, 'manage_balance_checks', {
+      action: 'correct',
+      check: check.checkId,
+      balance: 1000,
+    })
+  ).json() as { gap: number; adjustment: string }
+  assert.equal(settled.gap, 0)
+  assert.match(settled.adjustment, /removed/)
+  assert.equal(((await call(client, 'list_movements')).json() as unknown[]).length, 1)
+
+  await call(client, 'manage_balance_checks', { action: 'delete', check: check.checkId })
+  assert.deepEqual((await call(client, 'manage_balance_checks', { action: 'list' })).json(), [])
+
+  const gone = await call(client, 'manage_balance_checks', {
+    action: 'correct',
+    check: check.checkId,
+    balance: 10,
+  })
+  assert.equal(gone.isError, true)
+  assert.match(gone.text, /manage_balance_checks/)
+})

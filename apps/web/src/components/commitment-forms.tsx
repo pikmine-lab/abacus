@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { PeriodField } from '@/components/period-field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -23,13 +24,8 @@ export interface CommitmentOptions {
   accounts: Option[]
   actors: Option[]
   categories: Option[]
+  activities: Option[]
 }
-
-const PERIOD_OPTIONS = [
-  { value: 'week', label: 'Hebdomadaire' },
-  { value: 'month', label: 'Mensuelle' },
-  { value: 'year', label: 'Annuelle' },
-]
 
 /**
  * Recurring commitments, one form per direction. Money going out and money
@@ -48,16 +44,21 @@ function CommitmentIdentityFields({
   accounts,
   actors,
   categories,
+  activities,
   defaults,
   beforeCategory,
+  afterActivity,
 }: {
   outgoing: boolean
   accounts: Option[]
   actors: Option[]
   categories: Option[]
-  defaults?: { actor?: string; accountId?: string; categoryId?: string }
+  activities: Option[]
+  defaults?: { actor?: string; accountId?: string; categoryId?: string; activityId?: string }
   /** Sits next to the category, on the row where the first due date belongs. */
   beforeCategory?: React.ReactNode
+  /** Sits next to the activity: a lock-in date, where one can exist. */
+  afterActivity?: React.ReactNode
 }) {
   return (
     <>
@@ -96,6 +97,17 @@ function CommitmentIdentityFields({
           />
         </Field>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Activité">
+          <FormSelect
+            name="activityId"
+            noneLabel="(perso)"
+            defaultValue={defaults?.activityId}
+            options={activities.map((a) => ({ value: a.id, label: a.name }))}
+          />
+        </Field>
+        {afterActivity}
+      </div>
     </>
   )
 }
@@ -105,27 +117,37 @@ export function NewCommitmentForm({
   accounts,
   actors,
   categories,
+  activities,
   today,
 }: {
   direction: 'outgoing' | 'incoming'
   accounts: Option[]
   actors: Option[]
   categories: Option[]
+  activities: Option[]
   today: string
 }) {
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
   const outgoing = direction === 'outgoing'
 
-  const shared = (withFirstDue: boolean) => (
+  const shared = (options: { withFirstDue: boolean; withLockIn?: boolean }) => (
     <CommitmentIdentityFields
       outgoing={outgoing}
       accounts={accounts}
       actors={actors}
       categories={categories}
+      activities={activities}
       beforeCategory={
-        withFirstDue ? (
+        options.withFirstDue ? (
           <Field label="Première échéance" name="firstDueOn">
             <DateField name="firstDueOn" defaultValue={today} />
+          </Field>
+        ) : undefined
+      }
+      afterActivity={
+        options.withLockIn ? (
+          <Field label="Engagé jusqu’au (optionnel)">
+            <DateField name="engagedUntil" />
           </Field>
         ) : undefined
       }
@@ -137,14 +159,12 @@ export function NewCommitmentForm({
       <ActionForm action={createSubscriptionAction} successLabel="Revenu récurrent créé">
         <input type="hidden" name="direction" value="incoming" />
         <TextField name="label" label="Nom" placeholder="Salaire, loyer perçu…" />
-        {shared(true)}
+        {shared({ withFirstDue: true })}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Montant par période (€)" name="amount">
             <AmountInput name="amount" placeholder="2 400" />
           </Field>
-          <Field label="Périodicité">
-            <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
-          </Field>
+          <PeriodField defaultValue="month:1" />
         </div>
         <SubmitButton className="self-start">Créer</SubmitButton>
       </ActionForm>
@@ -163,14 +183,12 @@ export function NewCommitmentForm({
         <ActionForm action={createSubscriptionAction} className="mt-3" successLabel="Abonnement créé">
           <input type="hidden" name="direction" value="outgoing" />
           <TextField name="label" label="Nom" placeholder="Netflix" />
-          {shared(true)}
+          {shared({ withFirstDue: true, withLockIn: true })}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Montant par période (€)" name="amount">
               <AmountInput name="amount" placeholder="15,99" />
             </Field>
-            <Field label="Périodicité">
-              <FormSelect name="periodUnit" defaultValue="month" options={PERIOD_OPTIONS} />
-            </Field>
+            <PeriodField defaultValue="month:1" />
           </div>
           <Field label="Jugement">
             <FormSelect
@@ -188,7 +206,7 @@ export function NewCommitmentForm({
       ) : (
         <ActionForm action={createFinancingAction} className="mt-3" successLabel="Financement créé">
           <TextField name="label" label="Ce qui est financé" placeholder="Canapé en 4x" />
-          {shared(false)}
+          {shared({ withFirstDue: false })}
           <FinancingAmountFields today={today} />
           <SubmitButton className="self-start">Créer le financement</SubmitButton>
         </ActionForm>
@@ -208,14 +226,24 @@ export function NewCommitmentForm({
  */
 export function EditCommitmentForm({
   commitmentId,
+  kind,
   incoming,
   defaults,
   options,
   onDone,
 }: {
   commitmentId: string
+  kind: 'subscription' | 'financing'
   incoming: boolean
-  defaults: { label: string; actor: string; accountId: string; categoryId: string; periodUnit: string }
+  defaults: {
+    label: string
+    actor: string
+    accountId: string
+    categoryId: string
+    activityId: string
+    period: string
+    engagedUntil: string
+  }
   options: CommitmentOptions
   onDone?: () => void
 }) {
@@ -228,11 +256,18 @@ export function EditCommitmentForm({
         accounts={options.accounts}
         actors={options.actors}
         categories={options.categories}
+        activities={options.activities}
         defaults={defaults}
+        afterActivity={
+          // A financing ends at its last installment: it has no lock-in to end.
+          kind === 'subscription' ? (
+            <Field label="Engagé jusqu’au (optionnel)">
+              <DateField name="engagedUntil" defaultValue={defaults.engagedUntil || undefined} />
+            </Field>
+          ) : undefined
+        }
       />
-      <Field label="Périodicité">
-        <FormSelect name="periodUnit" defaultValue={defaults.periodUnit} options={PERIOD_OPTIONS} />
-      </Field>
+      <PeriodField defaultValue={defaults.period} />
       <p className="text-[11.5px] text-faint">
         La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur compte et
         leur acteur : ils disent ce qui s’est passé.
