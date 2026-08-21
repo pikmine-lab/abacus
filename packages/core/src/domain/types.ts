@@ -55,6 +55,8 @@ export interface Movement {
   commitmentId: string | null
   balanceCheckId: string | null
   expectedRefundFromActorId: string | null
+  /** What is owed back: a share of the amount, never implicitly all of it. */
+  expectedRefundAmount: string | null
   refundClosed: boolean
   refundsMovementId: string | null
 }

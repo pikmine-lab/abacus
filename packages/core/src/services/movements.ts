@@ -14,11 +14,13 @@ import {
   listOutstandingAdvances,
   type MovementFilters,
   type MovementSelection,
+  refundedSoFar,
   selectionTotals as selectionTotalsDs,
   setRefundClosed,
   updateMovementRow,
 } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
+import { today } from '../domain/period.ts'
 import type { Account, Actor, Movement } from '../domain/types.ts'
 
 export interface DeclareMovementInput {
@@ -37,8 +39,15 @@ export interface DeclareMovementInput {
   balanceCheckId?: string
   /** Marks the expense as an advance to be refunded by this actor. */
   expectedRefundFromActorId?: string
+  /** How much of the expense is owed back. Required with a refunding actor. */
+  expectedRefundAmount?: number
   /** Links this income to the advanced expense it refunds. */
   refundsMovementId?: string
+  /**
+   * The advance came back the same day: the refund income is written in the
+   * same transaction, so the account balance never lies in between.
+   */
+  refundedNow?: boolean
 }
 
 async function requireAccount(tx: Executor, userId: string, id: string, role: string): Promise<Account> {
@@ -63,7 +72,38 @@ export async function declareMovementIn(
   input: DeclareMovementInput,
 ): Promise<Movement> {
   const activityId = await checkMovement(tx, userId, input)
-  return await insertMovement(tx, { ...input, userId, activityId })
+  const { refundedNow, ...row } = input
+  const movement = await insertMovement(tx, { ...row, userId, activityId })
+  if (refundedNow) await writeRefundIn(tx, userId, movement, {})
+  return movement
+}
+
+/**
+ * The income that brings an advance back: it lands on the account that paid,
+ * comes from the actor who owed it, and defaults to what is still owed. One
+ * place decides that, because the web panel, the MCP and an advance refunded
+ * on the spot must all write the same movement.
+ */
+async function writeRefundIn(
+  tx: Executor,
+  userId: string,
+  advance: Movement,
+  { amount, on }: { amount?: number; on?: string },
+): Promise<Movement> {
+  if (!advance.expectedRefundFromActorId || !advance.expectedRefundAmount)
+    throw new DomainError('not_an_advance', 'This movement is not marked as an advance')
+  const owed = Number(advance.expectedRefundAmount) - Number(await refundedSoFar(tx, advance.id))
+  const received = amount ?? owed
+  if (!(received > 0))
+    throw new DomainError('advance_settled', 'This advance has already been refunded in full')
+  return await declareMovementIn(tx, userId, {
+    happenedOn: on ?? advance.happenedOn,
+    amount: received,
+    currency: advance.currency,
+    sourceActorId: advance.expectedRefundFromActorId,
+    targetAccountId: advance.sourceAccountId!,
+    refundsMovementId: advance.id,
+  })
 }
 
 /**
@@ -105,6 +145,7 @@ async function checkMovement(
 
   if (input.expectedRefundFromActorId)
     await requireActor(tx, userId, input.expectedRefundFromActorId, 'refunding')
+  checkAdvanceShare(input)
 
   if (input.refundsMovementId) {
     const advanced = await getMovement(tx, userId, input.refundsMovementId)
@@ -117,6 +158,32 @@ async function checkMovement(
   // Inherited from the actor at write time on purpose: history stays stable,
   // reclassifying it later is an explicit action.
   return input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
+}
+
+/**
+ * An advance says who owes and how much: the two travel together, because a
+ * claim without an amount would silently mean "the whole expense", which is
+ * exactly the guess that made splitting a bill inexpressible.
+ */
+function checkAdvanceShare(input: DeclareMovementInput): void {
+  const { expectedRefundFromActorId: debtor, expectedRefundAmount: share } = input
+  if ((debtor || share !== undefined) && !(input.sourceAccountId && input.targetActorId))
+    throw new DomainError(
+      'advance_is_expense',
+      'Only an expense can be an advance: a transfer or an income cannot be owed back',
+    )
+  if (debtor && share === undefined)
+    throw new DomainError('advance_needs_amount', 'An advance needs the amount expected back')
+  if (share !== undefined && !debtor)
+    throw new DomainError('advance_needs_actor', 'An expected refund needs the actor who owes it')
+  if (share === undefined) return
+  if (!(share > 0))
+    throw new DomainError('advance_amount_invalid', 'The amount expected back must be positive')
+  if (share > input.amount)
+    throw new DomainError(
+      'advance_amount_too_large',
+      `The amount expected back (${share}) cannot exceed the expense (${input.amount})`,
+    )
 }
 
 export async function declareMovement(userId: string, input: DeclareMovementInput): Promise<Movement> {
@@ -137,6 +204,8 @@ export interface CorrectMovementInput {
   categoryId?: string | null
   activityId?: string | null
   note?: string | null
+  expectedRefundFromActorId?: string | null
+  expectedRefundAmount?: number | null
 }
 
 const CORRECTABLE = [
@@ -149,6 +218,8 @@ const CORRECTABLE = [
   'categoryId',
   'activityId',
   'note',
+  'expectedRefundFromActorId',
+  'expectedRefundAmount',
 ] as const
 
 /**
@@ -194,10 +265,32 @@ export async function correctMovementIn(
     note: pick(input, current, 'note'),
     // Explicit null keeps "no activity" from being re-inherited.
     activityId: input.activityId !== undefined ? input.activityId : current.activityId,
-    expectedRefundFromActorId: current.expectedRefundFromActorId ?? undefined,
+    expectedRefundFromActorId: pick(input, current, 'expectedRefundFromActorId'),
+    expectedRefundAmount:
+      input.expectedRefundAmount !== undefined
+        ? (input.expectedRefundAmount ?? undefined)
+        : current.expectedRefundAmount !== null
+          ? Number(current.expectedRefundAmount)
+          : undefined,
     refundsMovementId: current.refundsMovementId ?? undefined,
   }
   const activityId = await checkMovement(tx, userId, merged)
+
+  // What has already come back is a fact: the claim it belongs to cannot be
+  // dropped under it, nor shrunk below it.
+  const received = Number(await refundedSoFar(tx, id))
+  if (received > 0) {
+    if (!merged.expectedRefundFromActorId)
+      throw new DomainError(
+        'advance_has_refund',
+        'A refund is already linked to this advance: delete that refund before dropping the claim',
+      )
+    if (merged.expectedRefundAmount! < received)
+      throw new DomainError(
+        'advance_below_refunds',
+        `The amount expected back cannot be lower than the ${received} already refunded`,
+      )
+  }
 
   const row: Record<string, unknown> = { activityId }
   for (const key of CORRECTABLE) {
@@ -227,7 +320,14 @@ export async function correctMovementIn(
 function pick(
   input: CorrectMovementInput,
   current: Movement,
-  key: 'sourceAccountId' | 'sourceActorId' | 'targetAccountId' | 'targetActorId' | 'categoryId' | 'note',
+  key:
+    | 'sourceAccountId'
+    | 'sourceActorId'
+    | 'targetAccountId'
+    | 'targetActorId'
+    | 'categoryId'
+    | 'note'
+    | 'expectedRefundFromActorId',
 ): string | undefined {
   const value = input[key] !== undefined ? input[key] : current[key]
   return value ?? undefined
@@ -277,6 +377,24 @@ export async function selectionTotals(
 
 export async function outstandingAdvances(userId: string): Promise<(Movement & { refunded: string })[]> {
   return await listOutstandingAdvances(db(), userId)
+}
+
+/**
+ * The refund arrived: writes the income that closes the claim, in full or in
+ * part. Everything it needs is already in the advance, so a caller only says
+ * what reality changed, the amount received and the day it landed.
+ */
+export async function refundAdvance(
+  userId: string,
+  movementId: string,
+  { amount, on }: { amount?: number; on?: string } = {},
+): Promise<Movement> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const advance = await getMovement(tx, userId, movementId)
+    if (!advance) throw new DomainError('movement_not_found', `No movement ${movementId} for this user`)
+    return await writeRefundIn(tx, userId, advance, { amount, on: on ?? today() })
+  })
 }
 
 /** Writes off what will never come back: the claim stops showing, the expense stays whole. */

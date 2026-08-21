@@ -28,6 +28,7 @@ import {
   correctMovement,
   declareMovement,
   deleteMovement,
+  refundAdvance,
 } from '@abacus/core/services/movements'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
@@ -108,6 +109,15 @@ const FR: Record<string, string> = {
   financing_has_no_lock_in: 'Un financement s’arrête à sa dernière échéance : pas de date de fin.',
   alias_taken: 'Ce nom désigne déjà un acteur : fusionne-les plutôt que d’ajouter cet alias.',
   merge_self: 'Un acteur ne se fusionne pas avec lui-même.',
+  advance_needs_amount: 'Indique la part attendue en remboursement.',
+  advance_needs_actor: 'Indique qui doit rembourser cette part.',
+  advance_amount_invalid: 'La part attendue doit être supérieure à zéro.',
+  advance_amount_too_large: 'La part attendue ne peut pas dépasser le montant de la dépense.',
+  advance_is_expense: 'Seule une dépense peut être avancée pour quelqu’un.',
+  advance_has_refund:
+    'Un remboursement est déjà lié à cette avance : supprime-le avant de retirer la créance.',
+  advance_below_refunds: 'La part attendue est déjà dépassée par ce qui a été remboursé.',
+  advance_settled: 'Cette avance est déjà remboursée en entier.',
 }
 
 /**
@@ -232,6 +242,8 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : undefined,
+      expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : undefined,
+      refundedNow: expectedRefundFrom ? formData.get('refundedNow') !== null : undefined,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -279,6 +291,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
               targetActorId: null,
             }
     }
+    // Only an expense can be an advance, so switching a movement away from
+    // expense drops the claim rather than colliding with the domain rule.
+    const expectedRefundFrom = type === 'expense' ? opt(formData, 'expectedRefundFrom') : undefined
     await correctMovement(userId, str(formData, 'movementId'), {
       happenedOn: str(formData, 'date'),
       amount: num(formData, 'amount'),
@@ -286,6 +301,10 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       categoryId: opt(formData, 'categoryId') ?? null,
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
+      expectedRefundFromActorId: expectedRefundFrom
+        ? await actorIdFromName(userId, expectedRefundFrom)
+        : null,
+      expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -633,9 +652,30 @@ export async function cancelCommitmentAction(_prev: FormState, formData: FormDat
   return { ok: true }
 }
 
+/**
+ * "It came back": writes the income that closes the claim. The amount is
+ * editable on the way, because a refund arrives partial as often as whole.
+ */
+export async function refundAdvanceAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await refundAdvance(userId, str(formData, 'movementId'), {
+      amount: opt(formData, 'amount') ? num(formData, 'amount') : undefined,
+      on: opt(formData, 'date'),
+    })
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
 export async function closeAdvanceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
-  await closeAdvance(userId, str(formData, 'movementId'))
+  try {
+    await closeAdvance(userId, str(formData, 'movementId'))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
   refreshAll()
 }
 

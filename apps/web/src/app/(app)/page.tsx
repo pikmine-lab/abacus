@@ -137,7 +137,9 @@ export default async function OverviewPage({
   const monthlyCommitted = active
     .filter((c) => c.direction === 'outgoing')
     .reduce((sum, c) => sum + monthlyEquivalent(c), 0)
-  const claims = advances.reduce((sum, a) => sum + Number(a.amount) - Number(a.refunded), 0)
+  // What is owed back, not what was spent: an advance covers a share of its
+  // expense, so the claim is that share minus what already came back.
+  const claims = advances.reduce((sum, a) => sum + Number(a.expectedRefundAmount) - Number(a.refunded), 0)
 
   const staleChecks = accounts
     .map((account, i) => ({ account, check: checks[i] }))
@@ -287,7 +289,7 @@ export default async function OverviewPage({
                   className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
                 >
                   <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-faint" />
-                  <span className="text-[13px]">{eur(claims)} avancés, en attente de remboursement</span>
+                  <span className="text-[13px]">{eur(claims, 2)} en attente de remboursement</span>
                   <span className="text-[11.5px] text-faint">
                     {advances.length} avance{advances.length > 1 ? 's' : ''}
                   </span>

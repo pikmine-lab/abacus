@@ -205,5 +205,14 @@ parité des deux interfaces est rétablie partout où elle manquait :
   doublons d'acteurs (un nom qui ne résout pas crée l'acteur) et que le panneau de pointage
   promettait un ajustement qu'elle ne savait pas créer.
 
+**Avance et remboursement** (2026-08-21, issue #28) : une avance porte la **part
+attendue** (`expected_refund_amount`, migration `0005`), écrite et non plus déduite du
+montant : payer 120 € et n'en attendre que 90 s'exprime. Le remboursement est toujours le
+revenu qui rentre, jamais un drapeau : les avances ouvertes s'affichent en tête des
+mouvements et « Remboursé » écrit ce revenu sur le compte qui a payé (MCP :
+`declare_movements` avec `refundsMovementId`, ou `alreadyRefunded` quand l'argent revient
+le jour même). Solder reste l'autre geste, celui du renoncement. La part et le débiteur se
+corrigent (`fix_movement`) ; le lien d'un remboursement reçu vers son avance, non.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).
