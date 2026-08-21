@@ -139,12 +139,12 @@ export default async function InvestmentsPage() {
             , puis déclare ici ce que tu y détiens.
           </EmptyLine>
         ) : operations.length === 0 && assets.length === 0 ? (
-          <Section title="Rien de déclaré" description="l’achat cherche l’actif tout seul" action={entry}>
-            <EmptyLine>
-              Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son
-              ISIN ou son fournisseur.
-            </EmptyLine>
-          </Section>
+          // One line, and the two panels the header already carries: a title, a
+          // description and a sentence all saying "nothing yet" said it thrice.
+          <EmptyLine>
+            Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son ISIN
+            ou son fournisseur.
+          </EmptyLine>
         ) : (
           <>
             <StatRow>
