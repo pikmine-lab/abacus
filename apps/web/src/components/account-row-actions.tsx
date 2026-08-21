@@ -3,7 +3,7 @@
 import { ArchiveIcon, ArchiveRestoreIcon, HistoryIcon, PencilIcon, ScaleIcon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { BalanceCheckHistory, type CheckEntry } from '@/components/balance-check-history'
+import { BalanceCheckHistory, type CheckEntry, type SettleOptions } from '@/components/balance-check-history'
 import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
 import {
@@ -47,6 +47,7 @@ export function AccountRowActions({
   computedBalance,
   closed,
   checks,
+  settleOptions,
 }: {
   accountId: string
   name: string
@@ -56,6 +57,8 @@ export function AccountRowActions({
   closed?: boolean
   /** What was already pointed on this account, repairable from the panel. */
   checks: CheckEntry[]
+  /** References a gap can be settled against, from that same panel. */
+  settleOptions: SettleOptions
 }) {
   const [checking, setChecking] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -157,7 +160,7 @@ export function AccountRowActions({
             </SheetDescription>
           </SheetHeader>
           <div className="p-4">
-            <BalanceCheckHistory checks={checks} />
+            <BalanceCheckHistory checks={checks} options={settleOptions} />
           </div>
         </SheetContent>
       </Sheet>

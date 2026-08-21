@@ -2,7 +2,9 @@ import { auth } from '@abacus/core/auth'
 import type { AccountBehavior } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
+import { listActors } from '@abacus/core/services/actors'
 import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
+import { listCategories } from '@abacus/core/services/catalog'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AccountRowActions } from '@/components/account-row-actions'
@@ -45,7 +47,16 @@ export default async function AccountsPage() {
   const userId = session.user.id
   const now = today()
 
-  const accounts = await listAccounts(userId)
+  const [accounts, actors, categories] = await Promise.all([
+    listAccounts(userId),
+    listActors(userId),
+    listCategories(userId),
+  ])
+  // A gap is settled against an actor, and filed like any other movement.
+  const settleOptions = {
+    actors: actors.map((a) => ({ id: a.id, name: a.name })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+  }
   // The whole pointing history per account: the row shows the latest, and its
   // panel repairs any of them.
   const histories = await Promise.all(accounts.map((a) => listChecks(userId, a.id, 100)))
@@ -169,6 +180,7 @@ export default async function AccountsPage() {
                           behavior={account.behavior}
                           computedBalance={Number(account.balance)}
                           checks={checkEntries(checks)}
+                          settleOptions={settleOptions}
                         />
                       </div>
                     ))}
@@ -194,6 +206,7 @@ export default async function AccountsPage() {
                         computedBalance={Number(account.balance)}
                         closed
                         checks={checkEntries(checks)}
+                        settleOptions={settleOptions}
                       />
                     </div>
                   ))}

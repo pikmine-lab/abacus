@@ -1,5 +1,5 @@
 import { auth } from '@abacus/core/auth'
-import { listActors } from '@abacus/core/services/actors'
+import { listActorsWithAliases } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -21,7 +21,7 @@ export default async function SettingsPage() {
   const [categories, activities, actors] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
-    listActors(userId),
+    listActorsWithAliases(userId),
   ])
 
   return (

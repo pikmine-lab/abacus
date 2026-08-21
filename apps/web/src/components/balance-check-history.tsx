@@ -1,9 +1,9 @@
 'use client'
 
-import { PencilIcon, Trash2Icon } from 'lucide-react'
+import { PencilIcon, ScaleIcon, Trash2Icon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { ActionForm, DateField, Field, SubmitButton } from '@/components/forms'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
 import {
   AlertDialog,
@@ -17,7 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { correctBalanceCheckAction, deleteBalanceCheckAction } from '@/lib/actions'
+import { correctBalanceCheckAction, deleteBalanceCheckAction, settleCheckGapAction } from '@/lib/actions'
 import { eur, frDate } from '@/lib/utils'
 
 export interface CheckEntry {
@@ -30,25 +30,32 @@ export interface CheckEntry {
   settled: boolean
 }
 
+/** What the settling form offers to attribute and file the adjustment. */
+export interface SettleOptions {
+  actors: { id: string; name: string }[]
+  categories: { id: string; name: string }[]
+}
+
 /**
  * What was pointed on an account, and how to repair it. A check is a claim
  * about reality ("the balance was this, that day"), so it is mistypable like
  * any other declaration: the amount, and the day it was read.
  */
-export function BalanceCheckHistory({ checks }: { checks: CheckEntry[] }) {
+export function BalanceCheckHistory({ checks, options }: { checks: CheckEntry[]; options: SettleOptions }) {
   if (checks.length === 0) return <p className="text-[13px] text-faint">Ce compte n’a jamais été pointé.</p>
 
   return (
     <div className="flex flex-col divide-y divide-border/70 border-y border-border">
       {checks.map((check) => (
-        <CheckRow key={check.id} check={check} />
+        <CheckRow key={check.id} check={check} options={options} />
       ))}
     </div>
   )
 }
 
-function CheckRow({ check }: { check: CheckEntry }) {
+function CheckRow({ check, options }: { check: CheckEntry; options: SettleOptions }) {
   const [correcting, setCorrecting] = useState(false)
+  const [settling, setSettling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteState, remove, deletePending] = useActionState(deleteBalanceCheckAction, {})
 
@@ -74,6 +81,12 @@ function CheckRow({ check }: { check: CheckEntry }) {
           <PencilIcon />
           Corriger
         </DropdownMenuItem>
+        {check.gap !== 0 && !check.settled && (
+          <DropdownMenuItem onSelect={() => setSettling(true)}>
+            <ScaleIcon />
+            Solder l’écart
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
           <Trash2Icon />
           Supprimer
@@ -100,6 +113,47 @@ function CheckRow({ check }: { check: CheckEntry }) {
               <DateField name="checkedOn" defaultValue={check.checkedOn} />
             </Field>
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
+          </ActionForm>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={settling} onOpenChange={setSettling}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">Solder l’écart</DialogTitle>
+            <DialogDescription className="text-[12px]">
+              {eur(Math.abs(check.gap), 2)} {check.gap < 0 ? 'de sorties manquent' : 'd’entrées manquent'} au{' '}
+              {frDate(check.checkedOn)}. Un seul mouvement daté de ce jour les porte, attribué à l’acteur
+              choisi : dernier recours, déclarer ce qui manque vaut mieux.
+            </DialogDescription>
+          </DialogHeader>
+          <ActionForm
+            action={settleCheckGapAction}
+            onSuccess={() => setSettling(false)}
+            successLabel="Écart soldé"
+          >
+            <input type="hidden" name="checkId" value={check.id} />
+            <datalist id={`settle-actors-${check.id}`}>
+              {options.actors.map((a) => (
+                <option key={a.id} value={a.name} />
+              ))}
+            </datalist>
+            <TextField
+              name="actor"
+              label="Attribué à"
+              list={`settle-actors-${check.id}`}
+              placeholder="Inconnu"
+              autoComplete="off"
+            />
+            <Field label="Catégorie">
+              <FormSelect
+                name="categoryId"
+                noneLabel="(aucune)"
+                options={options.categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            </Field>
+            <TextField name="note" label="Note" defaultValue="Ajustement de pointage" />
+            <SubmitButton className="self-start">Solder</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>

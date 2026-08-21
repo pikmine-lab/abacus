@@ -186,6 +186,15 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   ouvre l'historique (lu, calculé, écart, soldé ou non), et chaque ligne se corrige ou se
   supprime. Corriger un pointage, c'est le refaire : le panneau le dit, et dit ce que
   devient l'ajustement qui le soldait.
+- **Solder un écart est un dernier recours, et il le dit.** L'entrée n'existe que sur un
+  pointage dont l'écart n'est pas soldé ; le panneau dit ce qui manque et dans quel sens
+  (« 50,00 € de sorties manquent au 21/08 »), puis que déclarer ce qui manque vaut mieux.
+  L'acteur d'attribution se saisit comme dans un mouvement, autocomplété.
+- **Un doublon d'acteur se répare dans sa ligne** : « Ajouter un alias » pour qu'un nom
+  cesse de créer un doublon, « Fusionner dans… » pour absorber celui qui existe déjà. La
+  ligne montre les alias qu'elle porte (« aussi Macdo, McDo »), et le panneau de fusion
+  annonce qu'il réécrit des mouvements déjà déclarés : c'est le seul geste qui le fait, et
+  la contrepartie de créer un acteur dès qu'un nom saisi ne résout pas.
 - **Clore n'est pas un cul-de-sac** : un compte clos garde son menu, s'y corrige et s'y
   réouvre. Une clôture par erreur ne doit pas obliger à recréer un compte, donc à
   redéclarer son historique.

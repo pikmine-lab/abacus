@@ -88,6 +88,21 @@ export async function deleteActor(tx: Executor, userId: string, id: string): Pro
   await tx`delete from actor where user_id = ${userId} and id = ${id}`
 }
 
+/** An actor with the other names that resolve to it, for a screen that repairs them. */
+export type ActorWithAliases = Actor & { aliases: string[] }
+
+export async function listActorsWithAliases(tx: Executor, userId: string): Promise<ActorWithAliases[]> {
+  return await tx<ActorWithAliases[]>`
+    select a.*,
+           coalesce(array_agg(al.alias order by al.alias) filter (where al.alias is not null), '{}') as aliases
+    from actor a
+    left join actor_alias al on al.actor_id = a.id
+    where a.user_id = ${userId}
+    group by a.id
+    order by a.name
+  `
+}
+
 export async function updateActorRow(
   tx: Executor,
   userId: string,

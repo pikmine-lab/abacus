@@ -4,9 +4,10 @@ import { auth } from '@abacus/core/auth'
 import type { AccountBehavior, Judgment, PeriodUnit } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
-import { createActor, editActor, resolveActor } from '@abacus/core/services/actors'
+import { addAlias, createActor, editActor, mergeActors, resolveActor } from '@abacus/core/services/actors'
 import {
   correctBalanceCheck,
+  createAdjustment,
   deleteBalanceCheck,
   recordBalanceCheck,
 } from '@abacus/core/services/balanceChecks'
@@ -105,6 +106,8 @@ const FR: Record<string, string> = {
   check_not_found: 'Ce pointage n’existe plus.',
   check_already_settled: 'Un ajustement solde déjà ce pointage.',
   financing_has_no_lock_in: 'Un financement s’arrête à sa dernière échéance : pas de date de fin.',
+  alias_taken: 'Ce nom désigne déjà un acteur : fusionne-les plutôt que d’ajouter cet alias.',
+  merge_self: 'Un acteur ne se fusionne pas avec lui-même.',
 }
 
 /**
@@ -334,6 +337,29 @@ export async function correctBalanceCheckAction(_prev: FormState, formData: Form
     await correctBalanceCheck(userId, str(formData, 'checkId'), {
       declaredBalance: num(formData, 'balance'),
       checkedOn: str(formData, 'checkedOn'),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Settles a gap in one movement, attributed to an actor. Last resort: declaring
+ * the movements that are actually missing is the right answer, and the panel
+ * says so. The note is prefilled rather than defaulted server-side, so what
+ * lands in the ledger is what the user read.
+ */
+export async function settleCheckGapAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'actor' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await createAdjustment(userId, str(formData, 'checkId'), {
+      actorId: await actorIdFromName(userId, str(formData, 'actor')),
+      categoryId: opt(formData, 'categoryId'),
+      note: opt(formData, 'note'),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -674,6 +700,42 @@ export async function editActorAction(_prev: FormState, formData: FormData): Pro
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
     })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Records another name that resolves to this actor. The correction panel
+ * replaces a name; this keeps one, which is the difference between a typo and
+ * a name that was really in use.
+ */
+export async function addAliasAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'alias' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await addAlias(userId, str(formData, 'actorId'), str(formData, 'alias'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Absorbs this actor into another: the whole history moves and its name becomes
+ * an alias of the one kept, so the duplicate cannot come back through a
+ * declaration. The only gesture here that rewrites what is already recorded.
+ */
+export async function mergeActorsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'keepId' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await mergeActors(userId, str(formData, 'keepId'), str(formData, 'actorId'))
   } catch (e) {
     return { error: frError(e) }
   }

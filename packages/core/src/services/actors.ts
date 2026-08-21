@@ -1,11 +1,13 @@
 import { db } from '../db/client.ts'
 import {
+  type ActorWithAliases,
   deleteActor,
   findActorByNameOrAlias,
   getActor,
   insertActor,
   insertActorAlias,
   listActors as listActorsDs,
+  listActorsWithAliases as listActorsWithAliasesDs,
   moveAliases,
   reassignActorReferences,
   suggestActors,
@@ -40,6 +42,13 @@ export async function createActor(
 export async function listActors(userId: string): Promise<Actor[]> {
   return await listActorsDs(db(), userId)
 }
+
+/** For the screen that repairs the referential: the aliases come with the actor. */
+export async function listActorsWithAliases(userId: string): Promise<ActorWithAliases[]> {
+  return await listActorsWithAliasesDs(db(), userId)
+}
+
+export type { ActorWithAliases }
 
 export interface ActorResolution {
   match: Actor | null
