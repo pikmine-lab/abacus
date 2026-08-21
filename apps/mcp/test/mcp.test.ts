@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
+import { addPeriod, today } from '@abacus/core/domain/period'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { AuthInfo } from '@modelcontextprotocol/server'
 import { createMcpHandler } from '@modelcontextprotocol/server'
@@ -133,6 +134,7 @@ test('subscription lifecycle through the MCP surface', async () => {
     dueOn: '2026-08-01',
     amount: 13.49,
     direction: 'outgoing',
+    account: 'Courant',
   })
   assert.equal(overview.monthlyCommittedCost, 13.49)
 
@@ -171,20 +173,40 @@ test('subscription lifecycle through the MCP surface', async () => {
   assert.equal(commitments[0]!.monthlyEquivalent, 15.99)
   assert.equal(commitments[0]!.judgment, 'reducible')
 
-  // Renamed and moved to another account: a correction, not a price change.
-  // The movements already recorded keep the account they happened on.
-  await call(client, 'manage_accounts', { action: 'create', name: 'Second', behavior: 'payment' })
+  // Renamed: a correction, and it carries no date.
   const corrected = (
     await call(client, 'update_commitment', {
       commitment: 'Netflix',
       label: 'Netflix Standard',
-      account: 'Second',
       periodUnit: 'year',
     })
   ).json() as { label: string; every: string; note: string }
   assert.equal(corrected.label, 'Netflix Standard')
   assert.equal(corrected.every, '1 year')
   assert.match(corrected.note, /already recorded are unchanged/)
+
+  // The debit moving to another account is the other kind of gesture: dated,
+  // declarable before it happens. Until that date the review shows both the
+  // account in force and the move to come.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Second', behavior: 'payment' })
+  const moveOn = addPeriod(today(), 'year', 1)
+  const moved = (
+    await call(client, 'change_commitment_account', {
+      commitment: 'Netflix Standard',
+      account: 'Second',
+      effectiveOn: moveOn,
+    })
+  ).json() as { account: string; effectiveOn: string; note: string }
+  assert.equal(moved.account, 'Second')
+  assert.match(moved.note, /still land on the previous account/)
+  const [reviewed] = (await call(client, 'list_commitments')).json() as {
+    account: string
+    movingTo?: { account: string; on: string }
+  }[]
+  assert.equal(reviewed!.account, 'Courant')
+  assert.deepEqual(reviewed!.movingTo, { account: 'Second', on: moveOn })
+
+  // The movements already recorded keep the account they happened on.
   const onOldAccount = (
     await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Courant' })
   ).json() as unknown[]

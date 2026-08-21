@@ -19,6 +19,11 @@ export interface PendingItem {
   dueOn: string
   amount: number
   incoming: boolean
+  /**
+   * The account of its own date, which is not always the one the commitment
+   * hits today: an occurrence left pending across a move keeps the old one.
+   */
+  account: string
 }
 
 /**
@@ -64,7 +69,7 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
           <p className="text-[13px] font-medium">{item.label}</p>
           <p className="text-[11px] text-faint">
             attendu le {frDate(item.dueOn)} · {item.incoming ? 'entrée' : 'prélèvement'} de{' '}
-            {eur(item.amount, 2)}
+            {eur(item.amount, 2)} sur {item.account}
           </p>
         </div>
 

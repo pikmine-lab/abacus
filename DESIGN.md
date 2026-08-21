@@ -219,11 +219,17 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   couvre les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste
   garde le sien dedans, pour qu'une correction ne le réécrive pas en passant.
 - **Un engagement se corrige comme il se déclare** : « Modifier », dans le menu de la
-  ligne, ouvre un panneau qui reprend les champs de la déclaration (nom, acteur, compte,
-  catégorie, activité, périodicité, fin d'engagement), préremplis avec ce qu'ils valent. Le montant n'y est pas : il
-  est daté et historisé, il garde son geste propre. Et une correction ne réécrit pas les
-  mouvements déjà déclarés, qui disent ce qui s'est passé sur le compte où ça s'est passé :
-  le panneau le dit plutôt que de laisser le découvrir après.
+  ligne, ouvre un panneau qui reprend les champs de la déclaration (nom, acteur, catégorie,
+  activité, périodicité, fin d'engagement), préremplis avec ce qu'ils valent. Le montant et
+  le compte n'y sont pas : datés et historisés, ils gardent leur geste propre. Et une
+  correction ne réécrit pas les mouvements déjà déclarés, qui disent ce qui s'est passé sur
+  le compte où ça s'est passé : le panneau le dit plutôt que de laisser le découvrir après.
+- **Changer de compte est un geste daté** (« Changer de compte », dans le menu de la
+  ligne) : le nouveau compte et le jour où il prend effet, aujourd'hui par défaut, parce
+  qu'un prélèvement qui déménage s'apprend souvent avant de bouger. Le déménagement annoncé
+  se lit sur la ligne (« passe sur Livret A le 01/09 »), seul endroit où il existe avant sa
+  date, et chaque échéance à confirmer dit le compte qu'elle touchera : celui de sa date,
+  qui n'est pas toujours celui d'aujourd'hui.
 - **Confirmer une échéance n'est pas un oui/non.** Le montant est modifiable sur
   place, parce que la réalité diverge en routine : un salaire bouge avec le nombre
   de jours ouvrés, une prime tombe, un abonnement grimpe. Dès que le montant saisi

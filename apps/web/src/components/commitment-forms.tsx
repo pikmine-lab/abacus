@@ -8,6 +8,7 @@ import { PeriodField } from '@/components/period-field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
+  changeCommitmentAccountAction,
   createFinancingAction,
   createSubscriptionAction,
   editCommitmentAction,
@@ -48,6 +49,8 @@ function CommitmentIdentityFields({
   defaults,
   beforeCategory,
   afterActivity,
+  /** The account has its own dated gesture, so correction leaves it out. */
+  withAccount = true,
 }: {
   outgoing: boolean
   accounts: Option[]
@@ -59,6 +62,7 @@ function CommitmentIdentityFields({
   beforeCategory?: React.ReactNode
   /** Sits next to the activity: a lock-in date, where one can exist. */
   afterActivity?: React.ReactNode
+  withAccount?: boolean
 }) {
   return (
     <>
@@ -76,15 +80,17 @@ function CommitmentIdentityFields({
           placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
           autoComplete="off"
         />
-        <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
-          <FormSelect
-            name="accountId"
-            required
-            placeholder="Choisir"
-            defaultValue={defaults?.accountId}
-            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-          />
-        </Field>
+        {withAccount && (
+          <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
+            <FormSelect
+              name="accountId"
+              required
+              placeholder="Choisir"
+              defaultValue={defaults?.accountId}
+              options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+            />
+          </Field>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         {beforeCategory}
@@ -238,7 +244,6 @@ export function EditCommitmentForm({
   defaults: {
     label: string
     actor: string
-    accountId: string
     categoryId: string
     activityId: string
     period: string
@@ -253,6 +258,7 @@ export function EditCommitmentForm({
       <TextField name="label" label="Nom" defaultValue={defaults.label} />
       <CommitmentIdentityFields
         outgoing={!incoming}
+        withAccount={false}
         accounts={options.accounts}
         actors={options.actors}
         categories={options.categories}
@@ -269,9 +275,49 @@ export function EditCommitmentForm({
       />
       <PeriodField defaultValue={defaults.period} />
       <p className="text-[11.5px] text-faint">
-        La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur compte et
-        leur acteur : ils disent ce qui s’est passé.
+        La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur acteur : ils
+        disent ce qui s’est passé.
       </p>
+      <SubmitButton className="self-start">Enregistrer</SubmitButton>
+    </ActionForm>
+  )
+}
+
+/**
+ * Moves the debit (or credit) to another account, from a date. Dated because a
+ * move is usually known before it takes effect, and because an occurrence
+ * confirmed after it must still land on the account the money really left.
+ */
+export function MoveAccountForm({
+  commitmentId,
+  incoming,
+  accounts,
+  currentAccountId,
+  today,
+  onDone,
+}: {
+  commitmentId: string
+  incoming: boolean
+  accounts: Option[]
+  currentAccountId: string
+  today: string
+  onDone?: () => void
+}) {
+  return (
+    <ActionForm action={changeCommitmentAccountAction} onSuccess={onDone} successLabel="Compte changé">
+      <input type="hidden" name="commitmentId" value={commitmentId} />
+      <Field label={incoming ? 'Nouveau compte crédité' : 'Nouveau compte prélevé'} name="accountId">
+        <FormSelect
+          name="accountId"
+          required
+          placeholder="Choisir"
+          defaultValue={currentAccountId}
+          options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+        />
+      </Field>
+      <Field label="À partir du" name="effectiveOn">
+        <DateField name="effectiveOn" defaultValue={today} />
+      </Field>
       <SubmitButton className="self-start">Enregistrer</SubmitButton>
     </ActionForm>
   )
