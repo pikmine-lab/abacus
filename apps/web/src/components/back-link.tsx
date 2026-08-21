@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 /**
  * The way back from a cross-page jump. Links that leave a page tag themselves
- * with `?de=<clé>`; this reads the tag and offers a return.
+ * with `?from=<key>`; this reads the tag and offers a return.
  *
  * It goes back through history rather than to a fresh URL, so the period and
  * the filters of the page left behind are exactly as they were. Only when
@@ -13,17 +13,17 @@ import { useRouter, useSearchParams } from 'next/navigation'
  * route.
  */
 const ORIGINS: Record<string, { label: string; href: string }> = {
-  accueil: { label: 'Vue d’ensemble', href: '/' },
-  analyse: { label: 'Analyse', href: '/analyse' },
-  mouvements: { label: 'Mouvements', href: '/mouvements' },
-  depenses: { label: 'Dépenses récurrentes', href: '/depenses-recurrentes' },
-  revenus: { label: 'Revenus récurrents', href: '/revenus-recurrents' },
-  comptes: { label: 'Comptes', href: '/comptes' },
+  overview: { label: 'Vue d’ensemble', href: '/' },
+  analysis: { label: 'Analyse', href: '/analysis' },
+  movements: { label: 'Mouvements', href: '/movements' },
+  expenses: { label: 'Dépenses récurrentes', href: '/recurring-expenses' },
+  income: { label: 'Revenus récurrents', href: '/recurring-income' },
+  accounts: { label: 'Comptes', href: '/accounts' },
 }
 
 export function BackLink() {
   const router = useRouter()
-  const origin = ORIGINS[useSearchParams().get('de') ?? '']
+  const origin = ORIGINS[useSearchParams().get('from') ?? '']
   if (!origin) return null
 
   return (

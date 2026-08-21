@@ -22,17 +22,17 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Revenus récurrents' }
 
-const PATH = '/revenus-recurrents'
+const PATH = '/recurring-income'
 
 export default async function RecurringIncomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ erreur?: string }>
+  searchParams: Promise<{ error?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
-  const { erreur } = await searchParams
+  const { error } = await searchParams
 
   const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     listCommitmentsWithProgress(userId, false),
@@ -77,9 +77,9 @@ export default async function RecurringIncomePage({
       </PageHeader>
 
       <PageBody>
-        {erreur && (
+        {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-            {erreur}
+            {error}
           </p>
         )}
 
@@ -112,7 +112,7 @@ export default async function RecurringIncomePage({
             description="corrige le montant s’il diffère : c’est comme ça qu’on voit une prime ou une hausse"
           >
             <PendingOccurrences
-              retour={PATH}
+              back={PATH}
               items={pendingIn.map((p) => ({
                 commitmentId: p.commitment.id,
                 label: p.commitment.label,

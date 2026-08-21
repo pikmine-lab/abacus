@@ -126,7 +126,7 @@ export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
               <TabsTrigger value="claude-code" className="px-2 text-[12px]">
                 Claude Code
               </TabsTrigger>
-              <TabsTrigger value="autre" className="px-2 text-[12px]">
+              <TabsTrigger value="other" className="px-2 text-[12px]">
                 Autre client
               </TabsTrigger>
             </TabsList>
@@ -140,7 +140,7 @@ export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
               />
             </TabsContent>
 
-            <TabsContent value="autre" className="flex min-w-0 flex-col gap-1.5">
+            <TabsContent value="other" className="flex min-w-0 flex-col gap-1.5">
               <p className="text-[12px] text-faint">dans le fichier MCP de ton client</p>
               <CodeBlock
                 key={`cfg-${key}`}

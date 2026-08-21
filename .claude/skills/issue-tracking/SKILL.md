@@ -101,9 +101,9 @@ lien retour automatiquement.
 
 ## Branche, PR, clôture
 
-Branche `<type>/<numéro>-<slug>` (`feat/12-echeances-du-mois`) : le numéro laisse la
-skill `pr-review-supervised` retrouver l'issue de suivi seule. La PR la close
-(`Closes #12` dans sa description).
+Branche `<type>/<numéro>-<slug>`, slug en anglais (`feat/12-monthly-due-dates`) : le
+numéro laisse la skill `pr-review-supervised` retrouver l'issue de suivi seule. La PR la
+close (`Closes #12` dans sa description).
 
 Une issue abandonnée se ferme avec son motif, jamais en silence :
 

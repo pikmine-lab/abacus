@@ -30,6 +30,12 @@ règles de graphes et usages de composants y sont tranchés, pas ici.
   livrée dans une seule des deux est incomplète, pas « en cours ». Cela ne veut pas dire
   les mêmes formulaires : chacune parle la langue de son acteur (des noms et une
   description qui enseigne côté MCP, des listes et des valeurs préremplies côté web).
+- **Le français s'arrête à ce qui s'affiche.** La frontière est le lecteur, pas le
+  fichier : ce qu'une personne lit devant l'application est en français, tout ce que seul
+  le code lit est en anglais. Segments d'URL, clés et valeurs de paramètres de requête,
+  noms de champs de formulaire, identifiants, noms de fichiers, slugs de branches,
+  commentaires et messages de commit : anglais. Les documents du dépôt (`SPEC.md`,
+  `DESIGN.md`, ce fichier) et les issues restent en français.
 - **Intégrité par construction.** La nature d'un mouvement (dépense, revenu, virement
   interne) est une colonne générée depuis ses extrémités ; les règles du modèle sont des
   contraintes SQL, pas des validations applicatives dupliquées.
@@ -213,6 +219,12 @@ mouvements et « Remboursé » écrit ce revenu sur le compte qui a payé (MCP :
 `declare_movements` avec `refundsMovementId`, ou `alreadyRefunded` quand l'argent revient
 le jour même). Solder reste l'autre geste, celui du renoncement. La part et le débiteur se
 corrigent (`fix_movement`) ; le lien d'un remboursement reçu vers son avance, non.
+
+**Anglais hors de l'écran** (2026-08-21, issue #24) : les segments d'URL, les clés et les
+valeurs de paramètres de requête et les noms de champs de formulaire sont passés en
+anglais, et le principe « le français s'arrête à ce qui s'affiche » est écrit plus haut.
+Les anciennes adresses ne répondent plus : pas de redirection, rupture assumée pour une
+production de deux jours à un seul utilisateur.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Mouvements' }
 
-const PATH = '/mouvements'
+const PATH = '/movements'
 const KINDS: MovementKind[] = ['expense', 'income', 'transfer']
 const PAGE_SIZE = 100
 
@@ -37,9 +37,9 @@ export default async function MovementsPage({
   const params = await searchParams
   // A ledger opens on a window wide enough to hold something, not on the
   // first day of the month.
-  const period = resolvePeriod(params, today(), '90j')
+  const period = resolvePeriod(params, today(), '90d')
 
-  const limit = Number(params.limite) > 0 ? Math.min(Number(params.limite), 1000) : PAGE_SIZE
+  const limit = Number(params.limit) > 0 ? Math.min(Number(params.limit), 1000) : PAGE_SIZE
 
   // The vocabulary first: a filter naming something this user does not own
   // (a stale link, a deleted category) is dropped rather than silently
@@ -58,12 +58,12 @@ export default async function MovementsPage({
     from: period.from,
     to: period.to,
     kind: KINDS.includes(params.type as MovementKind) ? (params.type as MovementKind) : undefined,
-    accountId: known(idParam(params.compte), accounts),
-    categoryId: known(idParam(params.categorie), categories),
-    actorId: known(idParam(params.acteur), actors),
-    activityId: known(idParam(params.activite), activities),
+    accountId: known(idParam(params.account), accounts),
+    categoryId: known(idParam(params.category), categories),
+    actorId: known(idParam(params.actor), actors),
+    activityId: known(idParam(params.activity), activities),
     search: params.q,
-    advancesOnly: params.avances === '1',
+    advancesOnly: params.advances === '1',
   }
 
   const [movements, selection] = await Promise.all([
@@ -145,7 +145,7 @@ export default async function MovementsPage({
             title="Avances à rembourser"
             description="« Remboursé » écrit le revenu sur le compte qui a payé"
           >
-            <OutstandingAdvances advances={openAdvances} today={today()} retour={PATH} />
+            <OutstandingAdvances advances={openAdvances} today={today()} back={PATH} />
           </Section>
         )}
 
@@ -305,7 +305,7 @@ function MoreLink({
   const next = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][],
   )
-  next.set('limite', String(limit + PAGE_SIZE))
+  next.set('limit', String(limit + PAGE_SIZE))
   return (
     <a
       href={`?${next}`}

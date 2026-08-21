@@ -17,7 +17,7 @@ interface Option {
 const ALL = '__all__'
 
 const KINDS = [
-  { value: 'tous', label: 'Tous' },
+  { value: 'all', label: 'Tous' },
   { value: 'expense', label: 'Dépenses' },
   { value: 'income', label: 'Revenus' },
   { value: 'transfer', label: 'Virements' },
@@ -69,21 +69,21 @@ export function MovementFilters({
     push((p) => (value === ALL ? p.delete(key) : p.set(key, value)))
 
   const dimensions = [
-    { key: 'compte', label: 'Tous les comptes', options: accounts },
-    { key: 'categorie', label: 'Toutes catégories', options: categories },
-    { key: 'acteur', label: 'Tous les acteurs', options: actors },
-    { key: 'activite', label: 'Toutes activités', options: activities },
+    { key: 'account', label: 'Tous les comptes', options: accounts },
+    { key: 'category', label: 'Toutes catégories', options: categories },
+    { key: 'actor', label: 'Tous les acteurs', options: actors },
+    { key: 'activity', label: 'Toutes activités', options: activities },
   ].filter((d) => d.options.length > 0)
 
-  const active = ['compte', 'categorie', 'acteur', 'activite', 'q', 'type', 'avances'].filter((k) =>
+  const active = ['account', 'category', 'actor', 'activity', 'q', 'type', 'advances'].filter((k) =>
     searchParams.get(k),
   )
 
   return (
     <>
       <Tabs
-        value={searchParams.get('type') ?? 'tous'}
-        onValueChange={(v) => push((p) => (v === 'tous' ? p.delete('type') : p.set('type', v)))}
+        value={searchParams.get('type') ?? 'all'}
+        onValueChange={(v) => push((p) => (v === 'all' ? p.delete('type') : p.set('type', v)))}
       >
         <TabsList className="h-7">
           {KINDS.map((k) => (
@@ -129,8 +129,8 @@ export function MovementFilters({
 
       <Toggle
         size="sm"
-        pressed={searchParams.get('avances') === '1'}
-        onPressedChange={(on) => push((p) => (on ? p.set('avances', '1') : p.delete('avances')))}
+        pressed={searchParams.get('advances') === '1'}
+        onPressedChange={(on) => push((p) => (on ? p.set('advances', '1') : p.delete('advances')))}
         className="h-7 px-2 text-[12px] font-normal text-faint data-[state=on]:text-primary"
       >
         Avances en attente
@@ -143,7 +143,7 @@ export function MovementFilters({
           className="h-7 gap-1 px-2 text-[12px] text-muted-foreground"
           onClick={() =>
             push((p) => {
-              for (const key of ['compte', 'categorie', 'acteur', 'activite', 'q', 'type', 'avances'])
+              for (const key of ['account', 'category', 'actor', 'activity', 'q', 'type', 'advances'])
                 p.delete(key)
             })
           }

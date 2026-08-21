@@ -18,12 +18,11 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Analyse' }
 
 const GROUPS: BreakdownGroup[] = ['category', 'actor', 'activity']
-const FILTER_PARAM = { category: 'categorie', actor: 'acteur', activity: 'activite' } as const
 
 export default async function AnalysisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string; ref?: string; par?: string; sens?: string }>
+  searchParams: Promise<{ period?: string; ref?: string; by?: string; flow?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -33,10 +32,8 @@ export default async function AnalysisPage({
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
 
-  const groupBy = (GROUPS as string[]).includes(params.par ?? '')
-    ? (params.par as BreakdownGroup)
-    : 'category'
-  const kind: FlowKind = params.sens === 'income' ? 'income' : 'expense'
+  const groupBy = (GROUPS as string[]).includes(params.by ?? '') ? (params.by as BreakdownGroup) : 'category'
+  const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
 
   const firstDay = await firstMovementDay(userId)
   const [breakdown, totals, previousTotals, monthly] = await Promise.all([
@@ -69,7 +66,7 @@ export default async function AnalysisPage({
         <PeriodPicker period={period} />
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
         <UrlTabs
-          param="sens"
+          param="flow"
           fallback="expense"
           ariaLabel="Sens des flux"
           options={[
@@ -78,7 +75,7 @@ export default async function AnalysisPage({
           ]}
         />
         <UrlTabs
-          param="par"
+          param="by"
           fallback="category"
           ariaLabel="Regrouper par"
           options={[
@@ -160,8 +157,8 @@ export default async function AnalysisPage({
         >
           <BreakdownBars
             rows={rows}
-            filterParam={FILTER_PARAM[groupBy]}
-            from="analyse"
+            filterParam={groupBy}
+            from="analysis"
             emptyLabel={
               kind === 'expense' ? 'Aucune dépense sur cette période.' : 'Aucun revenu sur cette période.'
             }
