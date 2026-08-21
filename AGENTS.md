@@ -244,5 +244,14 @@ premières : la pire paire tombe dans la bande CVD 6-8, légale uniquement avec 
 secondaire, ce qui fait des labels directs la condition de la palette plutôt qu'un confort.
 D'où le lien entre les trois défauts. `DESIGN.md` § Couleur porte les chiffres.
 
+**Le groupe d'une catégorie sert enfin** (2026-08-21, issue #30) : il se lit au bout de
+la ligne de sa catégorie dans Réglages, là où il occupait une deuxième ligne sous le nom,
+et il agrège les dépenses en grandes masses sur la vue d'ensemble, dans un donut posé à
+côté des barres par catégorie. Cinq groupes gardent leur teinte, la queue fusionne en un
+reste estompé qui se nomme, et le survol relie l'arc à sa ligne de légende (`DESIGN.md`
+§ Graphes et § Couleur portent les deux règles). Côté MCP, `analyze_spending` prend
+`groupBy: categoryGroup`. Le groupe n'entre pas dans Analyse : sans entité derrière lui,
+ses lignes n'auraient rien à cliquer, là où toutes les autres mènent aux mouvements.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

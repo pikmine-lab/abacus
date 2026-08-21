@@ -122,6 +122,58 @@ test('an income breakdown groups by the actor that paid, refunds excluded', asyn
   )
 })
 
+test('a group breakdown folds every category carrying it into one mass', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const friend = await createActor(user, { name: 'Friend' })
+  const groceries = await createCategory(user, 'Groceries', 'Everyday life')
+  const delivery = await createCategory(user, 'Delivery', 'Everyday life')
+  const haircut = await createCategory(user, 'Haircut')
+
+  const spend = async (amount: number, categoryId: string | undefined, day: string) =>
+    await declareMovement(user, {
+      happenedOn: day,
+      amount,
+      sourceAccountId: account.id,
+      targetActorId: shop.id,
+      categoryId,
+    })
+
+  await spend(60, groceries.id, '2026-04-02')
+  await spend(30, delivery.id, '2026-04-03')
+  // Advanced, so a refund can come back against it and pull net apart.
+  const advanced = await declareMovement(user, {
+    happenedOn: '2026-04-04',
+    amount: 20,
+    sourceAccountId: account.id,
+    targetActorId: shop.id,
+    categoryId: haircut.id,
+    expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 5,
+  })
+  // A movement with no category at all: it belongs to no group either.
+  await spend(15, undefined, '2026-04-05')
+  await declareMovement(user, {
+    happenedOn: '2026-04-10',
+    amount: 5,
+    sourceActorId: friend.id,
+    targetAccountId: account.id,
+    refundsMovementId: advanced.id,
+  })
+
+  const rows = await spendingBreakdown(user, '2026-04-01', '2026-04-30', 'categoryGroup')
+  assert.deepEqual(
+    [...rows],
+    [
+      { key: 'Everyday life', label: 'Everyday life', gross: '90.00', net: '90.00', count: '2' },
+      // The ungrouped category and the uncategorized movement are the same
+      // mass: what no group accounts for.
+      { key: null, label: null, gross: '35.00', net: '30.00', count: '2' },
+    ],
+  )
+})
+
 test('the first movement day is null until something is declared', async () => {
   const user = await seedUser()
   assert.equal(await firstMovementDay(user), null)

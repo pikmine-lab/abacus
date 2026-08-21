@@ -1,6 +1,6 @@
 import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
-import type { BreakdownGroup, FlowKind } from '@abacus/core/services/reports'
+import type { FlowKind } from '@abacus/core/services/reports'
 import { firstMovementDay, flowTotals, monthlyFlows, spendingBreakdown } from '@abacus/core/services/reports'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -17,7 +17,13 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Analyse' }
 
-const GROUPS: BreakdownGroup[] = ['category', 'actor', 'activity']
+/**
+ * The dimensions ranked here. Not the category group: its rows would have
+ * nothing to click, a group being a label on categories rather than an entity
+ * movements can be filtered by. It is read as masses on the overview.
+ */
+const GROUPS = ['category', 'actor', 'activity'] as const
+type Ranked = (typeof GROUPS)[number]
 
 export default async function AnalysisPage({
   searchParams,
@@ -32,7 +38,7 @@ export default async function AnalysisPage({
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
 
-  const groupBy = (GROUPS as string[]).includes(params.by ?? '') ? (params.by as BreakdownGroup) : 'category'
+  const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '') ? (params.by as Ranked) : 'category'
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
 
   const firstDay = await firstMovementDay(userId)
