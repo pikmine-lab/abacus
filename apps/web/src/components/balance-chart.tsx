@@ -11,7 +11,9 @@ import { eur, frDateLong } from '@/lib/utils'
  *
  * It has no period control of its own: the page's filter row scopes it, like
  * everything else below that row. The account toggles are the legend, not a
- * filter: three series at once is the validated ceiling of the palette.
+ * filter, and they refuse nothing: comparing more accounts is what the view is
+ * for. The palette holds six measured hues and repeats past them, the end
+ * label carrying the identity either way.
  */
 
 interface Account {
@@ -24,8 +26,54 @@ interface Row {
   balance: number
 }
 
-const SLOT_VARS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)']
-const MAX_ACTIVE = 3
+/**
+ * Series hues, in the order slots are handed out. Six is the measured maximum
+ * on the card surface in all pairs (DESIGN.md § Couleur), and the chart opens
+ * on as many accounts as the palette holds.
+ */
+const SLOT_VARS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+]
+/** End label type size, in px: the layout is measured against it. */
+const LABEL_SIZE = 11
+/** Gap between the plot edge and the label, plus breathing room on the right. */
+const LABEL_PAD = 16
+/** Vertical room one end label needs. */
+const LABEL_GAP = 15
+/** Plot height and the vertical margins the label column shares with it. */
+const H = 250
+const M_T = 12
+const M_B = 24
+
+/**
+ * Accounts the chart opens on: the best funded, not the first alphabetically.
+ * Series rows are dense (one per account per day), so the last day carries the
+ * closing balance of the window.
+ */
+function bestFunded(accounts: Account[], rows: Row[], count: number): Account[] {
+  const last = new Map<string, Row>()
+  for (const r of rows) {
+    const seen = last.get(r.accountId)
+    if (!seen || r.day > seen.day) last.set(r.accountId, r)
+  }
+  return [...accounts]
+    .sort((a, b) => (last.get(b.id)?.balance ?? 0) - (last.get(a.id)?.balance ?? 0))
+    .slice(0, count)
+}
+
+/** Trims the name, never the amount: a cut number would be a wrong number. */
+function fitLabel(name: string, amount: string, room: number, measure: (s: string) => number): string {
+  const full = `${name} · ${amount}`
+  if (measure(full) <= room) return full
+  let cut = name
+  while (cut.length > 1 && measure(`${cut}… · ${amount}`) > room) cut = cut.slice(0, -1)
+  return `${cut}… · ${amount}`
+}
 
 function frDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
@@ -49,15 +97,23 @@ export function BalanceChart({
   today: string
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const inkRef = useRef<CanvasRenderingContext2D | null>(null)
   const [width, setWidth] = useState(0)
   const [slots, setSlots] = useState<Map<string, number>>(
-    () => new Map(accounts.slice(0, MAX_ACTIVE).map((a, i) => [a.id, i])),
+    () => new Map(bestFunded(accounts, rows, SLOT_VARS.length).map((a, i) => [a.id, i])),
   )
   const [hover, setHover] = useState<number | null>(null)
 
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
+    // Labels are laid out against their real width, in the font they render
+    // in: the fixed right margin they used to sit in is what cropped them.
+    const ctx = document.createElement('canvas').getContext('2d')
+    if (ctx) {
+      ctx.font = `${LABEL_SIZE}px ${getComputedStyle(el).fontFamily}`
+      inkRef.current = ctx
+    }
     const measure = () => setWidth(el.clientWidth)
     measure()
     const ro = new ResizeObserver(measure)
@@ -90,9 +146,10 @@ export function BalanceChart({
         if (next.size === 1) return prev
         next.delete(id)
       } else {
-        if (next.size >= MAX_ACTIVE) return prev
-        const used = new Set(next.values())
-        next.set(id, [0, 1, 2].find((s) => !used.has(s))!)
+        // Nothing is refused: the least-used hue is taken, which is a free one
+        // until the palette is full and a repeat after that.
+        const counts = SLOT_VARS.map((_, s) => [...next.values()].filter((v) => v === s).length)
+        next.set(id, counts.indexOf(Math.min(...counts)))
       }
       return next
     })
@@ -104,15 +161,31 @@ export function BalanceChart({
     )
 
   const hasFuture = lastPast < days.length - 1
-  const H = 250
   const narrow = width < 520
-  const M = { t: 12, r: narrow ? 14 : 150, b: 24, l: 46 }
-  const active = accounts.filter((a) => slots.has(a.id))
-  const series = active.map((a) => ({
-    ...a,
-    slot: slots.get(a.id)!,
-    values: days.map((d) => byAccount.get(a.id)?.get(d) ?? 0),
-  }))
+  const series = accounts
+    .filter((a) => slots.has(a.id))
+    .map((a) => ({
+      ...a,
+      slot: slots.get(a.id)!,
+      values: days.map((d) => byAccount.get(a.id)?.get(d) ?? 0),
+    }))
+  // Only the first series holding the reference hue lays an area, or a
+  // repeated hue would stack two washes on top of each other.
+  const areaId = series.find((s) => s.slot === 0)?.id
+
+  const textWidth = (s: string) => inkRef.current?.measureText(s).width ?? s.length * LABEL_SIZE * 0.56
+  // More labels than the height holds are dropped rather than stacked: the
+  // legend and the tooltip still name every series.
+  const labelsFit = series.length * LABEL_GAP <= H - M_T - M_B - 6
+  const labels =
+    narrow || !labelsFit
+      ? []
+      : series.map((s) => ({ id: s.id, name: s.name, v: s.values[s.values.length - 1] ?? 0 }))
+  // The right margin IS the label column, so it is cut to the labels instead of
+  // fixed: measured, capped at a third of the frame, and what still does not
+  // fit is trimmed by us below rather than by the frame.
+  const wanted = Math.max(0, ...labels.map((l) => textWidth(`${l.name} · ${eur(l.v)}`))) + LABEL_PAD
+  const M = { t: M_T, r: narrow ? 14 : Math.round(Math.min(wanted, width * 0.34)), b: M_B, l: 46 }
 
   const allValues = series.flatMap((s) => s.values)
   const min = Math.min(...allValues, 0)
@@ -140,13 +213,23 @@ export function BalanceChart({
     xTicks.push({ i, label })
   }
 
-  // Direct end labels, pushed apart when they collide (never stacked).
-  const ends = series
-    .map((s) => ({ slot: s.slot, name: s.name, v: s.values[s.values.length - 1] ?? 0 }))
-    .map((e) => ({ ...e, y: Y(e.v) }))
+  // Direct end labels, pushed apart when they collide (never stacked). With
+  // six series colliding is the rule, so the stack is then pulled back inside
+  // the frame from both edges: pushing down alone walked off the bottom.
+  const room = M.r - LABEL_PAD
+  const ends = labels
+    .map((l) => ({ ...l, text: fitLabel(l.name, eur(l.v), room, textWidth), y: Y(l.v) }))
     .sort((a, b) => a.y - b.y)
   for (let i = 1; i < ends.length; i++) {
-    if (ends[i]!.y - ends[i - 1]!.y < 15) ends[i]!.y = ends[i - 1]!.y + 15
+    if (ends[i]!.y - ends[i - 1]!.y < LABEL_GAP) ends[i]!.y = ends[i - 1]!.y + LABEL_GAP
+  }
+  for (let i = ends.length - 1; i >= 0; i--) {
+    const floor = i === ends.length - 1 ? H - M.b - 2 : ends[i + 1]!.y - LABEL_GAP
+    if (ends[i]!.y > floor) ends[i]!.y = floor
+  }
+  for (let i = 0; i < ends.length; i++) {
+    const ceiling = i === 0 ? M.t + 4 : ends[i - 1]!.y + LABEL_GAP
+    if (ends[i]!.y < ceiling) ends[i]!.y = ceiling
   }
 
   function onMove(e: React.PointerEvent) {
@@ -169,9 +252,6 @@ export function BalanceChart({
               size="sm"
               pressed={on}
               onPressedChange={() => toggle(a.id)}
-              title={
-                !on && slots.size >= MAX_ACTIVE ? '3 séries maximum : désactive un compte d’abord' : undefined
-              }
               className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
             >
               <span
@@ -266,7 +346,7 @@ export function BalanceChart({
               const last = s.values[s.values.length - 1] ?? 0
               return (
                 <g key={s.id}>
-                  {s.slot === 0 && (
+                  {s.id === areaId && (
                     <polygon
                       points={`${M.l},${Y(y0)} ${past} ${X(lastPast)},${Y(y0)}`}
                       fill={SLOT_VARS[0]}
@@ -303,18 +383,17 @@ export function BalanceChart({
                 </g>
               )
             })}
-            {!narrow &&
-              ends.map((e) => (
-                <text
-                  key={e.slot}
-                  x={width - M.r + 10}
-                  y={e.y + 4}
-                  fontSize={11}
-                  fill="var(--muted-foreground)"
-                >
-                  {e.name} · {eur(e.v)}
-                </text>
-              ))}
+            {ends.map((e) => (
+              <text
+                key={e.id}
+                x={width - M.r + 10}
+                y={e.y + 4}
+                fontSize={LABEL_SIZE}
+                fill="var(--muted-foreground)"
+              >
+                {e.text}
+              </text>
+            ))}
             {hover !== null && (
               <g>
                 <line x1={X(hover)} x2={X(hover)} y1={M.t} y2={H - M.b} stroke="var(--faint)" />
