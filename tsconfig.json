@@ -12,5 +12,8 @@
     "skipLibCheck": true
   },
   "include": ["packages/**/*.ts", "apps/**/*.ts", "provision/**/*.ts"],
+  // The web app is its own project: JSX, the DOM lib, bundler resolution and the
+  // @/* paths genuinely differ from server-side code. It is not left unchecked:
+  // `pnpm typecheck` runs this project, then that one.
   "exclude": ["apps/web"]
 }
