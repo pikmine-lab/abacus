@@ -664,3 +664,40 @@ test('an advance and its refund through the MCP surface', async () => {
   })
   assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
 })
+
+test('spending reads back by category group through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Commerce' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Livraison', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Divers' })
+
+  const line = (date: string, amount: number, category: string) => ({
+    date,
+    amount,
+    type: 'expense',
+    account: 'Courant',
+    actor: 'Commerce',
+    category,
+  })
+  await call(client, 'declare_movements', {
+    movements: [
+      line('2026-08-02', 60, 'Courses'),
+      line('2026-08-03', 30, 'Livraison'),
+      line('2026-08-04', 10, 'Divers'),
+    ],
+  })
+
+  // Two categories, one mass; the groupless one is named as such.
+  const byGroup = await call(client, 'analyze_spending', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'categoryGroup',
+  })
+  assert.deepEqual(byGroup.json(), [
+    { categoryGroup: 'Vie quotidienne', gross: 90, net: 90 },
+    { categoryGroup: '(none)', gross: 10, net: 10 },
+  ])
+})

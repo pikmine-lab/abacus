@@ -58,12 +58,15 @@ export async function firstMovementDay(tx: Executor, userId: string): Promise<st
   return row?.day ?? null
 }
 
-export type BreakdownGroup = 'category' | 'actor' | 'activity'
+export type BreakdownGroup = 'category' | 'actor' | 'activity' | 'categoryGroup'
 /** Which side of the ledger a report reads. Internal transfers are never either. */
 export type FlowKind = 'expense' | 'income'
 
 export interface BreakdownRow {
-  /** Id of the grouping entity, so a row can link to its filtered movements. */
+  /**
+   * Id of the grouping entity, so a row can link to its filtered movements.
+   * A category group has no entity behind it: its own label is its key.
+   */
   key: string | null
   label: string | null
   /** What actually left the accounts. */
@@ -75,9 +78,9 @@ export interface BreakdownRow {
 }
 
 /**
- * Spending (or income) over a period, grouped by category, actor or activity.
- * Both readings are always returned: gross is the reality of outflows, net only
- * diverges once a linked refund has been received.
+ * Spending (or income) over a period, grouped by category, actor, activity or
+ * category group. Both readings are always returned: gross is the reality of
+ * outflows, net only diverges once a linked refund has been received.
  *
  * On the income side the counterparty is the source actor, and refunds are
  * excluded outright: a refund is an advance coming back, not money earned, and
@@ -93,19 +96,29 @@ export async function spendingBreakdown(
   kind: FlowKind = 'expense',
 ): Promise<BreakdownRow[]> {
   const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
-  const join = {
-    category: tx`left join category g on g.id = m.category_id`,
-    actor: tx`left join actor g on g.id = ${actorColumn}`,
-    activity: tx`left join activity g on g.id = m.activity_id`,
+  const entity = tx`left join category g on g.id = m.category_id`
+  // A group is a label written on categories, not an entity of its own: it is
+  // its own key, and every category carrying it folds into one row. Movements
+  // with no category at all fold into that same unlabelled row: both are the
+  // mass no group accounts for.
+  const dimension = {
+    category: { join: entity, key: tx`g.id::text`, label: tx`g.name` },
+    actor: { join: tx`left join actor g on g.id = ${actorColumn}`, key: tx`g.id::text`, label: tx`g.name` },
+    activity: {
+      join: tx`left join activity g on g.id = m.activity_id`,
+      key: tx`g.id::text`,
+      label: tx`g.name`,
+    },
+    categoryGroup: { join: entity, key: tx`g.group_label`, label: tx`g.group_label` },
   }[groupBy]
   return await tx<BreakdownRow[]>`
-    select g.id as key,
-           g.name as label,
+    select ${dimension.key} as key,
+           ${dimension.label} as label,
            sum(m.amount)::numeric(14,2) as gross,
            sum(m.amount - coalesce(r.total, 0))::numeric(14,2) as net,
            count(*) as count
     from movement m
-    ${join}
+    ${dimension.join}
     left join lateral (
       select sum(amount) as total from movement r where r.refunds_movement_id = m.id
     ) r on true
@@ -114,7 +127,7 @@ export async function spendingBreakdown(
       and m.happened_on >= ${from}
       and m.happened_on <= ${to}
       ${kind === 'income' ? tx`and m.refunds_movement_id is null` : tx``}
-    group by g.id, g.name
+    group by 1, 2
     order by gross desc
   `
 }

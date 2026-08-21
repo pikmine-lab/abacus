@@ -987,11 +987,11 @@ export function buildServer(userId: string): McpServer {
     'analyze_spending',
     {
       description:
-        'Breaks spending down over a period by category, actor or activity. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received). Internal transfers never appear here. For freelance revenue, group by activity and look at incomes through list_movements (kind: income).',
+        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received). Internal transfers never appear here. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list; rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income).',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
-        groupBy: z.enum(['category', 'actor', 'activity']),
+        groupBy: z.enum(['category', 'actor', 'activity', 'categoryGroup']),
       }),
     },
     async ({ from, to, groupBy }) =>

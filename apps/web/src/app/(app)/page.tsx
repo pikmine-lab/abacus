@@ -8,6 +8,7 @@ import {
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { outstandingAdvances } from '@abacus/core/services/movements'
+import type { BreakdownRow } from '@abacus/core/services/reports'
 import {
   balanceSeries,
   firstMovementDay,
@@ -34,6 +35,7 @@ import {
   SectionLink,
 } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
+import { SpendingDonut } from '@/components/spending-donut'
 import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
 import { previousWindow, resolvePeriod, seriesFrom } from '@/lib/period'
@@ -62,20 +64,31 @@ export default async function OverviewPage({
   const period = resolvePeriod(await searchParams, now)
   const previous = previousWindow(period)
 
-  const [accounts, firstDay, totals, previousTotals, monthly, breakdown, pending, advances, commitments] =
-    await Promise.all([
-      listAccounts(userId),
-      firstMovementDay(userId),
-      flowTotals(userId, period.from, period.to),
-      previous ? flowTotals(userId, previous.from, previous.to) : null,
-      // A month-by-month chart needs months: this window is named in the
-      // section title and is deliberately not the page period.
-      monthlyFlows(userId, shiftMonths(now, -11), now),
-      spendingBreakdown(userId, period.from, period.to, 'category'),
-      pendingOccurrences(userId),
-      outstandingAdvances(userId),
-      listCommitmentsWithProgress(userId),
-    ])
+  const [
+    accounts,
+    firstDay,
+    totals,
+    previousTotals,
+    monthly,
+    breakdown,
+    byGroup,
+    pending,
+    advances,
+    commitments,
+  ] = await Promise.all([
+    listAccounts(userId),
+    firstMovementDay(userId),
+    flowTotals(userId, period.from, period.to),
+    previous ? flowTotals(userId, previous.from, previous.to) : null,
+    // A month-by-month chart needs months: this window is named in the
+    // section title and is deliberately not the page period.
+    monthlyFlows(userId, shiftMonths(now, -11), now),
+    spendingBreakdown(userId, period.from, period.to, 'category'),
+    spendingBreakdown(userId, period.from, period.to, 'categoryGroup'),
+    pendingOccurrences(userId),
+    outstandingAdvances(userId),
+    listCommitmentsWithProgress(userId),
+  ])
 
   const active = commitments.filter((c) => !c.cancelledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription' && c.direction === 'outgoing')
@@ -320,77 +333,86 @@ export default async function OverviewPage({
         </Section>
 
         <div className="grid gap-8 lg:grid-cols-2">
+          <Section title="Dépenses par groupe" description={period.label}>
+            <SpendingDonut rows={amounts(byGroup)} emptyLabel="Aucune dépense déclarée sur cette période." />
+          </Section>
+
           <Section
             title="Dépenses par catégorie"
             description={period.label}
             action={<SectionLink href="/analysis?from=overview">Analyse</SectionLink>}
           >
             <BreakdownBars
-              rows={breakdown.map((r) => ({
-                key: r.key,
-                label: r.label,
-                gross: Number(r.gross),
-                net: Number(r.net),
-                count: Number(r.count),
-              }))}
+              rows={amounts(breakdown)}
               filterParam="category"
               from="overview"
               max={6}
               emptyLabel="Aucune dépense déclarée sur cette période."
             />
           </Section>
-
-          <Section
-            title="Prochaines échéances"
-            description="abonnements, financements et revenus récurrents"
-            action={<SectionLink href="/recurring-expenses?from=overview">Tout voir</SectionLink>}
-          >
-            {active.length === 0 ? (
-              <EmptyLine>Aucun engagement déclaré.</EmptyLine>
-            ) : (
-              <Rows>
-                {[...active]
-                  .sort((a, b) => a.nextDueOn.localeCompare(b.nextDueOn))
-                  .slice(0, 6)
-                  .map((c) => (
-                    <Link
-                      key={c.id}
-                      href={
-                        c.direction === 'incoming'
-                          ? '/recurring-income?from=overview'
-                          : '/recurring-expenses?from=overview'
-                      }
-                      className="group flex items-center gap-2 py-2.5 hover:bg-secondary/40"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px]">{c.label}</p>
-                        <p className="text-[11px] text-faint">
-                          {frDate(c.nextDueOn)}
-                          {c.kind === 'financing' && c.progress
-                            ? ` · ${c.progress.paidInstallments}/${c.installmentsTotal} échéances`
-                            : ''}
-                        </p>
-                      </div>
-                      {c.judgment && c.direction === 'outgoing' && (
-                        <Badge variant={JUDGMENT[c.judgment].variant}>{JUDGMENT[c.judgment].label}</Badge>
-                      )}
-                      <span
-                        className={`ml-auto font-mono text-[13px] font-semibold tabular ${
-                          c.direction === 'incoming' ? 'text-good' : ''
-                        }`}
-                      >
-                        {c.direction === 'incoming' ? '+' : '−'}
-                        {eur(Number(c.amount), 2)}
-                      </span>
-                    </Link>
-                  ))}
-              </Rows>
-            )}
-          </Section>
         </div>
+
+        <Section
+          title="Prochaines échéances"
+          description="abonnements, financements et revenus récurrents"
+          action={<SectionLink href="/recurring-expenses?from=overview">Tout voir</SectionLink>}
+        >
+          {active.length === 0 ? (
+            <EmptyLine>Aucun engagement déclaré.</EmptyLine>
+          ) : (
+            <Rows>
+              {[...active]
+                .sort((a, b) => a.nextDueOn.localeCompare(b.nextDueOn))
+                .slice(0, 6)
+                .map((c) => (
+                  <Link
+                    key={c.id}
+                    href={
+                      c.direction === 'incoming'
+                        ? '/recurring-income?from=overview'
+                        : '/recurring-expenses?from=overview'
+                    }
+                    className="group flex items-center gap-2 py-2.5 hover:bg-secondary/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px]">{c.label}</p>
+                      <p className="text-[11px] text-faint">
+                        {frDate(c.nextDueOn)}
+                        {c.kind === 'financing' && c.progress
+                          ? ` · ${c.progress.paidInstallments}/${c.installmentsTotal} échéances`
+                          : ''}
+                      </p>
+                    </div>
+                    {c.judgment && c.direction === 'outgoing' && (
+                      <Badge variant={JUDGMENT[c.judgment].variant}>{JUDGMENT[c.judgment].label}</Badge>
+                    )}
+                    <span
+                      className={`ml-auto font-mono text-[13px] font-semibold tabular ${
+                        c.direction === 'incoming' ? 'text-good' : ''
+                      }`}
+                    >
+                      {c.direction === 'incoming' ? '+' : '−'}
+                      {eur(Number(c.amount), 2)}
+                    </span>
+                  </Link>
+                ))}
+            </Rows>
+          )}
+        </Section>
       </PageBody>
     </>
   )
+}
+
+/** Breakdown rows as the charts read them: numbers, not decimal strings. */
+function amounts(rows: BreakdownRow[]) {
+  return rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    gross: Number(r.gross),
+    net: Number(r.net),
+    count: Number(r.count),
+  }))
 }
 
 /** Evenly spaced sample of a series, keeping the last point. */

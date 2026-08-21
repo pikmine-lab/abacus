@@ -26,10 +26,16 @@ import {
 function EntryLine({
   title,
   detail,
+  trailing,
   children,
 }: {
   title: string
   detail?: string
+  /**
+   * One attribute of the entry, read at the end of its own line: a second
+   * line under the name would lengthen the list without adding a fact.
+   */
+  trailing?: string
   /** The row's menu items. */
   children: React.ReactNode
 }) {
@@ -40,6 +46,7 @@ function EntryLine({
         <span className="truncate text-[12.5px]">{title}</span>
         {detail && <span className="truncate text-[11px] text-faint">{detail}</span>}
       </div>
+      {trailing && <span className="max-w-[45%] truncate text-[11.5px] text-faint">{trailing}</span>}
       <RowMenu label={title}>{children}</RowMenu>
     </div>
   )
@@ -58,7 +65,7 @@ function CategoryRow({ category }: { category: { id: string; name: string; group
   const [editing, setEditing] = useState(false)
   return (
     <>
-      <EntryLine title={category.name} detail={category.groupLabel ?? undefined}>
+      <EntryLine title={category.name} trailing={category.groupLabel ?? undefined}>
         <EditItem onSelect={() => setEditing(true)} />
       </EntryLine>
       <Dialog open={editing} onOpenChange={setEditing}>

@@ -107,7 +107,10 @@ de page.
 7. **Pas de couleur par catégorie.** Une barre de dépenses porte son identité dans
    son libellé et sa magnitude dans sa longueur ; la couleur n'encoderait rien.
    Toutes les barres sont cuivre. (L'ancienne rampe `--cat0…6` attribuait la teinte
-   au *rang*, ce que sa propre règle interdisait : supprimée.)
+   au *rang*, ce que sa propre règle interdisait : supprimée.) L'arc d'un donut est
+   l'exception qui se justifie : une part de cercle n'a pas d'identité lisible sans sa
+   teinte. D'où une teinte par groupe, sur un jeu fermé de cinq plus un reste, jamais
+   par catégorie.
 
 ## Graphes
 
@@ -142,6 +145,13 @@ de page.
   comptes les mieux garnis, autant que la palette en tient, jamais sur les premiers par
   ordre alphabétique. Il n'oppose pas non plus de plafond : comparer plus de comptes est
   exactement ce que la vue d'ensemble promet.
+- **Le donut répond par masses, pas par lignes.** Une part par groupe, une ligne de
+  légende par part, l'identité et le montant dans la légende. Au-delà de cinq groupes
+  la queue fusionne en une seule part, nommée par ce qu'elle contient et tracée dans
+  l'encre estompée : c'est un reste, pas une identité, et il referme le cercle sans
+  buter sur la première teinte. Le survol relie l'arc à sa ligne (les autres
+  s'effacent) et le creux dit ce que la légende ne répète pas : le net et le nombre de
+  mouvements.
 - **Marques** : lignes 2px, points de fin r4 avec anneau de la couleur du fond,
   barres ≤ 24px à bout arrondi, grille en filet discret, ticks au format français
   (`13,5k`).
