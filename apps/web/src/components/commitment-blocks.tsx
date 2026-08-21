@@ -43,11 +43,11 @@ export function CommitmentRow({
 }) {
   const incoming = c.direction === 'incoming'
   const financing = c.kind === 'financing'
+  const accountName = (id: string) => options?.accounts.find((a) => a.id === id)?.name ?? ''
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
   const defaults = options && {
     actor: options.actors.find((a) => a.id === c.actorId)?.name ?? '',
-    accountId: c.accountId,
     categoryId: c.categoryId ?? '',
     activityId: c.activityId ?? '',
     // The periodicity is asked as one question, so it travels as one value.
@@ -74,6 +74,12 @@ export function CommitmentRow({
             {c.periodUnit !== 'month' && ` · ≈ ${eur(monthlyEquivalent(c), 2)}/mois`}
           </span>
           <span>prochaine le {frDate(c.nextDueOn)}</span>
+          {/* A move already declared: the only place it shows before its date. */}
+          {c.nextAccountMove && (
+            <span>
+              passe sur {accountName(c.nextAccountMove.accountId)} le {frDate(c.nextAccountMove.effectiveOn)}
+            </span>
+          )}
           {financing && c.progress && (
             <span>
               {c.progress.paidInstallments}/{c.installmentsTotal} payées · reste{' '}
@@ -101,6 +107,8 @@ export function CommitmentRow({
         amount={Number(c.amount)}
         kind={c.kind}
         incoming={incoming}
+        accountId={c.accountId}
+        accountName={accountName(c.accountId)}
         schedule={schedule}
         today={today}
         options={options}

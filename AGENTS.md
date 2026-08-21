@@ -220,6 +220,16 @@ mouvements et « Remboursé » écrit ce revenu sur le compte qui a payé (MCP :
 le jour même). Solder reste l'autre geste, celui du renoncement. La part et le débiteur se
 corrigent (`fix_movement`) ; le lien d'un remboursement reçu vers son avance, non.
 
+**Le compte d'un engagement est daté** (2026-08-21, issue #35) : un prélèvement qui
+déménage se déclare le jour où on l'apprend, date d'effet future comprise (UI « Changer de
+compte » dans le menu de la ligne, MCP `change_commitment_account`), et chaque échéance
+tombe sur le compte en vigueur à sa date. Une échéance confirmée en retard part donc de
+l'ancien compte, là où l'argent est réellement sorti, au lieu d'être écrite en silence sur
+le nouveau. Le compte a quitté la correction sans date (`update_commitment`), comme le
+montant avant lui. Côté modèle : `commitment.account_id` est le compte de départ, chaque
+déménagement est un événement `account_changed` (migration `0006`), et les lectures
+exposent le compte du jour plus le déménagement annoncé.
+
 **Anglais hors de l'écran** (2026-08-21, issue #24) : les segments d'URL, les clés et les
 valeurs de paramètres de requête et les noms de champs de formulaire sont passés en
 anglais, et le principe « le français s'arrête à ce qui s'affiche » est écrit plus haut.

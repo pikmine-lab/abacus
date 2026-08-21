@@ -2,6 +2,8 @@ import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
 import {
+  type AccountPeriod,
+  accountTimeline,
   getCommitment,
   getCommitmentForUpdate,
   insertCommitment,
@@ -29,11 +31,29 @@ import { addPeriod, today } from '../domain/period.ts'
 import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
 import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
 
-async function requireRefs(tx: Executor, userId: string, actorId: string, accountId: string): Promise<void> {
+async function requireActor(tx: Executor, userId: string, actorId: string): Promise<void> {
   if (!(await getActor(tx, userId, actorId)))
     throw new DomainError('actor_not_found', `No actor ${actorId} for this user`)
+}
+
+async function requireAccount(tx: Executor, userId: string, accountId: string): Promise<void> {
   if (!(await getAccount(tx, userId, accountId)))
     throw new DomainError('account_not_found', `No account ${accountId} for this user`)
+}
+
+async function requireRefs(tx: Executor, userId: string, actorId: string, accountId: string): Promise<void> {
+  await requireActor(tx, userId, actorId)
+  await requireAccount(tx, userId, accountId)
+}
+
+/**
+ * The account in force on a date. The timeline starts with the account the
+ * commitment was declared on, so there is always one to fall back to.
+ */
+function accountAt(timeline: AccountPeriod[], on: string): string {
+  let accountId = timeline[0]!.accountId
+  for (const period of timeline) if (period.since !== null && period.since <= on) accountId = period.accountId
+  return accountId
 }
 
 export interface SubscriptionInput {
@@ -266,20 +286,49 @@ export async function changeAmount(
 }
 
 /**
- * What a commitment says about itself, once it exists. Everything a person can
- * mistype when declaring it is here: its label, who bills it, which account it
- * hits, how it is filed, how often it falls.
+ * Moves what a commitment hits to another account, from a date.
  *
- * Two things stay out on purpose. The amount, because a price change is dated
+ * A recurring payment that changes account is an event, not a typo, and the
+ * date is the whole point. It is usually known before it takes effect ("from
+ * next month it leaves the other account"), so it is declared the day it is
+ * learnt instead of having to be remembered on the right day. And an occurrence
+ * confirmed late lands on the account the money really left, not on the one in
+ * force the day someone got round to confirming it.
+ *
+ * Movements already declared are untouched, here as everywhere: they state what
+ * happened, on the account it happened on.
+ */
+export async function moveAccount(
+  userId: string,
+  id: string,
+  accountId: string,
+  effectiveOn?: string,
+): Promise<Commitment> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    const commitment = await getCommitmentForUpdate(tx, userId, id)
+    if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
+    await requireAccount(tx, userId, accountId)
+    await insertCommitmentEvent(tx, id, effectiveOn ?? today(), 'account_changed', null, null, accountId)
+    return (await getCommitment(tx, userId, id))!
+  })
+}
+
+/**
+ * What a commitment says about itself, once it exists. Everything a person can
+ * mistype when declaring it is here: its label, who bills it, how it is filed,
+ * how often it falls.
+ *
+ * Three things stay out on purpose. The amount, because a price change is dated
  * history (changeAmount) and a financing's nominal amount derives from its
- * schedule. And the direction, because an expense turned income is not the
- * same commitment corrected, it is another one: its own past movements would
- * contradict it.
+ * schedule. The account, for the same reason: a payment that moves accounts
+ * does so on a date (moveAccount). And the direction, because an expense turned
+ * income is not the same commitment corrected, it is another one: its own past
+ * movements would contradict it.
  */
 export interface CommitmentEdit {
   label?: string
   actorId?: string
-  accountId?: string
   categoryId?: string | null
   activityId?: string | null
   periodUnit?: PeriodUnit
@@ -290,7 +339,6 @@ export interface CommitmentEdit {
 const EDITABLE = [
   'label',
   'actorId',
-  'accountId',
   'categoryId',
   'activityId',
   'periodUnit',
@@ -309,13 +357,7 @@ export async function editCommitment(userId: string, id: string, input: Commitme
   return await sql.begin(async (tx) => {
     const commitment = await getCommitmentForUpdate(tx, userId, id)
     if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
-    if (input.actorId !== undefined || input.accountId !== undefined)
-      await requireRefs(
-        tx,
-        userId,
-        input.actorId ?? commitment.actorId,
-        input.accountId ?? commitment.accountId,
-      )
+    if (input.actorId !== undefined) await requireActor(tx, userId, input.actorId)
     if (commitment.kind === 'financing' && input.engagedUntil)
       throw new DomainError(
         'financing_has_no_lock_in',
@@ -390,6 +432,12 @@ export interface PendingOccurrence {
    * first.
    */
   amount: number
+  /**
+   * The account it will hit: the one in force on its own date, which is not
+   * always the one the commitment hits today. An occurrence left pending across
+   * a move is exactly the case that used to land on the wrong account.
+   */
+  accountId: string
 }
 
 /**
@@ -405,14 +453,25 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
   const due = await listCommitmentsDs(sql, userId, { activeOnly: true, dueOnOrBefore: limit })
   const pending: PendingOccurrence[] = []
   for (const commitment of due) {
+    const timeline = await accountTimeline(sql, commitment.id)
     if (commitment.kind === 'financing') {
       for (const installment of await dueInstallments(sql, commitment.id, limit))
-        pending.push({ commitment, dueOn: installment.dueOn, amount: Number(installment.amount) })
+        pending.push({
+          commitment,
+          dueOn: installment.dueOn,
+          amount: Number(installment.amount),
+          accountId: accountAt(timeline, installment.dueOn),
+        })
       continue
     }
     let dueOn = commitment.nextDueOn
     while (dueOn <= limit) {
-      pending.push({ commitment, dueOn, amount: Number(commitment.amount) })
+      pending.push({
+        commitment,
+        dueOn,
+        amount: Number(commitment.amount),
+        accountId: accountAt(timeline, dueOn),
+      })
       dueOn = addPeriod(dueOn, commitment.periodUnit, commitment.periodCount)
     }
   }
@@ -452,13 +511,18 @@ export async function confirmNextOccurrence(
 
     const expected = installment ? Number(installment.amount) : Number(commitment.amount)
     const outgoing = commitment.direction === 'outgoing'
+    const happenedOn = overrides.happenedOn ?? installment?.dueOn ?? commitment.nextDueOn
+    // The account is the one in force on the day the money moved, not the one
+    // the commitment hits now: an occurrence confirmed after a move left the
+    // old account, and writing it on the new one falsifies both balances.
+    const accountId = accountAt(await accountTimeline(tx, commitment.id), happenedOn)
     const movement = await declareMovementIn(tx, userId, {
-      happenedOn: overrides.happenedOn ?? installment?.dueOn ?? commitment.nextDueOn,
+      happenedOn,
       amount: overrides.amount ?? expected,
-      sourceAccountId: outgoing ? commitment.accountId : undefined,
+      sourceAccountId: outgoing ? accountId : undefined,
       targetActorId: outgoing ? commitment.actorId : undefined,
       sourceActorId: outgoing ? undefined : commitment.actorId,
-      targetAccountId: outgoing ? undefined : commitment.accountId,
+      targetAccountId: outgoing ? undefined : accountId,
       categoryId: commitment.categoryId ?? undefined,
       activityId: commitment.activityId,
       commitmentId: commitment.id,

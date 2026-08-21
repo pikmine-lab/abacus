@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
-import { addPeriod } from '../src/domain/period.ts'
+import { addPeriod, today } from '../src/domain/period.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import {
@@ -14,6 +14,7 @@ import {
   editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
+  moveAccount,
   pendingOccurrences,
   reviseSchedule,
   skipNextOccurrence,
@@ -495,31 +496,27 @@ test('a settled installment and its movement keep the same date, edited from eit
 test('editing a commitment corrects what it says, not the movements it produced', async () => {
   const user = await seedUser()
   const { subscription, account } = await subscriptionFixture(user)
-  const other = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
   const provider = await createActor(user, { name: 'Netflix SAS' })
   const movement = await confirmNextOccurrence(user, subscription.id)
 
   const edited = await editCommitment(user, subscription.id, {
     label: 'Netflix Standard',
     actorId: provider.id,
-    accountId: other.id,
     periodCount: 2,
   })
   assert.equal(edited.label, 'Netflix Standard')
   assert.equal(edited.actorId, provider.id)
-  assert.equal(edited.accountId, other.id)
   assert.equal(edited.periodCount, 2)
   // The amount has its own dated history: an edit never touches it.
   assert.equal(edited.amount, '13.49')
 
-  // What already happened, happened on the account it happened on.
+  // What already happened, happened with the actor it happened with.
   const [past] = await listMovements(user, { commitmentId: subscription.id })
   assert.equal(past!.id, movement.id)
   assert.equal(past!.sourceAccountId, account.id)
 
   // The next occurrence, though, follows the correction.
   const confirmed = await confirmNextOccurrence(user, subscription.id)
-  assert.equal(confirmed.sourceAccountId, other.id)
   assert.equal(confirmed.targetActorId, provider.id)
 })
 
@@ -527,14 +524,144 @@ test('editing a commitment refuses a reference that is not the user’s', async 
   const user = await seedUser()
   const other = await seedUser('user-2')
   const { subscription } = await subscriptionFixture(user)
-  const theirAccount = await createAccount({ userId: other, name: 'Theirs', behavior: 'payment' })
+  const theirActor = await createActor(other, { name: 'Theirs' })
 
   await assert.rejects(
-    editCommitment(user, subscription.id, { accountId: theirAccount.id }),
+    editCommitment(user, subscription.id, { actorId: theirActor.id }),
+    (e: DomainError) => e.code === 'actor_not_found',
+  )
+  await assert.rejects(
+    editCommitment(user, subscription.id, { actorId: '00000000-0000-0000-0000-000000000000' }),
+    (e: DomainError) => e.code === 'actor_not_found',
+  )
+})
+
+test('an occurrence confirmed after a move lands on the account it really left', async () => {
+  const user = await seedUser()
+  // Dates hang off today: the point is which side of the move an occurrence
+  // falls on, so the two must be built the same way.
+  const first = addPeriod(today(), 'month', -2)
+  const second = addPeriod(first, 'month', 1)
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const moved = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
+  const actor = await createActor(user, { name: 'Netflix' })
+  const subscription = await createSubscription(user, {
+    label: 'Netflix',
+    actorId: actor.id,
+    accountId: account.id,
+    amount: 13.49,
+    periodUnit: 'month',
+    firstDueOn: first,
+  })
+
+  const after = await moveAccount(user, subscription.id, moved.id, second)
+  // The move is already in force, so that is the account it hits now.
+  assert.equal(after.accountId, moved.id)
+  assert.equal(after.nextAccountMove, null)
+
+  // The occurrence left behind is still the old account's: it was debited
+  // before the move, whatever day it is finally confirmed.
+  const late = await confirmNextOccurrence(user, subscription.id)
+  assert.equal(late.happenedOn, first)
+  assert.equal(late.sourceAccountId, account.id)
+
+  // The one falling on the move's own date is the new account's.
+  const then = await confirmNextOccurrence(user, subscription.id)
+  assert.equal(then.happenedOn, second)
+  assert.equal(then.sourceAccountId, moved.id)
+
+  const events = await commitmentEvents(user, subscription.id)
+  const move = events.find((e) => e.type === 'account_changed')
+  assert.equal(move?.occurredOn, second)
+  assert.equal(move?.accountId, moved.id)
+})
+
+test('a move announced ahead waits for its date, and says so meanwhile', async () => {
+  const user = await seedUser()
+  const now = today()
+  const nextMonth = addPeriod(now, 'month', 1)
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const moved = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
+  const actor = await createActor(user, { name: 'Spotify' })
+  const subscription = await createSubscription(user, {
+    label: 'Spotify',
+    actorId: actor.id,
+    accountId: account.id,
+    amount: 11.99,
+    periodUnit: 'month',
+    firstDueOn: now,
+  })
+
+  const announced = await moveAccount(user, subscription.id, moved.id, nextMonth)
+  assert.equal(announced.accountId, account.id)
+  assert.deepEqual(announced.nextAccountMove, { accountId: moved.id, effectiveOn: nextMonth })
+  const [listed] = await listCommitmentsWithProgress(user)
+  assert.equal(listed!.accountId, account.id)
+  assert.deepEqual(listed!.nextAccountMove, { accountId: moved.id, effectiveOn: nextMonth })
+
+  // Each expected occurrence carries the account of its own date, so nothing
+  // has to be done on the day the move takes effect.
+  const pending = await pendingOccurrences(user, nextMonth)
+  assert.deepEqual(
+    pending.map((p) => [p.dueOn, p.accountId]),
+    [
+      [now, account.id],
+      [nextMonth, moved.id],
+    ],
+  )
+
+  assert.equal((await confirmNextOccurrence(user, subscription.id)).sourceAccountId, account.id)
+  assert.equal((await confirmNextOccurrence(user, subscription.id)).sourceAccountId, moved.id)
+})
+
+test('a recurring income moves the account it is credited to', async () => {
+  const user = await seedUser()
+  const first = addPeriod(today(), 'month', -1)
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const moved = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
+  const employer = await createActor(user, { name: 'ACME' })
+  const salary = await createSubscription(user, {
+    label: 'Salaire',
+    actorId: employer.id,
+    accountId: account.id,
+    direction: 'incoming',
+    amount: 2400,
+    periodUnit: 'month',
+    firstDueOn: first,
+  })
+
+  await moveAccount(user, salary.id, moved.id, first)
+  const movement = await confirmNextOccurrence(user, salary.id)
+  assert.equal(movement.kind, 'income')
+  assert.equal(movement.targetAccountId, moved.id)
+  assert.equal(movement.sourceActorId, employer.id)
+})
+
+test('a financing installment follows the account of its own due date', async () => {
+  const user = await seedUser()
+  const { financing, account } = await financingFixture(user)
+  const moved = await createAccount({ userId: user, name: 'Second', behavior: 'payment' })
+
+  // The plan is 2026-02-01, 2026-03-05, 2026-04-05: the move splits it.
+  await moveAccount(user, financing.id, moved.id, '2026-03-05')
+
+  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, account.id)
+  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, moved.id)
+  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, moved.id)
+})
+
+test('moving to an account that is not the user’s is refused', async () => {
+  const user = await seedUser()
+  const other = await seedUser('user-2')
+  const { subscription } = await subscriptionFixture(user)
+  const theirs = await createAccount({ userId: other, name: 'Theirs', behavior: 'payment' })
+
+  await assert.rejects(
+    moveAccount(user, subscription.id, theirs.id),
     (e: DomainError) => e.code === 'account_not_found',
   )
   await assert.rejects(
-    editCommitment(user, subscription.id, { accountId: '00000000-0000-0000-0000-000000000000' }),
+    moveAccount(user, subscription.id, '00000000-0000-0000-0000-000000000000'),
     (e: DomainError) => e.code === 'account_not_found',
   )
 })

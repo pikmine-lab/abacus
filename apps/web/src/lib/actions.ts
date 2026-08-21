@@ -19,6 +19,7 @@ import {
   createFinancing,
   createSubscription,
   editCommitment,
+  moveAccount,
   reviseSchedule,
   setJudgment,
   skipNextOccurrence,
@@ -600,12 +601,13 @@ export async function setJudgmentAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Corrects what a commitment says about itself. The amount is not here: it has
- * its own historised action, and a financing's comes from its schedule.
+ * Corrects what a commitment says about itself. Neither the amount nor the
+ * account is here: both are dated histories with their own gesture, and a
+ * financing's amount comes from its schedule.
  */
 export async function editCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'actor' }, { name: 'accountId' }])
+  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'actor' }])
   if (invalid) return { fields: invalid }
   const every = period(formData)
   if (!every) return { fields: { period: 'À renseigner.' } }
@@ -613,7 +615,6 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
     await editCommitment(userId, str(formData, 'commitmentId'), {
       label: str(formData, 'label'),
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
-      accountId: str(formData, 'accountId'),
       categoryId: opt(formData, 'categoryId') ?? null,
       activityId: opt(formData, 'activityId') ?? null,
       ...every,
@@ -621,6 +622,32 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
       // them: an empty value clears it rather than being refused.
       engagedUntil: opt(formData, 'engagedUntil') ?? null,
     })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Moves the debit (or credit) to another account, from a date. Dated because a
+ * move is usually known before it happens, and because an occurrence confirmed
+ * afterwards must still land on the account the money really left.
+ */
+export async function changeCommitmentAccountAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'accountId' }, { name: 'effectiveOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await moveAccount(
+      userId,
+      str(formData, 'commitmentId'),
+      str(formData, 'accountId'),
+      str(formData, 'effectiveOn'),
+    )
   } catch (e) {
     return { error: frError(e) }
   }

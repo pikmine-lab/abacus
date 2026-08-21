@@ -33,6 +33,7 @@ import {
   financingSchedule,
   listCommitmentsWithProgress,
   monthlyEquivalent,
+  moveAccount,
   pendingOccurrences,
   reviseSchedule,
   setJudgment,
@@ -182,6 +183,7 @@ export function buildServer(userId: string): McpServer {
     async () =>
       run(async () => {
         const accounts = await listAccounts(userId)
+        const names = new Map(accounts.map((a) => [a.id, a.name]))
         const accountsView = await Promise.all(
           accounts.map(async (a) => {
             const check = await latestCheck(userId, a.id)
@@ -205,8 +207,11 @@ export function buildServer(userId: string): McpServer {
           pendingOccurrences: pending.map((p) => ({
             commitment: p.commitment.label,
             dueOn: p.dueOn,
-            amount: Number(p.commitment.amount),
+            amount: p.amount,
             direction: p.commitment.direction,
+            // The account of its own date, which is not always the one the
+            // commitment hits today: a move may have happened in between.
+            account: names.get(p.accountId),
           })),
           outstandingAdvances: advances,
           monthlyCommittedCost: Math.round(monthlyOut * 100) / 100,
@@ -672,7 +677,7 @@ export function buildServer(userId: string): McpServer {
     'update_commitment',
     {
       description:
-        'Corrects what an existing commitment says about itself: its label, who bills it, the account it hits, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "it is not debited from that account any more", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Two things have their own tool: the amount, because a price change is dated history (manage_subscription change_price), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
       inputSchema: z.object({
         commitment: z.string().describe('Label (or id) of the commitment to correct'),
         label: z.string().optional().describe('New label'),
@@ -680,7 +685,6 @@ export function buildServer(userId: string): McpServer {
           .string()
           .optional()
           .describe('The actor billing (or paying) from now on. Must already exist'),
-        account: z.string().optional().describe('The account debited (or credited) from now on'),
         category: z.string().optional().describe('Exact name of an existing category, or "none" to clear it'),
         activity: z.string().optional().describe('Existing activity name, or "none" to clear it'),
         periodUnit: z.enum(['week', 'month', 'year']).optional(),
@@ -699,7 +703,6 @@ export function buildServer(userId: string): McpServer {
         const updated = await editCommitment(userId, target.id, {
           label: u.label,
           actorId: u.actor ? (await requireActorByName(userId, u.actor)).actor.id : undefined,
-          accountId: u.account ? (await requireAccountByName(userId, u.account)).id : undefined,
           categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           periodUnit: u.periodUnit,
@@ -712,6 +715,35 @@ export function buildServer(userId: string): McpServer {
           every: `${updated.periodCount} ${updated.periodUnit}`,
           engagedUntil: updated.engagedUntil ?? undefined,
           note: 'Applies from the next occurrence: the movements already recorded are unchanged.',
+        })
+      }),
+  )
+
+  server.registerTool(
+    'change_commitment_account',
+    {
+      description:
+        'Moves a commitment to another account, from a date: "from next month that direct debit leaves the other account". The account a commitment hits is a dated history, like its amount, so this is an event and not a correction. Declare it the day it is learnt, future date included: every occurrence then lands on the account in force on its own date, including one confirmed weeks late, which is what keeps both balances true. Movements already recorded are never rewritten. For what a commitment says about itself with no date (label, actor, category, periodicity), use update_commitment.',
+      inputSchema: z.object({
+        commitment: z.string().describe('Label (or id) of the commitment'),
+        account: z.string().describe('The account it hits from that date on'),
+        effectiveOn: isoDate
+          .optional()
+          .describe('The date the move takes effect, past or future. Defaults to today'),
+      }),
+    },
+    async (m) =>
+      run(async () => {
+        const target = await requireCommitment(userId, m.commitment)
+        const account = await requireAccountByName(userId, m.account)
+        const updated = await moveAccount(userId, target.id, account.id, m.effectiveOn)
+        const from = m.effectiveOn ?? 'today'
+        return ok({
+          commitmentId: updated.id,
+          label: updated.label,
+          account: account.name,
+          effectiveOn: from,
+          note: `Occurrences due before ${from} still land on the previous account, and movements already recorded are unchanged.`,
         })
       }),
   )
@@ -837,12 +869,22 @@ export function buildServer(userId: string): McpServer {
     async ({ includeCancelled }) =>
       run(async () => {
         const commitments = await listCommitmentsWithProgress(userId, !includeCancelled)
+        const names = new Map((await listAccounts(userId)).map((a) => [a.id, a.name]))
+        // A move already declared for a later date belongs in the review: it is
+        // state nothing else would show before the day it takes effect.
+        const account = (c: (typeof commitments)[number]) => ({
+          account: names.get(c.accountId),
+          movingTo: c.nextAccountMove
+            ? { account: names.get(c.nextAccountMove.accountId), on: c.nextAccountMove.effectiveOn }
+            : undefined,
+        })
         const view = commitments.map((c) => {
           if (c.kind === 'financing' && c.progress) {
             return {
               type: 'financing',
               label: c.label,
               id: c.id,
+              ...account(c),
               installment: Number(c.amount),
               paidInstallments: `${c.progress.paidInstallments}/${c.installmentsTotal}`,
               remainingDue: c.progress.remainingDue,
@@ -853,6 +895,7 @@ export function buildServer(userId: string): McpServer {
             type: 'subscription',
             label: c.label,
             id: c.id,
+            ...account(c),
             direction: c.direction,
             amount: Number(c.amount),
             every: `${c.periodCount} ${c.periodUnit}`,
@@ -898,6 +941,7 @@ export function buildServer(userId: string): McpServer {
     },
     async ({ items }) => {
       const results: unknown[] = []
+      const names = new Map((await listAccounts(userId)).map((a) => [a.id, a.name]))
       for (const item of items) {
         try {
           const commitment = await requireCommitment(userId, item.commitment)
@@ -916,6 +960,9 @@ export function buildServer(userId: string): McpServer {
               commitment: commitment.label,
               movementId: movement.id,
               amount: Number(movement.amount),
+              // The account of the movement's own date: an occurrence confirmed
+              // after the commitment moved lands on the one it really left.
+              account: names.get(movement.sourceAccountId ?? movement.targetAccountId ?? ''),
               ...(diverged
                 ? {
                     expected,

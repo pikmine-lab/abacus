@@ -53,7 +53,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      # The web app typechecks through its own Next build (JSX config lives there).
+      # `pnpm typecheck` already covers the web app. What the build adds is the
+      # route types Next generates under .next/types, and that the app builds.
       - run: pnpm --filter @abacus/web build
         env:
           BETTER_AUTH_SECRET: ci-build-only
