@@ -16,7 +16,7 @@ export interface Step {
   done: boolean
 }
 
-export function Onboarding({ steps, apiKeyHref }: { steps: Step[]; apiKeyHref: string }) {
+export function Onboarding({ steps, mcpHref }: { steps: Step[]; mcpHref: string }) {
   const nextIndex = steps.findIndex((s) => !s.done)
 
   return (
@@ -78,9 +78,9 @@ export function Onboarding({ steps, apiKeyHref }: { steps: Step[]; apiKeyHref: s
       </ol>
 
       <p className="text-[12.5px] leading-relaxed text-faint">
-        Tu peux aussi tout déclarer en langage naturel depuis Claude, en branchant le serveur MCP :{' '}
-        <Link href={apiKeyHref} className="text-primary underline-offset-2 hover:underline">
-          créer une clé d’API
+        Tu peux aussi tout déclarer en langage naturel depuis une IA :{' '}
+        <Link href={mcpHref} className="text-primary underline-offset-2 hover:underline">
+          brancher une IA
         </Link>
         .
       </p>

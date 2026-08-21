@@ -16,6 +16,8 @@ export const SPEC = {
   /** Compose file, relative to the repository root. */
   composeFile: 'deploy/docker-compose.yml',
   publicUrl: 'https://abacus.payangar.dev',
+  /** Endpoint the web app hands out on the "brancher une IA" screen. */
+  mcpUrl: 'https://abacus-mcp.payangar.dev/mcp',
   domains: [
     { host: 'abacus.payangar.dev', serviceName: 'web', port: 3000 },
     { host: 'abacus-mcp.payangar.dev', serviceName: 'mcp', port: 3000 },

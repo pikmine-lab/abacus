@@ -10,6 +10,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       PUBLIC_URL: ${PUBLIC_URL}
+      MCP_URL: ${MCP_URL}
     networks:
       - dokploy-network
 

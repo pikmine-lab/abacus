@@ -55,7 +55,8 @@ nr db:reset      # base vierge (détruit le volume)
 
 L'app web se lance avec `pnpm --filter @abacus/web dev` et lit `apps/web/.env.local`
 (non commité) : `DATABASE_URL` vers la base Docker, `BETTER_AUTH_SECRET` quelconque,
-`PUBLIC_URL=http://localhost:3000`.
+`PUBLIC_URL=http://localhost:3000`, et `MCP_URL` (l'endpoint que l'écran « Brancher une
+IA » livre ; sans elle, l'écran le signale au lieu d'afficher une commande fausse).
 
 **Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
 toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
@@ -109,7 +110,8 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
   `DOKPLOY_AUTH_TOKEN`, `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`) ; copies locales dans
   `~/.config/abacus/`. Dépôt public : aucun secret, aucune topologie serveur ici.
 - Variables runtime des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
-  (obligatoire en production, sinon crash à la première requête), `PORT` (MCP).
+  (obligatoire en production, sinon crash à la première requête), `PORT` (MCP), `MCP_URL`
+  (web : l'endpoint MCP donné à l'utilisateur, écrit par le provisionneur depuis `SPEC`).
 - Actions GitHub épinglées par commit, jamais par tag.
 - **Piège** : les checks requis de la protection de `main` portent les noms complets des
   jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un Dockerfile ou la matrice
@@ -120,8 +122,13 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 
 Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, auth
 `Authorization: Bearer <clé d'API>`). Les clés sont par utilisateur, gérées par le plugin
-api-key de Better Auth, et se créent depuis l'écran **Réglages**. Côté Claude :
-`claude mcp add --transport http abacus https://abacus-mcp.payangar.dev/mcp --header "Authorization: Bearer <clé>"`.
+api-key de Better Auth. L'écran **Brancher une IA** (menu du compte) crée la clé et rend
+la commande complète, prête à coller, pour Claude Code comme pour un client à
+`mcpServers` : c'est la source à jour, ne pas recopier de commande ici.
+
+Une clé ne branche que les clients qui acceptent un en-tête HTTP (Claude Code, Cursor,
+VS Code, Codex). Les connecteurs personnalisés de l'application Claude ne prennent qu'une
+URL et un OAuth, que le serveur MCP ne sait pas encore servir.
 
 ## État (2026-08-20)
 
@@ -137,6 +144,13 @@ identité (marque abaque + favicon). Les cas d'usage ouverts dans l'UI existent 
 côté MCP : `fix_movement` (corriger ou supprimer une déclaration erronée) et, sur
 `confirm_due_movements`, la qualification d'un écart (ponctuel ou nouveau montant de
 référence, historisé).
+
+**Raccordement d'une IA** (2026-08-21) : la création de clé a quitté Réglages pour son
+propre écran, **Brancher une IA** (menu du compte) : deux pas numérotés, créer la clé puis
+coller la commande complète, en deux formes (CLI Claude Code, bloc `mcpServers` pour les
+clients à fichier). Rien n'est mémorisé du client choisi : la commande entière n'existe
+que le temps où la clé est visible. Le premier jet, trop bavard, a produit la règle
+`DESIGN.md` § *Ce qu'on écrit à l'écran*, qui vaut pour tous les écrans.
 
 **Échéanciers de financement** (2026-08-20) : un financement porte un échéancier
 écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
