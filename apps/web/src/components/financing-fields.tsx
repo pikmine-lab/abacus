@@ -6,7 +6,7 @@ import { AmountInput } from '@/components/amount-input'
 import { DateField, Field } from '@/components/forms'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { eur, frDate } from '@/lib/utils'
+import { addMonths, eur, frDate } from '@/lib/utils'
 
 /**
  * A payment plan, stated the way the contract states it: a total over N
@@ -29,20 +29,9 @@ interface Line {
 function buildSchedule(total: number, count: number, firstDueOn: string): Line[] {
   const cents = Math.round(total * 100)
   const share = Math.floor(cents / count)
-  const [y, m, d] = firstDueOn.split('-').map(Number)
   return Array.from({ length: count }, (_, index) => {
     const amount = index === count - 1 ? cents - share * (count - 1) : share
-    // Same clamping as the domain's addPeriod: the 31st falls on the 28th in
-    // February rather than sliding into March.
-    const month = m! - 1 + index
-    const year = y! + Math.floor(month / 12)
-    const monthIndex = ((month % 12) + 12) % 12
-    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
-    const day = String(Math.min(d!, lastDay)).padStart(2, '0')
-    return {
-      dueOn: `${year}-${String(monthIndex + 1).padStart(2, '0')}-${day}`,
-      amount: (amount / 100).toFixed(2),
-    }
+    return { dueOn: addMonths(firstDueOn, index), amount: (amount / 100).toFixed(2) }
   })
 }
 

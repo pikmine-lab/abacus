@@ -13,6 +13,8 @@ import {
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  editCommitment,
+  reviseSchedule,
   setJudgment,
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
@@ -74,6 +76,10 @@ const FR: Record<string, string> = {
   transfer_has_no_category: 'Un virement interne ne porte pas de catégorie.',
   not_an_advance: 'Le mouvement visé n’est pas une avance.',
   financing_settled: 'Ce financement est déjà soldé.',
+  not_a_financing: 'Seul un financement porte un échéancier écrit.',
+  schedule_empty: 'Un financement garde au moins une échéance : clos-le plutôt que de vider son plan.',
+  installment_not_found: 'Une échéance de ce plan n’existe plus : rouvre le panneau pour repartir à jour.',
+  installment_repeated: 'La même échéance apparaît deux fois dans le plan.',
   cancelled: 'Cet engagement est résilié.',
   already_cancelled: 'Cet engagement est déjà résilié.',
   no_gap: 'Ce pointage n’a aucun écart à solder.',
@@ -389,6 +395,32 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
   return { ok: true }
 }
 
+/**
+ * Revises the plan of an existing financing. The panel sends the whole plan,
+ * one parallel list per column, in the order the rows were rendered: that
+ * order is the contractual order, and an empty id marks a line being added.
+ */
+export async function reviseScheduleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const ids = formData.getAll('installmentId').map(String)
+  const lines = scheduleFrom(formData)
+  if (!lines)
+    return { error: 'Un financement garde au moins une échéance : clos-le plutôt que de vider son plan.' }
+  if (lines.some((line) => !/^\d{4}-\d{2}-\d{2}$/.test(line.dueOn) || !(line.amount > 0)))
+    return { error: 'Chaque échéance a besoin d’une date et d’un montant supérieur à zéro.' }
+  try {
+    await reviseSchedule(
+      userId,
+      str(formData, 'commitmentId'),
+      lines.map((line, index) => ({ id: ids[index] || undefined, ...line })),
+    )
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
 export async function confirmOccurrenceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
   try {
@@ -421,6 +453,29 @@ export async function setJudgmentAction(formData: FormData): Promise<void> {
   if (judgment === '') return
   await setJudgment(userId, str(formData, 'commitmentId'), judgment as Judgment)
   refreshAll()
+}
+
+/**
+ * Corrects what a commitment says about itself. The amount is not here: it has
+ * its own historised action, and a financing's comes from its schedule.
+ */
+export async function editCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'actor' }, { name: 'accountId' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editCommitment(userId, str(formData, 'commitmentId'), {
+      label: str(formData, 'label'),
+      actorId: await actorIdFromName(userId, str(formData, 'actor')),
+      accountId: str(formData, 'accountId'),
+      categoryId: opt(formData, 'categoryId') ?? null,
+      periodUnit: str(formData, 'periodUnit') as PeriodUnit,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
 }
 
 export async function changePriceAction(_prev: FormState, formData: FormData): Promise<FormState> {

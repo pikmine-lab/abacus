@@ -4,6 +4,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listCategories } from '@abacus/core/services/catalog'
 import {
+  financingSchedule,
   listCommitmentsWithProgress,
   monthlyEquivalent,
   pendingOccurrences,
@@ -49,6 +50,29 @@ export default async function RecurringExpensesPage({
   const subscriptions = active.filter((c) => c.kind === 'subscription')
   const financings = active.filter((c) => c.kind === 'financing')
   const cancelled = outgoing.filter((c) => c.cancelledOn)
+  // Same references the creation form offers, so a row can be corrected too.
+  const options = {
+    accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
+    actors: actors.map((a) => ({ id: a.id, name: a.name })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+  }
+  // The plans themselves, so a financing's schedule can be revised from its row.
+  const schedules = new Map(
+    await Promise.all(
+      financings.map(
+        async (c) =>
+          [
+            c.id,
+            (await financingSchedule(userId, c.id)).map((i) => ({
+              id: i.id,
+              dueOn: i.dueOn,
+              amount: i.amount,
+              paid: i.movementId !== null,
+            })),
+          ] as const,
+      ),
+    ),
+  )
   const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
 
   const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalent(c), 0)
@@ -156,7 +180,7 @@ export default async function RecurringExpensesPage({
               {[...subscriptions]
                 .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
                 .map((c) => (
-                  <CommitmentRow key={c.id} commitment={c} showJudgment />
+                  <CommitmentRow key={c.id} commitment={c} showJudgment options={options} />
                 ))}
             </Rows>
           )}
@@ -166,7 +190,14 @@ export default async function RecurringExpensesPage({
           <Section title="Financements en cours" description="s’éteignent seuls à la dernière échéance">
             <Rows>
               {financings.map((c) => (
-                <CommitmentRow key={c.id} commitment={c} showJudgment={false} />
+                <CommitmentRow
+                  key={c.id}
+                  commitment={c}
+                  showJudgment={false}
+                  schedule={schedules.get(c.id)}
+                  today={today()}
+                  options={options}
+                />
               ))}
             </Rows>
           </Section>

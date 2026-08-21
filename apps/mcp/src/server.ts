@@ -9,10 +9,12 @@ import {
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
   monthlyEquivalent,
   pendingOccurrences,
+  reviseSchedule,
   setJudgment,
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
@@ -82,6 +84,16 @@ const GUIDANCE: Record<string, string> = {
     'The installments do not add up to the total. Fix one or the other: a plan that does not sum to what is owed would make the remaining due wrong.',
   cannot_skip_financing:
     'A financing installment cannot be skipped: it is owed. Confirm it when it is paid, or cancel the financing if the plan ended early.',
+  not_a_financing:
+    'Only a financing carries a written schedule. A subscription is open-ended: change its amount with manage_subscription.',
+  financing_has_no_lock_in:
+    'A financing ends at its last installment, so it has no lock-in date. A lock-in period only makes sense on a subscription.',
+  schedule_empty:
+    'A revision cannot leave a financing without a single installment. To end it early, either revise it down to the installments that remain owed, or cancel it with manage_subscription.',
+  installment_not_found:
+    'No installment with that id in this financing. Call manage_financing_schedule with action show to get the current ids: they change when a line is dropped.',
+  installment_repeated:
+    'The same installment id appears twice in the revision. Each line of the plan is one installment: use one entry per installment, and omit the id to add a new one.',
   bad_source: 'A movement needs exactly one source: an owned account or an external actor, never both.',
   bad_target: 'A movement needs exactly one target: an owned account or an external actor, never both.',
   no_owned_account:
@@ -398,7 +410,7 @@ export function buildServer(userId: string): McpServer {
     'manage_subscription',
     {
       description:
-        'Manages subscriptions and recurring incomes (open-ended commitments). Actions: create (new subscription, or a salary with direction incoming), change_price (the price changed: the dated history is kept, which is how raises become visible), set_judgment (essential / reducible / to_cancel, with a note), cancel (no more occurrences). For an installment purchase use declare_financing. The actual debit of each occurrence is confirmed through confirm_due_movements, never through declare_movements.',
+        'Manages subscriptions and recurring incomes (open-ended commitments). Actions: create (new subscription, or a salary with direction incoming), change_price (the price changed: the dated history is kept, which is how raises become visible), set_judgment (essential / reducible / to_cancel, with a note), cancel (no more occurrences). For an installment purchase use declare_financing. To correct what the commitment says about itself (label, actor, account, category, periodicity), use update_commitment: a mistyped label is a correction, not a price change. The actual debit of each occurrence is confirmed through confirm_due_movements, never through declare_movements.',
       inputSchema: z.object({
         action: z.enum(['create', 'change_price', 'set_judgment', 'cancel']),
         commitment: z
@@ -484,10 +496,60 @@ export function buildServer(userId: string): McpServer {
   )
 
   server.registerTool(
+    'update_commitment',
+    {
+      description:
+        'Corrects what an existing commitment says about itself: its label, who bills it, the account it hits, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "it is not debited from that account any more", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Two things have their own tool: the amount, because a price change is dated history (manage_subscription change_price), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+      inputSchema: z.object({
+        commitment: z.string().describe('Label (or id) of the commitment to correct'),
+        label: z.string().optional().describe('New label'),
+        actor: z
+          .string()
+          .optional()
+          .describe('The actor billing (or paying) from now on. Must already exist'),
+        account: z.string().optional().describe('The account debited (or credited) from now on'),
+        category: z.string().optional().describe('Exact name of an existing category, or "none" to clear it'),
+        activity: z.string().optional().describe('Existing activity name, or "none" to clear it'),
+        periodUnit: z.enum(['week', 'month', 'year']).optional(),
+        periodCount: z.number().int().positive().optional().describe('Every N periods'),
+        engagedUntil: z
+          .string()
+          .optional()
+          .describe('Subscription only: end of the contractual lock-in as YYYY-MM-DD, or "none" to clear it'),
+      }),
+    },
+    async (u) =>
+      run(async () => {
+        const target = await requireCommitment(userId, u.commitment)
+        const clearable = (value: string | undefined) =>
+          value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
+        const category = clearable(u.category)
+        const activity = clearable(u.activity)
+        const updated = await editCommitment(userId, target.id, {
+          label: u.label,
+          actorId: u.actor ? (await requireActorByName(userId, u.actor)).actor.id : undefined,
+          accountId: u.account ? (await requireAccountByName(userId, u.account)).id : undefined,
+          categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
+          activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
+          periodUnit: u.periodUnit,
+          periodCount: u.periodCount,
+          engagedUntil: clearable(u.engagedUntil),
+        })
+        return ok({
+          commitmentId: updated.id,
+          label: updated.label,
+          every: `${updated.periodCount} ${updated.periodUnit}`,
+          engagedUntil: updated.engagedUntil ?? undefined,
+          note: 'Applies from the next occurrence: the movements already recorded are unchanged.',
+        })
+      }),
+  )
+
+  server.registerTool(
     'declare_financing',
     {
       description:
-        'Declares an installment purchase (financing): a total amount paid in N installments. Give the total and the number of installments and the schedule is written for you : equal amounts one period apart, the rounding cent on the last one. Pass installments instead when the real plan is not that: a prorated first month, uneven thirds, a date pushed off a weekend, a payment holiday. That is the normal case for a contract read off a paper, so prefer it whenever the user states actual dates or amounts. Whichever you pass, the installments must add up to the total. The remaining due is then the sum of what is still owed, and each installment is confirmed for its own amount through confirm_due_movements.',
+        'Declares an installment purchase (financing): a total amount paid in N installments. Give the total and the number of installments and the schedule is written for you : equal amounts one period apart, the rounding cent on the last one. Pass installments instead when the real plan is not that: a prorated first month, uneven thirds, a date pushed off a weekend, a payment holiday. That is the normal case for a contract read off a paper, so prefer it whenever the user states actual dates or amounts. Whichever you pass, the installments must add up to the total. The remaining due is then the sum of what is still owed, and each installment is confirmed for its own amount through confirm_due_movements. A plan is not final once written: manage_financing_schedule revises it when reality moves (a date pushed back, an amount renegotiated, an installment added or dropped).',
       inputSchema: z.object({
         label: z.string().describe('What is being financed (e.g. "Sofa x4")'),
         actor: z.string().describe('The creditor (store, payment provider)'),
@@ -538,6 +600,55 @@ export function buildServer(userId: string): McpServer {
             position: i.position,
             dueOn: i.dueOn,
             amount: Number(i.amount),
+          })),
+        })
+      }),
+  )
+
+  server.registerTool(
+    'manage_financing_schedule',
+    {
+      description:
+        'Reads and revises the written plan of a financing. show lists every installment with its id, its date, its amount and whether it is already paid. revise replaces that plan with the one you pass: this is how a pushed-back date, a renegotiated amount, an extra installment or an early settlement gets recorded, and the remaining due follows. Always show before revise, because a revision is the whole plan, not a patch: keep the id of every installment you keep, omit the id to add one, and leave a line out to drop it (dropping a paid one deletes the movement that paid it, so only do that when the installment never was owed). The total owed becomes the sum of the plan, so a renegotiation is expressible instead of blocked. Fixing what was really debited on a paid installment can also be done through fix_movement: both sides stay in sync either way.',
+      inputSchema: z.object({
+        action: z.enum(['show', 'revise']),
+        commitment: z.string().describe('Label (or id) of the financing'),
+        installments: z
+          .array(
+            z.object({
+              id: z
+                .string()
+                .optional()
+                .describe('Id of the installment this line keeps, from show. Omit to add a new one'),
+              dueOn: isoDate.describe('Date this installment is owed'),
+              amount: z.number().positive().describe('Amount of this installment alone'),
+            }),
+          )
+          .min(1)
+          .optional()
+          .describe('revise: the complete plan you want, in contractual order'),
+      }),
+    },
+    async ({ action, commitment, installments }) =>
+      run(async () => {
+        const target = await requireCommitment(userId, commitment)
+        if (target.kind !== 'financing')
+          return fail(GUIDANCE.not_a_financing ?? 'Only a financing carries a written schedule.')
+        if (action === 'revise' && !installments)
+          return fail('revise requires installments: the whole plan you want, one entry per installment.')
+        const financing =
+          action === 'revise' ? await reviseSchedule(userId, target.id, installments!) : target
+        return ok({
+          commitmentId: financing.id,
+          label: financing.label,
+          totalAmount: Number(financing.totalAmount),
+          nextDueOn: financing.nextDueOn,
+          installments: (await financingSchedule(userId, financing.id)).map((i) => ({
+            id: i.id,
+            position: i.position,
+            dueOn: i.dueOn,
+            amount: Number(i.amount),
+            status: i.movementId ? 'paid' : 'due',
           })),
         })
       }),
@@ -851,7 +962,7 @@ export function buildServer(userId: string): McpServer {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the advance or refund links. Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the advance or refund links. Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),

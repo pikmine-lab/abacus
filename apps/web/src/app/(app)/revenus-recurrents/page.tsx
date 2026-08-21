@@ -48,6 +48,12 @@ export default async function RecurringIncomePage({
   const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
 
   const monthly = active.reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  // Same references the creation form offers, so a row can be corrected too.
+  const options = {
+    accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
+    actors: actors.map((a) => ({ id: a.id, name: a.name })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+  }
 
   return (
     <>
@@ -125,7 +131,7 @@ export default async function RecurringIncomePage({
               {[...active]
                 .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
                 .map((c) => (
-                  <CommitmentRow key={c.id} commitment={c} showJudgment={false} />
+                  <CommitmentRow key={c.id} commitment={c} showJudgment={false} options={options} />
                 ))}
             </Rows>
           )}

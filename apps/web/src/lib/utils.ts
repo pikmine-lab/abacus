@@ -39,6 +39,20 @@ export function frDateLong(iso: string): string {
   })
 }
 
+/**
+ * Same clamping as the domain's addPeriod: the 31st lands on the 28th in
+ * February rather than sliding into March.
+ */
+export function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const shifted = m! - 1 + months
+  const year = y! + Math.floor(shifted / 12)
+  const monthIndex = ((shifted % 12) + 12) % 12
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
+  const day = String(Math.min(d!, lastDay)).padStart(2, '0')
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${day}`
+}
+
 function utcDay(iso: string): number {
   const [y, m, d] = iso.split('-').map(Number)
   return Date.UTC(y!, m! - 1, d!)
