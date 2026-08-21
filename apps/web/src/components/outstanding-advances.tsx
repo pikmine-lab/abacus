@@ -37,12 +37,12 @@ export interface OpenAdvance {
 export function OutstandingAdvances({
   advances,
   today,
-  retour,
+  back,
 }: {
   advances: OpenAdvance[]
   today: string
   /** Where a failed action comes back to, with its message. */
-  retour: string
+  back: string
 }) {
   return (
     <Rows>
@@ -54,14 +54,14 @@ export function OutstandingAdvances({
           key={`${advance.movementId}-${advance.remaining}`}
           advance={advance}
           today={today}
-          retour={retour}
+          back={back}
         />
       ))}
     </Rows>
   )
 }
 
-function AdvanceRow({ advance, today, retour }: { advance: OpenAdvance; today: string; retour: string }) {
+function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: string; back: string }) {
   const [dateOpen, setDateOpen] = useState(false)
   const partial = advance.expected < advance.expense
 
@@ -78,7 +78,7 @@ function AdvanceRow({ advance, today, retour }: { advance: OpenAdvance; today: s
 
       <form action={refundAdvanceAction} className="ml-auto flex flex-wrap items-center gap-2">
         <input type="hidden" name="movementId" value={advance.movementId} />
-        <input type="hidden" name="retour" value={retour} />
+        <input type="hidden" name="back" value={back} />
         <AmountInput
           name="amount"
           defaultValue={advance.remaining.toFixed(2)}
@@ -103,7 +103,7 @@ function AdvanceRow({ advance, today, retour }: { advance: OpenAdvance; today: s
         <DropdownMenuItem asChild variant="destructive">
           <form action={closeAdvanceAction}>
             <input type="hidden" name="movementId" value={advance.movementId} />
-            <input type="hidden" name="retour" value={retour} />
+            <input type="hidden" name="back" value={back} />
             <button type="submit" className="flex w-full items-center gap-2">
               <HandCoinsIcon />
               Solder : il ne rendra rien

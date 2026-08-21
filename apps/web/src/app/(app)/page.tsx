@@ -53,7 +53,7 @@ const STALE_CHECK_DAYS = 45
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string; ref?: string }>
+  searchParams: Promise<{ period?: string; ref?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -88,21 +88,21 @@ export default async function OverviewPage({
       {
         title: 'Déclare tes comptes',
         why: 'Un compte courant suffit pour commencer. C’est ce qui porte les soldes et rend tout le reste calculable.',
-        href: '/comptes',
+        href: '/accounts',
         cta: 'Ajouter un compte',
         done: accounts.length > 0,
       },
       {
         title: 'Déclare quelques mouvements',
         why: 'Dépenses, revenus, virements entre tes comptes. Dès le premier, les soldes et les graphes existent.',
-        href: '/mouvements',
+        href: '/movements',
         cta: 'Déclarer',
         done: firstDay !== null,
       },
       {
         title: 'Déclare tes engagements récurrents',
         why: 'Abonnements et salaire : l’app en déduit ton coût mensuel engagé et te propose les échéances à confirmer.',
-        href: '/depenses-recurrentes',
+        href: '/recurring-expenses',
         cta: 'Ajouter',
         done: active.length > 0,
       },
@@ -110,7 +110,7 @@ export default async function OverviewPage({
     return (
       <>
         <PageHeader title="Bienvenue" />
-        <Onboarding steps={steps} mcpHref="/brancher-une-ia" />
+        <Onboarding steps={steps} mcpHref="/connect-ai" />
       </>
     )
   }
@@ -169,7 +169,7 @@ export default async function OverviewPage({
             hero
             label="Patrimoine"
             value={eur(wealth)}
-            href="/comptes?de=accueil"
+            href="/accounts?from=overview"
             delta={
               days.length > 1
                 ? { value: Math.round(wealthEnd - wealthStart), label: 'sur la période' }
@@ -200,7 +200,7 @@ export default async function OverviewPage({
           <StatTile
             label={`Dépensé · ${period.label}`}
             value={eur(expenseNet)}
-            href="/analyse?de=accueil"
+            href="/analysis?from=overview"
             delta={
               previousTotals
                 ? {
@@ -223,7 +223,7 @@ export default async function OverviewPage({
           <StatTile
             label="Récurrent engagé"
             value={`${eur(monthlyCommitted, 2)}/mois`}
-            href="/depenses-recurrentes?de=accueil"
+            href="/recurring-expenses?from=overview"
             hint={`${subscriptions.length} abonnement${subscriptions.length > 1 ? 's' : ''}${
               financings.length > 0
                 ? ` · ${financings.length} financement${financings.length > 1 ? 's' : ''}`
@@ -238,14 +238,14 @@ export default async function OverviewPage({
               {/* One line per direction: an occurrence to confirm lives on the
                   page of its own kind, and a single link could only guess. */}
               {[
-                { items: pendingOut, href: '/depenses-recurrentes', noun: 'prélèvement' },
-                { items: pendingIn, href: '/revenus-recurrents', noun: 'versement' },
+                { items: pendingOut, href: '/recurring-expenses', noun: 'prélèvement' },
+                { items: pendingIn, href: '/recurring-income', noun: 'versement' },
               ]
                 .filter((group) => group.items.length > 0)
                 .map((group) => (
                   <Link
                     key={group.href}
-                    href={`${group.href}?de=accueil`}
+                    href={`${group.href}?from=overview`}
                     className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
                   >
                     <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
@@ -261,7 +261,7 @@ export default async function OverviewPage({
                 ))}
               {staleChecks.length > 0 && (
                 <Link
-                  href="/comptes?de=accueil"
+                  href="/accounts?from=overview"
                   className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
                 >
                   <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-faint" />
@@ -285,7 +285,7 @@ export default async function OverviewPage({
               )}
               {claims > 0 && (
                 <Link
-                  href="/mouvements?avances=1&de=accueil"
+                  href="/movements?advances=1&from=overview"
                   className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
                 >
                   <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-faint" />
@@ -303,7 +303,7 @@ export default async function OverviewPage({
         <Section
           title="Soldes"
           description={`${period.label} · calculé depuis les mouvements déclarés`}
-          action={<SectionLink href="/comptes?de=accueil">Comptes</SectionLink>}
+          action={<SectionLink href="/accounts?from=overview">Comptes</SectionLink>}
         >
           <BalanceChart
             accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
@@ -323,7 +323,7 @@ export default async function OverviewPage({
           <Section
             title="Dépenses par catégorie"
             description={period.label}
-            action={<SectionLink href="/analyse?de=accueil">Analyse</SectionLink>}
+            action={<SectionLink href="/analysis?from=overview">Analyse</SectionLink>}
           >
             <BreakdownBars
               rows={breakdown.map((r) => ({
@@ -333,8 +333,8 @@ export default async function OverviewPage({
                 net: Number(r.net),
                 count: Number(r.count),
               }))}
-              filterParam="categorie"
-              from="accueil"
+              filterParam="category"
+              from="overview"
               max={6}
               emptyLabel="Aucune dépense déclarée sur cette période."
             />
@@ -343,7 +343,7 @@ export default async function OverviewPage({
           <Section
             title="Prochaines échéances"
             description="abonnements, financements et revenus récurrents"
-            action={<SectionLink href="/depenses-recurrentes?de=accueil">Tout voir</SectionLink>}
+            action={<SectionLink href="/recurring-expenses?from=overview">Tout voir</SectionLink>}
           >
             {active.length === 0 ? (
               <EmptyLine>Aucun engagement déclaré.</EmptyLine>
@@ -357,8 +357,8 @@ export default async function OverviewPage({
                       key={c.id}
                       href={
                         c.direction === 'incoming'
-                          ? '/revenus-recurrents?de=accueil'
-                          : '/depenses-recurrentes?de=accueil'
+                          ? '/recurring-income?from=overview'
+                          : '/recurring-expenses?from=overview'
                       }
                       className="group flex items-center gap-2 py-2.5 hover:bg-secondary/40"
                     >

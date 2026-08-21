@@ -21,9 +21,9 @@ export interface BreakdownItem {
 
 /** What an unset dimension is called, in the words of that dimension. */
 const NO_KEY: Record<string, string> = {
-  categorie: 'Sans catégorie',
-  acteur: 'Sans acteur',
-  activite: 'Hors activité',
+  category: 'Sans catégorie',
+  actor: 'Sans acteur',
+  activity: 'Hors activité',
 }
 
 export function BreakdownBars({
@@ -35,7 +35,7 @@ export function BreakdownBars({
   max: maxRows,
 }: {
   rows: BreakdownItem[]
-  filterParam: 'categorie' | 'acteur' | 'activite'
+  filterParam: 'category' | 'actor' | 'activity'
   /** Origin key, so the movements page can offer the way back. */
   from: string
   emptyLabel?: string
@@ -81,7 +81,7 @@ export function BreakdownBars({
         return row.key ? (
           <Link
             key={row.key}
-            href={`/mouvements?${filterParam}=${row.key}&de=${from}`}
+            href={`/movements?${filterParam}=${row.key}&from=${from}`}
             className={`${layout} -mx-2 rounded-md px-2 hover:bg-secondary/40`}
             title={`${row.count} mouvement${row.count > 1 ? 's' : ''} · voir le détail`}
           >

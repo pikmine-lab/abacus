@@ -33,22 +33,22 @@ export interface PendingItem {
  */
 export function PendingOccurrences({
   items,
-  retour,
+  back,
 }: {
   items: PendingItem[]
   /** Where a failed action comes back to, with its message. */
-  retour: string
+  back: string
 }) {
   return (
     <Rows>
       {items.map((item) => (
-        <PendingRow key={`${item.commitmentId}-${item.dueOn}`} item={item} retour={retour} />
+        <PendingRow key={`${item.commitmentId}-${item.dueOn}`} item={item} back={back} />
       ))}
     </Rows>
   )
 }
 
-function PendingRow({ item, retour }: { item: PendingItem; retour: string }) {
+function PendingRow({ item, back }: { item: PendingItem; back: string }) {
   const expected = item.amount.toFixed(2)
   const [amount, setAmount] = useState(expected)
   const [dateOpen, setDateOpen] = useState(false)
@@ -70,7 +70,7 @@ function PendingRow({ item, retour }: { item: PendingItem; retour: string }) {
 
         <form action={confirmOccurrenceAction} className="ml-auto flex flex-wrap items-center gap-2">
           <input type="hidden" name="commitmentId" value={item.commitmentId} />
-          <input type="hidden" name="retour" value={retour} />
+          <input type="hidden" name="back" value={back} />
           <AmountInput
             name="amount"
             defaultValue={expected}
@@ -90,7 +90,7 @@ function PendingRow({ item, retour }: { item: PendingItem; retour: string }) {
           {/* The one thing the app cannot guess, asked only when it applies. */}
           {differs && (
             <Label className="flex w-full items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
-              <Checkbox name="nouveauMontant" />
+              <Checkbox name="newAmount" />
               <span>
                 écart de{' '}
                 <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
@@ -110,7 +110,7 @@ function PendingRow({ item, retour }: { item: PendingItem; retour: string }) {
           <DropdownMenuItem asChild variant="destructive">
             <form action={skipOccurrenceAction}>
               <input type="hidden" name="commitmentId" value={item.commitmentId} />
-              <input type="hidden" name="retour" value={retour} />
+              <input type="hidden" name="back" value={back} />
               <button type="submit" className="flex w-full items-center gap-2">
                 <SkipForwardIcon />
                 Passer cette échéance

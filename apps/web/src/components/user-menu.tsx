@@ -32,13 +32,13 @@ export function UserMenu({ name }: { name: string }) {
       {/* Anchored to the side on desktop so it never covers the nav it came from. */}
       <DropdownMenuContent side={isMobile ? 'bottom' : 'right'} align="end" className="min-w-44">
         <DropdownMenuItem asChild>
-          <Link href="/brancher-une-ia">
+          <Link href="/connect-ai">
             <PlugZapIcon />
             Brancher une IA
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/reglages">
+          <Link href="/settings">
             <SettingsIcon />
             Réglages
           </Link>

@@ -214,11 +214,11 @@ export function FlowChart({
                   aria-label={`${monthLabelLong(r.month)} : ${eur(r.income)} de revenus, ${eur(r.expenseNet)} de dépenses`}
                   onPointerEnter={() => setHover(i)}
                   onFocus={() => setHover(i)}
-                  onClick={() => router.push(`?periode=mois&ref=${ref}`, { scroll: false })}
+                  onClick={() => router.push(`?period=month&ref=${ref}`, { scroll: false })}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter' && e.key !== ' ') return
                     e.preventDefault()
-                    router.push(`?periode=mois&ref=${ref}`, { scroll: false })
+                    router.push(`?period=month&ref=${ref}`, { scroll: false })
                   }}
                   className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
                 >

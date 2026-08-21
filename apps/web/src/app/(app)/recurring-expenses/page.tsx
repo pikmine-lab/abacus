@@ -23,17 +23,17 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Dépenses récurrentes' }
 
-const PATH = '/depenses-recurrentes'
+const PATH = '/recurring-expenses'
 
 export default async function RecurringExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ erreur?: string }>
+  searchParams: Promise<{ error?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
-  const { erreur } = await searchParams
+  const { error } = await searchParams
 
   const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     // Cancelled ones included: a subscription's history is the point of the
@@ -110,9 +110,9 @@ export default async function RecurringExpensesPage({
       </PageHeader>
 
       <PageBody>
-        {erreur && (
+        {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-            {erreur}
+            {error}
           </p>
         )}
 
@@ -160,7 +160,7 @@ export default async function RecurringExpensesPage({
             description="confirmer crée le mouvement réel · passer avance sans mouvement (mois offert)"
           >
             <PendingOccurrences
-              retour={PATH}
+              back={PATH}
               items={pendingOut.map((p) => ({
                 commitmentId: p.commitment.id,
                 label: p.commitment.label,

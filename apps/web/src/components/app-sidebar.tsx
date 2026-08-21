@@ -38,21 +38,21 @@ const GROUPS = [
     label: 'Suivi',
     items: [
       { href: '/', label: 'Vue d’ensemble', icon: LayoutDashboardIcon },
-      { href: '/mouvements', label: 'Mouvements', icon: ArrowLeftRightIcon },
-      { href: '/analyse', label: 'Analyse', icon: ChartNoAxesColumnIcon },
+      { href: '/movements', label: 'Mouvements', icon: ArrowLeftRightIcon },
+      { href: '/analysis', label: 'Analyse', icon: ChartNoAxesColumnIcon },
     ],
   },
   {
     label: 'Engagements',
     items: [
-      { href: '/depenses-recurrentes', label: 'Dépenses récurrentes', icon: CircleArrowDownIcon },
-      { href: '/revenus-recurrents', label: 'Revenus récurrents', icon: CircleArrowUpIcon },
+      { href: '/recurring-expenses', label: 'Dépenses récurrentes', icon: CircleArrowDownIcon },
+      { href: '/recurring-income', label: 'Revenus récurrents', icon: CircleArrowUpIcon },
     ],
   },
   {
     label: 'Patrimoine',
     items: [
-      { href: '/comptes', label: 'Comptes', icon: LandmarkIcon },
+      { href: '/accounts', label: 'Comptes', icon: LandmarkIcon },
       { href: '/placements', label: 'Placements', icon: ChartCandlestickIcon, soon: true },
     ],
   },
@@ -127,10 +127,10 @@ export function AppSidebar({ userName }: { userName: string }) {
             <SidebarMenuButton
               asChild
               tooltip="Réglages"
-              isActive={isActive('/reglages')}
+              isActive={isActive('/settings')}
               className={ITEM_CLASS}
             >
-              <Link href="/reglages">
+              <Link href="/settings">
                 <SettingsIcon />
                 <span>Réglages</span>
               </Link>

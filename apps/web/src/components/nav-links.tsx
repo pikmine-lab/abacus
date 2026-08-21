@@ -13,9 +13,9 @@ import { cn } from '@/lib/utils'
 
 const NAV = [
   { href: '/', label: 'Tableau de bord' },
-  { href: '/mouvements', label: 'Mouvements' },
+  { href: '/movements', label: 'Mouvements' },
   { href: '/abonnements', label: 'Abonnements' },
-  { href: '/comptes', label: 'Comptes' },
+  { href: '/accounts', label: 'Comptes' },
 ]
 
 export function NavLinks() {

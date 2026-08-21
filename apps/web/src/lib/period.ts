@@ -6,7 +6,7 @@ import { today } from '@abacus/core/domain/period'
  * read it without any client state. One row of filters scopes everything
  * below it (DESIGN.md); this is where that row's meaning lives.
  */
-export type Preset = 'mois' | 'annee' | '90j' | '12m' | 'tout'
+export type Preset = 'month' | 'year' | '90d' | '12m' | 'all'
 
 export interface Period {
   preset: Preset
@@ -21,19 +21,19 @@ export interface Period {
   next: string | null
 }
 
-const PRESETS: Preset[] = ['mois', 'annee', '90j', '12m', 'tout']
+const PRESETS: Preset[] = ['month', 'year', '90d', '12m', 'all']
 
 export const PRESET_LABEL: Record<Preset, string> = {
-  mois: 'Mois',
-  annee: 'Année',
-  '90j': '90 jours',
+  month: 'Mois',
+  year: 'Année',
+  '90d': '90 jours',
   '12m': '12 mois',
-  tout: 'Tout',
+  all: 'Tout',
 }
 
 /** Presets that slide along the calendar, and therefore get arrows. */
 export function isNavigable(preset: Preset): boolean {
-  return preset === 'mois' || preset === 'annee'
+  return preset === 'month' || preset === 'year'
 }
 
 const MONTHS = [
@@ -69,16 +69,16 @@ function daysBack(count: number, to: string): string {
 }
 
 export function resolvePeriod(
-  params: { periode?: string; ref?: string },
+  params: { period?: string; ref?: string },
   now = today(),
   /** What the view means by "no period chosen": a ledger wants a wider one. */
-  fallback: Preset = 'mois',
+  fallback: Preset = 'month',
 ): Period {
-  const preset = (PRESETS as string[]).includes(params.periode ?? '') ? (params.periode as Preset) : fallback
+  const preset = (PRESETS as string[]).includes(params.period ?? '') ? (params.period as Preset) : fallback
   const currentMonth = now.slice(0, 7)
   const currentYear = now.slice(0, 4)
 
-  if (preset === 'mois') {
+  if (preset === 'month') {
     const ref = /^\d{4}-\d{2}$/.test(params.ref ?? '') ? params.ref! : currentMonth
     const [y, m] = ref.split('-').map(Number)
     const from = `${ref}-01`
@@ -95,7 +95,7 @@ export function resolvePeriod(
     }
   }
 
-  if (preset === 'annee') {
+  if (preset === 'year') {
     const ref = /^\d{4}$/.test(params.ref ?? '') ? params.ref! : currentYear
     const next = String(Number(ref) + 1)
     return {
@@ -109,7 +109,7 @@ export function resolvePeriod(
     }
   }
 
-  if (preset === '90j')
+  if (preset === '90d')
     return {
       preset,
       ref: now,
@@ -132,7 +132,7 @@ export function resolvePeriod(
     }
 
   return {
-    preset: 'tout',
+    preset: 'all',
     ref: now,
     // Far enough back to hold any declared history without a query per view.
     from: '1970-01-01',
@@ -149,8 +149,8 @@ export function resolvePeriod(
  * empty window would read as a collapse rather than as "no comparison".
  */
 export function previousWindow(period: Period): { from: string; to: string; label: string } | null {
-  if (period.preset === 'tout') return null
-  if (period.preset === 'mois') {
+  if (period.preset === 'all') return null
+  if (period.preset === 'month') {
     const ref = shiftMonth(period.ref, -1)
     const [y, m] = ref.split('-').map(Number)
     return {
@@ -159,7 +159,7 @@ export function previousWindow(period: Period): { from: string; to: string; labe
       label: `vs ${MONTHS[m! - 1]}`,
     }
   }
-  if (period.preset === 'annee') {
+  if (period.preset === 'year') {
     const ref = String(Number(period.ref) - 1)
     return { from: `${ref}-01-01`, to: `${ref}-12-31`, label: `vs ${ref}` }
   }
@@ -168,7 +168,7 @@ export function previousWindow(period: Period): { from: string; to: string; labe
   return {
     from: shiftDays(to, -(span - 1)),
     to,
-    label: period.preset === '90j' ? 'vs 90 jours avant' : 'vs 12 mois avant',
+    label: period.preset === '90d' ? 'vs 90 jours avant' : 'vs 12 mois avant',
   }
 }
 
@@ -196,8 +196,8 @@ export function seriesFrom(period: Period, firstMovementDay: string | null): str
 
 /** Number of months the period spans, for "≈ x €/mois" readings. */
 export function monthsInPeriod(period: Period): number {
-  if (period.preset === 'mois') return 1
-  if (period.preset === 'annee') return 12
+  if (period.preset === 'month') return 1
+  if (period.preset === 'year') return 12
   const [fy, fm] = period.from.split('-').map(Number)
   const [ty, tm] = period.to.split('-').map(Number)
   return Math.max(1, (ty! - fy!) * 12 + (tm! - fm!) + 1)

@@ -181,12 +181,12 @@ async function actorIdFromName(userId: string, name: string): Promise<string> {
 function refreshAll() {
   for (const path of [
     '/',
-    '/mouvements',
-    '/analyse',
-    '/depenses-recurrentes',
-    '/revenus-recurrents',
-    '/comptes',
-    '/reglages',
+    '/movements',
+    '/analysis',
+    '/recurring-expenses',
+    '/recurring-income',
+    '/accounts',
+    '/settings',
   ])
     revalidatePath(path)
 }
@@ -197,8 +197,8 @@ function refreshAll() {
  * the same action serves the pages that share these forms.
  */
 function errorRedirect(formData: FormData, message: string): never {
-  const back = str(formData, 'retour') || '/depenses-recurrentes'
-  redirect(`${back}?erreur=${encodeURIComponent(message)}`)
+  const back = str(formData, 'back') || '/recurring-expenses'
+  redirect(`${back}?error=${encodeURIComponent(message)}`)
 }
 
 /** The fields a movement needs, which depend on the kind being declared. */
@@ -573,7 +573,7 @@ export async function confirmOccurrenceAction(formData: FormData): Promise<void>
       happenedOn: opt(formData, 'date'),
       // "It is the new normal": historises the change instead of treating it
       // as a one-off month.
-      updateReference: formData.get('nouveauMontant') !== null,
+      updateReference: formData.get('newAmount') !== null,
     })
   } catch (e) {
     errorRedirect(formData, frError(e))
@@ -822,7 +822,7 @@ export async function createApiKeyAction(
     body: { name: str(formData, 'name') },
     headers: await headers(),
   })
-  revalidatePath('/brancher-une-ia')
+  revalidatePath('/connect-ai')
   return { ok: true, key: created.key }
 }
 
@@ -831,5 +831,5 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
     body: { keyId: str(formData, 'keyId') },
     headers: await headers(),
   })
-  revalidatePath('/brancher-une-ia')
+  revalidatePath('/connect-ai')
 }
