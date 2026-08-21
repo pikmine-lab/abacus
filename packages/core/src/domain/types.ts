@@ -73,7 +73,14 @@ export interface Commitment {
   direction: CommitmentDirection
   label: string
   actorId: string
+  /**
+   * The account it hits today. What a commitment hits is a dated history (a
+   * recurring payment moves from one account to another on a date), so this is
+   * resolved on read; an occurrence reads the account of its own date.
+   */
   accountId: string
+  /** The move already announced for a later date, when there is one. */
+  nextAccountMove: { accountId: string; effectiveOn: string } | null
   categoryId: string | null
   activityId: string | null
   amount: string
@@ -89,7 +96,12 @@ export interface Commitment {
   totalAmount: string | null
 }
 
-export type CommitmentEventType = 'created' | 'price_changed' | 'judgment_changed' | 'cancelled'
+export type CommitmentEventType =
+  | 'created'
+  | 'price_changed'
+  | 'judgment_changed'
+  | 'cancelled'
+  | 'account_changed'
 
 export interface CommitmentEvent {
   id: string
@@ -98,6 +110,8 @@ export interface CommitmentEvent {
   type: CommitmentEventType
   amount: string | null
   note: string | null
+  /** account_changed only: the account it hits from that date on. */
+  accountId: string | null
 }
 
 export interface BalanceCheck {

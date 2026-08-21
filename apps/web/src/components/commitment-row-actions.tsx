@@ -1,9 +1,9 @@
 'use client'
 
-import { BanIcon, BanknoteIcon, CalendarClockIcon, PencilIcon } from 'lucide-react'
+import { ArrowRightLeftIcon, BanIcon, BanknoteIcon, CalendarClockIcon, PencilIcon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { type CommitmentOptions, EditCommitmentForm } from '@/components/commitment-forms'
+import { type CommitmentOptions, EditCommitmentForm, MoveAccountForm } from '@/components/commitment-forms'
 import { FinancingScheduleForm, type ScheduleLine } from '@/components/financing-schedule-form'
 import { ActionForm, Field, SubmitButton } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
@@ -35,6 +35,8 @@ export function CommitmentRowActions({
   amount,
   kind,
   incoming,
+  accountId,
+  accountName,
   schedule,
   today,
   options,
@@ -45,6 +47,9 @@ export function CommitmentRowActions({
   amount: number
   kind: 'subscription' | 'financing'
   incoming: boolean
+  /** The account it hits today, which the dated move starts from. */
+  accountId: string
+  accountName: string
   /** Financings only: the written plan, so it can be revised from here. */
   schedule?: ScheduleLine[]
   today?: string
@@ -52,7 +57,6 @@ export function CommitmentRowActions({
   options?: CommitmentOptions
   defaults?: {
     actor: string
-    accountId: string
     categoryId: string
     activityId: string
     period: string
@@ -60,6 +64,7 @@ export function CommitmentRowActions({
   }
 }) {
   const [pricing, setPricing] = useState(false)
+  const [moving, setMoving] = useState(false)
   const [editing, setEditing] = useState(false)
   const [revising, setRevising] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -84,6 +89,12 @@ export function CommitmentRowActions({
           <DropdownMenuItem onSelect={() => setPricing(true)}>
             <BanknoteIcon />
             {incoming ? 'Changer le montant' : 'Changer le prix'}
+          </DropdownMenuItem>
+        )}
+        {options && today && (
+          <DropdownMenuItem onSelect={() => setMoving(true)}>
+            <ArrowRightLeftIcon />
+            Changer de compte
           </DropdownMenuItem>
         )}
         {kind === 'financing' && schedule && (
@@ -117,12 +128,36 @@ export function CommitmentRowActions({
         </DialogContent>
       </Dialog>
 
+      {/* Dated on purpose: a move is usually known before it happens, and an
+          occurrence confirmed after it left the account that was right then. */}
+      <Dialog open={moving} onOpenChange={setMoving}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">{label}</DialogTitle>
+            <DialogDescription className="text-[12px]">
+              {incoming ? 'Versé sur' : 'Prélevé sur'} {accountName} aujourd’hui. Chaque échéance suit le
+              compte en vigueur à sa date.
+            </DialogDescription>
+          </DialogHeader>
+          {options && today && (
+            <MoveAccountForm
+              commitmentId={commitmentId}
+              incoming={incoming}
+              accounts={options.accounts}
+              currentAccountId={accountId}
+              today={today}
+              onDone={() => setMoving(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Sheet open={editing} onOpenChange={setEditing}>
         <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
           <SheetHeader className="border-b border-border">
             <SheetTitle className="text-[15px]">{label}</SheetTitle>
             <SheetDescription className="text-[12px]">
-              Corriger ce que cet engagement dit de lui-même. Le montant a son propre geste, daté.
+              Corriger ce que cet engagement dit de lui-même. Le montant et le compte ont le leur, daté.
             </SheetDescription>
           </SheetHeader>
           <div className="p-4">

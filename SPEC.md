@@ -117,10 +117,15 @@ Engagement déclaré, lié à un acteur et à un compte de prélèvement, en deu
   c'est lui qui fait foi : le montant total suit la somme de ses lignes, ce qui rend
   exprimables un report, une renégociation ou un solde anticipé.
 
+Le **compte est daté**, comme le montant : un prélèvement qui déménage se déclare le jour
+où on l'apprend, date d'effet future comprise, et chaque échéance tombe sur le compte en
+vigueur à sa date, y compris une échéance confirmée en retard. Le reste de ce qu'un
+engagement dit de lui-même (nom, acteur, catégorie, périodicité) se corrige sans date.
+
 Les deux formes partagent le même moteur d'échéances et alimentent la projection ; un
 financement s'éteint de lui-même à la dernière échéance.
-- **Historique en événements datés** : création, changement de prix, résiliation. Jamais
-  d'écrasement ; l'app peut dire « +40 % en deux ans ».
+- **Historique en événements datés** : création, changement de prix, changement de compte,
+  résiliation. Jamais d'écrasement ; l'app peut dire « +40 % en deux ans ».
 - **Générateur d'échéances** : l'app produit les mouvements attendus de la période,
   l'utilisateur confirme d'un geste (ou ajuste). Vaut aussi pour les récurrences de revenus
   (salaire) : même mécanisme, sens inverse.
