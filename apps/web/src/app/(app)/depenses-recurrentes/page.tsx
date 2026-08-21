@@ -2,7 +2,7 @@ import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
-import { listCategories } from '@abacus/core/services/catalog'
+import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   financingSchedule,
   listCommitmentsWithProgress,
@@ -35,7 +35,7 @@ export default async function RecurringExpensesPage({
   const userId = session.user.id
   const { erreur } = await searchParams
 
-  const [commitments, pending, accounts, actors, categories] = await Promise.all([
+  const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     // Cancelled ones included: a subscription's history is the point of the
     // event log, and "what did I cut this year" is a real question.
     listCommitmentsWithProgress(userId, false),
@@ -43,6 +43,7 @@ export default async function RecurringExpensesPage({
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
+    listActivities(userId),
   ])
 
   const outgoing = commitments.filter((c) => c.direction === 'outgoing')
@@ -55,6 +56,7 @@ export default async function RecurringExpensesPage({
     accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
+    activities: activities.map((a) => ({ id: a.id, name: a.name })),
   }
   // The plans themselves, so a financing's schedule can be revised from its row.
   const schedules = new Map(
@@ -98,9 +100,10 @@ export default async function RecurringExpensesPage({
         >
           <NewCommitmentForm
             direction="outgoing"
-            accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-            actors={actors.map((a) => ({ id: a.id, name: a.name }))}
-            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            accounts={options.accounts}
+            actors={options.actors}
+            categories={options.categories}
+            activities={options.activities}
             today={today()}
           />
         </EntrySheet>

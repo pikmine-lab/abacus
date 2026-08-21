@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
+import { ActivityRows, ActorRows, CategoryRows } from '@/components/referential-rows'
 import { Input } from '@/components/ui/input'
 import { createActivityAction, createActorAction, createCategoryAction } from '@/lib/actions'
 
@@ -35,17 +36,7 @@ export default async function SettingsPage() {
           {categories.length === 0 ? (
             <EmptyLine>Aucune catégorie. Sans elles, l’analyse par catégorie reste vide.</EmptyLine>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {categories.map((c) => (
-                <span
-                  key={c.id}
-                  className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground"
-                >
-                  {c.name}
-                  {c.groupLabel && <span className="ml-1.5 text-[10.5px] text-faint">{c.groupLabel}</span>}
-                </span>
-              ))}
-            </div>
+            <CategoryRows categories={categories} />
           )}
           <ActionForm action={createCategoryAction} className="flex-row gap-2" successLabel="Catégorie créée">
             <Input name="name" required placeholder="Nouvelle catégorie" className="h-8 w-48 text-[13px]" />
@@ -63,16 +54,7 @@ export default async function SettingsPage() {
           {activities.length === 0 ? (
             <EmptyLine>Aucune activité. Tout est considéré comme perso.</EmptyLine>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {activities.map((a) => (
-                <span
-                  key={a.id}
-                  className="rounded-md border border-border px-2 py-1 text-[12px] text-muted-foreground"
-                >
-                  {a.name}
-                </span>
-              ))}
-            </div>
+            <ActivityRows activities={activities} />
           )}
           <ActionForm action={createActivityAction} className="flex-row gap-2" successLabel="Activité créée">
             <Input name="name" required placeholder="Nouvelle activité" className="h-8 w-48 text-[13px]" />
@@ -86,8 +68,10 @@ export default async function SettingsPage() {
           title="Acteurs"
           description={`${actors.length} contreparties connues · créées automatiquement à la première déclaration`}
         >
-          {actors.length > 0 && (
-            <p className="text-[12px] leading-relaxed text-faint">{actors.map((a) => a.name).join(' · ')}</p>
+          {actors.length === 0 ? (
+            <EmptyLine>Aucun acteur. Le premier mouvement déclaré en crée un.</EmptyLine>
+          ) : (
+            <ActorRows actors={actors} activities={activities} />
           )}
           <ActionForm action={createActorAction} className="flex-row gap-2" successLabel="Acteur créé">
             <Input name="name" required placeholder="Nouvel acteur" className="h-8 w-48 text-[13px]" />

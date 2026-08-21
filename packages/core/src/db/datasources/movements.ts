@@ -129,13 +129,23 @@ export async function selectionTotals(
   return row!
 }
 
-/** Signed sum of everything that entered and left the account. */
-export async function accountBalance(tx: Executor, accountId: string, upTo?: string): Promise<string> {
+/**
+ * Signed sum of everything that entered and left the account. `except` leaves
+ * one movement out, which is how a balance check is recomputed without
+ * counting the adjustment it produced.
+ */
+export async function accountBalance(
+  tx: Executor,
+  accountId: string,
+  upTo?: string,
+  except?: string,
+): Promise<string> {
   const [row] = await tx<{ balance: string }[]>`
     select coalesce(sum(case when target_account_id = ${accountId} then amount else -amount end), 0)::numeric(14,2) as balance
     from movement
     where (source_account_id = ${accountId} or target_account_id = ${accountId})
     ${upTo ? tx`and happened_on <= ${upTo}` : tx``}
+    ${except ? tx`and id <> ${except}` : tx``}
   `
   return row!.balance
 }
@@ -187,6 +197,17 @@ export async function setRefundClosed(
     update movement set refund_closed = ${closed}, updated_at = now()
     where user_id = ${userId} and id = ${id}
     returning *
+  `
+  return movement
+}
+
+/** The adjustment a balance check produced, if its gap was settled. */
+export async function movementByBalanceCheck(
+  tx: Executor,
+  balanceCheckId: string,
+): Promise<Movement | undefined> {
+  const [movement] = await tx<Movement[]>`
+    select * from movement where balance_check_id = ${balanceCheckId}
   `
   return movement
 }

@@ -87,3 +87,17 @@ export async function reassignActorReferences(
 export async function deleteActor(tx: Executor, userId: string, id: string): Promise<void> {
   await tx`delete from actor where user_id = ${userId} and id = ${id}`
 }
+
+export async function updateActorRow(
+  tx: Executor,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Actor | undefined> {
+  const [actor] = await tx<Actor[]>`
+    update actor set ${tx(patch)}, updated_at = now()
+    where user_id = ${userId} and id = ${id}
+    returning *
+  `
+  return actor
+}

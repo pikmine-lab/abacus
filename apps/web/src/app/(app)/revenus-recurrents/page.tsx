@@ -2,7 +2,7 @@ import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
-import { listCategories } from '@abacus/core/services/catalog'
+import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   listCommitmentsWithProgress,
   monthlyEquivalent,
@@ -34,12 +34,13 @@ export default async function RecurringIncomePage({
   const userId = session.user.id
   const { erreur } = await searchParams
 
-  const [commitments, pending, accounts, actors, categories] = await Promise.all([
+  const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     listCommitmentsWithProgress(userId, false),
     pendingOccurrences(userId),
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
+    listActivities(userId),
   ])
 
   const incoming = commitments.filter((c) => c.direction === 'incoming')
@@ -53,6 +54,7 @@ export default async function RecurringIncomePage({
     accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
+    activities: activities.map((a) => ({ id: a.id, name: a.name })),
   }
 
   return (
@@ -65,9 +67,10 @@ export default async function RecurringIncomePage({
         >
           <NewCommitmentForm
             direction="incoming"
-            accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-            actors={actors.map((a) => ({ id: a.id, name: a.name }))}
-            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            accounts={options.accounts}
+            actors={options.actors}
+            categories={options.categories}
+            activities={options.activities}
             today={today()}
           />
         </EntrySheet>

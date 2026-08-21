@@ -177,8 +177,27 @@ mouvements déjà déclarés ne sont jamais réécrits, ils constatent ce qui s'
 le compte où ça s'est passé. Restent hors correction : le montant, qui est une histoire
 datée (`change_price`), et la direction, qui ferait d'un engagement un autre.
 
-Le chantier « chaque entité se corrige » (comptes, acteurs, catégories, activités,
-pointages) est suivi en issue.
+**Chaque entité déclarée se corrige** (2026-08-21, issue #21) : un compte (nom,
+établissement, type, et réouverture après une clôture), un acteur (nom, activité, note),
+une catégorie (nom, groupe), une activité (nom) et un pointage de solde (montant lu, date,
+suppression). Côté MCP, une action `update` sur chaque outil `manage_*` et un nouvel outil
+`manage_balance_checks` (list, correct, delete).
+
+Deux points tranchés au passage :
+
+- le **type d'un compte** se corrige, sauf quand le compte porte des opérations
+  d'investissement, que seul ce type peut porter ;
+- **corriger un pointage, c'est le refaire** : l'écart est recalculé sur l'historique du
+  jour, pour la date donnée, son propre ajustement exclu du calcul ; l'ajustement qui le
+  soldait suit (réaligné, ou supprimé quand il n'y a plus rien à solder), et supprimer le
+  pointage l'emporte avec lui. La migration `0004` fait de « un ajustement par pointage »
+  une contrainte SQL plutôt qu'une convention.
+
+Réglages est passé en listes de lignes à menu `⋯` (les acteurs avec une recherche), et
+deux écarts de parité sont comblés : l'UI d'engagement propose désormais la périodicité
+complète (posée comme une seule question : « toutes les 2 semaines »), la fin d'engagement
+et l'activité ; `list_movements` (MCP) renvoie le compte, la contrepartie et la catégorie
+de chaque mouvement, que l'UI affichait déjà.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

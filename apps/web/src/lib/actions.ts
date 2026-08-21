@@ -1,12 +1,16 @@
 'use server'
 
 import { auth } from '@abacus/core/auth'
-import type { Judgment, PeriodUnit } from '@abacus/core/domain'
+import type { AccountBehavior, Judgment, PeriodUnit } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
-import { closeAccount, createAccount } from '@abacus/core/services/accounts'
-import { createActor, resolveActor } from '@abacus/core/services/actors'
-import { recordBalanceCheck } from '@abacus/core/services/balanceChecks'
-import { createActivity, createCategory } from '@abacus/core/services/catalog'
+import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
+import { createActor, editActor, resolveActor } from '@abacus/core/services/actors'
+import {
+  correctBalanceCheck,
+  deleteBalanceCheck,
+  recordBalanceCheck,
+} from '@abacus/core/services/balanceChecks'
+import { createActivity, createCategory, editActivity, editCategory } from '@abacus/core/services/catalog'
 import {
   cancelCommitment,
   changeAmount,
@@ -89,6 +93,30 @@ const FR: Record<string, string> = {
   no_owned_account: 'Un mouvement doit toucher au moins un de tes comptes.',
   movement_not_found: 'Ce mouvement n’existe plus.',
   refunded_movement: 'Un remboursement est lié à ce mouvement : supprime d’abord le remboursement.',
+  account_exists: 'Un compte porte déjà ce nom.',
+  account_not_found: 'Ce compte n’existe plus.',
+  account_has_operations:
+    'Ce compte porte des opérations d’investissement : son type ne change plus. Le reste se corrige.',
+  actor_not_found: 'Cet acteur n’existe plus.',
+  category_exists: 'Une catégorie porte déjà ce nom.',
+  category_not_found: 'Cette catégorie n’existe plus.',
+  activity_exists: 'Une activité porte déjà ce nom.',
+  activity_not_found: 'Cette activité n’existe plus.',
+  check_not_found: 'Ce pointage n’existe plus.',
+  check_already_settled: 'Un ajustement solde déjà ce pointage.',
+  financing_has_no_lock_in: 'Un financement s’arrête à sa dernière échéance : pas de date de fin.',
+}
+
+/**
+ * The periodicity travels as one field ("month:3"), because the interface asks
+ * it as one question ("tous les 3 mois") rather than as a unit and a multiple
+ * to combine.
+ */
+function period(formData: FormData): { periodUnit: PeriodUnit; periodCount: number } | null {
+  const [unit, count] = str(formData, 'period').split(':')
+  if (!/^(week|month|year)$/.test(unit ?? '') || !Number.isInteger(Number(count)) || Number(count) < 1)
+    return null
+  return { periodUnit: unit as PeriodUnit, periodCount: Number(count) }
 }
 
 async function requireUserId(): Promise<string> {
@@ -290,6 +318,41 @@ export async function recordBalanceCheckAction(_prev: FormState, formData: FormD
   return { ok: true }
 }
 
+/**
+ * Corrects a recorded check. Correcting one is re-checking: the gap is
+ * recomputed for the date given, and the adjustment that settled the old one
+ * follows (realigned, or removed when nothing is left to settle).
+ */
+export async function correctBalanceCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const raw = str(formData, 'balance')
+  if (raw === '') return { fields: { balance: 'À renseigner.' } }
+  if (!Number.isFinite(num(formData, 'balance'))) return { fields: { balance: 'Montant invalide.' } }
+  const invalid = checkFields(formData, [{ name: 'checkedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await correctBalanceCheck(userId, str(formData, 'checkId'), {
+      declaredBalance: num(formData, 'balance'),
+      checkedOn: str(formData, 'checkedOn'),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function deleteBalanceCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await deleteBalanceCheck(userId, str(formData, 'checkId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
 export async function createAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'name' }])
@@ -301,6 +364,35 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
       behavior: str(formData, 'behavior') as 'payment' | 'savings' | 'investment',
       institution: opt(formData, 'institution') ?? null,
     })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** What an account says about itself. Its balance is history, never edited here. */
+export async function editAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editAccount(userId, str(formData, 'accountId'), {
+      name: str(formData, 'name'),
+      institution: opt(formData, 'institution') ?? null,
+      behavior: str(formData, 'behavior') as AccountBehavior,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function reopenAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await reopenAccount(userId, str(formData, 'accountId'))
   } catch (e) {
     return { error: frError(e) }
   }
@@ -329,6 +421,8 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
     { name: 'firstDueOn', kind: 'date' },
   ])
   if (invalid) return { fields: invalid }
+  const every = period(formData)
+  if (!every) return { fields: { period: 'À renseigner.' } }
   try {
     await createSubscription(userId, {
       label: str(formData, 'label'),
@@ -336,11 +430,12 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       accountId: str(formData, 'accountId'),
       direction: str(formData, 'direction') === 'incoming' ? 'incoming' : 'outgoing',
       amount: num(formData, 'amount'),
-      periodUnit: str(formData, 'periodUnit') as PeriodUnit,
-      periodCount: opt(formData, 'periodCount') ? num(formData, 'periodCount') : undefined,
+      ...every,
       firstDueOn: str(formData, 'firstDueOn'),
       categoryId: opt(formData, 'categoryId'),
+      activityId: opt(formData, 'activityId'),
       judgment: opt(formData, 'judgment') as Judgment | undefined,
+      engagedUntil: opt(formData, 'engagedUntil'),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -375,6 +470,8 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
     { name: 'firstDueOn', kind: 'date' },
   ])
   if (invalid) return { fields: invalid }
+  const every = period(formData)
+  if (!every) return { fields: { period: 'À renseigner.' } }
   try {
     await createFinancing(userId, {
       label: str(formData, 'label'),
@@ -383,10 +480,12 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
       totalAmount: num(formData, 'totalAmount'),
       installmentsTotal: num(formData, 'installmentsTotal'),
       firstDueOn: str(formData, 'firstDueOn'),
+      ...every,
       // Present only when the schedule editor was opened; otherwise the plan
       // is generated from the total.
       installments: scheduleFrom(formData),
       categoryId: opt(formData, 'categoryId'),
+      activityId: opt(formData, 'activityId'),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -463,13 +562,19 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'label' }, { name: 'actor' }, { name: 'accountId' }])
   if (invalid) return { fields: invalid }
+  const every = period(formData)
+  if (!every) return { fields: { period: 'À renseigner.' } }
   try {
     await editCommitment(userId, str(formData, 'commitmentId'), {
       label: str(formData, 'label'),
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
       accountId: str(formData, 'accountId'),
       categoryId: opt(formData, 'categoryId') ?? null,
-      periodUnit: str(formData, 'periodUnit') as PeriodUnit,
+      activityId: opt(formData, 'activityId') ?? null,
+      ...every,
+      // Financings never carry one, and the panel does not show the field for
+      // them: an empty value clears it rather than being refused.
+      engagedUntil: opt(formData, 'engagedUntil') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -514,6 +619,61 @@ export async function createCategoryAction(_prev: FormState, formData: FormData)
   if (invalid) return { fields: invalid }
   try {
     await createCategory(userId, str(formData, 'name'), opt(formData, 'group'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Renames a category, or moves it to another group. Nothing has to follow:
+ * what is filed under it points at the category, not at its name.
+ */
+export async function editCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editCategory(userId, str(formData, 'categoryId'), {
+      name: str(formData, 'name'),
+      groupLabel: opt(formData, 'group') ?? null,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function editActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editActivity(userId, str(formData, 'activityId'), str(formData, 'name'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Corrects an actor. The former name is replaced, not kept as an alias: a typo
+ * has to stop resolving. A name that really was in use gets added as an alias
+ * instead, deliberately.
+ */
+export async function editActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await editActor(userId, str(formData, 'actorId'), {
+      name: str(formData, 'name'),
+      activityId: opt(formData, 'activityId') ?? null,
+      note: opt(formData, 'note') ?? null,
+    })
   } catch (e) {
     return { error: frError(e) }
   }

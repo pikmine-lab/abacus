@@ -41,3 +41,27 @@ export async function listCategories(tx: Executor, userId: string): Promise<Cate
     Category[]
   >`select * from category where user_id = ${userId} order by group_label nulls last, name`
 }
+
+export async function updateActivityRow(
+  tx: Executor,
+  userId: string,
+  id: string,
+  name: string,
+): Promise<Activity | undefined> {
+  const [activity] = await tx<Activity[]>`
+    update activity set name = ${name} where user_id = ${userId} and id = ${id} returning *
+  `
+  return activity
+}
+
+export async function updateCategoryRow(
+  tx: Executor,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Category | undefined> {
+  const [category] = await tx<Category[]>`
+    update category set ${tx(patch)} where user_id = ${userId} and id = ${id} returning *
+  `
+  return category
+}

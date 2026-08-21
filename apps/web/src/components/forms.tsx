@@ -89,6 +89,7 @@ export function FormSelect({
   required,
   noneLabel,
   defaultValue = '',
+  onValueChange,
 }: {
   name: string
   options: { value: string; label: string }[]
@@ -97,6 +98,8 @@ export function FormSelect({
   /** Visible item that clears the selection, for optional fields. */
   noneLabel?: string
   defaultValue?: string
+  /** For callers deriving something from the choice, such as a preview. */
+  onValueChange?: (value: string) => void
 }) {
   const [value, setValue] = useState(defaultValue)
   return (
@@ -104,7 +107,11 @@ export function FormSelect({
       name={name}
       required={required}
       value={value}
-      onValueChange={(v) => setValue(v === NONE ? '' : v)}
+      onValueChange={(v) => {
+        const next = v === NONE ? '' : v
+        setValue(next)
+        onValueChange?.(next)
+      }}
     >
       <SelectTrigger className="w-full">
         <SelectValue placeholder={placeholder ?? noneLabel} />

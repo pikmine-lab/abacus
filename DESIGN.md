@@ -170,17 +170,32 @@ avec le registre sont locales et motivées, en commentaire, sur place.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais
   étalées dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne
   doivent pas concurrencer ses chiffres. Vaut pour les mouvements (corriger,
-  supprimer), les engagements (changer le montant, résilier) et les comptes
-  (pointer, clore). Ce qui reste dans la ligne n'est pas une action mais un
+  supprimer), les engagements (changer le montant, résilier), les comptes (pointer,
+  modifier, clore) et les entrées du référentiel (renommer). Ce qui reste dans la ligne n'est pas une action mais un
   attribut : le jugement d'un abonnement se change d'un geste pendant la revue
   « que couper ? ».
 - **Corriger est aussi accessible que saisir** : la correction s'ouvre dans le même
   panneau que la déclaration, la suppression derrière une confirmation. Une
   correction ne touche jamais les liens d'origine (échéance, pointage, avance) : le
   panneau le dit quand la ligne en porte un.
+- **Le référentiel se corrige dans ses listes.** Réglages montre les catégories, les
+  activités et les acteurs en lignes, chacune avec son menu `⋯` ; les acteurs, seuls à
+  grossir, portent un champ de recherche. Renommer ne demande rien de plus : ce qui est
+  classé sous une entrée la désigne par identifiant, jamais par son nom.
+- **Un pointage se corrige comme il se déclare** : « Pointages », dans le menu du compte,
+  ouvre l'historique (lu, calculé, écart, soldé ou non), et chaque ligne se corrige ou se
+  supprime. Corriger un pointage, c'est le refaire : le panneau le dit, et dit ce que
+  devient l'ajustement qui le soldait.
+- **Clore n'est pas un cul-de-sac** : un compte clos garde son menu, s'y corrige et s'y
+  réouvre. Une clôture par erreur ne doit pas obliger à recréer un compte, donc à
+  redéclarer son historique.
+- **La périodicité est une seule question** : « chaque mois », « toutes les 2 semaines »,
+  « tous les 3 mois », plutôt qu'une unité et un multiple à combiner de tête. La liste
+  couvre les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste
+  garde le sien dedans, pour qu'une correction ne le réécrive pas en passant.
 - **Un engagement se corrige comme il se déclare** : « Modifier », dans le menu de la
   ligne, ouvre un panneau qui reprend les champs de la déclaration (nom, acteur, compte,
-  catégorie, périodicité), préremplis avec ce qu'ils valent. Le montant n'y est pas : il
+  catégorie, activité, périodicité, fin d'engagement), préremplis avec ce qu'ils valent. Le montant n'y est pas : il
   est daté et historisé, il garde son geste propre. Et une correction ne réécrit pas les
   mouvements déjà déclarés, qui disent ce qui s'est passé sur le compte où ça s'est passé :
   le panneau le dit plutôt que de laisser le découvrir après.

@@ -9,8 +9,9 @@ import {
   moveAliases,
   reassignActorReferences,
   suggestActors,
+  updateActorRow,
 } from '../db/datasources/actors.ts'
-import { DomainError } from '../domain/errors.ts'
+import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import type { Actor } from '../domain/types.ts'
 
 export async function createActor(
@@ -32,10 +33,7 @@ export async function createActor(
       return actor
     })
   } catch (e) {
-    if ((e as { code?: string }).code === '23505') {
-      throw new DomainError('actor_exists', `An actor already uses the name or alias "${input.name}"`)
-    }
-    throw e
+    rethrowUnique(e, 'actor_exists', `An actor already uses the name or alias "${input.name}"`)
   }
 }
 
@@ -68,10 +66,7 @@ export async function addAlias(userId: string, actorId: string, alias: string): 
   try {
     await insertActorAlias(sql, userId, actorId, alias)
   } catch (e) {
-    if ((e as { code?: string }).code === '23505') {
-      throw new DomainError('alias_taken', `"${alias}" already resolves to an actor`)
-    }
-    throw e
+    rethrowUnique(e, 'alias_taken', `"${alias}" already resolves to an actor`)
   }
 }
 
@@ -92,4 +87,35 @@ export async function mergeActors(userId: string, keepId: string, absorbedId: st
     await insertActorAlias(tx, userId, keepId, absorbed.name)
     return keep
   })
+}
+
+/** Fields a correction may touch; anything absent keeps its current value. */
+export interface ActorEdit {
+  name?: string
+  activityId?: string | null
+  note?: string | null
+}
+
+const EDITABLE = ['name', 'activityId', 'note'] as const
+
+/**
+ * Corrects what an actor says about itself. The former name does not become an
+ * alias: a typo has to stop resolving, and a name that really was in use is
+ * kept with addAlias, deliberately. The movements already written keep the
+ * activity they were written with, as they do everywhere else.
+ */
+export async function editActor(userId: string, id: string, input: ActorEdit): Promise<Actor> {
+  const sql = db()
+  const patch: Record<string, unknown> = {}
+  for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
+  try {
+    const actor =
+      Object.keys(patch).length > 0
+        ? await updateActorRow(sql, userId, id, patch)
+        : await getActor(sql, userId, id)
+    if (!actor) throw new DomainError('actor_not_found', `No actor ${id} for this user`)
+    return actor
+  } catch (e) {
+    rethrowUnique(e, 'actor_exists', `An actor already uses the name "${input.name}"`)
+  }
 }

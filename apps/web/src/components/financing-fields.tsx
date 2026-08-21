@@ -1,12 +1,15 @@
 'use client'
 
+import type { PeriodUnit } from '@abacus/core/domain'
+import { addPeriod } from '@abacus/core/domain/period'
 import { PencilIcon, RotateCcwIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { DateField, Field } from '@/components/forms'
+import { PeriodField } from '@/components/period-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { addMonths, eur, frDate } from '@/lib/utils'
+import { eur, frDate } from '@/lib/utils'
 
 /**
  * A payment plan, stated the way the contract states it: a total over N
@@ -26,26 +29,32 @@ interface Line {
 }
 
 /** Same rule as the server's defaultSchedule: the remainder lands on the last. */
-function buildSchedule(total: number, count: number, firstDueOn: string): Line[] {
+function buildSchedule(total: number, count: number, firstDueOn: string, period: string): Line[] {
+  const [unit, step] = period.split(':')
   const cents = Math.round(total * 100)
   const share = Math.floor(cents / count)
-  return Array.from({ length: count }, (_, index) => {
+  const lines: Line[] = []
+  let dueOn = firstDueOn
+  for (let index = 0; index < count; index++) {
     const amount = index === count - 1 ? cents - share * (count - 1) : share
-    return { dueOn: addMonths(firstDueOn, index), amount: (amount / 100).toFixed(2) }
-  })
+    lines.push({ dueOn, amount: (amount / 100).toFixed(2) })
+    dueOn = addPeriod(dueOn, unit as PeriodUnit, Number(step))
+  }
+  return lines
 }
 
 export function FinancingAmountFields({ today }: { today: string }) {
   const [total, setTotal] = useState('')
   const [count, setCount] = useState('')
   const [firstDueOn, setFirstDueOn] = useState(today)
+  const [period, setPeriod] = useState('month:1')
   const [lines, setLines] = useState<Line[] | null>(null)
 
   const totalValue = Number(total)
   const countValue = Number(count)
   const canBuild =
     Number.isFinite(totalValue) && totalValue > 0 && Number.isInteger(countValue) && countValue >= 2
-  const preview = canBuild ? buildSchedule(totalValue, countValue, firstDueOn) : null
+  const preview = canBuild ? buildSchedule(totalValue, countValue, firstDueOn, period) : null
 
   const scheduled = lines
     ? lines.reduce((sum, line) => sum + Math.round((Number(line.amount) || 0) * 100), 0)
@@ -79,17 +88,27 @@ export function FinancingAmountFields({ today }: { today: string }) {
         </Field>
       </div>
 
-      {/* The first date drives the generated schedule; each line can move after. */}
-      <Field label="Première échéance" name="firstDueOn">
-        <DateField
-          name="firstDueOn"
-          defaultValue={today}
-          onValueChange={(day) => {
-            setFirstDueOn(day)
+      {/* The first date and the rhythm drive the generated schedule; each line
+          can still move after. */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Première échéance" name="firstDueOn">
+          <DateField
+            name="firstDueOn"
+            defaultValue={today}
+            onValueChange={(day) => {
+              setFirstDueOn(day)
+              setLines(null)
+            }}
+          />
+        </Field>
+        <PeriodField
+          defaultValue="month:1"
+          onValueChange={(value) => {
+            setPeriod(value)
             setLines(null)
           }}
         />
-      </Field>
+      </div>
 
       {lines === null ? (
         <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-faint">

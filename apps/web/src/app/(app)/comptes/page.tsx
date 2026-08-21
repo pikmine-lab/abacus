@@ -2,10 +2,11 @@ import { auth } from '@abacus/core/auth'
 import type { AccountBehavior } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
-import { latestCheck } from '@abacus/core/services/balanceChecks'
+import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AccountRowActions } from '@/components/account-row-actions'
+import type { CheckEntry } from '@/components/balance-check-history'
 import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
@@ -26,6 +27,18 @@ const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
 }
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
 
+/** What the correction panel needs of a check, and nothing more. */
+function checkEntries(entries: BalanceCheckEntry[]): CheckEntry[] {
+  return entries.map((entry) => ({
+    id: entry.check.id,
+    checkedOn: entry.check.checkedOn,
+    declared: Number(entry.check.declaredBalance),
+    computed: Number(entry.check.computedBalance),
+    gap: entry.gap,
+    settled: entry.adjustmentId !== null,
+  }))
+}
+
 export default async function AccountsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -33,8 +46,14 @@ export default async function AccountsPage() {
   const now = today()
 
   const accounts = await listAccounts(userId)
-  const checks = await Promise.all(accounts.map((a) => latestCheck(userId, a.id)))
-  const state = accounts.map((account, i) => ({ account, check: checks[i] }))
+  // The whole pointing history per account: the row shows the latest, and its
+  // panel repairs any of them.
+  const histories = await Promise.all(accounts.map((a) => listChecks(userId, a.id, 100)))
+  const state = accounts.map((account, i) => ({
+    account,
+    checks: histories[i]!,
+    check: histories[i]![0] ?? null,
+  }))
 
   const open = state.filter((s) => !s.account.closedOn)
   const closed = state.filter((s) => s.account.closedOn)
@@ -119,7 +138,7 @@ export default async function AccountsPage() {
                 <Rows>
                   {open
                     .filter((s) => s.account.behavior === behavior)
-                    .map(({ account, check }) => (
+                    .map(({ account, check, checks }) => (
                       <div key={account.id} className="flex items-center gap-3 py-3">
                         <div className="flex min-w-0 flex-col gap-0.5">
                           <div className="flex flex-wrap items-baseline gap-2">
@@ -146,7 +165,10 @@ export default async function AccountsPage() {
                         <AccountRowActions
                           accountId={account.id}
                           name={account.name}
+                          institution={account.institution ?? ''}
+                          behavior={account.behavior}
                           computedBalance={Number(account.balance)}
+                          checks={checkEntries(checks)}
                         />
                       </div>
                     ))}
@@ -157,13 +179,22 @@ export default async function AccountsPage() {
             {closed.length > 0 && (
               <Section title="Comptes clos" description="l’historique survit au montage bancaire du moment">
                 <Rows>
-                  {closed.map(({ account }) => (
-                    <div key={account.id} className="flex items-baseline gap-3 py-2 text-faint">
+                  {closed.map(({ account, checks }) => (
+                    <div key={account.id} className="flex items-center gap-3 py-2 text-faint">
                       <span className="text-[12.5px]">{account.name}</span>
                       <span className="text-[11px]">clos le {account.closedOn}</span>
                       <span className="ml-auto font-mono text-[12.5px] tabular">
                         {eur(Number(account.balance), 2)}
                       </span>
+                      <AccountRowActions
+                        accountId={account.id}
+                        name={account.name}
+                        institution={account.institution ?? ''}
+                        behavior={account.behavior}
+                        computedBalance={Number(account.balance)}
+                        closed
+                        checks={checkEntries(checks)}
+                      />
                     </div>
                   ))}
                 </Rows>
