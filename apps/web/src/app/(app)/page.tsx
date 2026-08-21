@@ -7,6 +7,7 @@ import {
   monthlyEquivalent,
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
+import { holdingsValue } from '@abacus/core/services/investments'
 import { outstandingAdvances } from '@abacus/core/services/movements'
 import type { BreakdownRow } from '@abacus/core/services/reports'
 import {
@@ -129,7 +130,11 @@ export default async function OverviewPage({
   }
 
   const checks = await Promise.all(accounts.map((a) => latestCheck(userId, a.id)))
-  const wealth = accounts.reduce((sum, a) => sum + Number(a.balance), 0)
+  // An investment account's balance is its cash, so the holdings have to be
+  // added in: without them the total is wrong the moment a placement moves,
+  // which is what this whole feature was for.
+  const holdings = await holdingsValue(userId)
+  const wealth = accounts.reduce((sum, a) => sum + Number(a.balance), 0) + holdings.value
 
   const series = await balanceSeries(userId, seriesFrom(period, firstDay), period.to)
   const dayTotals = new Map<string, number>()
@@ -188,7 +193,13 @@ export default async function OverviewPage({
                 ? { value: Math.round(wealthEnd - wealthStart), label: 'sur la période' }
                 : undefined
             }
-            hint={`${accounts.filter((a) => !a.closedOn).length} comptes ouverts`}
+            hint={
+              holdings.value > 0
+                ? `${accounts.filter((a) => !a.closedOn).length} comptes, placements au dernier cours${
+                    holdings.unpriced > 0 ? ` (${holdings.unpriced} sans cours)` : ''
+                  }`
+                : `${accounts.filter((a) => !a.closedOn).length} comptes ouverts`
+            }
             spark={wealthSpark}
           />
           <StatTile

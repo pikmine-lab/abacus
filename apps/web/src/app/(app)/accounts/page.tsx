@@ -5,6 +5,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
 import { listCategories } from '@abacus/core/services/catalog'
+import { holdingsValue } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AccountRowActions } from '@/components/account-row-actions'
@@ -68,7 +69,10 @@ export default async function AccountsPage() {
 
   const open = state.filter((s) => !s.account.closedOn)
   const closed = state.filter((s) => s.account.closedOn)
-  const wealth = open.reduce((sum, s) => sum + Number(s.account.balance), 0)
+  // The balance of an investment account is its cash; its holdings are worth
+  // what Placements says they are, and both belong in the wealth total.
+  const holdings = await holdingsValue(userId)
+  const wealth = open.reduce((sum, s) => sum + Number(s.account.balance), 0) + holdings.value
   const gaps = open.filter((s) => s.check && s.check.gap !== 0)
   const toCheck = open.filter((s) => !s.check || daysBetween(s.check.check.checkedOn, now) > STALE_CHECK_DAYS)
 
@@ -115,7 +119,11 @@ export default async function AccountsPage() {
                 hero
                 label="Patrimoine"
                 value={eur(wealth)}
-                hint={`${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`}
+                hint={
+                  holdings.value > 0
+                    ? `${open.length} comptes, dont ${eur(holdings.value)} de placements`
+                    : `${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`
+                }
               />
               <StatTile
                 label="Écarts de pointage"

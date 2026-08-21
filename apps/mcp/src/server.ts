@@ -43,6 +43,7 @@ import {
 import {
   declareAsset,
   editAsset,
+  holdingsValue,
   listAssets,
   listOperations,
   portfolio,
@@ -228,8 +229,20 @@ export function buildServer(userId: string): McpServer {
         const monthlyOut = commitments
           .filter((c) => c.direction === 'outgoing')
           .reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+        // An investment account's balance is its cash, so wealth is only whole
+        // once the holdings are counted: what is worth stating is what those
+        // add on top, at the last known price.
+        const holdings = await holdingsValue(userId)
         return ok({
           accounts: accountsView,
+          holdings:
+            holdings.value > 0
+              ? {
+                  value: Math.round(holdings.value * 100) / 100,
+                  method: 'positions at their last known price, on top of the account balances above',
+                  unpricedPositions: holdings.unpriced === 0 ? undefined : holdings.unpriced,
+                }
+              : undefined,
           pendingOccurrences: pending.map((p) => ({
             commitment: p.commitment.label,
             dueOn: p.dueOn,

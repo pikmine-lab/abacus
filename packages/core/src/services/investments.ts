@@ -279,3 +279,20 @@ export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
 export async function positions(userId: string, accountId?: string): Promise<Position[]> {
   return await positionsDs(db(), userId, accountId)
 }
+
+/**
+ * What the holdings are worth, on top of the account balances. Everywhere else
+ * wealth is the sum of balances, and an investment account's balance is its
+ * cash: without this the total ignores the holdings entirely, which is exactly
+ * what made the dashboard wrong as soon as a placement moved.
+ *
+ * `unpriced` is what the figure cannot include, so a screen can say the total
+ * is partial rather than passing it off as whole.
+ */
+export async function holdingsValue(userId: string): Promise<{ value: number; unpriced: number }> {
+  const held = await positionsDs(db(), userId)
+  return {
+    value: held.reduce((sum, p) => sum + Number(p.value ?? 0), 0),
+    unpriced: held.filter((p) => p.value === null).length,
+  }
+}
