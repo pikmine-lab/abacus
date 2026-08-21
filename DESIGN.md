@@ -176,8 +176,24 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   « que couper ? ».
 - **Corriger est aussi accessible que saisir** : la correction s'ouvre dans le même
   panneau que la déclaration, la suppression derrière une confirmation. Une
-  correction ne touche jamais les liens d'origine (échéance, pointage, avance) : le
-  panneau le dit quand la ligne en porte un.
+  correction ne touche jamais les liens d'origine (échéance, pointage) : le panneau le
+  dit quand la ligne en porte un.
+- **Une avance dit qui doit et combien.** La part attendue se saisit en euros **ou** en
+  pourcentage de la dépense, deux champs qui se répondent : un partage à quatre se pense
+  en pourcentage, un article prêté dans un panier commun se pense en euros. Celui qu'on
+  tape fait foi, l'autre suit. Et quand l'argent est déjà revenu au moment de déclarer,
+  une case écrit le revenu dans la même transaction plutôt que d'exiger une deuxième
+  saisie.
+- **Une créance est un travail à faire, pas un filtre.** Les avances non remboursées
+  s'affichent en tête des mouvements, hors période : celle de quatre mois est exactement
+  celle qu'on a oubliée. Chaque ligne dit ce qui est dû et porte le geste qui la referme,
+  montant modifiable, parce qu'un remboursement arrive partiel aussi souvent qu'entier.
+  « Remboursé » **écrit le revenu** sur le compte qui a payé : cocher un drapeau
+  laisserait le solde calculé et le pointage mentir. Renoncer au reste est l'autre geste,
+  dans le menu de la ligne, et il ne dit pas la même chose.
+- **Ce qui est dû a sa colonne**, à côté du montant, pas la ligne de la note : deux faits
+  différents ne partagent pas une place. Elle n'apparaît que si la sélection porte une
+  créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien.
 - **Le référentiel se corrige dans ses listes.** Réglages montre les catégories, les
   activités et les acteurs en lignes, chacune avec son menu `⋯` ; les acteurs, seuls à
   grossir, portent un champ de recherche. Renommer ne demande rien de plus : ce qui est

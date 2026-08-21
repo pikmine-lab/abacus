@@ -510,3 +510,135 @@ test('a balance check is corrected through the MCP surface, adjustment included'
   assert.equal(gone.isError, true)
   assert.match(gone.text, /manage_balance_checks/)
 })
+
+test('an advance and its refund through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Restaurant' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Alex' })
+
+  // A claim without its share is refused, with what to do about it.
+  const missing = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+      },
+    ],
+  })
+  assert.match(missing.text, /expectedRefundAmount/)
+
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+        expectedRefundAmount: 90,
+      },
+    ],
+  })
+
+  // The claim tells what is owed and where a refund lands: nothing to guess.
+  const open = (await call(client, 'list_outstanding_advances')).json() as {
+    movementId: string
+    paid: number
+    owed: number
+    remaining: number
+    debtor: string
+    account: string
+  }[]
+  assert.equal(open.length, 1)
+  assert.equal(open[0]!.paid, 120)
+  assert.equal(open[0]!.owed, 90)
+  assert.equal(open[0]!.remaining, 90)
+  assert.equal(open[0]!.debtor, 'Alex')
+  assert.equal(open[0]!.account, 'Courant')
+
+  // Half of it comes back, then the rest: the claim closes on its own.
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-12',
+        amount: 40,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Alex',
+        refundsMovementId: open[0]!.movementId,
+      },
+    ],
+  })
+  const half = (await call(client, 'list_outstanding_advances')).json() as { remaining: number }[]
+  assert.equal(half[0]!.remaining, 50)
+
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-13',
+        amount: 50,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Alex',
+        refundsMovementId: open[0]!.movementId,
+      },
+    ],
+  })
+  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+
+  // Refunded on the spot: both movements, no claim left behind.
+  const sameDay = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-14',
+        amount: 60,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+        expectedRefundAmount: 30,
+        alreadyRefunded: true,
+      },
+    ],
+  })
+  assert.equal((sameDay.json() as { declared: number; failed: number }).declared, 1)
+  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+
+  // The claim itself is repairable: a share mistyped, then dropped entirely.
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-15',
+        amount: 80,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+        expectedRefundAmount: 80,
+      },
+    ],
+  })
+  const [claim] = (await call(client, 'list_outstanding_advances')).json() as { movementId: string }[]
+  await call(client, 'fix_movement', {
+    movement: claim!.movementId,
+    action: 'correct',
+    expectedRefundAmount: 20,
+  })
+  const fixed = (await call(client, 'list_outstanding_advances')).json() as { owed: number }[]
+  assert.equal(fixed[0]!.owed, 20)
+
+  await call(client, 'fix_movement', {
+    movement: claim!.movementId,
+    action: 'correct',
+    expectedRefundFrom: 'none',
+  })
+  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+})

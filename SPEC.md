@@ -89,12 +89,17 @@ sociales », le tout étant des données.
 
 ### Avance et remboursement
 Cas : payer pour quelqu'un et attendre un remboursement, éventuellement partiel.
-- La dépense peut être marquée « avance », avec l'acteur qui doit rembourser.
+- La dépense peut être marquée « avance » : l'acteur qui doit rembourser **et la part
+  attendue**, écrite, jamais déduite du montant. Payer 120 € pour quatre et en attendre
+  90 est le cas ordinaire ; une avance ne suppose pas que toute la dépense revienne.
 - Un revenu de remboursement se **lie** à la dépense avancée (même mécanisme de référence
-  d'origine que pour les échéances).
-- La **créance** est dérivée : montant avancé moins remboursements liés, par acteur. Une
+  d'origine que pour les échéances). Un remboursement est toujours ce revenu, jamais un
+  drapeau « c'est réglé » : l'argent est revenu sur un compte, le solde le dit.
+- La **créance** est dérivée : part attendue moins remboursements liés, par acteur. Une
   créance peut être soldée explicitement (abandon du reste : « il ne remboursera que
   50 % »), pour ne pas traîner éternellement.
+- La part attendue et le débiteur se **corrigent** ; le lien d'un remboursement déjà reçu
+  vers son avance, non : ce qui est revenu est un fait.
 - Les analyses de dépenses distinguent **deux lectures, toutes deux visibles** : le
   **brut** (ce qui est réellement sorti des comptes, la dépense « est ce qu'elle est ») et
   le **net** (brut moins remboursements liés **effectivement reçus**). Une créance en

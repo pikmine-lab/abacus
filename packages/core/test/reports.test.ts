@@ -32,6 +32,7 @@ test('period totals separate what was earned from what came back as a refund', a
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
     expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 100,
   })
   await declareMovement(user, {
     happenedOn: '2026-06-20',
@@ -104,6 +105,7 @@ test('an income breakdown groups by the actor that paid, refunds excluded', asyn
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
     expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 60,
   })
   await declareMovement(user, {
     happenedOn: '2026-07-03',

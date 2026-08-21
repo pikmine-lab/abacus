@@ -159,6 +159,7 @@ test('correcting a movement re-derives its kind and keeps its origin links', asy
     targetActorId: shop.id,
     categoryId: dining.id,
     expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 90,
     note: 'diner',
   })
 
@@ -169,8 +170,9 @@ test('correcting a movement re-derives its kind and keeps its origin links', asy
   assert.equal(fixed.kind, 'expense')
   assert.equal(fixed.categoryId, dining.id)
   assert.equal(fixed.note, 'diner')
-  // The advance link is not part of a correction and must survive it.
+  // A correction that says nothing about the claim leaves it alone.
   assert.equal(fixed.expectedRefundFromActorId, friend.id)
+  assert.equal(fixed.expectedRefundAmount, '90.00')
 
   // Reclassifying the counterparty keeps the row valid and re-derives nothing
   // it should not: an expense stays an expense when the actor changes.
@@ -200,6 +202,7 @@ test('a movement can be deleted unless a refund points at it', async () => {
     sourceAccountId: checking.id,
     targetActorId: shop.id,
     expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 60,
   })
   const refund = await declareMovement(user, {
     happenedOn: '2026-03-05',

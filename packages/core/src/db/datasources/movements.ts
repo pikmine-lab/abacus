@@ -16,6 +16,7 @@ export interface NewMovement {
   commitmentId?: string | null
   balanceCheckId?: string | null
   expectedRefundFromActorId?: string | null
+  expectedRefundAmount?: number | null
   refundsMovementId?: string | null
 }
 
@@ -80,7 +81,13 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.categoryId ? tx`and m.category_id = ${f.categoryId}` : tx``}
     ${f.activityId ? tx`and m.activity_id = ${f.activityId}` : tx``}
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
-    ${f.advancesOnly ? tx`and m.expected_refund_from_actor_id is not null and m.refund_closed = false` : tx``}
+    ${
+      f.advancesOnly
+        ? tx`and m.expected_refund_from_actor_id is not null and m.refund_closed = false
+             and m.expected_refund_amount > coalesce(
+               (select sum(r.amount) from movement r where r.refunds_movement_id = m.id), 0)`
+        : tx``
+    }
     ${
       term
         ? tx`and (m.note ilike ${term} or exists (
@@ -166,8 +173,10 @@ export async function sumMovementsForCommitment(tx: Executor, commitmentId: stri
 
 /**
  * Open advances: expenses awaiting a refund, with what came back so far.
- * Fully refunded ones drop out on their own; abandoned ones are closed
- * explicitly (refund_closed).
+ * What is owed is the expected share, not the whole expense: paying for four
+ * and being owed three quarters is the ordinary case. An advance drops out on
+ * its own once that share is back; an abandoned one is closed explicitly
+ * (refund_closed).
  */
 export async function listOutstandingAdvances(
   tx: Executor,
@@ -182,9 +191,18 @@ export async function listOutstandingAdvances(
     where m.user_id = ${userId}
       and m.expected_refund_from_actor_id is not null
       and m.refund_closed = false
-      and m.amount > coalesce(r.total, 0)
+      and m.expected_refund_amount > coalesce(r.total, 0)
     order by m.happened_on
   `
+}
+
+/** What has already come back on an advance, refund movements linked to it. */
+export async function refundedSoFar(tx: Executor, id: string): Promise<string> {
+  const [row] = await tx<{ total: string }[]>`
+    select coalesce(sum(amount), 0)::numeric(14,2) as total
+    from movement where refunds_movement_id = ${id}
+  `
+  return row!.total
 }
 
 export async function setRefundClosed(
