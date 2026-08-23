@@ -7,7 +7,7 @@ import { ActionForm, DateField, SubmitButton } from '@/components/forms'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { reviseScheduleAction } from '@/lib/actions'
-import { addMonths, eur } from '@/lib/utils'
+import { addMonths, eur, money } from '@/lib/utils'
 
 /** One installment as the panel edits it: existing (an id) or added (none). */
 interface Line {
@@ -42,15 +42,19 @@ export interface ScheduleLine {
 export function FinancingScheduleForm({
   commitmentId,
   installments,
+  currency = 'EUR',
   today,
   onDone,
 }: {
   commitmentId: string
   installments: ScheduleLine[]
+  /** The plan's own currency: every line and total reads in it. */
+  currency?: string
   /** Fallback date for a line added to an emptied plan. */
   today: string
   onDone?: () => void
 }) {
+  const fmt = (value: number) => (currency === 'EUR' ? eur(value, 2) : money(value, currency))
   const [lines, setLines] = useState<Line[]>(() =>
     installments.map((i) => ({ key: i.id, id: i.id, dueOn: i.dueOn, amount: i.amount, paid: i.paid })),
   )
@@ -105,9 +109,9 @@ export function FinancingScheduleForm({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11.5px] text-faint">
-          Total du plan <span className="font-mono text-muted-foreground tabular">{eur(total / 100, 2)}</span>
+          Total du plan <span className="font-mono text-muted-foreground tabular">{fmt(total / 100)}</span>
           {' · reste dû '}
-          <span className="font-mono text-muted-foreground tabular">{eur(remaining / 100, 2)}</span>
+          <span className="font-mono text-muted-foreground tabular">{fmt(remaining / 100)}</span>
         </p>
         <Button
           type="button"

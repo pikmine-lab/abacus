@@ -922,7 +922,7 @@ export function buildServer(userId: string): McpServer {
     'manage_financing_schedule',
     {
       description:
-        'Reads and revises the written plan of a financing. show lists every installment with its id, its date, its amount and whether it is already paid. revise replaces that plan with the one you pass: this is how a pushed-back date, a renegotiated amount, an extra installment or an early settlement gets recorded, and the remaining due follows. Always show before revise, because a revision is the whole plan, not a patch: keep the id of every installment you keep, omit the id to add one, and leave a line out to drop it (dropping a paid one deletes the movement that paid it, so only do that when the installment never was owed). The total owed becomes the sum of the plan, so a renegotiation is expressible instead of blocked. Fixing what was really debited on a paid installment can also be done through fix_movement: both sides stay in sync either way.',
+        "Reads and revises the written plan of a financing. show lists every installment with its id, its date, its amount and whether it is already paid. revise replaces that plan with the one you pass: this is how a pushed-back date, a renegotiated amount, an extra installment or an early settlement gets recorded, and the remaining due follows. Always show before revise, because a revision is the whole plan, not a patch: keep the id of every installment you keep, omit the id to add one, and leave a line out to drop it (dropping a paid one deletes the movement that paid it, so only do that when the installment never was owed). The total owed becomes the sum of the plan, so a renegotiation is expressible instead of blocked. Every amount is in the plan's own currency (shown by show; euros unless said otherwise). Fixing what was really debited on a paid installment can also be done through fix_movement: both sides stay in sync either way.",
       inputSchema: z.object({
         action: z.enum(['show', 'revise']),
         commitment: z.string().describe('Label (or id) of the financing'),
@@ -955,6 +955,8 @@ export function buildServer(userId: string): McpServer {
           commitmentId: financing.id,
           label: financing.label,
           totalAmount: Number(financing.totalAmount),
+          // The whole plan is written in this currency: revise in it too.
+          ...(financing.currency !== 'EUR' ? { currency: financing.currency } : {}),
           nextDueOn: financing.nextDueOn,
           installments: (await financingSchedule(userId, financing.id)).map((i) => ({
             id: i.id,

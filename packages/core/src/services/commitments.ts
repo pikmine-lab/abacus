@@ -355,11 +355,13 @@ export async function changeAmount(
     // The billing currency moves with the price and nothing else: it is what
     // the new amount is stated in, and past events keep the currency of their
     // own day. A financing's plan is written in its currency, so it stays.
-    const currency = await resolveCurrency(
-      tx,
-      opts.currency ?? commitment.currency,
-      opts.history ?? fetchHistory,
-    )
+    // Unchanged, it is already validated and backfilled: a plain price change
+    // must not depend on the network.
+    const requested = (opts.currency ?? commitment.currency).toUpperCase()
+    const currency =
+      requested === commitment.currency
+        ? requested
+        : await resolveCurrency(tx, requested, opts.history ?? fetchHistory)
     if (currency !== commitment.currency && commitment.kind === 'financing')
       throw new DomainError(
         'financing_keeps_currency',

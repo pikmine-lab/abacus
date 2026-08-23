@@ -198,6 +198,7 @@ export function CommitmentRowActions({
               <FinancingScheduleForm
                 commitmentId={commitmentId}
                 installments={schedule}
+                currency={currency}
                 today={today ?? ''}
                 onDone={() => setRevising(false)}
               />
