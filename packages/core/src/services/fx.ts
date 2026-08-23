@@ -1,8 +1,14 @@
 import type { Executor } from '../db/client.ts'
-import { closeOnOrBefore, insertPriceHistory, upsertInstrument } from '../db/datasources/investments.ts'
+import {
+  closeOnOrBefore,
+  hasPriceHistory,
+  insertPriceHistory,
+  listCloses,
+  upsertInstrument,
+} from '../db/datasources/investments.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
-import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
+import { fetchHistory, type HistoricalPrice, type HistoryFetcher } from '../prices/sources.ts'
 
 /**
  * FX pairs quote Monday to Friday, so a close up to three days old still is
@@ -88,6 +94,42 @@ export function toEur(amount: number, rate: string): number {
  * beats a broken page: this falls back to whatever close is stored, and only
  * answers null when nothing was ever fetched for the pair.
  */
+/**
+ * Every stored close of one pair, backfilled on first use: what a whole price
+ * history converts against, one lookup instead of one query per day.
+ */
+export async function eurRatesFor(
+  tx: Executor,
+  currency: string,
+  history: HistoryFetcher = fetchHistory,
+): Promise<HistoricalPrice[]> {
+  const instrument = await pairInstrument(tx, currency)
+  if (!(await hasPriceHistory(tx, instrument.id)))
+    await insertPriceHistory(tx, instrument.id, await history('yahoo', instrument.priceSourceRef))
+  return await listCloses(tx, instrument.id)
+}
+
+/**
+ * A foreign price series converted close by close: each day at its own rate
+ * (the last pair close at or before it, weekend bound included), because a
+ * year of USD closes at today's rate would draw the dollar's curve, not the
+ * holding's. A day without a rate is skipped: a missing point beats a wrong
+ * one.
+ */
+export function toEurSeries(closes: HistoricalPrice[], rates: HistoricalPrice[]): HistoricalPrice[] {
+  const byDay = [...rates].sort((a, b) => (a.quotedOn < b.quotedOn ? -1 : 1))
+  const series: HistoricalPrice[] = []
+  let at = -1
+  for (const close of [...closes].sort((a, b) => (a.quotedOn < b.quotedOn ? -1 : 1))) {
+    while (at + 1 < byDay.length && byDay[at + 1]!.quotedOn <= close.quotedOn) at++
+    if (at < 0) continue
+    const rate = byDay[at]!
+    if (daysBetween(rate.quotedOn, close.quotedOn) > WEEKEND_GAP_DAYS) continue
+    series.push({ quotedOn: close.quotedOn, price: String(Number(close.price) * Number(rate.price)) })
+  }
+  return series
+}
+
 export async function eurRateLatest(
   tx: Executor,
   currency: string,

@@ -22,6 +22,7 @@ import {
   movementsNetPerAccount,
   type NewInstrument,
   positions as positionsDs,
+  setInstrumentCurrency,
   updateAssetRow,
   updateOperationRow,
   upsertAssetPrice,
@@ -47,7 +48,9 @@ import {
   fetchHistory,
   fetchQuote,
   type HistoryFetcher,
+  type Quote,
 } from '../prices/sources.ts'
+import { eurRateOn, eurRatesFor, toEurSeries } from './fx.ts'
 
 export interface DeclareAssetInput {
   name: string
@@ -261,29 +264,55 @@ export async function refreshQuotes(
   const now = Date.now()
   await Promise.all(
     candidates.map(async (candidate) => {
-      // The backfill is checked before anything is written, and outside the
-      // freshness bound: a fresh spot price says nothing about whether the year
-      // behind it was ever fetched, and writing today's close first would make
-      // the history look like it already existed.
+      // The spot quote first: it is what names the currency the venue quotes
+      // in, which a foreign backfill needs before it can convert anything.
+      const bound = candidate.marketOpen === false ? CLOSED_FRESHNESS_MS : FRESHNESS_MS[candidate.priceSource]
+      const fresh = candidate.fetchedAt !== null && now - candidate.fetchedAt.getTime() < bound
+      let quote: Quote | null = null
+      if (!fresh) {
+        try {
+          quote = await fetcher(candidate.priceSource, candidate.priceSourceRef)
+        } catch {
+          // Deliberately silent: the caller is a read, and the stored price stands.
+        }
+      }
+      // Within the freshness bound the quote is not refetched, so the venue's
+      // currency is read back from the instrument, where it was learnt.
+      const currency = (quote?.currency ?? candidate.instrumentCurrency).toUpperCase()
+
+      // The backfill is checked outside the freshness bound: a fresh spot
+      // price says nothing about whether the year behind it was ever fetched.
+      // (Today's close cannot fake a backfill: hasPriceHistory looks a month
+      // back.) A foreign history converts close by close, each day at its own
+      // rate: the whole year at today's rate would draw the currency's curve.
       try {
         if (!(await hasPriceHistory(sql, candidate.instrumentId))) {
           const past = await history(candidate.priceSource, candidate.priceSourceRef)
-          await insertPriceHistory(sql, candidate.instrumentId, past)
+          const stored =
+            currency === 'EUR' ? past : toEurSeries(past, await eurRatesFor(sql, currency, history))
+          await insertPriceHistory(sql, candidate.instrumentId, stored)
         }
       } catch {
         // No history is a missing curve, not a broken page.
       }
 
-      const bound = candidate.marketOpen === false ? CLOSED_FRESHNESS_MS : FRESHNESS_MS[candidate.priceSource]
-      if (candidate.fetchedAt && now - candidate.fetchedAt.getTime() < bound) return
+      if (!quote) return
       try {
-        const quote = await fetcher(candidate.priceSource, candidate.priceSourceRef)
-        // A price in another currency cannot be added to euros, and converting
-        // it is issue #10, not this one: leave the position unpriced and say so
-        // rather than mixing units.
-        if (quote.currency !== 'EUR') return
-        await upsertQuote(sql, candidate.instrumentId, quote)
-        await upsertClose(sql, candidate.instrumentId, quote.quotedAt.toISOString().slice(0, 10), quote.price)
+        const day = quote.quotedAt.toISOString().slice(0, 10)
+        // Stored prices are EUR counter-values by construction, whatever the
+        // venue quotes in: every read below (positions, curve) stays a plain
+        // multiplication. No rate for the day leaves the stored price standing.
+        const price =
+          currency === 'EUR'
+            ? quote.price
+            : String(Number(quote.price) * Number(await eurRateOn(sql, currency, day, history)))
+        await upsertQuote(sql, candidate.instrumentId, { ...quote, price, currency: 'EUR' })
+        await upsertClose(sql, candidate.instrumentId, day, price)
+        // The venue's own currency, learnt from the quote: what lets the next
+        // pass convert a backfill without refetching, and a screen say
+        // "quoted in USD".
+        if (currency !== candidate.instrumentCurrency)
+          await setInstrumentCurrency(sql, candidate.instrumentId, currency)
       } catch {
         // Deliberately silent: the caller is a read, and the stored price stands.
       }

@@ -299,16 +299,26 @@ saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
   canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
   en euro sans faire choisir ;
 - **la devise réelle est vérifiée en demandant le cours**, ce qui évite de coder une liste
-  de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10. Et un fonds
-  sans ligne en euro parmi les résultats n'est pas écarté pour autant : ses autres places
-  sont cherchées avant de le déclarer hors de portée, parce qu'un ISIN ne rend chez Yahoo
-  qu'une seule cotation, souvent celle de Londres en livres, quand le même fonds cote en
-  euro à XETRA ou à Milan (mesuré sur `LU1781541252` : Londres en GBP, XETRA et Milan en
-  EUR, Amsterdam en JPY) ;
+  de places : depuis #47 le non-euro se détient (son cours converti, voir plus bas), seule
+  une ligne sans cours lisible reste désactivée. Un fonds sans ligne en euro parmi les
+  résultats voit quand même ses autres places cherchées, parce qu'une ligne en euro reste
+  préférée (aucun bruit de conversion) et qu'un ISIN ne rend chez Yahoo qu'une seule
+  cotation, souvent celle de Londres en livres, quand le même fonds cote en euro à XETRA
+  ou à Milan (mesuré sur `LU1781541252` : Londres en GBP, XETRA et Milan en EUR, Amsterdam
+  en JPY) ;
 - **ce qui départage deux trackers d'un même indice** (l'émetteur, capitalisant ou
   distribuant) est extrait du nom du fonds, et le cours affiché sert à recouper avec le
   relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
   il est gardé quand l'utilisateur le saisit.
+
+**Un instrument coté hors euro se détient** (2026-08-23, issue #47) : les cours stockés
+restent des contre-valeurs euro par construction, la conversion se faisant à l'écriture
+avec les paires de #10 : l'historique clôture par clôture (le cours d'un jour au taux de
+ce jour, un an de USD au taux du jour dessinerait la courbe du dollar), le spot au
+dernier cours de la paire. Un jour sans taux est un point manquant, jamais un point
+faux, et un spot sans taux laisse le cours stocké en place. La devise de cotation est
+apprise du cours lui-même (jamais déclarée de mémoire) et gardée sur
+`instrument.currency` ; les lectures (positions, courbe, valorisation) ne changent pas.
 
 **La courbe** (migration `0009`) : un an de clôtures quotidiennes par instrument, récupéré
 d'un appel (256 points, 27 Ko, 186 ms mesurés) au premier passage, puis complété par la

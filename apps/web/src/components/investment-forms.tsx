@@ -117,9 +117,10 @@ function shortName(name: string): string {
  * tells two trackers of the same index apart: who runs it, whether it pays out
  * or accumulates, and its price. The price is the point, because it is the one
  * number that can be compared against a broker's statement, and that comparison
- * is the only way to be certain this is the same holding. What no venue quotes
- * in euros stays visible and disabled, with its currency: vanishing would read
- * as "not found".
+ * is the only way to be certain this is the same holding. A foreign quote is
+ * held like any other (its price converts to euros at read, issue #47); only a
+ * line whose price could not be read stays visible and disabled, because
+ * vanishing would read as "not found".
  */
 function InstrumentSearch({
   known,
@@ -276,10 +277,10 @@ function InstrumentSearch({
                     ))
                   )}
                   {venues[key]?.some((v) => !v.available) && (
-                    // The greyed lines show their currency, but not why that
-                    // greys them: said once, under the ones concerned.
+                    // The greyed lines lack a price, not a currency: said once,
+                    // under the ones concerned.
                     <p className="px-2 pt-1 text-[11px] text-faint">
-                      Seules les cotations en euro sont sélectionnables.
+                      Une cotation sans cours lisible n’est pas sélectionnable.
                     </p>
                   )}
                 </div>
