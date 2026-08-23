@@ -166,6 +166,10 @@ function InstrumentSearch({
               <span className="truncate">{hit.name}</span>
               <span className="truncate text-[11px] text-faint">
                 {[
+                  // The ticker and the ISIN first: they are what the broker's app
+                  // shows, so they are what makes a line recognisable as one's own.
+                  hit.reference,
+                  hit.isin,
                   hit.issuer,
                   hit.payout ? PAYOUT[hit.payout] : null,
                   hit.venue ?? hit.typeLabel,
