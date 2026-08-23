@@ -4,7 +4,13 @@ import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createCategory } from '../src/services/catalog.ts'
 import { declareMovement } from '../src/services/movements.ts'
-import { firstMovementDay, flowTotals, monthlyFlows, spendingBreakdown } from '../src/services/reports.ts'
+import {
+  firstMovementDay,
+  flowTotals,
+  monthlyFlows,
+  spendingBreakdown,
+  spendingByCategoryGroup,
+} from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -122,7 +128,7 @@ test('an income breakdown groups by the actor that paid, refunds excluded', asyn
   )
 })
 
-test('a group breakdown folds every category carrying it into one mass', async () => {
+test('a group breakdown folds every category carrying it into one mass, and unfolds back into them', async () => {
   const user = await seedUser()
   const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
   const shop = await createActor(user, { name: 'Shop' })
@@ -170,6 +176,38 @@ test('a group breakdown folds every category carrying it into one mass', async (
       // The ungrouped category and the uncategorized movement are the same
       // mass: what no group accounts for.
       { key: null, label: null, gross: '35.00', net: '30.00', count: '2' },
+    ],
+  )
+
+  // Same masses, each keeping what it merges, so a group can be drilled into
+  // without an entity of its own: totals agree with the breakdown above, and
+  // every level is ordered by weight.
+  const masses = await spendingByCategoryGroup(user, '2026-04-01', '2026-04-30')
+  assert.deepEqual(
+    [...masses],
+    [
+      {
+        key: 'Everyday life',
+        label: 'Everyday life',
+        gross: '90.00',
+        net: '90.00',
+        count: '2',
+        categories: [
+          { key: groceries.id, label: 'Groceries', gross: '60.00', net: '60.00', count: '1' },
+          { key: delivery.id, label: 'Delivery', gross: '30.00', net: '30.00', count: '1' },
+        ],
+      },
+      {
+        key: null,
+        label: null,
+        gross: '35.00',
+        net: '30.00',
+        count: '2',
+        categories: [
+          { key: haircut.id, label: 'Haircut', gross: '20.00', net: '15.00', count: '1' },
+          { key: null, label: null, gross: '15.00', net: '15.00', count: '1' },
+        ],
+      },
     ],
   )
 })

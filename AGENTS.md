@@ -387,5 +387,31 @@ Côté MCP : `month` sur `declare_movements` et `fix_movement` (« none » déta
 sur `list_movements` et `analyze_spending`, dont la réponse nomme désormais la lecture et
 la fenêtre qu'elle a servies.
 
+**Analyse agrège par groupe de catégorie** (2026-08-24, issue #45) : l'axe « Groupe » rejoint
+Catégorie, Acteur et Activité, et il devient l'axe par défaut, « où part l'argent » se
+répondant d'abord par grandes masses. #30 avait écarté cet axe faute de quoi cliquer sur une
+ligne de groupe : la réponse est qu'un groupe ne mène nulle part, il se déplie sur les
+catégories qui le composent, et ce sont elles qui mènent aux mouvements. Le dépliement est un
+`<details>` natif animé en CSS (aucun état client, et il tient sans JS) et l'agrégat à deux
+niveaux vit dans le service (`spendingByCategoryGroup`), replié depuis le découpage par
+catégorie et les groupes écrits sur les catégories, jamais dans le front.
+
+Trois décisions d'interface en sont sorties, écrites dans `DESIGN.md` § Graphes :
+
+- **le chiffre est le net, et le classement se fait sur lui** : ordonner par brut place une
+  ligne au-dessus d'une autre qu'elle passe dessous dès le remboursement rentré (`order by net
+  desc, gross desc`, donc côté MCP aussi). Le brut a quitté sa deuxième ligne sous le montant,
+  qui rendait une ligne remboursée plus haute que ses voisines ;
+- **le regroupement se lit à la distance** (rapport de un à quatre entre l'espace intérieur et
+  l'espace entre rangs), avec l'indentation et un filet vertical en renfort, sans fond plein ;
+- **l'infobulle suit le curseur** et n'est plus un `title` de navigateur : elle dit le nombre de
+  mouvements, ce que la ligne agrège, et le brut quand un remboursement l'a séparé du net.
+
+Le donut de la vue d'ensemble a suivi le chiffre net (légende et parts), sinon deux sections
+voisines auraient donné deux nombres pour la même dépense ; sa géométrie ne change pas, l'arc
+dit le brut et le nombre dit ce que ça a coûté. Côté MCP, rien à ajouter : `analyze_spending`
+savait déjà `groupBy: categoryGroup`, et creuser un groupe s'y fait par un second appel par
+catégorie.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

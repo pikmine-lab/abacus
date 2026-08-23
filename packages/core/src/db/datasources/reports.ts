@@ -106,6 +106,11 @@ export interface BreakdownRow {
  * excluded outright: a refund is an advance coming back, not money earned, and
  * counting it as income would double-count what `net` already removed from the
  * expense side.
+ *
+ * Ranked by net, because that is what the period actually cost: ordering by
+ * gross would put a line above another it ends up below once the refund is
+ * back. Gross breaks the ties, so an equal net still ranks the heavier outflow
+ * first and the order stays stable.
  */
 export async function spendingBreakdown(
   tx: Executor,
@@ -148,7 +153,7 @@ export async function spendingBreakdown(
       ${inPeriod(tx, from, to, reading)}
       ${kind === 'income' ? tx`and m.refunds_movement_id is null` : tx``}
     group by 1, 2
-    order by gross desc
+    order by net desc, gross desc
   `
 }
 
