@@ -11,13 +11,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
 import { confirmOccurrenceAction, skipOccurrenceAction } from '@/lib/actions'
-import { eur, eurSigned, frDate } from '@/lib/utils'
+import { eur, frDate, money } from '@/lib/utils'
 
 export interface PendingItem {
   commitmentId: string
   label: string
   dueOn: string
+  /** In the commitment's currency, like the field that confirms it. */
   amount: number
+  currency: string
   incoming: boolean
   /**
    * The account of its own date, which is not always the one the commitment
@@ -57,6 +59,8 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
   const expected = item.amount.toFixed(2)
   const [amount, setAmount] = useState(expected)
   const [dateOpen, setDateOpen] = useState(false)
+  const foreign = item.currency !== 'EUR'
+  const inCurrency = (value: number) => (foreign ? money(value, item.currency) : eur(value, 2))
 
   const entered = Number(amount)
   const differs = amount !== '' && Number.isFinite(entered) && entered !== item.amount
@@ -69,7 +73,7 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
           <p className="text-[13px] font-medium">{item.label}</p>
           <p className="text-[11px] text-faint">
             attendu le {frDate(item.dueOn)} · {item.incoming ? 'entrée' : 'prélèvement'} de{' '}
-            {eur(item.amount, 2)} sur {item.account}
+            {inCurrency(item.amount)} sur {item.account}
           </p>
         </div>
 
@@ -81,8 +85,16 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
             defaultValue={expected}
             onValueChange={setAmount}
             className="h-7 w-28 text-[12.5px]"
-            aria-label={`Montant réellement ${item.incoming ? 'reçu' : 'prélevé'}`}
+            aria-label={`Montant réellement ${item.incoming ? 'reçu' : 'prélevé'}${foreign ? ` (${item.currency})` : ''}`}
           />
+          {foreign && (
+            <AmountInput
+              name="eurAmount"
+              placeholder="€ au cours du jour"
+              className="h-7 w-36 text-[12.5px]"
+              aria-label={`Euros réellement ${item.incoming ? 'crédités' : 'débités'} (optionnel)`}
+            />
+          )}
           {dateOpen && (
             <div className="w-40">
               <DateField name="date" defaultValue={item.dueOn} />
@@ -99,7 +111,7 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
               <span>
                 écart de{' '}
                 <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
-                  {eurSigned(gap, 2)}
+                  {`${gap > 0 ? '+' : '−'}${inCurrency(Math.abs(gap))}`}
                 </span>{' '}
                 : c’est le nouveau montant habituel
               </span>

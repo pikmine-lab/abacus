@@ -58,13 +58,21 @@ export async function listInstallmentsForUpdate(
   `
 }
 
-/** The installment a movement settled, if it settled one. */
+/**
+ * The installment a movement settled, if it settled one, with the currency its
+ * plan is written in: realigning it from the movement is only sound in that
+ * currency.
+ */
 export async function installmentByMovement(
   tx: Executor,
   movementId: string,
-): Promise<FinancingInstallment | undefined> {
-  const [installment] = await tx<FinancingInstallment[]>`
-    select * from financing_installment where movement_id = ${movementId} for update
+): Promise<(FinancingInstallment & { planCurrency: string }) | undefined> {
+  const [installment] = await tx<(FinancingInstallment & { planCurrency: string })[]>`
+    select f.*, c.currency as plan_currency
+    from financing_installment f
+    join commitment c on c.id = f.commitment_id
+    where f.movement_id = ${movementId}
+    for update of f
   `
   return installment
 }

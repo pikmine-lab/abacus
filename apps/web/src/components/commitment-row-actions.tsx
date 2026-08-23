@@ -4,6 +4,7 @@ import { ArrowRightLeftIcon, BanIcon, BanknoteIcon, CalendarClockIcon, PencilIco
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { type CommitmentOptions, EditCommitmentForm, MoveAccountForm } from '@/components/commitment-forms'
+import { CurrencySelect } from '@/components/currency-select'
 import { FinancingScheduleForm, type ScheduleLine } from '@/components/financing-schedule-form'
 import { ActionForm, Field, SubmitButton } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
@@ -21,7 +22,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cancelCommitmentAction, changePriceAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { eur, money } from '@/lib/utils'
 
 /**
  * Life-cycle actions of a recurring commitment. Changing the amount is
@@ -33,6 +34,7 @@ export function CommitmentRowActions({
   commitmentId,
   label,
   amount,
+  currency,
   kind,
   incoming,
   accountId,
@@ -45,6 +47,8 @@ export function CommitmentRowActions({
   commitmentId: string
   label: string
   amount: number
+  /** The currency it bills in, which the price-change panel can move. */
+  currency: string
   kind: 'subscription' | 'financing'
   incoming: boolean
   /** The account it hits today, which the dated move starts from. */
@@ -115,13 +119,16 @@ export function CommitmentRowActions({
             <DialogTitle className="text-[15px]">{label}</DialogTitle>
             <DialogDescription className="text-[12px]">
               Le changement est daté et conservé : c’est ce qui permet de voir les hausses sur la durée.
-              Actuellement {eur(amount, 2)}.
+              Actuellement {currency === 'EUR' ? eur(amount, 2) : money(amount, currency)}.
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={changePriceAction} onSuccess={() => setPricing(false)}>
             <input type="hidden" name="commitmentId" value={commitmentId} />
-            <Field label={incoming ? 'Nouveau montant (€)' : 'Nouveau prix (€)'} name="amount">
-              <AmountInput name="amount" defaultValue={amount.toFixed(2)} />
+            <Field label={incoming ? 'Nouveau montant' : 'Nouveau prix'} name="amount">
+              <div className="flex gap-2">
+                <AmountInput name="amount" defaultValue={amount.toFixed(2)} />
+                <CurrencySelect defaultValue={currency} />
+              </div>
             </Field>
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
           </ActionForm>
@@ -191,6 +198,7 @@ export function CommitmentRowActions({
               <FinancingScheduleForm
                 commitmentId={commitmentId}
                 installments={schedule}
+                currency={currency}
                 today={today ?? ''}
                 onDone={() => setRevising(false)}
               />

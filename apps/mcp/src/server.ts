@@ -33,7 +33,7 @@ import {
   editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
-  monthlyEquivalent,
+  monthlyEquivalentEur,
   moveAccount,
   pendingOccurrences,
   reviseSchedule,
@@ -118,6 +118,15 @@ const GUIDANCE: Record<string, string> = {
     'The amount expected back would be lower than what has already been refunded. Raise it, or correct the refund movement instead.',
   advance_settled:
     'This advance is already refunded in full: there is nothing left to bring back. Check list_outstanding_advances.',
+  transfer_stays_eur:
+    'A transfer between two owned accounts moves euros: declare it in euros, without a currency.',
+  needless_eur_amount:
+    'eurAmount only goes with a foreign currency: the amount is already in euros, so drop one of the two.',
+  no_exchange_rate:
+    'No rate is known for that currency on that date. Check the ISO code (USD, GBP…); if it is right, ask the user for the euros the bank moved and pass them as eurAmount.',
+  bad_currency: 'A currency is a three-letter ISO 4217 code other than EUR: USD, GBP, CHF…',
+  financing_keeps_currency:
+    'A financing plan is written in its currency for its whole life. To change it, the honest way is to close this financing and declare the new plan.',
   financing_settled: 'Every installment of this financing is already paid: it is settled.',
   cancelled: 'This commitment is cancelled: there is no occurrence left to confirm.',
   already_cancelled: 'This commitment is already cancelled.',
@@ -237,9 +246,11 @@ export function buildServer(userId: string): McpServer {
         const pending = await pendingOccurrences(userId)
         const advances = await advancesView()
         const commitments = (await listCommitmentsWithProgress(userId)).filter((c) => !c.cancelledOn)
+        // In euros at the latest rate: a USD line added as-is would count
+        // dollars as euros.
         const monthlyOut = commitments
           .filter((c) => c.direction === 'outgoing')
-          .reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+          .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
         // An investment account's balance is its cash, so wealth is only whole
         // once the holdings are counted: what is worth stating is what those
         // add on top, at the last known price.
@@ -258,6 +269,9 @@ export function buildServer(userId: string): McpServer {
             commitment: p.commitment.label,
             dueOn: p.dueOn,
             amount: p.amount,
+            // Absent on a euro commitment; the euros are computed at
+            // confirmation, at the occurrence day's rate.
+            ...(p.commitment.currency !== 'EUR' ? { currency: p.commitment.currency } : {}),
             direction: p.commitment.direction,
             // The account of its own date, which is not always the one the
             // commitment hits today: a move may have happened in between.
@@ -304,7 +318,7 @@ export function buildServer(userId: string): McpServer {
     'declare_movements',
     {
       description:
-        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). Each line succeeds or fails independently: read the result line by line.',
+        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). Each line succeeds or fails independently: read the result line by line.',
       inputSchema: z.object({
         movements: z
           .array(
@@ -313,7 +327,23 @@ export function buildServer(userId: string): McpServer {
               amount: z
                 .number()
                 .positive()
-                .describe('Amount, always positive; the direction comes from the type'),
+                .describe(
+                  'Amount, always positive; the direction comes from the type. In euros, or in the currency below when one is given',
+                ),
+              currency: z
+                .string()
+                .length(3)
+                .optional()
+                .describe(
+                  "ISO 4217 code the amount was paid in, when not euros (USD, GBP…). Expense/income only. The EUR counter-value is computed at the transaction day's real rate and frozen: never convert yourself",
+                ),
+              eurAmount: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  "With a foreign currency only: the euros the bank actually moved, when the statement shows them. Omitted: computed at the day's rate",
+                ),
               type: z
                 .enum(['expense', 'income', 'transfer'])
                 .describe(
@@ -426,6 +456,8 @@ export function buildServer(userId: string): McpServer {
           const movement = await declareMovement(userId, {
             happenedOn: m.date,
             amount: m.amount,
+            currency: m.currency,
+            eurAmount: m.eurAmount,
             sourceAccountId,
             sourceActorId,
             targetAccountId,
@@ -443,6 +475,13 @@ export function buildServer(userId: string): McpServer {
             ok: true,
             movementId: movement.id,
             kind: movement.kind,
+            // Echo the conversion so the user can hear what was written.
+            ...(movement.originalCurrency
+              ? {
+                  paid: `${Number(movement.originalAmount)} ${movement.originalCurrency}`,
+                  eurAmount: Number(movement.amount),
+                }
+              : {}),
             ...(createdActor ? { createdActor } : {}),
           })
         } catch (e) {
@@ -498,6 +537,8 @@ export function buildServer(userId: string): McpServer {
             date: m.happenedOn,
             kind: m.kind,
             amount: Number(m.amount),
+            // Declared in a foreign currency: amount is its EUR counter-value.
+            ...(m.originalCurrency ? { paid: `${Number(m.originalAmount)} ${m.originalCurrency}` } : {}),
             // The owned account the money moved on; on a transfer, the one it left.
             account: accountName.get((m.sourceAccountId ?? m.targetAccountId)!),
             counterparty:
@@ -653,6 +694,13 @@ export function buildServer(userId: string): McpServer {
           .positive()
           .optional()
           .describe('create: amount per period; change_price: the new amount'),
+        currency: z
+          .string()
+          .length(3)
+          .optional()
+          .describe(
+            "create/change_price: ISO 4217 code the commitment bills in, when not euros (a US SaaS in USD). Each confirmed occurrence converts at its own day's rate, like any movement. On change_price it moves with the new price (a service that starts billing in euros); past events keep their currency",
+          ),
         periodUnit: z.enum(['week', 'month', 'year']).optional().describe('create: defaults to month'),
         periodCount: z
           .number()
@@ -687,6 +735,7 @@ export function buildServer(userId: string): McpServer {
             accountId: (await requireAccountByName(userId, a.account)).id,
             direction: a.direction,
             amount: a.amount,
+            currency: a.currency,
             periodUnit: a.periodUnit ?? 'month',
             periodCount: a.periodCount,
             firstDueOn: a.firstDueOn,
@@ -702,10 +751,13 @@ export function buildServer(userId: string): McpServer {
         const target = await requireCommitment(userId, a.commitment)
         if (a.action === 'change_price') {
           if (!a.amount) return fail('change_price requires amount (the new price).')
-          const updated = await changeAmount(userId, target.id, a.amount, a.effectiveOn)
+          const updated = await changeAmount(userId, target.id, a.amount, a.effectiveOn, {
+            currency: a.currency,
+          })
           return ok({
             commitmentId: updated.id,
             amount: Number(updated.amount),
+            ...(updated.currency !== 'EUR' ? { currency: updated.currency } : {}),
             note: 'Change recorded in the dated history.',
           })
         }
@@ -727,7 +779,7 @@ export function buildServer(userId: string): McpServer {
     'update_commitment',
     {
       description:
-        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
       inputSchema: z.object({
         commitment: z.string().describe('Label (or id) of the commitment to correct'),
         label: z.string().optional().describe('New label'),
@@ -809,6 +861,13 @@ export function buildServer(userId: string): McpServer {
         account: z.string().describe('Account debited at each installment'),
         totalAmount: z.number().positive().describe('Total owed across every installment'),
         installmentsTotal: z.number().int().min(2).describe('Total number of installments'),
+        currency: z
+          .string()
+          .length(3)
+          .optional()
+          .describe(
+            "ISO 4217 code the whole plan is written in (total and installments), when not euros. Fixed for the life of the plan; each confirmed installment converts at its own day's rate",
+          ),
         firstDueOn: isoDate.describe('First installment date'),
         installments: z
           .array(
@@ -839,6 +898,7 @@ export function buildServer(userId: string): McpServer {
           installments: f.installments,
           installmentsTotal: f.installmentsTotal,
           totalAmount: f.totalAmount,
+          currency: f.currency,
           periodUnit: f.periodUnit,
           periodCount: f.periodCount,
           firstDueOn: f.firstDueOn,
@@ -862,7 +922,7 @@ export function buildServer(userId: string): McpServer {
     'manage_financing_schedule',
     {
       description:
-        'Reads and revises the written plan of a financing. show lists every installment with its id, its date, its amount and whether it is already paid. revise replaces that plan with the one you pass: this is how a pushed-back date, a renegotiated amount, an extra installment or an early settlement gets recorded, and the remaining due follows. Always show before revise, because a revision is the whole plan, not a patch: keep the id of every installment you keep, omit the id to add one, and leave a line out to drop it (dropping a paid one deletes the movement that paid it, so only do that when the installment never was owed). The total owed becomes the sum of the plan, so a renegotiation is expressible instead of blocked. Fixing what was really debited on a paid installment can also be done through fix_movement: both sides stay in sync either way.',
+        "Reads and revises the written plan of a financing. show lists every installment with its id, its date, its amount and whether it is already paid. revise replaces that plan with the one you pass: this is how a pushed-back date, a renegotiated amount, an extra installment or an early settlement gets recorded, and the remaining due follows. Always show before revise, because a revision is the whole plan, not a patch: keep the id of every installment you keep, omit the id to add one, and leave a line out to drop it (dropping a paid one deletes the movement that paid it, so only do that when the installment never was owed). The total owed becomes the sum of the plan, so a renegotiation is expressible instead of blocked. Every amount is in the plan's own currency (shown by show; euros unless said otherwise). Fixing what was really debited on a paid installment can also be done through fix_movement: both sides stay in sync either way.",
       inputSchema: z.object({
         action: z.enum(['show', 'revise']),
         commitment: z.string().describe('Label (or id) of the financing'),
@@ -895,6 +955,8 @@ export function buildServer(userId: string): McpServer {
           commitmentId: financing.id,
           label: financing.label,
           totalAmount: Number(financing.totalAmount),
+          // The whole plan is written in this currency: revise in it too.
+          ...(financing.currency !== 'EUR' ? { currency: financing.currency } : {}),
           nextDueOn: financing.nextDueOn,
           installments: (await financingSchedule(userId, financing.id)).map((i) => ({
             id: i.id,
@@ -935,6 +997,9 @@ export function buildServer(userId: string): McpServer {
               label: c.label,
               id: c.id,
               ...account(c),
+              // The plan's own currency: installment, remaining due and total
+              // are all stated in it.
+              ...(c.currency !== 'EUR' ? { currency: c.currency } : {}),
               installment: Number(c.amount),
               paidInstallments: `${c.progress.paidInstallments}/${c.installmentsTotal}`,
               remainingDue: c.progress.remainingDue,
@@ -948,8 +1013,11 @@ export function buildServer(userId: string): McpServer {
             ...account(c),
             direction: c.direction,
             amount: Number(c.amount),
+            ...(c.currency !== 'EUR' ? { currency: c.currency } : {}),
             every: `${c.periodCount} ${c.periodUnit}`,
-            monthlyEquivalent: monthlyEquivalent(c),
+            // Always in euros (latest rate on a foreign commitment), so the
+            // caller can add these up.
+            monthlyEquivalent: monthlyEquivalentEur(c),
             judgment: c.judgment ?? 'not judged',
             judgmentNote: c.judgmentNote ?? undefined,
             engagedUntil: c.engagedUntil ?? undefined,
@@ -984,6 +1052,13 @@ export function buildServer(userId: string): McpServer {
                   'confirm + amount: true when that amount replaces the expected one from now on (a raise, a price increase). It updates the commitment and records a dated price change, so the history shows when it moved. Leave it out or false for a one-off month, which changes nothing for the next occurrences.',
                 ),
               date: isoDate.optional().describe('confirm: the real date when it differs from the due date'),
+              eurAmount: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  "confirm, foreign-currency commitment only: the euros the bank actually moved, when the statement shows them. Omitted: computed at the occurrence day's rate. The amount field stays in the commitment's own currency either way",
+                ),
             }),
           )
           .min(1),
@@ -1004,12 +1079,16 @@ export function buildServer(userId: string): McpServer {
               amount: item.amount,
               happenedOn: item.date,
               updateReference: item.amountIsTheNewNorm,
+              eurAmount: item.eurAmount,
             })
             const diverged = item.amount !== undefined && item.amount !== expected
             results.push({
               commitment: commitment.label,
               movementId: movement.id,
               amount: Number(movement.amount),
+              ...(movement.originalCurrency
+                ? { paid: `${Number(movement.originalAmount)} ${movement.originalCurrency}` }
+                : {}),
               // The account of the movement's own date: an occurrence confirmed
               // after the commitment moved lands on the one it really left.
               account: names.get(movement.sourceAccountId ?? movement.targetAccountId ?? ''),
@@ -1017,8 +1096,8 @@ export function buildServer(userId: string): McpServer {
                 ? {
                     expected,
                     reference: item.amountIsTheNewNorm
-                      ? `Updated to ${item.amount} € and recorded as a dated price change.`
-                      : `Left at ${expected} €, treated as a one-off. Pass amountIsTheNewNorm if it is permanent.`,
+                      ? `Updated to ${item.amount} ${commitment.currency} and recorded as a dated price change.`
+                      : `Left at ${expected} ${commitment.currency}, treated as a one-off. Pass amountIsTheNewNorm if it is permanent.`,
                   }
                 : {}),
             })
@@ -1268,12 +1347,30 @@ export function buildServer(userId: string): McpServer {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
         date: isoDate.optional().describe('correct: the real date'),
-        amount: z.number().positive().optional().describe('correct: the real amount, always positive'),
+        amount: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            'correct: the real amount, always positive. Alone: the euros that hit the account. With currency: what was paid in that currency',
+          ),
+        currency: z
+          .string()
+          .length(3)
+          .optional()
+          .describe(
+            'correct: redeclares the money side, as on declaration. A foreign ISO code converts the amount at the day\'s rate (unless eurAmount gives the bank\'s figure); "EUR" drops a wrongly declared foreign original. Absent: the stored original is kept',
+          ),
+        eurAmount: z
+          .number()
+          .positive()
+          .optional()
+          .describe('correct, with a foreign currency only: the euros the bank actually moved'),
         type: z
           .enum(['expense', 'income', 'transfer'])
           .optional()
@@ -1344,6 +1441,8 @@ export function buildServer(userId: string): McpServer {
         const movement = await correctMovement(userId, f.movement, {
           happenedOn: f.date,
           amount: f.amount,
+          currency: f.currency,
+          eurAmount: f.eurAmount,
           ...endpoints,
           categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
@@ -1358,6 +1457,9 @@ export function buildServer(userId: string): McpServer {
           date: movement.happenedOn,
           amount: Number(movement.amount),
           kind: movement.kind,
+          ...(movement.originalCurrency
+            ? { paid: `${Number(movement.originalAmount)} ${movement.originalCurrency}` }
+            : {}),
         })
       }),
   )

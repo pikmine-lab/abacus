@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { CurrencySelect } from '@/components/currency-select'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,9 @@ export interface MovementDraft {
   type: 'expense' | 'income' | 'transfer'
   happenedOn: string
   amount: string
+  /** Declared in a foreign currency: amount above is its EUR counter-value. */
+  originalAmount?: string
+  originalCurrency?: string
   accountId: string
   toAccountId?: string
   actorName?: string
@@ -68,15 +72,30 @@ export function MovementForm({
   const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
   // The expense amount, watched because the expected share reads as a
   // percentage of it, live.
-  const [amount, setAmount] = useState(draft?.amount ?? '')
+  const [amount, setAmount] = useState(draft?.originalAmount ?? draft?.amount ?? '')
+  const [currency, setCurrency] = useState(draft?.originalCurrency ?? 'EUR')
+  // What hit the account when the statement says it; the share reads on it.
+  const [eurAmount, setEurAmount] = useState(draft?.originalCurrency ? (draft?.amount ?? '') : '')
+  // Editing the paid amount voids the prefilled statement euros.
+  const [eurCleared, setEurCleared] = useState(false)
 
   const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
   const editing = draft !== undefined
+  const foreign = type !== 'transfer' && currency !== 'EUR'
 
   return (
     <ActionForm
       action={editing ? correctMovementAction : declareMovementAction}
       successLabel={editing ? 'Mouvement corrigé' : 'Mouvement déclaré'}
+      onSuccess={() => {
+        // A success remounts the fields (they clear), but this state lives
+        // above the remount: left alone it would keep showing the euros field
+        // while the cleared select says EUR.
+        setAmount('')
+        setCurrency('EUR')
+        setEurAmount('')
+        setEurCleared(false)
+      }}
     >
       <input type="hidden" name="type" value={type} />
       {draft && <input type="hidden" name="movementId" value={draft.id} />}
@@ -85,7 +104,17 @@ export function MovementForm({
           {draft.origin} Corriger le montant ou la date ici ne défait pas ce lien.
         </p>
       )}
-      <Tabs value={type} onValueChange={(v) => setType(v as typeof type)}>
+      <Tabs
+        value={type}
+        onValueChange={(v) => {
+          const next = v as typeof type
+          setType(next)
+          // A transfer moves euros: editing a foreign movement, the amount
+          // field flips to the EUR counter-value (and back to the paid amount).
+          if (editing && draft?.originalCurrency)
+            setAmount(next === 'transfer' ? draft.amount : (draft.originalAmount ?? draft.amount))
+        }}
+      >
         <TabsList className="w-full">
           {TYPES.map((t) => (
             <TabsTrigger key={t.value} value={t.value}>
@@ -99,15 +128,50 @@ export function MovementForm({
         <Field label="Date" name="date">
           <DateField name="date" defaultValue={draft?.happenedOn ?? today} />
         </Field>
-        <Field label="Montant (€)" name="amount">
-          <AmountInput
-            name="amount"
-            placeholder="12,50"
-            defaultValue={draft?.amount ?? ''}
-            onValueChange={setAmount}
-          />
+        <Field label="Montant" name="amount">
+          <div className="flex gap-2">
+            <AmountInput
+              // The key remounts the field when the unit it shows changes.
+              key={
+                editing && draft?.originalCurrency
+                  ? `amount-${type === 'transfer' ? 'eur' : 'paid'}`
+                  : 'amount'
+              }
+              name="amount"
+              placeholder="12,50"
+              defaultValue={
+                type === 'transfer' ? (draft?.amount ?? '') : (draft?.originalAmount ?? draft?.amount ?? '')
+              }
+              onValueChange={(value) => {
+                setAmount(value)
+                // The paid amount moved: the prefilled euros stop applying,
+                // the day's rate takes over unless retyped from the statement.
+                if (editing && draft?.originalCurrency && Number(value) !== Number(draft.originalAmount)) {
+                  setEurCleared(true)
+                  setEurAmount('')
+                }
+              }}
+            />
+            {type !== 'transfer' && (
+              <CurrencySelect value={currency} onValueChange={(v) => setCurrency(v || 'EUR')} />
+            )}
+          </div>
         </Field>
       </div>
+
+      {foreign && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={`En euros (${type === 'income' ? 'crédités' : 'débités'})`} name="eurAmount">
+            <AmountInput
+              key={eurCleared ? 'eur-cleared' : 'eur'}
+              name="eurAmount"
+              placeholder="au cours du jour"
+              defaultValue={!eurCleared && draft?.originalCurrency ? (draft?.amount ?? '') : ''}
+              onValueChange={setEurAmount}
+            />
+          </Field>
+        </div>
+      )}
 
       <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'} name="accountId">
         <FormSelect
@@ -187,7 +251,10 @@ export function MovementForm({
                 autoComplete="off"
                 defaultValue={draft?.refundFromActorName ?? ''}
               />
-              <RefundShare expense={Number(amount)} defaultAmount={draft?.expectedRefundAmount} />
+              <RefundShare
+                expense={Number(foreign ? eurAmount : amount)}
+                defaultAmount={draft?.expectedRefundAmount}
+              />
               {!editing && (
                 <Label className="flex items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
                   <Checkbox name="refundedNow" />

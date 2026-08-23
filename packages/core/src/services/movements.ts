@@ -22,11 +22,24 @@ import {
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { Account, Actor, Movement } from '../domain/types.ts'
+import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
+import { eurRateOn, toEur } from './fx.ts'
 
 export interface DeclareMovementInput {
   happenedOn: string
+  /** In `currency`: euros unless another code says what was actually paid. */
   amount: number
+  /**
+   * ISO 4217 code of the amount as it was paid. Foreign: the movement stores
+   * its EUR counter-value (the account holds euros), the original alongside.
+   */
   currency?: string
+  /**
+   * With a foreign currency only: the euros the bank actually moved, when the
+   * statement says so. Omitted, the counter-value is computed at the
+   * transaction day's rate.
+   */
+  eurAmount?: number
   sourceAccountId?: string
   sourceActorId?: string
   targetAccountId?: string
@@ -63,6 +76,45 @@ async function requireActor(tx: Executor, userId: string, id: string, role: stri
 }
 
 /**
+ * What actually hit the account, resolved once. Accounts hold euros, so a
+ * foreign amount is converted at the transaction day's rate and frozen (a past
+ * expense does not move with today's rate); the bank's own figure wins when
+ * the statement gives it. The declared amount stays alongside as the original.
+ */
+async function inAccountCurrency(
+  tx: Executor,
+  input: DeclareMovementInput,
+  history: HistoryFetcher,
+): Promise<DeclareMovementInput & { originalAmount?: number; originalCurrency?: string }> {
+  const code = (input.currency ?? 'EUR').toUpperCase()
+  if (code === 'EUR') {
+    if (input.eurAmount !== undefined)
+      throw new DomainError(
+        'needless_eur_amount',
+        'eurAmount only goes with a foreign currency: the amount is already in euros',
+      )
+    return { ...input, currency: 'EUR', originalAmount: undefined, originalCurrency: undefined }
+  }
+  if (input.sourceAccountId && input.targetAccountId)
+    throw new DomainError(
+      'transfer_stays_eur',
+      'A transfer between two of your accounts moves euros: declare it in euros',
+    )
+  if (input.eurAmount !== undefined && !(input.eurAmount > 0))
+    throw new DomainError('bad_amount', 'An amount is always positive')
+  const eur = input.eurAmount ?? toEur(input.amount, await eurRateOn(tx, code, input.happenedOn, history))
+  if (!(eur > 0)) throw new DomainError('bad_amount', `${input.amount} ${code} converts to less than a cent`)
+  return {
+    ...input,
+    amount: eur,
+    currency: 'EUR',
+    eurAmount: undefined,
+    originalAmount: input.amount,
+    originalCurrency: code,
+  }
+}
+
+/**
  * Transaction-aware variant, so other services (commitment confirmation,
  * balance adjustments) can declare a movement inside their own transaction.
  */
@@ -70,9 +122,11 @@ export async function declareMovementIn(
   tx: Executor,
   userId: string,
   input: DeclareMovementInput,
+  history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
-  const activityId = await checkMovement(tx, userId, input)
-  const { refundedNow, ...row } = input
+  const resolved = await inAccountCurrency(tx, input, history)
+  const activityId = await checkMovement(tx, userId, resolved)
+  const { refundedNow, eurAmount: _, ...row } = resolved
   const movement = await insertMovement(tx, { ...row, userId, activityId })
   if (refundedNow) await writeRefundIn(tx, userId, movement, {})
   return movement
@@ -186,9 +240,13 @@ function checkAdvanceShare(input: DeclareMovementInput): void {
     )
 }
 
-export async function declareMovement(userId: string, input: DeclareMovementInput): Promise<Movement> {
+export async function declareMovement(
+  userId: string,
+  input: DeclareMovementInput,
+  history: HistoryFetcher = fetchHistory,
+): Promise<Movement> {
   const sql = db()
-  return await sql.begin(async (tx) => declareMovementIn(tx, userId, input))
+  return await sql.begin(async (tx) => declareMovementIn(tx, userId, input, history))
 }
 
 export type { MovementFilters, MovementSelection }
@@ -196,7 +254,16 @@ export type { MovementFilters, MovementSelection }
 /** Fields a correction may touch; anything absent keeps its current value. */
 export interface CorrectMovementInput {
   happenedOn?: string
+  /** Alone: the euros that hit the account. With `currency`: what was paid abroad. */
   amount?: number
+  /**
+   * Redeclares the money side, as on declaration: a foreign code converts the
+   * amount at the day's rate (unless eurAmount gives the bank's figure) and
+   * keeps the original alongside; 'EUR' drops a wrongly declared original.
+   * Absent, the stored original is kept as it is.
+   */
+  currency?: string
+  eurAmount?: number
   sourceAccountId?: string | null
   sourceActorId?: string | null
   targetAccountId?: string | null
@@ -236,9 +303,10 @@ export async function correctMovement(
   userId: string,
   id: string,
   input: CorrectMovementInput,
+  history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
   const sql = db()
-  return await sql.begin(async (tx) => await correctMovementIn(tx, userId, id, input))
+  return await sql.begin(async (tx) => await correctMovementIn(tx, userId, id, input, history))
 }
 
 /**
@@ -250,13 +318,23 @@ export async function correctMovementIn(
   userId: string,
   id: string,
   input: CorrectMovementInput,
+  history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
   const current = await getMovement(tx, userId, id)
   if (!current) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
 
+  // Touching the currency redeclares the money side, so the amount defaults to
+  // the stored original (the declared figure), not to its counter-value.
+  const moneyTouched = input.currency !== undefined || input.eurAmount !== undefined
   const merged: DeclareMovementInput = {
     happenedOn: input.happenedOn ?? current.happenedOn,
-    amount: input.amount ?? Number(current.amount),
+    amount:
+      input.amount ??
+      (moneyTouched && current.originalAmount !== null
+        ? Number(current.originalAmount)
+        : Number(current.amount)),
+    currency: moneyTouched ? (input.currency ?? current.originalCurrency ?? 'EUR') : 'EUR',
+    eurAmount: input.eurAmount,
     sourceAccountId: pick(input, current, 'sourceAccountId'),
     sourceActorId: pick(input, current, 'sourceActorId'),
     targetAccountId: pick(input, current, 'targetAccountId'),
@@ -274,44 +352,63 @@ export async function correctMovementIn(
           : undefined,
     refundsMovementId: current.refundsMovementId ?? undefined,
   }
-  const activityId = await checkMovement(tx, userId, merged)
+  // A movement corrected into a transfer moves euros: an original left over
+  // from the expense it was would dress an internal move as a foreign payment.
+  const becomesTransfer = Boolean(merged.sourceAccountId && merged.targetAccountId)
+  const resolved = moneyTouched
+    ? await inAccountCurrency(tx, merged, history)
+    : {
+        ...merged,
+        originalAmount:
+          !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
+        originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
+      }
+  const activityId = await checkMovement(tx, userId, resolved)
 
   // What has already come back is a fact: the claim it belongs to cannot be
   // dropped under it, nor shrunk below it.
   const received = Number(await refundedSoFar(tx, id))
   if (received > 0) {
-    if (!merged.expectedRefundFromActorId)
+    if (!resolved.expectedRefundFromActorId)
       throw new DomainError(
         'advance_has_refund',
         'A refund is already linked to this advance: delete that refund before dropping the claim',
       )
-    if (merged.expectedRefundAmount! < received)
+    if (resolved.expectedRefundAmount! < received)
       throw new DomainError(
         'advance_below_refunds',
         `The amount expected back cannot be lower than the ${received} already refunded`,
       )
   }
 
-  const row: Record<string, unknown> = { activityId }
+  const row: Record<string, unknown> = {
+    activityId,
+    originalAmount: resolved.originalAmount ?? null,
+    originalCurrency: resolved.originalCurrency ?? null,
+  }
   for (const key of CORRECTABLE) {
     if (key === 'activityId') continue
-    row[key] = merged[key] ?? null
+    row[key] = resolved[key] ?? null
   }
   const updated = await updateMovementRow(tx, userId, id, row)
   if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
 
   // A settled financing installment says what its movement says: the amount
   // debited and the day it was debited. Correcting one corrects the other, or
-  // the plan drifts away from what actually left the account.
+  // the plan drifts away from what actually left the account. On a foreign
+  // plan the installment is written in the billing currency, which on the
+  // movement is the original side, not its EUR counter-value: the plan is only
+  // realigned when the movement still speaks that currency, so a correction to
+  // another one cannot write its units into the plan.
   const settled = await installmentByMovement(tx, id)
+  const paid = updated.originalAmount !== null ? Number(updated.originalAmount) : Number(updated.amount)
+  const paidCurrency = updated.originalCurrency ?? 'EUR'
   if (
     settled &&
-    (Number(settled.amount) !== Number(updated.amount) || settled.dueOn !== updated.happenedOn)
+    paidCurrency === settled.planCurrency &&
+    (Number(settled.amount) !== paid || settled.dueOn !== updated.happenedOn)
   ) {
-    await alignInstallmentOnMovement(tx, settled.id, {
-      amount: Number(updated.amount),
-      on: updated.happenedOn,
-    })
+    await alignInstallmentOnMovement(tx, settled.id, { amount: paid, on: updated.happenedOn })
     await resyncFinancing(tx, settled.commitmentId)
   }
   return updated

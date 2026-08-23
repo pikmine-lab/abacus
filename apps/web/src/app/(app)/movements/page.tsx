@@ -16,7 +16,7 @@ import { FilterBar, PageBody, PageHeader, Section } from '@/components/page-shel
 import { PeriodPicker } from '@/components/period-picker'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { resolvePeriod } from '@/lib/period'
-import { eur, frDate, idParam } from '@/lib/utils'
+import { eur, frDate, idParam, money } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -246,6 +246,11 @@ export default async function MovementsPage({
                     >
                       {isIncome ? '+' : isTransfer ? '' : '−'}
                       {eur(Number(m.amount), 2)}
+                      {m.originalCurrency && (
+                        <span className="block text-[11px] font-normal text-faint">
+                          {money(Number(m.originalAmount), m.originalCurrency)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="pr-1 pl-0 text-right">
                       <MovementRowActions
@@ -257,6 +262,8 @@ export default async function MovementsPage({
                           type: m.kind,
                           happenedOn: m.happenedOn,
                           amount: Number(m.amount).toFixed(2),
+                          originalAmount: m.originalAmount ? Number(m.originalAmount).toFixed(2) : undefined,
+                          originalCurrency: m.originalCurrency ?? undefined,
                           accountId: (isIncome ? m.targetAccountId : m.sourceAccountId) ?? '',
                           toAccountId: isTransfer ? (m.targetAccountId ?? undefined) : undefined,
                           actorName: isTransfer

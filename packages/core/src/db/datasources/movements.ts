@@ -18,6 +18,8 @@ export interface NewMovement {
   expectedRefundFromActorId?: string | null
   expectedRefundAmount?: number | null
   refundsMovementId?: string | null
+  originalAmount?: number | null
+  originalCurrency?: string | null
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {

@@ -59,6 +59,10 @@ export interface Movement {
   expectedRefundAmount: string | null
   refundClosed: boolean
   refundsMovementId: string | null
+  /** What was paid abroad, when the movement was declared in a foreign
+   * currency: `amount` is then its EUR counter-value, frozen at declaration. */
+  originalAmount: string | null
+  originalCurrency: string | null
 }
 
 export type CommitmentKind = 'subscription' | 'financing'
@@ -109,6 +113,8 @@ export interface CommitmentEvent {
   occurredOn: string
   type: CommitmentEventType
   amount: string | null
+  /** The currency the amount was stated in that day; a price change can move it. */
+  currency: string | null
   note: string | null
   /** account_changed only: the account it hits from that date on. */
   accountId: string | null
@@ -128,7 +134,7 @@ export interface BalanceCheck {
  * A quoted thing: public data, owned by nobody, shared by every user. Its
  * identity is where its price comes from and its reference over there.
  */
-export type InstrumentKind = 'security' | 'crypto'
+export type InstrumentKind = 'security' | 'crypto' | 'currency'
 export type PriceSource = 'yahoo' | 'coingecko'
 
 export interface Instrument {

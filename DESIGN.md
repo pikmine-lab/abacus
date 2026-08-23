@@ -196,6 +196,12 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   devient `2 000 000` avant la fin de la saisie, quand un zéro de trop est encore
   bon marché à voir. Le champ visible porte le texte groupé, un champ caché porte la
   valeur machine ; le serveur ne devine jamais ce qu'un espace voulait dire.
+- **Une devise se choisit dans un combobox recherchable** (`CurrencySelect`), jamais
+  dans un Select brut : ~180 codes n'ont ni vue d'ensemble ni tri utile (le problème
+  du sélecteur de pays, mesuré par Baymard). La recherche matche le code et le nom
+  français, accents ignorés (« etats » trouve USD), le code passant devant ; les
+  devises courantes ouvrent la liste, le déclencheur reste compact et montre le code,
+  EUR par défaut. Posé à côté du montant, dont il qualifie l'unité.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais
   étalées dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne
   doivent pas concurrencer ses chiffres. Vaut pour les mouvements (corriger,

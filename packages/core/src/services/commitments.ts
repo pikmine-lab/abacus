@@ -29,7 +29,25 @@ import {
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
 import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
+import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
+import { eurRateLatest, eurRateOn, toEur } from './fx.ts'
 import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
+
+/**
+ * The currency a commitment bills in, resolved at declaration. A foreign one
+ * is asked for its rate right away: that validates the code and backfills the
+ * pair, so the forecasts (committed monthly cost) can convert without waiting
+ * for a first occurrence.
+ */
+async function resolveCurrency(
+  tx: Executor,
+  currency: string | undefined,
+  history: HistoryFetcher,
+): Promise<string> {
+  const code = (currency ?? 'EUR').toUpperCase()
+  if (code !== 'EUR') await eurRateOn(tx, code, today(), history)
+  return code
+}
 
 async function requireActor(tx: Executor, userId: string, actorId: string): Promise<void> {
   if (!(await getActor(tx, userId, actorId)))
@@ -64,6 +82,8 @@ export interface SubscriptionInput {
   categoryId?: string
   activityId?: string
   amount: number
+  /** ISO 4217 code the commitment bills in; each occurrence converts like any movement. */
+  currency?: string
   periodUnit: PeriodUnit
   periodCount?: number
   firstDueOn: string
@@ -72,10 +92,15 @@ export interface SubscriptionInput {
   engagedUntil?: string
 }
 
-export async function createSubscription(userId: string, input: SubscriptionInput): Promise<Commitment> {
+export async function createSubscription(
+  userId: string,
+  input: SubscriptionInput,
+  history: HistoryFetcher = fetchHistory,
+): Promise<Commitment> {
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
+    const currency = await resolveCurrency(tx, input.currency, history)
     const commitment = await insertCommitment(tx, {
       userId,
       kind: 'subscription',
@@ -86,6 +111,7 @@ export async function createSubscription(userId: string, input: SubscriptionInpu
       categoryId: input.categoryId ?? null,
       activityId: input.activityId ?? null,
       amount: input.amount,
+      currency,
       periodUnit: input.periodUnit,
       periodCount: input.periodCount ?? 1,
       nextDueOn: input.firstDueOn,
@@ -93,7 +119,7 @@ export async function createSubscription(userId: string, input: SubscriptionInpu
       judgmentNote: input.judgmentNote ?? null,
       engagedUntil: input.engagedUntil ?? null,
     })
-    await insertCommitmentEvent(tx, commitment.id, today(), 'created', input.amount)
+    await insertCommitmentEvent(tx, commitment.id, today(), 'created', input.amount, null, null, currency)
     return commitment
   })
 }
@@ -122,6 +148,8 @@ export interface FinancingInput {
    * replaces the generated schedule and its sum must match the total.
    */
   installments?: InstallmentInput[]
+  /** ISO 4217 code the whole plan is written in: total, installments, nominal. */
+  currency?: string
   periodUnit?: PeriodUnit
   periodCount?: number
   firstDueOn: string
@@ -164,10 +192,15 @@ export function defaultSchedule(input: {
  * of truth: the remaining due is the sum of what is still owed, never a
  * subtraction that rounding could bend.
  */
-export async function createFinancing(userId: string, input: FinancingInput): Promise<Commitment> {
+export async function createFinancing(
+  userId: string,
+  input: FinancingInput,
+  history: HistoryFetcher = fetchHistory,
+): Promise<Commitment> {
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
+    const currency = await resolveCurrency(tx, input.currency, history)
     if (input.totalAmount === undefined && input.installments === undefined)
       throw new DomainError('financing_needs_amount', 'A financing needs a total amount or a schedule')
 
@@ -208,6 +241,7 @@ export async function createFinancing(userId: string, input: FinancingInput): Pr
       categoryId: input.categoryId ?? null,
       activityId: input.activityId ?? null,
       amount: installmentAmount,
+      currency,
       periodUnit: input.periodUnit ?? 'month',
       periodCount: input.periodCount ?? 1,
       nextDueOn: schedule[0]!.dueOn,
@@ -219,20 +253,72 @@ export async function createFinancing(userId: string, input: FinancingInput): Pr
       commitment.id,
       schedule.map((line, index) => ({ position: index + 1, dueOn: line.dueOn, amount: line.amount })),
     )
-    await insertCommitmentEvent(tx, commitment.id, today(), 'created', installmentAmount)
+    await insertCommitmentEvent(
+      tx,
+      commitment.id,
+      today(),
+      'created',
+      installmentAmount,
+      null,
+      null,
+      currency,
+    )
     return commitment
   })
 }
 
-export async function listCommitments(userId: string, activeOnly = true): Promise<Commitment[]> {
-  return await listCommitmentsDs(db(), userId, { activeOnly })
+/**
+ * A commitment with its amount re-said in euros at the latest known rate.
+ * `amount` stays in the billing currency (it is what the provider states);
+ * `amountEur` is what forecast sums add up, equal to it on a EUR commitment
+ * and null in the one case no rate was ever fetched for the pair.
+ */
+export type CommitmentWithEur = Commitment & { amountEur: string | null }
+
+/** The latest known rate of every foreign currency these commitments bill in. */
+async function latestRates(
+  tx: Executor,
+  commitments: Commitment[],
+  history: HistoryFetcher,
+): Promise<Map<string, string | null>> {
+  const codes = [...new Set(commitments.map((c) => c.currency).filter((c) => c !== 'EUR'))]
+  const rates = new Map<string, string | null>()
+  for (const code of codes) rates.set(code, await eurRateLatest(tx, code, history))
+  return rates
+}
+
+/** A stated amount re-said in euros at the latest rate; null when none is known. */
+function eurOf(amount: string, currency: string, rates: Map<string, string | null>): string | null {
+  if (currency === 'EUR') return amount
+  const rate = rates.get(currency)
+  return rate ? toEur(Number(amount), rate).toFixed(2) : null
+}
+
+async function withEurAmounts<T extends Commitment>(
+  tx: Executor,
+  commitments: T[],
+  history: HistoryFetcher,
+): Promise<(T & { amountEur: string | null })[]> {
+  const rates = await latestRates(tx, commitments, history)
+  return commitments.map((c) => ({ ...c, amountEur: eurOf(c.amount, c.currency, rates) }))
+}
+
+export async function listCommitments(
+  userId: string,
+  activeOnly = true,
+  history: HistoryFetcher = fetchHistory,
+): Promise<CommitmentWithEur[]> {
+  const sql = db()
+  return await withEurAmounts(sql, await listCommitmentsDs(sql, userId, { activeOnly }), history)
 }
 
 export interface FinancingProgress {
   paidInstallments: number
   paidTotal: string
-  /** Sum of the installments still owed, so an adjusted plan stays exact. */
+  /** Sum of the installments still owed, in the plan's own currency. */
   remainingDue: number
+  /** The same in euros at the latest rate: what a sum across plans adds up. */
+  remainingDueEur: number | null
   /** Amount of the next installment, which may differ from the others. */
   nextAmount: number | null
 }
@@ -241,20 +327,26 @@ export interface FinancingProgress {
 export async function listCommitmentsWithProgress(
   userId: string,
   activeOnly = true,
-): Promise<(Commitment & { progress: FinancingProgress | null })[]> {
+  history: HistoryFetcher = fetchHistory,
+): Promise<(CommitmentWithEur & { progress: FinancingProgress | null })[]> {
   const sql = db()
-  const commitments = await listCommitmentsDs(sql, userId, { activeOnly })
+  const raw = await listCommitmentsDs(sql, userId, { activeOnly })
+  const rates = await latestRates(sql, raw, history)
   return await Promise.all(
-    commitments.map(async (c) => {
-      if (c.kind !== 'financing') return { ...c, progress: null }
+    raw.map(async (c) => {
+      const amountEur = eurOf(c.amount, c.currency, rates)
+      if (c.kind !== 'financing') return { ...c, amountEur, progress: null }
       const progress = await scheduleProgress(sql, c.id)
-      if (!progress) return { ...c, progress: null }
+      if (!progress) return { ...c, amountEur, progress: null }
+      const remainingDueEur = eurOf(progress.remainingDue, c.currency, rates)
       return {
         ...c,
+        amountEur,
         progress: {
           paidInstallments: progress.paid,
           paidTotal: progress.paidAmount,
           remainingDue: Number(progress.remainingDue),
+          remainingDueEur: remainingDueEur === null ? null : Number(remainingDueEur),
           nextAmount: progress.nextAmount === null ? null : Number(progress.nextAmount),
         },
       }
@@ -274,13 +366,38 @@ export async function changeAmount(
   id: string,
   newAmount: number,
   effectiveOn?: string,
+  opts: { currency?: string; history?: HistoryFetcher } = {},
 ): Promise<Commitment> {
   const sql = db()
   return await sql.begin(async (tx) => {
     const commitment = await getCommitmentForUpdate(tx, userId, id)
     if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
-    const updated = await updateCommitment(tx, userId, id, { amount: newAmount })
-    await insertCommitmentEvent(tx, id, effectiveOn ?? today(), 'price_changed', newAmount)
+    // The billing currency moves with the price and nothing else: it is what
+    // the new amount is stated in, and past events keep the currency of their
+    // own day. A financing's plan is written in its currency, so it stays.
+    // Unchanged, it is already validated and backfilled: a plain price change
+    // must not depend on the network.
+    const requested = (opts.currency ?? commitment.currency).toUpperCase()
+    const currency =
+      requested === commitment.currency
+        ? requested
+        : await resolveCurrency(tx, requested, opts.history ?? fetchHistory)
+    if (currency !== commitment.currency && commitment.kind === 'financing')
+      throw new DomainError(
+        'financing_keeps_currency',
+        'A financing schedule is written in its currency: it does not change mid-plan',
+      )
+    const updated = await updateCommitment(tx, userId, id, { amount: newAmount, currency })
+    await insertCommitmentEvent(
+      tx,
+      id,
+      effectiveOn ?? today(),
+      'price_changed',
+      newAmount,
+      null,
+      null,
+      currency,
+    )
     return updated!
   })
 }
@@ -410,7 +527,7 @@ export async function cancelCommitment(userId: string, id: string, on?: string):
   })
 }
 
-/** What one period of a commitment costs per month, for "committed monthly cost" views. */
+/** What one period of a commitment costs per month, in its own currency. */
 export function monthlyEquivalent(c: Pick<Commitment, 'amount' | 'periodUnit' | 'periodCount'>): number {
   const amount = Number(c.amount)
   const perMonth =
@@ -420,6 +537,19 @@ export function monthlyEquivalent(c: Pick<Commitment, 'amount' | 'periodUnit' | 
         ? 1 / (12 * c.periodCount)
         : 52 / (12 * c.periodCount)
   return Math.round(amount * perMonth * 100) / 100
+}
+
+/**
+ * Same figure in euros at the latest rate, which is what every sum across
+ * commitments must use: a USD line added as-is would count dollars as euros.
+ * A commitment whose pair was never priced contributes nothing rather than a
+ * guess; the row itself still shows its own currency.
+ */
+export function monthlyEquivalentEur(
+  c: Pick<CommitmentWithEur, 'amountEur' | 'periodUnit' | 'periodCount'>,
+): number {
+  if (c.amountEur === null) return 0
+  return monthlyEquivalent({ amount: c.amountEur, periodUnit: c.periodUnit, periodCount: c.periodCount })
 }
 
 export interface PendingOccurrence {
@@ -495,7 +625,18 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
 export async function confirmNextOccurrence(
   userId: string,
   id: string,
-  overrides: { amount?: number; happenedOn?: string; updateReference?: boolean } = {},
+  overrides: {
+    amount?: number
+    happenedOn?: string
+    updateReference?: boolean
+    /**
+     * Foreign-currency commitment only: the euros the bank actually moved,
+     * when the statement shows them. Omitted, the movement's counter-value is
+     * computed at the occurrence day's rate, like any declared movement.
+     */
+    eurAmount?: number
+  } = {},
+  history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
   const sql = db()
   return await sql.begin(async (tx) => {
@@ -516,17 +657,26 @@ export async function confirmNextOccurrence(
     // the commitment hits now: an occurrence confirmed after a move left the
     // old account, and writing it on the new one falsifies both balances.
     const accountId = accountAt(await accountTimeline(tx, commitment.id), happenedOn)
-    const movement = await declareMovementIn(tx, userId, {
-      happenedOn,
-      amount: overrides.amount ?? expected,
-      sourceAccountId: outgoing ? accountId : undefined,
-      targetActorId: outgoing ? commitment.actorId : undefined,
-      sourceActorId: outgoing ? undefined : commitment.actorId,
-      targetAccountId: outgoing ? undefined : accountId,
-      categoryId: commitment.categoryId ?? undefined,
-      activityId: commitment.activityId,
-      commitmentId: commitment.id,
-    })
+    const movement = await declareMovementIn(
+      tx,
+      userId,
+      {
+        happenedOn,
+        // The occurrence's amount is in the commitment's currency: billed 10
+        // USD, confirmed 10 USD, and the movement converts like any other.
+        amount: overrides.amount ?? expected,
+        currency: commitment.currency !== 'EUR' ? commitment.currency : undefined,
+        eurAmount: overrides.eurAmount,
+        sourceAccountId: outgoing ? accountId : undefined,
+        targetActorId: outgoing ? commitment.actorId : undefined,
+        sourceActorId: outgoing ? undefined : commitment.actorId,
+        targetAccountId: outgoing ? undefined : accountId,
+        categoryId: commitment.categoryId ?? undefined,
+        activityId: commitment.activityId,
+        commitmentId: commitment.id,
+      },
+      history,
+    )
     const confirmedAmount = overrides.amount ?? expected
 
     if (installment) {
@@ -548,7 +698,16 @@ export async function confirmNextOccurrence(
       ...(becomesTheNorm ? { amount: confirmedAmount } : {}),
     })
     if (becomesTheNorm)
-      await insertCommitmentEvent(tx, id, movement.happenedOn, 'price_changed', confirmedAmount)
+      await insertCommitmentEvent(
+        tx,
+        id,
+        movement.happenedOn,
+        'price_changed',
+        confirmedAmount,
+        null,
+        null,
+        commitment.currency,
+      )
     return movement
   })
 }
@@ -615,6 +774,7 @@ export async function reviseSchedule(
   userId: string,
   id: string,
   lines: ScheduleRevisionLine[],
+  history: HistoryFetcher = fetchHistory,
 ): Promise<Commitment> {
   const sql = db()
   return await sql.begin(async (tx) => {
@@ -667,11 +827,29 @@ export async function reviseSchedule(
       const existing = known.get(line.id)!
       // A settled line and its movement say the same thing, whichever side is
       // edited: revising one carries the correction over to the other.
-      if (existing.movementId && (Number(existing.amount) !== line.amount || existing.dueOn !== line.dueOn))
-        await correctMovementIn(tx, userId, existing.movementId, {
-          amount: line.amount,
-          happenedOn: line.dueOn,
-        })
+      const amountChanged = Number(existing.amount) !== line.amount
+      if (existing.movementId && (amountChanged || existing.dueOn !== line.dueOn))
+        // The plan is written in the commitment's currency, so on a foreign
+        // one a changed amount redeclares the paid side and the euros are
+        // reconverted at the day's rate. A date moved alone keeps the euros:
+        // what the bank did is not rewritten for a calendar fix (same rule as
+        // fix_movement), and an old line stays revisable even when the stored
+        // rate history no longer covers its day.
+        await correctMovementIn(
+          tx,
+          userId,
+          existing.movementId,
+          {
+            ...(amountChanged
+              ? {
+                  amount: line.amount,
+                  currency: commitment.currency !== 'EUR' ? commitment.currency : undefined,
+                }
+              : {}),
+            happenedOn: line.dueOn,
+          },
+          history,
+        )
     }
     await insertInstallments(tx, id, added)
 

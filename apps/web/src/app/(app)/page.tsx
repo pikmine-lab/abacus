@@ -4,7 +4,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   listCommitmentsWithProgress,
-  monthlyEquivalent,
+  monthlyEquivalentEur,
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { holdingsValue } from '@abacus/core/services/investments'
@@ -159,7 +159,7 @@ export default async function OverviewPage({
   const saved = income - expenseNet
   const monthlyCommitted = active
     .filter((c) => c.direction === 'outgoing')
-    .reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+    .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   // What is owed back, not what was spent: an advance covers a share of its
   // expense, so the claim is that share minus what already came back.
   const claims = advances.reduce((sum, a) => sum + Number(a.expectedRefundAmount) - Number(a.refunded), 0)

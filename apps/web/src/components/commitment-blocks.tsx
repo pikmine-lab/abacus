@@ -1,12 +1,12 @@
-import type { Commitment, PeriodUnit } from '@abacus/core/domain'
-import type { FinancingProgress } from '@abacus/core/services/commitments'
-import { monthlyEquivalent } from '@abacus/core/services/commitments'
+import type { PeriodUnit } from '@abacus/core/domain'
+import type { CommitmentWithEur, FinancingProgress } from '@abacus/core/services/commitments'
+import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { type CommitmentOptions, JudgmentSelect } from '@/components/commitment-forms'
 import { CommitmentRowActions } from '@/components/commitment-row-actions'
 import type { ScheduleLine } from '@/components/financing-schedule-form'
 import { ProgressRing } from '@/components/progress-ring'
 import { Badge } from '@/components/ui/badge'
-import { eur, frDate } from '@/lib/utils'
+import { eur, frDate, money } from '@/lib/utils'
 
 const UNIT: Record<PeriodUnit, string> = { week: 'semaine', month: 'mois', year: 'an' }
 
@@ -16,7 +16,7 @@ const JUDGMENT = {
   to_cancel: { label: 'à résilier', variant: 'default' as const },
 }
 
-export type CommitmentWithProgress = Commitment & { progress: FinancingProgress | null }
+export type CommitmentWithProgress = CommitmentWithEur & { progress: FinancingProgress | null }
 
 /**
  * One recurring commitment. The row is something to read: what it costs, when
@@ -43,6 +43,10 @@ export function CommitmentRow({
 }) {
   const incoming = c.direction === 'incoming'
   const financing = c.kind === 'financing'
+  const foreign = c.currency !== 'EUR'
+  // Amounts read in the billing currency; only the monthly hint converts.
+  const inCurrency = (value: number, decimals = 0) =>
+    foreign ? money(value, c.currency, decimals) : eur(value, decimals)
   const accountName = (id: string) => options?.accounts.find((a) => a.id === id)?.name ?? ''
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
@@ -71,7 +75,9 @@ export function CommitmentRow({
           <span>
             par {c.periodCount > 1 ? `${c.periodCount} ` : ''}
             {UNIT[c.periodUnit]}
-            {c.periodUnit !== 'month' && ` · ≈ ${eur(monthlyEquivalent(c), 2)}/mois`}
+            {(c.periodUnit !== 'month' || foreign) &&
+              c.amountEur !== null &&
+              ` · ≈ ${eur(monthlyEquivalentEur(c), 2)}/mois`}
           </span>
           <span>prochaine le {frDate(c.nextDueOn)}</span>
           {/* A move already declared: the only place it shows before its date. */}
@@ -83,8 +89,10 @@ export function CommitmentRow({
           {financing && c.progress && (
             <span>
               {c.progress.paidInstallments}/{c.installmentsTotal} payées · reste{' '}
-              <span className="font-mono text-muted-foreground tabular">{eur(c.progress.remainingDue)}</span>{' '}
-              sur {eur(Number(c.totalAmount))}
+              <span className="font-mono text-muted-foreground tabular">
+                {inCurrency(c.progress.remainingDue)}
+              </span>{' '}
+              sur {inCurrency(Number(c.totalAmount))}
             </span>
           )}
         </div>
@@ -96,7 +104,7 @@ export function CommitmentRow({
         }`}
       >
         {incoming ? '+' : '−'}
-        {eur(Number(c.amount), 2)}
+        {inCurrency(Number(c.amount), 2)}
       </span>
 
       {showJudgment && <JudgmentSelect commitmentId={c.id} value={c.judgment} />}
@@ -105,6 +113,7 @@ export function CommitmentRow({
         commitmentId={c.id}
         label={c.label}
         amount={Number(c.amount)}
+        currency={c.currency}
         kind={c.kind}
         incoming={incoming}
         accountId={c.accountId}

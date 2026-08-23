@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { CurrencySelect } from '@/components/currency-select'
 import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { PeriodField } from '@/components/period-field'
@@ -167,8 +168,11 @@ export function NewCommitmentForm({
         <TextField name="label" label="Nom" placeholder="Salaire, loyer perçu…" />
         {shared({ withFirstDue: true })}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Montant par période (€)" name="amount">
-            <AmountInput name="amount" placeholder="2 400" />
+          <Field label="Montant par période" name="amount">
+            <div className="flex gap-2">
+              <AmountInput name="amount" placeholder="2 400" />
+              <CurrencySelect />
+            </div>
           </Field>
           <PeriodField defaultValue="month:1" />
         </div>
@@ -191,8 +195,11 @@ export function NewCommitmentForm({
           <TextField name="label" label="Nom" placeholder="Netflix" />
           {shared({ withFirstDue: true, withLockIn: true })}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Montant par période (€)" name="amount">
-              <AmountInput name="amount" placeholder="15,99" />
+            <Field label="Montant par période" name="amount">
+              <div className="flex gap-2">
+                <AmountInput name="amount" placeholder="15,99" />
+                <CurrencySelect />
+              </div>
             </Field>
             <PeriodField defaultValue="month:1" />
           </div>

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
+import { db } from '@abacus/core/db'
 import { addPeriod, today } from '@abacus/core/domain/period'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { AuthInfo } from '@modelcontextprotocol/server'
@@ -469,6 +470,98 @@ test('a movement reads back with its account and its counterparty', async () => 
       ['expense', 'Courant', 'Carrefour', 'Courses'],
     ],
   )
+})
+
+test('a foreign-currency expense through the MCP surface, statement euros given', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  // eurAmount short-circuits the rate lookup, so no price source is hit here;
+  // the computed-rate path is covered by the core tests with a stubbed source.
+  const declared = await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-01',
+        amount: 99,
+        currency: 'USD',
+        eurAmount: 91.35,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Diner',
+      },
+    ],
+  })
+  const [line] = (declared.json() as { results: { paid?: string; eurAmount?: number }[] }).results
+  assert.equal(line?.paid, '99 USD')
+  assert.equal(line?.eurAmount, 91.35)
+
+  const [row] = (await call(client, 'list_movements')).json() as { amount: number; paid?: string }[]
+  assert.equal(row?.amount, 91.35)
+  assert.equal(row?.paid, '99 USD')
+
+  // A transfer moves euros between owned accounts: a currency on it is refused.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  const refused = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 50,
+        currency: 'USD',
+        type: 'transfer',
+        account: 'Courant',
+        toAccount: 'Livret',
+      },
+    ],
+  })
+  assert.match(refused.text, /euros/)
+})
+
+test('a USD subscription through the MCP surface, converted where euros are needed', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  // The pair is seeded so no price source is hit: the conversion machinery
+  // itself is covered by the core tests with a stubbed source.
+  const sql = db()
+  const [pair] = await sql<{ id: string }[]>`
+    insert into instrument (kind, price_source, price_source_ref, name, symbol, currency)
+    values ('currency', 'yahoo', 'USDEUR=X', 'USD/EUR', 'USD', 'EUR')
+    returning id
+  `
+  await sql`insert into instrument_price (instrument_id, quoted_on, price) values (${pair!.id}, ${today()}, 0.9)`
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'US SaaS',
+    actor: 'SaaS Inc',
+    account: 'Courant',
+    amount: 10,
+    currency: 'USD',
+    firstDueOn: today(),
+  })
+
+  // The committed cost is in euros at the latest rate; the row says its currency.
+  const overview = (await call(client, 'get_overview')).json() as {
+    monthlyCommittedCost: number
+    pendingOccurrences: { amount: number; currency?: string }[]
+  }
+  assert.equal(overview.monthlyCommittedCost, 9)
+  assert.deepEqual(
+    overview.pendingOccurrences.map((p) => [p.amount, p.currency]),
+    [[10, 'USD']],
+  )
+
+  // Confirmed with the bank's own euros: the movement carries both sides.
+  const confirmed = (
+    await call(client, 'confirm_due_movements', {
+      items: [{ commitment: 'US SaaS', action: 'confirm', eurAmount: 9.12 }],
+    })
+  ).json() as { results: { amount: number; paid?: string }[] }
+  assert.equal(confirmed.results[0]!.amount, 9.12)
+  assert.equal(confirmed.results[0]!.paid, '10 USD')
 })
 
 test('a balance check is corrected through the MCP surface, adjustment included', async () => {

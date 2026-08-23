@@ -5,7 +5,7 @@ import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   listCommitmentsWithProgress,
-  monthlyEquivalent,
+  monthlyEquivalentEur,
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
@@ -48,7 +48,7 @@ export default async function RecurringIncomePage({
   const stopped = incoming.filter((c) => c.cancelledOn)
   const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
 
-  const monthly = active.reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  const monthly = active.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
   // Same references the creation form offers, so a row can be corrected too.
   const options = {
@@ -119,6 +119,7 @@ export default async function RecurringIncomePage({
                 label: p.commitment.label,
                 dueOn: p.dueOn,
                 amount: p.amount,
+                currency: p.commitment.currency,
                 incoming: true,
                 account: accountNames.get(p.accountId) ?? '',
               }))}
@@ -134,7 +135,7 @@ export default async function RecurringIncomePage({
           ) : (
             <Rows>
               {[...active]
-                .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
+                .sort((a, b) => monthlyEquivalentEur(b) - monthlyEquivalentEur(a))
                 .map((c) => (
                   <CommitmentRow
                     key={c.id}
