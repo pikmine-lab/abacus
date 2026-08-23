@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -33,6 +33,7 @@ import {
   deleteOperationAction,
   recordOperationAction,
   renameAssetAction,
+  stopFollowingAction,
 } from '@/lib/actions'
 
 interface Option {
@@ -48,6 +49,14 @@ export interface AssetEntry {
   /** The only unambiguous identifier of a fund, when it is known. */
   isin: string | null
   followed: boolean
+}
+
+export interface InstrumentVenue {
+  reference: string
+  venue: string | null
+  price: string | null
+  currency: string | null
+  available: boolean
 }
 
 export interface InstrumentHit {
@@ -124,6 +133,26 @@ function InstrumentSearch({
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<InstrumentHit[]>([])
   const [searching, setSearching] = useState(false)
+  // Venues are fetched when asked for, per fund: listing them for every result
+  // would cost a search and a price per venue on every keystroke.
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [venues, setVenues] = useState<Record<string, InstrumentVenue[]>>({})
+
+  async function toggleVenues(key: string, fund: string) {
+    if (expanded === key) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(key)
+    if (venues[key]) return
+    try {
+      const response = await fetch(`/api/instruments/venues?fund=${encodeURIComponent(fund)}`)
+      const found: InstrumentVenue[] = response.ok ? await response.json() : []
+      setVenues((prev) => ({ ...prev, [key]: found }))
+    } catch {
+      setVenues((prev) => ({ ...prev, [key]: [] }))
+    }
+  }
 
   useEffect(() => {
     const term = query.trim()
@@ -163,36 +192,101 @@ function InstrumentSearch({
   const found = (label: string, items: InstrumentHit[]) =>
     items.length > 0 && (
       <CommandGroup heading={label}>
-        {items.map((hit) => (
-          <CommandItem
-            key={`${hit.source}:${hit.reference}`}
-            value={`new:${hit.reference}`}
-            disabled={!hit.available}
-            onSelect={() => hit.available && onPickNew(hit)}
-            className="items-start gap-3"
-          >
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate">{hit.name}</span>
-              <span className="truncate text-[11px] text-faint">
-                {[
-                  // The ticker and the ISIN first: they are what the broker's app
-                  // shows, so they are what makes a line recognisable as one's own.
-                  hit.reference,
-                  hit.isin,
-                  hit.issuer,
-                  hit.payout ? PAYOUT[hit.payout] : null,
-                  hit.venue ?? hit.typeLabel,
-                  hit.otherVenues > 0 ? `+${hit.otherVenues} places` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-            </span>
-            <span className="tabular shrink-0 text-[11.5px] text-muted-foreground">
-              {hit.price ? amount(hit.price, hit.currency) : (hit.currency ?? '')}
-            </span>
-          </CommandItem>
-        ))}
+        {items.map((hit) => {
+          const key = `${hit.source}:${hit.reference}`
+          const open = expanded === key
+          return (
+            <div key={key} className={open ? 'rounded-sm bg-secondary/30' : undefined}>
+              <CommandItem
+                value={`new:${hit.reference}`}
+                disabled={!hit.available}
+                onSelect={() => hit.available && onPickNew(hit)}
+                className="items-start gap-3"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate">{hit.name}</span>
+                  <span className="truncate text-[11px] text-faint">
+                    {/* The ticker and the ISIN first: they are what the broker's
+                        app shows, so they are what makes a line recognisable. */}
+                    {[hit.reference, hit.isin, hit.issuer, hit.payout ? PAYOUT[hit.payout] : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span className="tabular text-[11.5px] text-muted-foreground">
+                    {hit.price ? amount(hit.price, hit.currency) : (hit.currency ?? '')}
+                  </span>
+                  <span className="text-[11px] text-faint">{hit.venue ?? hit.typeLabel}</span>
+                </span>
+              </CommandItem>
+              {hit.otherVenues > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggleVenues(key, hit.name)}
+                  className="flex w-full items-center gap-1.5 px-2 pb-1.5 text-left text-[11px] text-muted-foreground hover:text-primary"
+                >
+                  {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
+                  {/* Same fund, other venues: what changes between them is the
+                      ticker, the place, the currency and the price, and nothing
+                      else, which is why they sit under it and not beside it. */}
+                  {open
+                    ? 'même fonds, autres cotations'
+                    : `${hit.otherVenues} autre${hit.otherVenues > 1 ? 's' : ''} cotation${
+                        hit.otherVenues > 1 ? 's' : ''
+                      } du même fonds`}
+                </button>
+              )}
+              {open && (
+                <div className="ml-2 border-l border-border pb-1 pl-2">
+                  {venues[key] === undefined ? (
+                    <p className="px-2 py-1 text-[11px] text-faint">Chargement…</p>
+                  ) : venues[key]!.length === 0 ? (
+                    <p className="px-2 py-1 text-[11px] text-faint">Aucune autre cotation trouvée.</p>
+                  ) : (
+                    venues[key]!.map((venue) => (
+                      <CommandItem
+                        key={venue.reference}
+                        value={`venue:${venue.reference}`}
+                        disabled={!venue.available}
+                        onSelect={() =>
+                          venue.available &&
+                          onPickNew({
+                            ...hit,
+                            reference: venue.reference,
+                            venue: venue.venue,
+                            price: venue.price,
+                            currency: venue.currency,
+                            available: true,
+                          })
+                        }
+                        className="gap-3"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[12px]">
+                          {venue.reference}
+                          <span className="text-faint"> · {venue.venue ?? '—'}</span>
+                          {venue.reference === hit.reference && (
+                            <span className="text-primary"> · retenue</span>
+                          )}
+                        </span>
+                        <span className="tabular shrink-0 text-[11.5px] text-muted-foreground">
+                          {venue.price ? amount(venue.price, venue.currency) : (venue.currency ?? '?')}
+                        </span>
+                      </CommandItem>
+                    ))
+                  )}
+                  {venues[key]?.some((v) => !v.available) && (
+                    // The greyed lines show their currency, but not why that
+                    // greys them: said once, under the ones concerned.
+                    <p className="px-2 pt-1 text-[11px] text-faint">
+                      Seules les cotations en euro sont sélectionnables.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </CommandGroup>
     )
 
@@ -501,9 +595,14 @@ export function FollowForm() {
   )
 }
 
-/** The rename gesture, wherever an asset is listed: followed, or held. */
-export function AssetMenu({ id, name }: { id: string; name: string }) {
+/**
+ * What can be done to an asset from its row. Only a followed one can be
+ * forgotten: an asset carrying operations is part of the account's history, so
+ * the entry is not offered rather than offered and refused.
+ */
+export function AssetMenu({ id, name, followed = false }: { id: string; name: string; followed?: boolean }) {
   const [editing, setEditing] = useState(false)
+  const [dropping, setDropping] = useState(false)
   return (
     <>
       <RowMenu label={name}>
@@ -511,7 +610,31 @@ export function AssetMenu({ id, name }: { id: string; name: string }) {
           <PencilIcon />
           Renommer
         </DropdownMenuItem>
+        {followed && (
+          <DropdownMenuItem variant="destructive" onSelect={() => setDropping(true)}>
+            <Trash2Icon />
+            Arrêter de suivre
+          </DropdownMenuItem>
+        )}
       </RowMenu>
+      <AlertDialog open={dropping} onOpenChange={setDropping}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[15px]">Arrêter de suivre {name} ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[12.5px]">
+              Rien n’a été déclaré dessus, donc il n’y a rien à perdre. Tu pourras le suivre à nouveau en le
+              cherchant.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ActionForm action={stopFollowingAction} onSuccess={() => setDropping(false)}>
+            <input type="hidden" name="assetId" value={id} />
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <SubmitButton variant="destructive">Arrêter</SubmitButton>
+            </AlertDialogFooter>
+          </ActionForm>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

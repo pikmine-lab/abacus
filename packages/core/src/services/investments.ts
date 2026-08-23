@@ -3,6 +3,8 @@ import { getAccount, listAccountsWithBalance } from '../db/datasources/accounts.
 import {
   assetHistory as assetHistoryDs,
   assetPrices as assetPricesDs,
+  countOperationsForAsset,
+  deleteAssetRow,
   deleteOperationRow,
   findAssetByInstrument,
   getAsset,
@@ -105,6 +107,27 @@ export async function editAsset(userId: string, id: string, name: string): Promi
   } catch (e) {
     rethrowUnique(e, 'asset_exists', `You already hold something named "${name}"`)
   }
+}
+
+/**
+ * Stops following an asset, which is only ever an asset nothing happened on:
+ * one that carries operations is part of the history, and forgetting it would
+ * take a position and its cost with it. The shared instrument stays: it belongs
+ * to no one, and someone else may well be following it.
+ */
+export async function stopFollowing(userId: string, assetId: string): Promise<void> {
+  const sql = db()
+  await sql.begin(async (tx) => {
+    const asset = await getAsset(tx, userId, assetId)
+    if (!asset) throw new DomainError('asset_not_found', `No asset ${assetId} for this user`)
+    const operations = await countOperationsForAsset(tx, assetId)
+    if (operations > 0)
+      throw new DomainError(
+        'asset_has_operations',
+        `"${asset.name}" carries ${operations} operation${operations > 1 ? 's' : ''}: delete those first, or keep it`,
+      )
+    await deleteAssetRow(tx, userId, assetId)
+  })
 }
 
 export interface RecordOperationInput {

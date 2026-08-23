@@ -1,5 +1,5 @@
 import { DomainError } from '@abacus/core/domain/errors'
-import { searchInstruments } from '@abacus/core/prices/search'
+import { listVenues, searchInstruments } from '@abacus/core/prices/search'
 import {
   closeAccount,
   createAccount,
@@ -41,6 +41,7 @@ import {
   skipNextOccurrence,
 } from '@abacus/core/services/commitments'
 import {
+  assetPrices,
   correctOperation,
   declareAsset,
   deleteOperation,
@@ -49,9 +50,11 @@ import {
   listAssets,
   listOperations,
   portfolio,
+  positions,
   recordOperations,
   refreshQuotes,
   setManualPrice,
+  stopFollowing,
 } from '@abacus/core/services/investments'
 import {
   closeAdvance,
@@ -168,6 +171,8 @@ const GUIDANCE: Record<string, string> = {
   unexpected_quantity: 'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
   needs_asset: 'This operation is about an asset: name the one it concerns.',
   no_operations: 'There is nothing to record: pass at least one operation.',
+  asset_has_operations:
+    'This asset carries operations, so it is part of the history: forgetting it would take a position and its cost with it. Delete its operations with fix_investment_operation first, or keep it.',
   operation_not_found:
     'No such operation for this user. Get a current id from list_investment_operations: an id from an earlier answer may already be gone.',
   amount_or_unit_price:
@@ -1392,7 +1397,7 @@ export function buildServer(userId: string): McpServer {
       description:
         "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's). Omit the source at creation for whatever no source quotes. One instrument can only be held under one name: a second name for it would split the position in half.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'rename', 'set_price']),
+        action: z.enum(['list', 'create', 'rename', 'set_price', 'unfollow']),
         name: z
           .string()
           .optional()
@@ -1430,9 +1435,15 @@ export function buildServer(userId: string): McpServer {
       run(async () => {
         if (a.action === 'list') {
           const assets = await listAssets(userId)
+          const [held, prices] = await Promise.all([positions(userId), assetPrices(userId)])
+          const holding = new Set(held.map((p) => p.assetId))
           return ok(
             assets.map((asset) => ({
               name: asset.name,
+              // Held or merely followed, and what it is worth: an AI could see
+              // neither, so it could not tell a watchlist from a portfolio.
+              status: holding.has(asset.id) ? 'held' : 'followed',
+              price: prices.get(asset.id) ? Number(prices.get(asset.id)) : undefined,
               pricing: asset.instrument
                 ? {
                     source: asset.instrument.priceSource,
@@ -1452,6 +1463,11 @@ export function buildServer(userId: string): McpServer {
           const target = await requireAssetByName(userId, a.name)
           const renamed = await editAsset(userId, target.id, a.newName)
           return ok({ assetId: renamed.id, name: renamed.name })
+        }
+        if (a.action === 'unfollow') {
+          const target = await requireAssetByName(userId, a.name)
+          await stopFollowing(userId, target.id)
+          return ok({ unfollowed: target.name })
         }
         if (a.action === 'set_price') {
           if (a.price === undefined || !a.pricedOn)
@@ -1560,7 +1576,7 @@ export function buildServer(userId: string): McpServer {
     'search_instruments',
     {
       description:
-        'Finds a listed instrument by anything the user knows it as: a name ("msci world"), a provider ("amundi", "ishares"), a ticker ("CW8.PA"), an ISIN ("FR0010315770"), or a coin name. Always search before declaring a holding with manage_assets: the reference has to be the source\'s exact one, and guessing a ticker creates an asset whose price will never update. Several listings of the same fund exist across venues, so use the venue and the price to pick the one the user actually holds, and ask them when it is not obvious. Each result is one fund rather than one quotation line, with a venue quoting it in euros when there is one: the issuer and the payout policy (accumulating or distributing) are what tell two trackers of the same index apart, and the ISIN is what the user can check against their bank. Results marked unavailable are priced in another currency, which this application cannot hold yet.',
+        'Finds a listed instrument by anything the user knows it as: a name ("msci world"), a provider ("amundi", "ishares"), a ticker ("CW8.PA"), an ISIN ("FR0010315770"), or a coin name. Always search before declaring a holding with manage_assets: the reference has to be the source\'s exact one, and guessing a ticker creates an asset whose price will never update. Several listings of the same fund exist across venues, so use the venue and the price to pick the one the user actually holds, and ask them when it is not obvious. Each result is one fund rather than one quotation line, with a venue quoting it in euros when there is one: the issuer and the payout policy (accumulating or distributing) are what tell two trackers of the same index apart, and the ISIN is what the user can check against their bank. Results marked unavailable are priced in another currency, which this application cannot hold yet. When the retained venue has to be checked or changed, list_instrument_venues gives every venue of one fund.',
       inputSchema: z.object({
         query: z.string().min(2).describe('Name, provider, ticker, ISIN or coin name'),
       }),
@@ -1710,6 +1726,34 @@ export function buildServer(userId: string): McpServer {
           quantity: corrected.quantity ?? undefined,
           amount: Number(corrected.amount),
         })
+      }),
+  )
+
+  server.registerTool(
+    'list_instrument_venues',
+    {
+      description:
+        "Every venue quoting one fund, with its ticker, its place, its currency and its price. search_instruments returns one entry per fund and picks a euro line itself, which is right almost always: the same ETF quoted in Amsterdam, Milan and Frankfurt differs by about 0,01 %. Use this when that choice has to be checked or changed: the user reads a price that does not match, names a ticker that is not the one retained, or holds the line of a venue quoting in another currency. Pass the fund's exact name as search_instruments returned it. A venue marked unavailable quotes in another currency and cannot be held yet.",
+      inputSchema: z.object({
+        fund: z.string().describe("The fund's exact name, as search_instruments returned it"),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const venues = await listVenues(a.fund)
+        if (venues.length === 0)
+          return fail(
+            `No venue found for "${a.fund}". The name has to be the exact one search_instruments returned, not a shortened version.`,
+          )
+        return ok(
+          venues.map((venue) => ({
+            reference: venue.reference,
+            venue: venue.venue ?? undefined,
+            price: venue.price ? Number(venue.price) : undefined,
+            currency: venue.currency ?? undefined,
+            unavailable: venue.available ? undefined : `priced in ${venue.currency}, not holdable yet`,
+          })),
+        )
       }),
   )
 

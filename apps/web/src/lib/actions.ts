@@ -31,6 +31,7 @@ import {
   editAsset,
   recordOperations,
   setManualPrice,
+  stopFollowing,
 } from '@abacus/core/services/investments'
 import {
   closeAdvance,
@@ -131,6 +132,8 @@ const FR: Record<string, string> = {
     'Seul un compte d’investissement porte des opérations. Alimenter ce compte est un virement.',
   operation_not_found: 'Cette opération n’existe plus.',
   asset_is_quoted: 'Cet actif prend son cours à sa source : un cours saisi ferait double emploi.',
+  asset_has_operations:
+    'Cet actif porte des opérations : elles font l’histoire du compte. Supprime-les d’abord, ou garde-le.',
   oversold: 'Tu vends plus que ce compte détient. Vérifie la quantité, et le compte.',
   needs_quantity: 'Un achat ou une vente porte une quantité.',
   needs_asset: 'Indique l’actif concerné.',
@@ -1044,6 +1047,18 @@ export async function setAssetPriceAction(_prev: FormState, formData: FormData):
   if (invalid) return { fields: invalid }
   try {
     await setManualPrice(userId, str(formData, 'assetId'), num(formData, 'price'), str(formData, 'pricedOn'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** Forgetting an asset nothing happened on: a watchlist entry, no more. */
+export async function stopFollowingAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await stopFollowing(userId, str(formData, 'assetId'))
   } catch (e) {
     return { error: frError(e) }
   }

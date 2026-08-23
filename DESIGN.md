@@ -317,8 +317,18 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   Yahoo de tête : le champ prend un nom, un fournisseur, un ticker, un ISIN.
 - **Une ligne est un fonds, pas une ligne de cotation.** Le même ETF est coté sur cinq
   places, qui affichent le même prix à 0,01 % près (mesuré : 709,07 / 709,10 / 709,16 €) :
-  faire choisir la place ajoutait tout le bruit et aucune précision. « s&p 500 ucits » passe
-  ainsi de sept lignes à trois fonds, et les places restantes se comptent (« +2 places »).
+  faire choisir la place à tout le monde ajoutait tout le bruit et aucune précision. « s&p
+  500 ucits » passe ainsi de sept lignes à trois fonds.
+- **Mais les cotations se voient, et se choisissent, à la demande.** Un chevron sous le
+  fonds (« 4 autres cotations du même fonds ») les déplie **sous un filet, indentées** :
+  c'est ce qui dit qu'elles sont le même actif et non quatre résultats de plus. Chacune
+  porte ce qui varie entre elles et rien d'autre : son ticker, sa place, sa devise, son
+  cours. Ce qui ne varie pas (nom, émetteur, capitalisant ou distribuant, ISIN) reste en
+  tête, une seule fois. Celle que l'application a retenue est marquée « retenue », et les
+  devises qu'elle ne sait pas tenir sont grisées avec une ligne qui le dit une fois.
+  Le dépliement **déclenche la recherche** de ces cotations : les lister pour chaque
+  résultat coûterait un appel par fonds à chaque frappe, pour ce que presque personne ne
+  regarde.
 - **Ce qui départage se lit séparément** : l'émetteur, capitalisant ou distribuant, et le
   cours. Noyés dans un nom long tronqué, ces trois faits n'existaient pas. Le cours est le
   plus utile des trois, parce que c'est le seul qui se compare au relevé du courtier : et

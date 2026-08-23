@@ -289,6 +289,11 @@ saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
   résultats sélectionnables étaient des jetons crypto tokenisés imitant l'ETF cherché, et
   filtrer par capitalisation n'y aurait rien fait (ces jetons sont classés 329 à 625, mieux
   que Bitcoin SV) ;
+- **un résultat est un fonds, dont les cotations se déplient à la demande**
+  (`list_instrument_venues` côté MCP, un chevron côté web) : le choix par défaut est bon
+  presque toujours, mais il doit pouvoir être vérifié quand un cours ne colle pas au relevé
+  ou quand l'utilisateur nomme un autre ticker. La liste n'est cherchée qu'au dépliement,
+  jamais pour tous les résultats ;
 - **un résultat est un fonds, pas une cotation.** Les places d'un même ETF cotent à 0,01 %
   près (709,07 / 709,10 / 709,16 € le 2026-08-21), donc le regroupement se fait sur le nom
   canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
@@ -325,7 +330,11 @@ courante minimale** : réduire un achat peut rendre une vente postérieure impos
 c'est cette séquence qui est vérifiée avant de valider.
 
 **Suivre sans détenir** : un actif sans opération est un actif suivi. Rien ne le marque en
-base, l'absence de position suffit, et un achat en fait une position sans redéclaration.
+base, l'absence de position suffit, et un achat en fait une position sans redéclaration. On
+arrête de suivre (menu de la ligne, ou `manage_assets action: unfollow`) **uniquement** un
+actif sans opération : celui qui en porte fait l'histoire du compte, et l'oublier emporterait
+une position et son prix de revient. L'instrument partagé, lui, reste : il n'appartient à
+personne et quelqu'un d'autre peut le suivre.
 
 Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
 

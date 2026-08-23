@@ -92,6 +92,19 @@ export async function updateAssetRow(
   return asset
 }
 
+/** What an asset carries, and what therefore forbids forgetting it. */
+export async function countOperationsForAsset(tx: Executor, assetId: string): Promise<number> {
+  const [row] = await tx<{ count: string }[]>`
+    select count(*) as count from investment_operation where asset_id = ${assetId}
+  `
+  return Number(row!.count)
+}
+
+export async function deleteAssetRow(tx: Executor, userId: string, id: string): Promise<number> {
+  const rows = await tx`delete from asset where user_id = ${userId} and id = ${id}`
+  return rows.count
+}
+
 export interface NewOperation {
   userId: string
   accountId: string

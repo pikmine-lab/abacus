@@ -290,20 +290,54 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
 }
 
 /**
+ * Every venue carrying one named fund, priced. What varies between them is the
+ * whole point: the ticker, the place, the currency and the price. What does not
+ * vary (the name, the issuer, the payout policy, the ISIN) is the fund itself,
+ * which is why they are one entry until someone asks to see them.
+ */
+export async function listVenues(name: string): Promise<InstrumentVenue[]> {
+  const priced = await priceSiblings(name)
+  return priced.map((entry) => ({
+    reference: entry.listing.symbol!,
+    venue: entry.listing.exchDisp ?? null,
+    price: entry.price,
+    currency: entry.currency,
+    // Only euros can be held until multi-currency lands (issue #10), so the
+    // others are shown with their currency rather than hidden.
+    available: entry.currency === 'EUR',
+  }))
+}
+
+export interface InstrumentVenue {
+  reference: string
+  venue: string | null
+  price: string | null
+  currency: string | null
+  available: boolean
+}
+
+/**
  * Looks for a euro listing of one named fund, by asking the source for every
  * venue that carries that exact name and pricing them until one answers in
  * euros. Measured on Amundi Core MSCI Japan: the ISIN gives London in pounds,
  * while XETRA and Milan quote it in euros and Amsterdam in yen.
  */
 async function findEuroListing(name: string): Promise<{ euro?: PricedListing; venues: number }> {
+  const priced = await priceSiblings(name)
+  return { euro: priced.find((e) => e.currency === 'EUR'), venues: priced.length }
+}
+
+/** Every listing carrying that exact fund name, with its price. */
+async function priceSiblings(name: string): Promise<PricedListing[]> {
   try {
     const payload = await getJson(
       `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(name)}&quotesCount=15&newsCount=0`,
     )
+    // The exact name is the grouping key, so a near match is another fund.
     const siblings = parseYahooSearch(payload).filter(
       (q) => (q.longname ?? q.shortname ?? '').trim() === name,
     )
-    const priced = await Promise.all(
+    return await Promise.all(
       siblings.slice(0, 8).map(async (listing) => {
         try {
           const quote = await fetchYahoo(listing.symbol!)
@@ -313,9 +347,8 @@ async function findEuroListing(name: string): Promise<{ euro?: PricedListing; ve
         }
       }),
     )
-    return { euro: priced.find((e) => e.currency === 'EUR'), venues: priced.length }
   } catch {
-    return { venues: 0 }
+    return []
   }
 }
 

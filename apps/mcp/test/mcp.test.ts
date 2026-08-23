@@ -853,6 +853,28 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.ok(both.isError)
   assert.match(both.text, /either a total amount or a unit price/)
 
+  // The listing says which assets are held and which are only watched, and a
+  // watched one can be forgotten while a held one cannot.
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Nasdaq',
+    source: 'yahoo',
+    reference: 'EQQQ.PA',
+    kind: 'security',
+  })
+  const listed = (await call(client, 'manage_assets', { action: 'list' })).json() as {
+    name: string
+    status: string
+  }[]
+  assert.equal(listed.find((a) => a.name === 'Nasdaq')!.status, 'followed')
+  assert.equal(listed.find((a) => a.name === 'Monde')!.status, 'held')
+
+  const dropped = await call(client, 'manage_assets', { action: 'unfollow', name: 'Nasdaq' })
+  assert.ok(!dropped.isError, dropped.text)
+  const stillHeld = await call(client, 'manage_assets', { action: 'unfollow', name: 'Monde' })
+  assert.ok(stillHeld.isError)
+  assert.match(stillHeld.text, /part of the history/)
+
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
   assert.equal((operations.json() as unknown[]).length, 5)
 })

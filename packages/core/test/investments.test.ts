@@ -8,6 +8,7 @@ import {
   portfolio,
   positions,
   recordOperations,
+  stopFollowing,
 } from '../src/services/investments.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -232,4 +233,28 @@ test('an asset priced by hand needs no instrument', async () => {
   assert.equal(scpi.instrumentId, null)
   const [only] = await listAssets(user)
   assert.equal(only!.instrument, null)
+})
+
+test('a followed asset is forgotten, one carrying operations is not', async () => {
+  const user = await seedUser()
+  const pea = await createAccount({ userId: user, name: 'PEA', behavior: 'investment' })
+  const watched = await declareAsset(user, {
+    name: 'Nasdaq',
+    instrument: { ...WORLD, priceSourceRef: 'EQQQ.PA' },
+  })
+  const held = await declareAsset(user, { name: 'World', instrument: WORLD })
+  await recordOperations(user, [
+    { accountId: pea.id, assetId: held.id, type: 'buy', quantity: 1, amount: 100, operatedOn: '2026-01-05' },
+  ])
+
+  // Nothing happened on it, so there is nothing to lose.
+  await stopFollowing(user, watched.id)
+  assert.deepEqual(
+    (await listAssets(user)).map((a) => a.name),
+    ['World'],
+  )
+
+  // The other one is the account's history: forgetting it would take a position
+  // and its cost basis with it.
+  await assert.rejects(stopFollowing(user, held.id), (e: DomainError) => e.code === 'asset_has_operations')
 })
