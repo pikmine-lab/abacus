@@ -5,11 +5,12 @@ import { addPeriod } from '@abacus/core/domain/period'
 import { PencilIcon, RotateCcwIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { CurrencySelect } from '@/components/currency-select'
 import { DateField, Field } from '@/components/forms'
 import { PeriodField } from '@/components/period-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { eur, frDate } from '@/lib/utils'
+import { frDate, money } from '@/lib/utils'
 
 /**
  * A payment plan, stated the way the contract states it: a total over N
@@ -49,6 +50,9 @@ export function FinancingAmountFields({ today }: { today: string }) {
   const [firstDueOn, setFirstDueOn] = useState(today)
   const [period, setPeriod] = useState('month:1')
   const [lines, setLines] = useState<Line[] | null>(null)
+  // The whole plan is written in one currency: total, installments, preview.
+  const [currency, setCurrency] = useState('EUR')
+  const fmt = (value: number) => money(value, currency)
 
   const totalValue = Number(total)
   const countValue = Number(count)
@@ -64,15 +68,18 @@ export function FinancingAmountFields({ today }: { today: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Montant total (€)" name="totalAmount">
-          <AmountInput
-            name="totalAmount"
-            placeholder="1 000"
-            onValueChange={(value) => {
-              setTotal(value)
-              setLines(null)
-            }}
-          />
+        <Field label="Montant total" name="totalAmount">
+          <div className="flex gap-2">
+            <AmountInput
+              name="totalAmount"
+              placeholder="1 000"
+              onValueChange={(value) => {
+                setTotal(value)
+                setLines(null)
+              }}
+            />
+            <CurrencySelect onValueChange={(v) => setCurrency(v || 'EUR')} />
+          </div>
         </Field>
         <Field label="Nombre d’échéances" name="installmentsTotal">
           <Input
@@ -116,13 +123,13 @@ export function FinancingAmountFields({ today }: { today: string }) {
             <span>
               {preview.length} échéances de{' '}
               <span className="font-mono text-muted-foreground tabular">
-                {eur(Number(preview[0]!.amount), 2)}
+                {fmt(Number(preview[0]!.amount))}
               </span>
               {preview[preview.length - 1]!.amount !== preview[0]!.amount && (
                 <>
                   , la dernière de{' '}
                   <span className="font-mono text-muted-foreground tabular">
-                    {eur(Number(preview[preview.length - 1]!.amount), 2)}
+                    {fmt(Number(preview[preview.length - 1]!.amount))}
                   </span>
                 </>
               )}
@@ -192,10 +199,10 @@ export function FinancingAmountFields({ today }: { today: string }) {
           </div>
 
           <p className={`text-[11.5px] ${gap === 0 ? 'text-faint' : 'text-destructive'}`}>
-            Total de l’échéancier <span className="font-mono tabular">{eur(scheduled / 100, 2)}</span>
+            Total de l’échéancier <span className="font-mono tabular">{fmt(scheduled / 100)}</span>
             {gap === 0
               ? ' : il correspond au total dû.'
-              : ` : ${gap > 0 ? 'dépasse' : 'manque'} de ${eur(Math.abs(gap) / 100, 2)} par rapport au total dû.`}
+              : ` : ${gap > 0 ? 'dépasse' : 'manque'} de ${fmt(Math.abs(gap) / 100)} par rapport au total dû.`}
           </p>
         </div>
       )}

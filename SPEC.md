@@ -264,14 +264,29 @@ les descriptions détaillées sont un livrable d'implémentation à part entièr
   multi-devise (voir ci-dessous).
 - **V3** : projection avancée (scénarios), et le reste selon l'usage réel.
 
-### Multi-devise (décidé le 2026-08-19, implémentation V2)
+### Multi-devise (décidé le 2026-08-19, tranché le 2026-08-23, issue #10)
 V1 est EUR uniquement, mais le schéma est prêt dès le départ : chaque montant porte sa
-devise (`EUR` partout en V1), pour ne jamais avoir à migrer les données. En V2 : dépenses
-en devise étrangère (USD…) avec **suivi du cours réel**, pas une constante ; la mécanique
-de récupération des cours est la même que pour les actifs boursiers. Point à trancher en
-V2 : conversion au cours du jour de la transaction (fige le coût en EUR) vs au cours
-courant (réévalue), sachant que pour des dépenses c'est le cours du jour de la
-transaction qui reflète la réalité.
+devise (`EUR` partout en V1), pour ne jamais avoir à migrer les données. Depuis #10 :
+dépenses et revenus en devise étrangère (USD…) avec **suivi du cours réel**, pas une
+constante ; la mécanique de récupération des cours est la même que pour les actifs
+boursiers (une paire est un `instrument` partagé de plus).
+
+Le point laissé ouvert est tranché : **conversion au cours du jour de la transaction,
+figée à la déclaration**. Le compte est en euros, donc `amount` reste ce qui a touché le
+compte (les soldes sont des sommes brutes et le relevé bancaire est la réalité pointée) ;
+le montant payé en devise est gardé à côté (`original_amount`, `original_currency`). Le
+cours mid-market n'étant jamais exactement le débit de la banque, les euros réellement
+débités se déclarent quand le relevé les donne, et se corrigent après coup. Un virement
+interne reste EUR : les deux comptes sont à soi.
+
+Les engagements suivent : un abonnement, un revenu récurrent ou un financement se
+déclare dans sa devise de facturation, chaque échéance confirmée convertit comme un
+mouvement (figée à son jour), et l'échéancier d'un financement est écrit tout entier
+dans sa devise. Deux règles complètent la première : une **prévision** (coût mensuel
+engagé, équivalent mensuel) se réévalue au **cours courant**, contrairement à un
+mouvement qui fige, parce qu'elle prédit des débits futurs ; et la devise d'un
+engagement se change par le geste daté (`change_price`), jamais en correction, parce
+que l'historique des montants est exprimé dans la devise de son jour.
 
 ## 7. Points ouverts
 

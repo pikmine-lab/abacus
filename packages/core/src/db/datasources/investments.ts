@@ -453,6 +453,20 @@ export async function insertPriceHistory(
   `
 }
 
+/** The last close at or before a day: what "that day's rate" means on a weekend. */
+export async function closeOnOrBefore(
+  tx: Executor,
+  instrumentId: string,
+  day: string,
+): Promise<{ quotedOn: string; price: string } | undefined> {
+  const [row] = await tx<{ quotedOn: string; price: string }[]>`
+    select quoted_on, price from instrument_price
+    where instrument_id = ${instrumentId} and quoted_on <= ${day}
+    order by quoted_on desc limit 1
+  `
+  return row
+}
+
 /** The close of one day, written as the spot price is read. */
 export async function upsertClose(
   tx: Executor,

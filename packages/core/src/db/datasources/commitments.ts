@@ -147,10 +147,11 @@ export async function insertCommitmentEvent(
   amount?: number | null,
   note?: string | null,
   accountId?: string | null,
+  currency?: string | null,
 ): Promise<CommitmentEvent> {
   const [event] = await tx<CommitmentEvent[]>`
-    insert into commitment_event (commitment_id, occurred_on, type, amount, note, account_id)
-    values (${commitmentId}, ${occurredOn}, ${type}, ${amount ?? null}, ${note ?? null}, ${accountId ?? null})
+    insert into commitment_event (commitment_id, occurred_on, type, amount, note, account_id, currency)
+    values (${commitmentId}, ${occurredOn}, ${type}, ${amount ?? null}, ${note ?? null}, ${accountId ?? null}, ${currency ?? null})
     returning *
   `
   return event!

@@ -6,7 +6,7 @@ import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   financingSchedule,
   listCommitmentsWithProgress,
-  monthlyEquivalent,
+  monthlyEquivalentEur,
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
@@ -78,11 +78,11 @@ export default async function RecurringExpensesPage({
   )
   const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
 
-  const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   const remainingDue = financings.reduce((sum, c) => sum + (c.progress?.remainingDue ?? 0), 0)
   const toCancel = subscriptions.filter((c) => c.judgment === 'to_cancel')
   const reducible = subscriptions.filter((c) => c.judgment === 'reducible')
-  const savable = [...toCancel, ...reducible].reduce((sum, c) => sum + monthlyEquivalent(c), 0)
+  const savable = [...toCancel, ...reducible].reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   const unjudged = subscriptions.filter((c) => !c.judgment).length
   const savableHint = [
     toCancel.length > 0 ? `${toCancel.length} à résilier` : null,
@@ -167,6 +167,7 @@ export default async function RecurringExpensesPage({
                 label: p.commitment.label,
                 dueOn: p.dueOn,
                 amount: p.amount,
+                currency: p.commitment.currency,
                 incoming: false,
                 account: accountNames.get(p.accountId) ?? '',
               }))}
@@ -183,7 +184,7 @@ export default async function RecurringExpensesPage({
           ) : (
             <Rows>
               {[...subscriptions]
-                .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
+                .sort((a, b) => monthlyEquivalentEur(b) - monthlyEquivalentEur(a))
                 .map((c) => (
                   <CommitmentRow key={c.id} commitment={c} showJudgment options={options} today={today()} />
                 ))}

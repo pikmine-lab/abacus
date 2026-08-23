@@ -12,6 +12,16 @@ export function eur(value: number | string, decimals = 0): string {
   })} €`
 }
 
+/** An amount in its own currency: "99,00 $US" for what was paid abroad. */
+export function money(value: number | string, currency: string, decimals = 2): string {
+  return Number(value).toLocaleString('fr-FR', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
 /** Compact money for axis ticks and dense tiles: "13,5 k €" rather than "13 500 €". */
 export function eurShort(value: number): string {
   const abs = Math.abs(value)

@@ -128,6 +128,13 @@ const FR: Record<string, string> = {
     'Un remboursement est déjà lié à cette avance : supprime-le avant de retirer la créance.',
   advance_below_refunds: 'La part attendue est déjà dépassée par ce qui a été remboursé.',
   advance_settled: 'Cette avance est déjà remboursée en entier.',
+  transfer_stays_eur: 'Un virement entre tes comptes se déclare en euros.',
+  needless_eur_amount: 'Le montant est déjà en euros : la contre-valeur ne s’applique pas.',
+  no_exchange_rate:
+    'Aucun cours connu pour cette devise à cette date. Vérifie le code, ou saisis les euros débités.',
+  bad_currency: 'Une devise est un code ISO à trois lettres, autre que EUR.',
+  financing_keeps_currency:
+    'L’échéancier d’un financement est écrit dans sa devise : clos-le et déclare le nouveau plan.',
   not_an_investment_account:
     'Seul un compte d’investissement porte des opérations. Alimenter ce compte est un virement.',
   operation_not_found: 'Cette opération n’existe plus.',
@@ -181,6 +188,11 @@ function str(formData: FormData, key: string): string {
 function opt(formData: FormData, key: string): string | undefined {
   const v = str(formData, key)
   return v === '' ? undefined : v
+}
+
+/** An amount left empty is an absence, not a zero. */
+function optNum(formData: FormData, key: string): number | undefined {
+  return opt(formData, key) === undefined ? undefined : num(formData, key)
 }
 
 /**
@@ -253,9 +265,12 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
           : { sourceActorId: actorId, targetAccountId: accountId }
     }
     const expectedRefundFrom = opt(formData, 'expectedRefundFrom')
+    const currency = opt(formData, 'currency')
     await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
       amount: num(formData, 'amount'),
+      currency,
+      eurAmount: currency && currency !== 'EUR' ? optNum(formData, 'eurAmount') : undefined,
       ...endpoints,
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
@@ -316,9 +331,14 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
     // Only an expense can be an advance, so switching a movement away from
     // expense drops the claim rather than colliding with the domain rule.
     const expectedRefundFrom = type === 'expense' ? opt(formData, 'expectedRefundFrom') : undefined
+    // The form rebuilds the money side whole, so the currency travels even as
+    // 'EUR': that is what drops a wrongly declared foreign original.
+    const currency = type === 'transfer' ? undefined : opt(formData, 'currency')
     await correctMovement(userId, str(formData, 'movementId'), {
       happenedOn: str(formData, 'date'),
       amount: num(formData, 'amount'),
+      currency,
+      eurAmount: currency && currency !== 'EUR' ? optNum(formData, 'eurAmount') : undefined,
       ...endpoints,
       categoryId: opt(formData, 'categoryId') ?? null,
       activityId: opt(formData, 'activityId') ?? null,
@@ -497,6 +517,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       accountId: str(formData, 'accountId'),
       direction: str(formData, 'direction') === 'incoming' ? 'incoming' : 'outgoing',
       amount: num(formData, 'amount'),
+      currency: opt(formData, 'currency'),
       ...every,
       firstDueOn: str(formData, 'firstDueOn'),
       categoryId: opt(formData, 'categoryId'),
@@ -546,6 +567,7 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
       accountId: str(formData, 'accountId'),
       totalAmount: num(formData, 'totalAmount'),
       installmentsTotal: num(formData, 'installmentsTotal'),
+      currency: opt(formData, 'currency'),
       firstDueOn: str(formData, 'firstDueOn'),
       ...every,
       // Present only when the schedule editor was opened; otherwise the plan
@@ -596,6 +618,7 @@ export async function confirmOccurrenceAction(formData: FormData): Promise<void>
       // "It is the new normal": historises the change instead of treating it
       // as a one-off month.
       updateReference: formData.get('newAmount') !== null,
+      eurAmount: optNum(formData, 'eurAmount'),
     })
   } catch (e) {
     errorRedirect(formData, frError(e))
@@ -681,7 +704,9 @@ export async function changePriceAction(_prev: FormState, formData: FormData): P
   const invalid = checkFields(formData, [{ name: 'amount', kind: 'amount' }])
   if (invalid) return { fields: invalid }
   try {
-    await changeAmount(userId, str(formData, 'commitmentId'), num(formData, 'amount'))
+    await changeAmount(userId, str(formData, 'commitmentId'), num(formData, 'amount'), undefined, {
+      currency: opt(formData, 'currency'),
+    })
   } catch (e) {
     return { error: frError(e) }
   }

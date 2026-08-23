@@ -338,5 +338,31 @@ personne et quelqu'un d'autre peut le suivre.
 
 Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
 
+**Un mouvement se déclare en devise étrangère** (2026-08-23, issue #10) : une dépense ou
+un revenu se déclare tel que payé (99 USD), sa contre-valeur EUR est calculée **au cours
+du jour de la transaction et figée** (SPEC § Multi-devise porte la décision). `amount`
+reste ce qui a touché le compte, en euros, donc tous les soldes restent des sommes
+brutes ; le montant payé vit à côté (`original_amount`/`original_currency`, migration
+`0010`) et s'affiche sous la contre-valeur. Une paire de change est un `instrument`
+partagé de plus (kind `currency`, `('yahoo', 'USDEUR=X')`), backfillée d'un an de
+clôtures au premier usage ; le taux d'un jour non coté est la dernière clôture avant lui
+(borne 3 jours), et au-delà de 7 jours d'écart l'app refuse plutôt que de mentir, en
+proposant de saisir les euros du relevé (`eurAmount`), qui priment toujours quand le
+relevé les donne. Corriger `amount` seul ajuste les euros sans toucher au montant payé ;
+repasser `currency` redéclare le côté payé ; `EUR` retire un original déclaré à tort. Un
+virement interne reste EUR. UI : sélecteur de devise dans le panneau, champ « En euros »
+optionnel ; MCP : `currency`/`eurAmount` sur `declare_movements` et `fix_movement`,
+`paid` dans `list_movements`.
+
+Les engagements aussi (même issue) : un abonnement, un revenu récurrent ou un
+financement se déclare dans sa devise de facturation, et chaque échéance confirmée
+convertit comme un mouvement, `eurAmount` compris. Deux règles en plus (SPEC
+§ Multi-devise) : une **prévision se réévalue au cours courant** (`amountEur` sur les
+listes, `monthlyEquivalentEur` pour toute somme), là où un mouvement fige ; la devise
+se change par `change_price`, datée et historisée (`commitment_event.currency`), jamais
+en correction, et jamais sur un financement, dont l'échéancier est écrit tout entier
+dans sa devise (la synchronisation échéance↔mouvement passe alors par le côté payé,
+`original_amount`).
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).
