@@ -37,6 +37,13 @@ const TIMEOUT_MS = 5000
 /** Quotation lines whose price gets checked. Enough to cover a few funds. */
 const CHECKED = 18
 
+/**
+ * How many funds that look unavailable get a second look. Each one costs a
+ * search plus a price per venue it turns up, so it is worth a few and not the
+ * whole list.
+ */
+const RESCUED = 4
+
 /** Two letters, nine alphanumerics, one check digit. */
 const ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/
 
@@ -51,6 +58,13 @@ async function getJson(url: string): Promise<unknown> {
 
 /** Only funds have a manager and a payout policy; a share has neither. */
 const FUND_TYPES = new Set(['ETF', 'MUTUALFUND'])
+
+/** A listing with whatever its price call returned. */
+interface PricedListing {
+  listing: YahooQuote
+  price: string | null
+  currency: string | null
+}
 
 interface YahooQuote {
   symbol?: string
@@ -206,8 +220,21 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
     else byFund.set(key, [entry])
   }
 
-  return [...byFund.entries()].map(([name, group]) => {
-    const euro = group.find((e) => e.currency === 'EUR')
+  // A fund with no euro line among the results is not out of reach: Yahoo simply
+  // did not return the venue that has one. Asked for an ISIN it answers a single
+  // listing, and it is regularly the London one in pounds while the same fund
+  // trades in euros on XETRA and Milan. So the ones that look unavailable get
+  // their other venues fetched before being written off.
+  const entries = [...byFund.entries()]
+  const withoutEuro = entries.filter(([, group]) => !group.some((e) => e.currency === 'EUR'))
+  const rescued = new Map<string, PricedListing>()
+  for (const [name] of withoutEuro.slice(0, RESCUED)) {
+    const euro = await findEuroListing(name)
+    if (euro) rescued.set(name, euro)
+  }
+
+  return entries.map(([name, group]) => {
+    const euro = group.find((e) => e.currency === 'EUR') ?? rescued.get(name)
     const chosen = euro ?? group[0]!
     const isFund = FUND_TYPES.has(chosen.listing.quoteType ?? '')
     return {
@@ -223,9 +250,39 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
       price: chosen.price,
       currency: chosen.currency,
       available: euro !== undefined,
-      otherVenues: group.length - 1,
+      otherVenues: Math.max(group.length - 1, euro && !group.includes(euro) ? 1 : 0),
     }
   })
+}
+
+/**
+ * Looks for a euro listing of one named fund, by asking the source for every
+ * venue that carries that exact name and pricing them until one answers in
+ * euros. Measured on Amundi Core MSCI Japan: the ISIN gives London in pounds,
+ * while XETRA and Milan quote it in euros and Amsterdam in yen.
+ */
+async function findEuroListing(name: string): Promise<PricedListing | undefined> {
+  try {
+    const payload = await getJson(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(name)}&quotesCount=15&newsCount=0`,
+    )
+    const siblings = parseYahooSearch(payload).filter(
+      (q) => (q.longname ?? q.shortname ?? '').trim() === name,
+    )
+    const priced = await Promise.all(
+      siblings.slice(0, 8).map(async (listing) => {
+        try {
+          const quote = await fetchYahoo(listing.symbol!)
+          return { listing, price: quote.price as string | null, currency: quote.currency as string | null }
+        } catch {
+          return { listing, price: null, currency: null }
+        }
+      }),
+    )
+    return priced.find((e) => e.currency === 'EUR')
+  } catch {
+    return undefined
+  }
 }
 
 /**

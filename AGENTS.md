@@ -288,7 +288,12 @@ saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
   canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
   en euro sans faire choisir ;
 - **la devise réelle est vérifiée en demandant le cours**, ce qui évite de coder une liste
-  de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10 ;
+  de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10. Et un fonds
+  sans ligne en euro parmi les résultats n'est pas écarté pour autant : ses autres places
+  sont cherchées avant de le déclarer hors de portée, parce qu'un ISIN ne rend chez Yahoo
+  qu'une seule cotation, souvent celle de Londres en livres, quand le même fonds cote en
+  euro à XETRA ou à Milan (mesuré sur `LU1781541252` : Londres en GBP, XETRA et Milan en
+  EUR, Amsterdam en JPY) ;
 - **ce qui départage deux trackers d'un même indice** (l'émetteur, capitalisant ou
   distribuant) est extrait du nom du fonds, et le cours affiché sert à recouper avec le
   relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
