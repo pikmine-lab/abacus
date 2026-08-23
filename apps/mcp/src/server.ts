@@ -1560,7 +1560,7 @@ export function buildServer(userId: string): McpServer {
     'search_instruments',
     {
       description:
-        'Finds a listed instrument by anything the user knows it as: a name ("msci world"), a provider ("amundi", "ishares"), a ticker ("CW8.PA"), an ISIN ("FR0010315770"), or a coin name. Always search before declaring a holding with manage_assets: the reference has to be the source\'s exact one, and guessing a ticker creates an asset whose price will never update. Several listings of the same fund exist across venues, so use the venue and the price to pick the one the user actually holds, and ask them when it is not obvious. Results marked unavailable are priced in another currency, which this application cannot hold yet.',
+        'Finds a listed instrument by anything the user knows it as: a name ("msci world"), a provider ("amundi", "ishares"), a ticker ("CW8.PA"), an ISIN ("FR0010315770"), or a coin name. Always search before declaring a holding with manage_assets: the reference has to be the source\'s exact one, and guessing a ticker creates an asset whose price will never update. Several listings of the same fund exist across venues, so use the venue and the price to pick the one the user actually holds, and ask them when it is not obvious. Each result is one fund rather than one quotation line, with a venue quoting it in euros when there is one: the issuer and the payout policy (accumulating or distributing) are what tell two trackers of the same index apart, and the ISIN is what the user can check against their bank. Results marked unavailable are priced in another currency, which this application cannot hold yet.',
       inputSchema: z.object({
         query: z.string().min(2).describe('Name, provider, ticker, ISIN or coin name'),
       }),
@@ -1578,7 +1578,14 @@ export function buildServer(userId: string): McpServer {
             reference: hit.reference,
             name: hit.name,
             kind: hit.kind,
+            // What actually tells two trackers of one index apart, and what the
+            // user can check against their bank: the web shows all three, so an
+            // AI has to see them too or it cannot help choose.
+            isin: hit.isin ?? undefined,
+            issuer: hit.issuer ?? undefined,
+            payout: hit.payout ?? undefined,
             venue: hit.venue ?? undefined,
+            otherVenues: hit.otherVenues > 0 ? hit.otherVenues : undefined,
             price: hit.price ? Number(hit.price) : undefined,
             currency: hit.currency ?? undefined,
             unavailable: hit.available ? undefined : `priced in ${hit.currency}, not holdable yet`,
