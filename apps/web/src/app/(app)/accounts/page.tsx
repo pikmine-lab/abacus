@@ -5,6 +5,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
 import { listCategories } from '@abacus/core/services/catalog'
+import { holdingsValue } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AccountRowActions } from '@/components/account-row-actions'
@@ -25,7 +26,7 @@ const STALE_CHECK_DAYS = 45
 const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
   payment: { label: 'Comptes courants', blurb: 'portent les mouvements du quotidien' },
   savings: { label: 'Épargne', blurb: 'virements et intérêts' },
-  investment: { label: 'Investissement', blurb: 'opérations et positions arrivent en V2' },
+  investment: { label: 'Investissement', blurb: 'espèces ici, positions dans Placements' },
 }
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
 
@@ -68,7 +69,17 @@ export default async function AccountsPage() {
 
   const open = state.filter((s) => !s.account.closedOn)
   const closed = state.filter((s) => s.account.closedOn)
-  const wealth = open.reduce((sum, s) => sum + Number(s.account.balance), 0)
+  // The balance of an investment account is its cash; its holdings are worth
+  // what Placements says they are, and both belong in the wealth total.
+  const holdings = await holdingsValue(userId)
+  const wealth = open.reduce((sum, s) => sum + Number(s.account.balance), 0) + holdings.value
+  // Cash gone negative on an investment account means the transfers that funded
+  // it were never declared, which is how an existing portfolio gets typed in.
+  // The total is then short by exactly that, so it says so instead of looking
+  // like the holdings were not counted.
+  const missing = open
+    .filter((s) => s.account.behavior === 'investment' && Number(s.account.balance) < 0)
+    .reduce((sum, s) => sum - Number(s.account.balance), 0)
   const gaps = open.filter((s) => s.check && s.check.gap !== 0)
   const toCheck = open.filter((s) => !s.check || daysBetween(s.check.check.checkedOn, now) > STALE_CHECK_DAYS)
 
@@ -115,7 +126,13 @@ export default async function AccountsPage() {
                 hero
                 label="Patrimoine"
                 value={eur(wealth)}
-                hint={`${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`}
+                hint={
+                  missing > 0
+                    ? `${eur(missing)} d’apports non déclarés : pointe les espèces du compte`
+                    : holdings.value > 0
+                      ? `${open.length} comptes, dont ${eur(holdings.value)} de placements`
+                      : `${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`
+                }
               />
               <StatTile
                 label="Écarts de pointage"

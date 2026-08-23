@@ -253,5 +253,90 @@ reste estompé qui se nomme, et le survol relie l'arc à sa ligne de légende (`
 `groupBy: categoryGroup`. Le groupe n'entre pas dans Analyse : sans entité derrière lui,
 ses lignes n'auraient rien à cliquer, là où toutes les autres mènent aux mouvements.
 
+**Les placements** (2026-08-21, issue #9) : un compte d'investissement porte des opérations
+(achat, vente, dividende, frais de compte), qui donnent des positions avec quantité, PRU en
+moyenne pondérée et prix de revient. UI *Placements*, MCP `manage_assets`,
+`record_investment_operations`, `get_portfolio`, `list_investment_operations`.
+
+Deux frontières tiennent la suite :
+
+- **un mouvement porte l'argent jusqu'au compte, une opération dit ce qui se passe
+  dedans.** Un achat ne peut pas être un mouvement : la nature est dérivée des extrémités,
+  donc il tomberait en dépense, alors qu'acheter un titre ne dépense rien. Le solde d'un
+  compte d'investissement est donc ses espèces, mouvements et opérations ensemble ;
+- **un cours n'appartient à personne.** `instrument` et ses cours sont partagés par tous
+  les utilisateurs (migration `0007`, qui refait ce que `0002` avait posé de travers) ;
+  seul un cours saisi à la main reste privé, parce que c'est une déclaration. Corollaire à
+  ne pas perdre : la table partagée ne sert jamais d'autocomplétion, sinon elle dirait à
+  chacun ce que les autres détiennent.
+
+**Les cours** (même issue) : rafraîchis **à la lecture**, jamais par un planificateur, avec
+une borne de fraîcheur par source (15 min sur les titres, 60 s en crypto, 1 h quand la place
+est fermée, ce que la réponse de Yahoo dit elle-même via `currentTradingPeriod`). Un
+rafraîchissement ne casse jamais une lecture : il ne lève pas, et un cours périmé affiché
+avec son heure vaut mieux qu'une page en erreur. Une position sans cours n'est pas valorisée
+à zéro, elle n'est pas valorisée, et la performance du compte se tait plutôt que de se
+sous-estimer. Deux chiffres, chacun disant sa méthode : plus-value latente (hors dividendes
+et frais) et performance (dividendes et frais compris, contre les apports nets).
+
+**Trouver un actif** se fait par nom, fournisseur, ticker ou ISIN (`search_instruments` côté
+MCP, un champ de recherche dans le panneau de déclaration côté web) : les références ne se
+saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
+
+- **la recherche part deux fois**, sur la requête telle quelle et sur la même suivie de
+  « ucits ». Mesuré : « s&p 500 » ne rend aucun fonds chez Yahoo, « s&p 500 ucits » en rend
+  sept ; « nasdaq 100 » en rend trois, tous américains, contre sept. Sans ça, les seuls
+  résultats sélectionnables étaient des jetons crypto tokenisés imitant l'ETF cherché, et
+  filtrer par capitalisation n'y aurait rien fait (ces jetons sont classés 329 à 625, mieux
+  que Bitcoin SV) ;
+- **un résultat est un fonds, dont les cotations se déplient à la demande**
+  (`list_instrument_venues` côté MCP, un chevron côté web) : le choix par défaut est bon
+  presque toujours, mais il doit pouvoir être vérifié quand un cours ne colle pas au relevé
+  ou quand l'utilisateur nomme un autre ticker. La liste n'est cherchée qu'au dépliement,
+  jamais pour tous les résultats ;
+- **un résultat est un fonds, pas une cotation.** Les places d'un même ETF cotent à 0,01 %
+  près (709,07 / 709,10 / 709,16 € le 2026-08-21), donc le regroupement se fait sur le nom
+  canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
+  en euro sans faire choisir ;
+- **la devise réelle est vérifiée en demandant le cours**, ce qui évite de coder une liste
+  de places : ce qui n'est pas en euro s'affiche désactivé et renvoie à #10. Et un fonds
+  sans ligne en euro parmi les résultats n'est pas écarté pour autant : ses autres places
+  sont cherchées avant de le déclarer hors de portée, parce qu'un ISIN ne rend chez Yahoo
+  qu'une seule cotation, souvent celle de Londres en livres, quand le même fonds cote en
+  euro à XETRA ou à Milan (mesuré sur `LU1781541252` : Londres en GBP, XETRA et Milan en
+  EUR, Amsterdam en JPY) ;
+- **ce qui départage deux trackers d'un même indice** (l'émetteur, capitalisant ou
+  distribuant) est extrait du nom du fonds, et le cours affiché sert à recouper avec le
+  relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
+  il est gardé quand l'utilisateur le saisit.
+
+**La courbe** (migration `0009`) : un an de clôtures quotidiennes par instrument, récupéré
+d'un appel (256 points, 27 Ko, 186 ms mesurés) au premier passage, puis complété par la
+clôture du jour à chaque rafraîchissement. La vue trace la valorisation contre les apports
+nets, l'écart entre les deux étant la performance. Un placement mène à sa propre page
+(`/investments/[assetId]`) : cours en courbe, valorisation, opérations. `BalanceChart` a été
+généralisé pour ça (ses props parlent de `lines`, plus de comptes) plutôt que dupliqué.
+
+**Une opération se déclare par son total ou par son prix unitaire** (`unitPrice` côté MCP, un
+choix explicite côté web), parce que c'est le prix d'acquisition moyen qu'un courtier affiche
+et que reconstruire un total depuis « valorisation moins plus-value » y ferait entrer l'écart
+entre deux places, à demeure dans le prix de revient. La multiplication vit dans le service,
+pas dans les deux interfaces. Le **total** est l'arrondi au centime, le PRU porte le reste :
+l'argent qui sort du compte est en centimes, un PRU ne l'est pas.
+
+**Une opération se corrige et se supprime** (UI : menu de la ligne ; MCP :
+`fix_investment_operation`). Le garde-fou n'est pas la quantité finale mais la **quantité
+courante minimale** : réduire un achat peut rendre une vente postérieure impossible, et
+c'est cette séquence qui est vérifiée avant de valider.
+
+**Suivre sans détenir** : un actif sans opération est un actif suivi. Rien ne le marque en
+base, l'absence de position suffit, et un achat en fait une position sans redéclaration. On
+arrête de suivre (menu de la ligne, ou `manage_assets action: unfollow`) **uniquement** un
+actif sans opération : celui qui en porte fait l'histoire du compte, et l'oublier emporterait
+une position et son prix de revient. L'instrument partagé, lui, reste : il n'appartient à
+personne et quelqu'un d'autre peut le suivre.
+
+Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

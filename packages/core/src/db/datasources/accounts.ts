@@ -29,13 +29,22 @@ export async function listAccountsWithBalance(
   userId: string,
 ): Promise<(Account & { balance: string })[]> {
   return await tx<(Account & { balance: string })[]>`
-    select a.*, coalesce(b.balance, 0)::numeric(14,2) as balance
+    select a.*, (coalesce(m.delta, 0) + coalesce(o.delta, 0))::numeric(14,2) as balance
     from account a
     left join lateral (
-      select sum(case when m.target_account_id = a.id then m.amount else -m.amount end) as balance
-      from movement m
-      where m.source_account_id = a.id or m.target_account_id = a.id
-    ) b on true
+      select sum(case when mv.target_account_id = a.id then mv.amount else -mv.amount end) as delta
+      from movement mv
+      where mv.source_account_id = a.id or mv.target_account_id = a.id
+    ) m on true
+    -- Operations move the cash inside an investment account: buying and paying
+    -- fees take money out, selling and dividends put it back. Counting only
+    -- movements would make that cash wrong from the first purchase on, and an
+    -- investment account's balance is its cash, its holdings being valued apart.
+    left join lateral (
+      select sum(case when op.type in ('sell', 'dividend') then op.amount else -op.amount end) as delta
+      from investment_operation op
+      where op.account_id = a.id
+    ) o on true
     where a.user_id = ${userId}
     order by a.name
   `

@@ -16,20 +16,20 @@ import { eur, frDateLong } from '@/lib/utils'
  * label carrying the identity either way.
  */
 
-interface Account {
+interface Line {
   id: string
   name: string
 }
 interface Row {
   day: string
-  accountId: string
+  lineId: string
   balance: number
 }
 
 /**
  * Series hues, in the order slots are handed out. Six is the measured maximum
  * on the card surface in all pairs (DESIGN.md § Couleur), and the chart opens
- * on as many accounts as the palette holds.
+ * on as many lines as the palette holds.
  */
 const SLOT_VARS = [
   'var(--chart-1)',
@@ -51,17 +51,17 @@ const M_T = 12
 const M_B = 24
 
 /**
- * Accounts the chart opens on: the best funded, not the first alphabetically.
- * Series rows are dense (one per account per day), so the last day carries the
- * closing balance of the window.
+ * Lines the chart opens on: the highest at the end of the window, not the
+ * first alphabetically. Rows are dense (one per line per day), so the last day
+ * carries each line's closing value.
  */
-function bestFunded(accounts: Account[], rows: Row[], count: number): Account[] {
+function bestFunded(lines: Line[], rows: Row[], count: number): Line[] {
   const last = new Map<string, Row>()
   for (const r of rows) {
-    const seen = last.get(r.accountId)
-    if (!seen || r.day > seen.day) last.set(r.accountId, r)
+    const seen = last.get(r.lineId)
+    if (!seen || r.day > seen.day) last.set(r.lineId, r)
   }
-  return [...accounts]
+  return [...lines]
     .sort((a, b) => (last.get(b.id)?.balance ?? 0) - (last.get(a.id)?.balance ?? 0))
     .slice(0, count)
 }
@@ -87,11 +87,11 @@ function frMonth(iso: string): string {
 }
 
 export function BalanceChart({
-  accounts,
+  lines,
   rows,
   today,
 }: {
-  accounts: Account[]
+  lines: Line[]
   rows: Row[]
   /** Boundary between what happened and what is merely extrapolated. */
   today: string
@@ -100,7 +100,7 @@ export function BalanceChart({
   const inkRef = useRef<CanvasRenderingContext2D | null>(null)
   const [width, setWidth] = useState(0)
   const [slots, setSlots] = useState<Map<string, number>>(
-    () => new Map(bestFunded(accounts, rows, SLOT_VARS.length).map((a, i) => [a.id, i])),
+    () => new Map(bestFunded(lines, rows, SLOT_VARS.length).map((a, i) => [a.id, i])),
   )
   const [hover, setHover] = useState<number | null>(null)
 
@@ -133,8 +133,8 @@ export function BalanceChart({
   const byAccount = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
     for (const r of rows) {
-      if (!map.has(r.accountId)) map.set(r.accountId, new Map())
-      map.get(r.accountId)!.set(r.day, r.balance)
+      if (!map.has(r.lineId)) map.set(r.lineId, new Map())
+      map.get(r.lineId)!.set(r.day, r.balance)
     }
     return map
   }, [rows])
@@ -162,7 +162,7 @@ export function BalanceChart({
 
   const hasFuture = lastPast < days.length - 1
   const narrow = width < 520
-  const series = accounts
+  const series = lines
     .filter((a) => slots.has(a.id))
     .map((a) => ({
       ...a,
@@ -244,7 +244,7 @@ export function BalanceChart({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1">
-        {accounts.map((a) => {
+        {lines.map((a) => {
           const on = slots.has(a.id)
           return (
             <Toggle

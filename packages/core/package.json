@@ -7,6 +7,7 @@
     "./db": "./src/db/client.ts",
     "./domain": "./src/domain/types.ts",
     "./domain/*": "./src/domain/*.ts",
+    "./prices/*": "./src/prices/*.ts",
     "./services/*": "./src/services/*.ts"
   },
   "dependencies": {

@@ -27,7 +27,7 @@ question posée, jamais à plat :
 |---|---|
 | Suivi | Vue d'ensemble · Mouvements · Analyse |
 | Engagements | Dépenses récurrentes · Revenus récurrents |
-| Patrimoine | Comptes · Placements (V2, désactivé et marqué) |
+| Patrimoine | Comptes · Placements |
 | (pied) | Réglages · compte utilisateur |
 
 - **Le menu du compte porte ce qui n'est pas une question sur l'argent** : brancher une
@@ -49,7 +49,7 @@ question posée, jamais à plat :
 
 ### Revenir en arrière
 
-Les liens qui traversent les pages se taguent `?de=<clé>`. `BackLink` lit ce tag et
+Les liens qui traversent les pages se taguent `?from=<clé>`. `BackLink` lit ce tag et
 affiche un retour nommé dans le header. Il **repasse par l'historique**
 (`router.back()`), donc la période et les filtres de la page quittée sont retrouvés
 intacts ; il ne retombe sur la route nue que sans historique (lien collé).
@@ -303,6 +303,77 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   contour. Une saisie refusée n'est jamais perdue : les champs texte tiennent leur
   valeur en état, car React réinitialise un champ non contrôlé dès qu'une action se
   termine : ce qui est juste après un succès et faux après une erreur.
+- **Un placement se déclare en deux gestes, parce que ce sont deux choses.** Ce qu'on
+  détient (un actif, avec la source de son cours) se déclare une fois ; ce qui se passe
+  dessus (achat, vente, dividende, frais) se déclare à chaque fois. Le panneau d'opération
+  dit ce qu'il ne fait pas, parce que c'est là qu'on se trompe : alimenter le compte ou en
+  sortir de l'argent est un virement, à déclarer dans les mouvements.
+- **On cherche un actif au moment où on déclare l'opération**, pas dans une course
+  préalable : chercher ce qu'on a acheté fait partie du geste d'acheter. Le panneau propose
+  d'abord ce qu'on connaît déjà, et le même champ va chercher le reste ; l'actif inconnu est
+  créé par l'envoi. Déclarer deux fois le même instrument rend celui qui existe au lieu de
+  refuser, sinon une ligne corrigée buterait sur l'actif que sa première tentative a créé.
+- **On cherche par ce qu'on en sait, jamais par une clé.** Personne ne connaît un ticker
+  Yahoo de tête : le champ prend un nom, un fournisseur, un ticker, un ISIN.
+- **Une ligne est un fonds, pas une ligne de cotation.** Le même ETF est coté sur cinq
+  places, qui affichent le même prix à 0,01 % près (mesuré : 709,07 / 709,10 / 709,16 €) :
+  faire choisir la place à tout le monde ajoutait tout le bruit et aucune précision. « s&p
+  500 ucits » passe ainsi de sept lignes à trois fonds.
+- **Mais les cotations se voient, et se choisissent, à la demande.** Un chevron sous le
+  fonds (« 4 autres cotations du même fonds ») les déplie **sous un filet, indentées** :
+  c'est ce qui dit qu'elles sont le même actif et non quatre résultats de plus. Chacune
+  porte ce qui varie entre elles et rien d'autre : son ticker, sa place, sa devise, son
+  cours. Ce qui ne varie pas (nom, émetteur, capitalisant ou distribuant, ISIN) reste en
+  tête, une seule fois. Celle que l'application a retenue est marquée « retenue », et les
+  devises qu'elle ne sait pas tenir sont grisées avec une ligne qui le dit une fois.
+  Le dépliement **déclenche la recherche** de ces cotations : les lister pour chaque
+  résultat coûterait un appel par fonds à chaque frappe, pour ce que presque personne ne
+  regarde.
+- **Ce qui départage se lit séparément** : l'émetteur, capitalisant ou distribuant, et le
+  cours. Noyés dans un nom long tronqué, ces trois faits n'existaient pas. Le cours est le
+  plus utile des trois, parce que c'est le seul qui se compare au relevé du courtier : et
+  cette comparaison est la seule façon d'être sûr que c'est bien la même ligne. L'écran le
+  dit, avec la voie sûre en premier (l'ISIN, affiché par la banque).
+- **Ce que l'application ne sait pas encore tenir** (une devise étrangère) reste visible et
+  **désactivé, avec sa devise** : disparaître sans un mot se lirait « pas trouvé ».
+- **Un portefeuille se lit en courbe, pas en chiffre.** Un nombre dit où on en est, une
+  courbe dit si ça va quelque part : la vue trace la valorisation **contre les apports**,
+  parce que l'écart entre les deux lignes est la performance, rendue visible au lieu d'être
+  affirmée. La fenêtre part de la première opération quand elle est plus récente qu'un an :
+  douze mois de plat à zéro ne disent rien et écrasent la partie qui parle.
+- **Un placement mène à son détail.** Une ligne de position s'ouvre sur sa propre page :
+  son cours en courbe, sa valorisation, ses opérations. Rien n'est un cul-de-sac, et le
+  retour est nommé.
+- **Une courbe ne descend pas à zéro faute de savoir.** Quand aucun cours n'est connu avant
+  un jour donné, le plus ancien connu est reporté en arrière : une chute à zéro dessinerait
+  un krach qui n'a pas eu lieu, ce qui est plus faux qu'une approximation dont la fenêtre
+  est nommée. Le chiffre du moment garde la règle inverse et reste non valorisé, parce qu'il
+  est lu comme exact.
+- **Une opération se corrige et se supprime**, depuis le menu de sa ligne : un montant
+  d'achat saisi de travers n'est pas cosmétique, il nourrit le PRU et fausserait la position
+  aussi longtemps qu'elle est détenue. Le type et l'actif n'y sont pas : les changer ferait
+  une autre opération, donc une suppression et une nouvelle déclaration, ce qui est ce qui
+  s'est passé. Et une correction qui ferait vendre plus que ce qui était détenu à l'époque
+  est refusée en bloc.
+- **Suivre n'est pas détenir.** Un actif sans opération est un actif suivi : son cours
+  s'affiche dans « Suivis », et le jour où on en achète il devient une position sans rien
+  redéclarer. Aucun drapeau n'est nécessaire, l'absence de position suffit.
+- **Un cours s'affiche avec son heure.** Le différé de 15 minutes d'Euronext est imposé par
+  la licence : la fraîcheur ne se gagne pas, elle se déclare. Un nombre nu serait lu comme
+  « maintenant ».
+- **Un chiffre affiché dit sa méthode**, et la référence contre laquelle il se mesure en
+  fait partie : « dividendes et frais compris, contre 5 000 € d'apports » se vérifie à la
+  main, « performance » ne se vérifie pas. Quand une donnée manque pour un calcul, le
+  chiffre devient un tiret et dit ce qui manque, au lieu d'un total sous-estimé qui a l'air
+  juste.
+- **Un chiffre négatif n'est pas une valeur, c'est une déclaration qui manque.** Des
+  espèces négatives sur un compte d'investissement veulent dire qu'un achat est entré sans
+  le virement qui l'a financé, ce qui est exactement ce qui arrive quand on saisit un
+  portefeuille déjà existant. Le total est alors amputé d'autant, donc **il le dit là où il
+  s'affiche** (« 4 795 € d'apports non déclarés : pointe les espèces du compte »), sur le
+  tableau de bord comme sur Comptes, et il nomme la sortie : le pointage. Sans ça, le total
+  a l'air de ne pas compter les placements alors qu'il les compte. Vaut partout où une somme
+  calculée peut passer sous zéro sans que la réalité l'ait fait.
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue,
   ou qui ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur
   « tous » côté contrôle. Une URL bricolée ne casse pas la page.

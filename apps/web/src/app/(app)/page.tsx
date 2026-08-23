@@ -7,6 +7,7 @@ import {
   monthlyEquivalent,
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
+import { holdingsValue } from '@abacus/core/services/investments'
 import { outstandingAdvances } from '@abacus/core/services/movements'
 import type { BreakdownRow } from '@abacus/core/services/reports'
 import {
@@ -129,7 +130,16 @@ export default async function OverviewPage({
   }
 
   const checks = await Promise.all(accounts.map((a) => latestCheck(userId, a.id)))
-  const wealth = accounts.reduce((sum, a) => sum + Number(a.balance), 0)
+  // An investment account's balance is its cash, so the holdings have to be
+  // added in: without them the total is wrong the moment a placement moves,
+  // which is what this whole feature was for.
+  const holdings = await holdingsValue(userId)
+  const wealth = accounts.reduce((sum, a) => sum + Number(a.balance), 0) + holdings.value
+  // See the accounts page: negative cash on an investment account is an
+  // undeclared contribution, and the total is short by exactly that.
+  const missingContributions = accounts
+    .filter((a) => a.behavior === 'investment' && Number(a.balance) < 0)
+    .reduce((sum, a) => sum - Number(a.balance), 0)
 
   const series = await balanceSeries(userId, seriesFrom(period, firstDay), period.to)
   const dayTotals = new Map<string, number>()
@@ -188,7 +198,15 @@ export default async function OverviewPage({
                 ? { value: Math.round(wealthEnd - wealthStart), label: 'sur la période' }
                 : undefined
             }
-            hint={`${accounts.filter((a) => !a.closedOn).length} comptes ouverts`}
+            hint={
+              missingContributions > 0
+                ? `${eur(missingContributions)} d’apports non déclarés : pointe les espèces du compte`
+                : holdings.value > 0
+                  ? `${accounts.filter((a) => !a.closedOn).length} comptes, placements au dernier cours${
+                      holdings.unpriced > 0 ? ` (${holdings.unpriced} sans cours)` : ''
+                    }`
+                  : `${accounts.filter((a) => !a.closedOn).length} comptes ouverts`
+            }
             spark={wealthSpark}
           />
           <StatTile
@@ -319,8 +337,8 @@ export default async function OverviewPage({
           action={<SectionLink href="/accounts?from=overview">Comptes</SectionLink>}
         >
           <BalanceChart
-            accounts={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-            rows={series.map((r) => ({ day: r.day, accountId: r.accountId, balance: Number(r.balance) }))}
+            lines={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
+            rows={series.map((r) => ({ day: r.day, lineId: r.accountId, balance: Number(r.balance) }))}
             today={now}
           />
         </Section>

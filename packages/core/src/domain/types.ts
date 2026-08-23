@@ -123,3 +123,79 @@ export interface BalanceCheck {
   computedBalance: string
   note: string | null
 }
+
+/**
+ * A quoted thing: public data, owned by nobody, shared by every user. Its
+ * identity is where its price comes from and its reference over there.
+ */
+export type InstrumentKind = 'security' | 'crypto'
+export type PriceSource = 'yahoo' | 'coingecko'
+
+export interface Instrument {
+  id: string
+  kind: InstrumentKind
+  priceSource: PriceSource
+  priceSourceRef: string
+  name: string
+  symbol: string | null
+  isin: string | null
+  currency: string
+}
+
+/**
+ * What a user holds, under the name they give it. An asset without an
+ * instrument is one they price by hand: a declared price is a declaration like
+ * any other, so it stays private.
+ */
+export interface Asset {
+  id: string
+  userId: string
+  name: string
+  instrumentId: string | null
+  /** Set only on an asset with no instrument, and always with its day. */
+  manualPrice: string | null
+  manualPricedOn: string | null
+}
+
+export type InvestmentOperationType = 'buy' | 'sell' | 'dividend' | 'fee'
+
+/**
+ * What happens inside an investment account. `amount` is what really left or
+ * entered its cash, order fees included.
+ */
+export interface InvestmentOperation {
+  id: string
+  userId: string
+  accountId: string
+  assetId: string | null
+  type: InvestmentOperationType
+  quantity: string | null
+  amount: string
+  currency: string
+  operatedOn: string
+  note: string | null
+}
+
+/**
+ * A holding as its operations make it, valued when a price is known and left
+ * unvalued when none is: nothing here is ever estimated.
+ */
+export interface Position {
+  assetId: string
+  assetName: string
+  instrumentId: string | null
+  quantity: string
+  /** Weighted average cost of one unit still held (PMP), order fees included. */
+  averageCost: string
+  /** `quantity x averageCost`: the money still committed to this holding. */
+  costBasis: string
+  /** Null when no price is known, and then everything below it is null too. */
+  price: string | null
+  /** When the market made that price, never when it was fetched. */
+  pricedAt: Date | null
+  /** Typed by hand, so its day is worth showing rather than its hour. */
+  manualPrice: boolean
+  value: string | null
+  /** `value - costBasis`: unrealized, dividends and account fees excluded. */
+  gain: string | null
+}
