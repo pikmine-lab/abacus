@@ -1,17 +1,23 @@
 'use client'
 
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { CurrencySelect } from '@/components/currency-select'
-import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { Button } from '@/components/ui/button'
+import {
+  ActionForm,
+  DateField,
+  Field,
+  FormSelect,
+  MonthField,
+  SubmitButton,
+  TextField,
+} from '@/components/forms'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correctMovementAction, declareMovementAction } from '@/lib/actions'
-import { eur, frMonthLong } from '@/lib/utils'
+import { eur } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -201,7 +207,7 @@ export function MovementForm({
               open state is the attachment, exactly as it is for an advance. */}
           {monthOpen && (
             <Field className="mt-2" label="Compté dans le mois de" name="accrualMonth">
-              <MonthStepper day={day} value={month} onChange={setMonth} />
+              <MonthField name="accrualMonth" anchor={day} value={month} onValueChange={setMonth} />
             </Field>
           )}
         </div>
@@ -315,77 +321,6 @@ export function MovementForm({
 
       <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Déclarer'}</SubmitButton>
     </ActionForm>
-  )
-}
-
-function shiftMonth(ym: string, by: number): string {
-  const [y, m] = ym.split('-').map(Number)
-  const total = y! * 12 + (m! - 1) + by
-  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
-}
-
-/**
- * The month a movement is about, stepped from the month of its own date.
- *
- * Not a list of months: a dropdown is the wrong control twice over here. It
- * only holds a value the user has to hunt for, and what is being stated is
- * relative anyway ("that one is for the month before"). NN/g names the month
- * of a date as the textbook case for not using a dropdown, and caps a date
- * dropdown at under ten options; a year of months is seventeen and scrolls.
- * Stepping is one click for the salary and the rent, which is every real case,
- * and it reuses the app's own month idiom (PeriodPicker).
- *
- * The date's own month is the neutral state, and it says so: coming back to it
- * detaches the movement rather than writing a default into the database.
- */
-function MonthStepper({
-  day,
-  value,
-  onChange,
-}: {
-  day: string
-  value: string | null
-  onChange: (month: string | null) => void
-}) {
-  const own = day.slice(0, 7)
-  const shown = value ?? own
-  const step = (by: number) => {
-    const next = shiftMonth(shown, by)
-    onChange(next === own ? null : next)
-  }
-  return (
-    <>
-      <input type="hidden" name="accrualMonth" value={value ?? ''} />
-      <div className="flex items-center gap-0.5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label="Mois précédent"
-          onClick={() => step(-1)}
-        >
-          <ChevronLeftIcon />
-        </Button>
-        <span
-          aria-live="polite"
-          className={`min-w-[8.5rem] text-center text-[13px] ${value ? 'font-medium text-primary' : 'text-muted-foreground'}`}
-        >
-          {frMonthLong(shown)}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label="Mois suivant"
-          onClick={() => step(1)}
-        >
-          <ChevronRightIcon />
-        </Button>
-        {!value && <span className="text-[11.5px] text-faint">le mois de la date</span>}
-      </div>
-    </>
   )
 }
 

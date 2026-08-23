@@ -210,6 +210,13 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   français, accents ignorés (« etats » trouve USD), le code passant devant ; les
   devises courantes ouvrent la liste, le déclencheur reste compact et montre le code,
   EUR par défaut. Posé à côté du montant, dont il qualifie l'unité.
+- **Un mois se choisit dans une grille d'année** (`MonthField`), jamais dans un Select :
+  une liste de mois fait chercher une valeur que la personne connaît déjà, ce que NN/g
+  donne en exemple contre les dropdowns, et une année en déborde le plafond de dix
+  options qu'elle accorde à un dropdown de date. Douze boutons montrent l'année entière,
+  donc un mois est à un clic et une autre année à deux. Même forme que `DateField`
+  (déclencheur + popover), parce que c'est la même chose d'un cran plus grossier ;
+  `react-day-picker` s'arrête au jour, d'où la grille composée sur `Popover`.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais
   étalées dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne
   doivent pas concurrencer ses chiffres. Vaut pour les mouvements (corriger,
