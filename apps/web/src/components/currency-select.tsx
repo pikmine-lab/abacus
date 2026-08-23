@@ -106,7 +106,10 @@ export function CurrencySelect({
   return (
     <div className="w-[5.5rem] shrink-0">
       <input type="hidden" name={name} value={value} />
-      <Popover open={open} onOpenChange={setOpen}>
+      {/* modal: the picker lives inside a Sheet, whose dialog sets
+          pointer-events: none on the body; a non-modal popover inherits it
+          through its portal and the list stops responding to the mouse. */}
+      <Popover modal open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
