@@ -283,6 +283,12 @@ et frais) et performance (dividendes et frais compris, contre les apports nets).
 MCP, un champ de recherche dans le panneau de déclaration côté web) : les références ne se
 saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
 
+- **la recherche part deux fois**, sur la requête telle quelle et sur la même suivie de
+  « ucits ». Mesuré : « s&p 500 » ne rend aucun fonds chez Yahoo, « s&p 500 ucits » en rend
+  sept ; « nasdaq 100 » en rend trois, tous américains, contre sept. Sans ça, les seuls
+  résultats sélectionnables étaient des jetons crypto tokenisés imitant l'ETF cherché, et
+  filtrer par capitalisation n'y aurait rien fait (ces jetons sont classés 329 à 625, mieux
+  que Bitcoin SV) ;
 - **un résultat est un fonds, pas une cotation.** Les places d'un même ETF cotent à 0,01 %
   près (709,07 / 709,10 / 709,16 € le 2026-08-21), donc le regroupement se fait sur le nom
   canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation

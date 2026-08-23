@@ -34,8 +34,12 @@ export interface InstrumentHit {
 
 const TIMEOUT_MS = 5000
 
-/** Quotation lines whose price gets checked. Enough to cover a few funds. */
-const CHECKED = 18
+/**
+ * Quotation lines whose price gets checked. Two searches feed this now, so it
+ * covers more funds than it used to: enough for a few, and the cap is what
+ * keeps a search under a second.
+ */
+const CHECKED = 24
 
 /**
  * How many funds that look unavailable get a second look. Each one costs a
@@ -46,6 +50,14 @@ const RESCUED = 4
 
 /** Two letters, nine alphanumerics, one check digit. */
 const ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/
+
+async function searchYahoo(encodedQuery: string): Promise<YahooQuote[]> {
+  return await getJson(
+    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodedQuery}&quotesCount=25&newsCount=0`,
+  )
+    .then(parseYahooSearch)
+    .catch(() => [] as YahooQuote[])
+}
 
 async function getJson(url: string): Promise<unknown> {
   const response = await fetch(url, {
@@ -163,14 +175,28 @@ export async function searchInstruments(query: string): Promise<InstrumentHit[]>
   const isin = ISIN.test(term.toUpperCase()) ? term.toUpperCase() : null
   const encoded = encodeURIComponent(term)
 
-  const [listings, coins] = await Promise.all([
-    getJson(`https://query1.finance.yahoo.com/v1/finance/search?q=${encoded}&quotesCount=25&newsCount=0`)
-      .then(parseYahooSearch)
-      .catch(() => [] as YahooQuote[]),
+  const [plain, ucits, coins] = await Promise.all([
+    searchYahoo(encoded),
+    // The same search again, narrowed to European funds. Measured: "s&p 500"
+    // returns no fund at all, "s&p 500 ucits" returns seven; "nasdaq 100"
+    // returns three, all American, against seven. Yahoo simply does not surface
+    // European lines without that word, and without them the only selectable
+    // results left were tokenized crypto imitations of the very ETF being
+    // looked for. UCITS is not a preference, it is the regulatory frame of the
+    // funds this application can hold, since it values euros only.
+    isin || /ucits/i.test(term) ? Promise.resolve([] as YahooQuote[]) : searchYahoo(`${encoded}%20ucits`),
     getJson(`https://api.coingecko.com/api/v3/search?query=${encoded}`)
       .then(parseGeckoSearch)
       .catch(() => [] as InstrumentHit[]),
   ])
+  // Merged on the symbol: the two searches overlap, and the plain one ranked
+  // its results by relevance, so it goes first.
+  const seen = new Set<string>()
+  const listings = [...plain, ...ucits].filter((q) => {
+    if (seen.has(q.symbol!)) return false
+    seen.add(q.symbol!)
+    return true
+  })
 
   const funds = await groupIntoFunds(listings.slice(0, CHECKED), isin)
   const pricedCoins = (await priceCoins(coins.slice(0, 6))).sort(
@@ -227,15 +253,23 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
   // their other venues fetched before being written off.
   const entries = [...byFund.entries()]
   const withoutEuro = entries.filter(([, group]) => !group.some((e) => e.currency === 'EUR'))
-  const rescued = new Map<string, PricedListing>()
-  for (const [name] of withoutEuro.slice(0, RESCUED)) {
-    const euro = await findEuroListing(name)
-    if (euro) rescued.set(name, euro)
-  }
+  // In parallel: four of these in a row was the whole second and a half a wide
+  // search took, for calls that have nothing to do with each other.
+  const rescued = new Map<string, { euro?: PricedListing; venues: number }>()
+  await Promise.all(
+    withoutEuro.slice(0, RESCUED).map(async ([name]) => {
+      rescued.set(name, await findEuroListing(name))
+    }),
+  )
 
   return entries.map(([name, group]) => {
-    const euro = group.find((e) => e.currency === 'EUR') ?? rescued.get(name)
+    const found = rescued.get(name)
+    const euro = group.find((e) => e.currency === 'EUR') ?? found?.euro
     const chosen = euro ?? group[0]!
+    // Every venue known of this fund, whether it came from the first answer or
+    // from looking further: that count is what tells a single result apart from
+    // a fund whose listings were merged into one.
+    const venues = Math.max(group.length, found?.venues ?? 0)
     const isFund = FUND_TYPES.has(chosen.listing.quoteType ?? '')
     return {
       source: 'yahoo' as const,
@@ -250,7 +284,7 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
       price: chosen.price,
       currency: chosen.currency,
       available: euro !== undefined,
-      otherVenues: Math.max(group.length - 1, euro && !group.includes(euro) ? 1 : 0),
+      otherVenues: Math.max(venues - 1, 0),
     }
   })
 }
@@ -261,7 +295,7 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
  * euros. Measured on Amundi Core MSCI Japan: the ISIN gives London in pounds,
  * while XETRA and Milan quote it in euros and Amsterdam in yen.
  */
-async function findEuroListing(name: string): Promise<PricedListing | undefined> {
+async function findEuroListing(name: string): Promise<{ euro?: PricedListing; venues: number }> {
   try {
     const payload = await getJson(
       `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(name)}&quotesCount=15&newsCount=0`,
@@ -279,9 +313,9 @@ async function findEuroListing(name: string): Promise<PricedListing | undefined>
         }
       }),
     )
-    return priced.find((e) => e.currency === 'EUR')
+    return { euro: priced.find((e) => e.currency === 'EUR'), venues: priced.length }
   } catch {
-    return undefined
+    return { venues: 0 }
   }
 }
 
