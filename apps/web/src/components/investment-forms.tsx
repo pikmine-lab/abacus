@@ -81,6 +81,15 @@ function amount(value: string, currency: string | null): string {
   return `${Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${currency ?? ''}`.trim()
 }
 
+/** What the two typed numbers come to, shown so a wrong one is caught early. */
+function product(quantity: string, unit: string): string | null {
+  const read = (v: string) => Number(v.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.'))
+  const total = read(quantity) * read(unit)
+  return Number.isFinite(total) && total > 0
+    ? `${total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+    : null
+}
+
 /** A default worth keeping: the fund's own name minus what every fund repeats. */
 function shortName(name: string): string {
   return name
@@ -297,6 +306,10 @@ export function OperationForm({
   const [picked, setPicked] = useState<InstrumentHit | null>(null)
   const [name, setName] = useState('')
   const [choosing, setChoosing] = useState(assets.length === 0)
+  // What the broker shows decides what gets typed: a total, or a price a share.
+  const [basis, setBasis] = useState<'total' | 'unit'>('total')
+  const [quantity, setQuantity] = useState('')
+  const [unit, setUnit] = useState('')
   const trade = type === 'buy' || type === 'sell'
   const needsAsset = type !== 'fee'
 
@@ -376,25 +389,57 @@ export function OperationForm({
         </Field>
         {trade && (
           <Field label="Quantité" name="quantity">
-            <Input name="quantity" inputMode="decimal" placeholder="12,5" autoComplete="off" />
+            <Input
+              name="quantity"
+              inputMode="decimal"
+              placeholder="12,5"
+              autoComplete="off"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
           </Field>
         )}
       </div>
 
-      <Field
-        label={
-          type === 'buy'
-            ? 'Montant débité, frais d’ordre compris'
-            : type === 'sell'
-              ? 'Montant crédité'
-              : type === 'dividend'
-                ? 'Montant reçu'
-                : 'Montant des frais'
-        }
-        name="amount"
-      >
-        <AmountInput name="amount" />
-      </Field>
+      {trade ? (
+        <div className="flex flex-col gap-2">
+          {/* A broker shows a unit cost, not a total, and rebuilding the total
+              from a valuation drags the venue's price difference into the cost
+              basis. So it is said which one is being typed, and the other is
+              computed rather than guessed. */}
+          <Tabs value={basis} onValueChange={(v) => setBasis(v as typeof basis)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="total">Montant total</TabsTrigger>
+              <TabsTrigger value="unit">Prix unitaire</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {basis === 'total' ? (
+            <Field label={type === 'buy' ? 'Montant débité, frais compris' : 'Montant crédité'} name="amount">
+              <AmountInput name="amount" />
+            </Field>
+          ) : (
+            <Field label={type === 'buy' ? 'Prix payé par part' : 'Prix reçu par part'} name="unitPrice">
+              <Input
+                name="unitPrice"
+                inputMode="decimal"
+                placeholder="22,57"
+                autoComplete="off"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+              />
+            </Field>
+          )}
+          {basis === 'unit' && product(quantity, unit) && (
+            <p className="text-[11.5px] text-faint">
+              {quantity} × {unit} = <span className="tabular">{product(quantity, unit)}</span>
+            </p>
+          )}
+        </div>
+      ) : (
+        <Field label={type === 'dividend' ? 'Montant reçu' : 'Montant des frais'} name="amount">
+          <AmountInput name="amount" />
+        </Field>
+      )}
 
       <TextField name="note" label="Note (optionnel)" placeholder="" />
       <SubmitButton className="self-start" disabled={needsAsset && !known && !picked}>

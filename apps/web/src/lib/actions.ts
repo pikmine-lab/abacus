@@ -937,9 +937,13 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
   const userId = await requireUserId()
   const type = str(formData, 'type') as 'buy' | 'sell' | 'dividend' | 'fee'
   const trade = type === 'buy' || type === 'sell'
+  // A trade may be declared by its unit price instead of its total: that is what
+  // a broker displays, and reconstructing a total from a valuation would fold
+  // the difference between two venues' prices into the cost basis.
+  const unitPriced = trade && opt(formData, 'unitPrice') !== undefined
   const rules: FieldRule[] = [
     { name: 'operatedOn', kind: 'date' },
-    { name: 'amount', kind: 'amount' },
+    { name: unitPriced ? 'unitPrice' : 'amount', kind: 'amount' },
   ]
   if (trade) rules.push({ name: 'quantity', kind: 'amount' })
   const source = opt(formData, 'source')
@@ -947,6 +951,10 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
   if (type !== 'fee' && !picked) rules.push({ name: 'assetId' })
   const invalid = checkFields(formData, rules)
   if (invalid) return { fields: invalid }
+  const quantity = trade ? num(formData, 'quantity') : undefined
+  const amount = unitPriced
+    ? Math.round(num(formData, 'unitPrice') * quantity! * 100) / 100
+    : num(formData, 'amount')
 
   let assetId = opt(formData, 'assetId')
   if (picked) {
@@ -972,8 +980,8 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
         accountId: str(formData, 'accountId'),
         assetId,
         type,
-        quantity: trade ? num(formData, 'quantity') : undefined,
-        amount: num(formData, 'amount'),
+        quantity,
+        amount,
         operatedOn: str(formData, 'operatedOn'),
         note: opt(formData, 'note'),
       },
