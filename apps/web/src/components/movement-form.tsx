@@ -3,7 +3,15 @@
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { CurrencySelect } from '@/components/currency-select'
-import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import {
+  ActionForm,
+  DateField,
+  Field,
+  FormSelect,
+  MonthField,
+  SubmitButton,
+  TextField,
+} from '@/components/forms'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,6 +51,8 @@ export interface MovementDraft {
   categoryId?: string
   activityId?: string
   note?: string
+  /** "YYYY-MM" when this movement is about a month other than its date's. */
+  accrualMonth?: string
   /** Advance carried by this expense: who owes, and the share expected back. */
   refundFromActorName?: string
   expectedRefundAmount?: number
@@ -70,6 +80,12 @@ export function MovementForm({
 }) {
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(draft?.type ?? 'expense')
   const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
+  const [monthOpen, setMonthOpen] = useState(draft?.accrualMonth !== undefined)
+  // The month the movement is about is stated against the month of its date,
+  // so the date is watched here: moving the date moves what "no attachment"
+  // means, and an attached month stays where it was put.
+  const [day, setDay] = useState(draft?.happenedOn ?? today)
+  const [month, setMonth] = useState<string | null>(draft?.accrualMonth ?? null)
   // The expense amount, watched because the expected share reads as a
   // percentage of it, live.
   const [amount, setAmount] = useState(draft?.originalAmount ?? draft?.amount ?? '')
@@ -95,6 +111,9 @@ export function MovementForm({
         setCurrency('EUR')
         setEurAmount('')
         setEurCleared(false)
+        setMonthOpen(false)
+        setDay(today)
+        setMonth(null)
       }}
     >
       <input type="hidden" name="type" value={type} />
@@ -126,7 +145,7 @@ export function MovementForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date" name="date">
-          <DateField name="date" defaultValue={draft?.happenedOn ?? today} />
+          <DateField name="date" defaultValue={draft?.happenedOn ?? today} onValueChange={setDay} />
         </Field>
         <Field label="Montant" name="amount">
           <div className="flex gap-2">
@@ -170,6 +189,27 @@ export function MovementForm({
               onValueChange={setEurAmount}
             />
           </Field>
+        </div>
+      )}
+
+      {type !== 'transfer' && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setMonthOpen((v) => !v)}
+            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            aria-expanded={monthOpen}
+          >
+            {monthOpen ? '− Rattacher à un autre mois' : '+ Rattacher à un autre mois'}
+          </button>
+          {/* Closing the block detaches the movement: the field stops being
+              submitted, and the action reads an absent month as "none". The
+              open state is the attachment, exactly as it is for an advance. */}
+          {monthOpen && (
+            <Field className="mt-2" label="Compté dans le mois de" name="accrualMonth">
+              <MonthField name="accrualMonth" anchor={day} value={month} onValueChange={setMonth} />
+            </Field>
+          )}
         </div>
       )}
 

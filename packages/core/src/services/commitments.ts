@@ -653,6 +653,15 @@ export async function confirmNextOccurrence(
     const expected = installment ? Number(installment.amount) : Number(commitment.amount)
     const outgoing = commitment.direction === 'outgoing'
     const happenedOn = overrides.happenedOn ?? installment?.dueOn ?? commitment.nextDueOn
+    const dueOn = installment?.dueOn ?? commitment.nextDueOn
+    // An occurrence is about the month it was due, not the month it was paid.
+    // A salary due on the 31st and confirmed on the 2nd belongs to the month
+    // it pays for, and a rent due on the 1st was paid at the end of the month
+    // before: re-typing that month on every salary and every rent would undo
+    // the point of the field. Written only when the two months differ, so the
+    // default stays unmaterialised and an ordinary occurrence keeps following
+    // its date.
+    const accrualMonth = dueOn.slice(0, 7) === happenedOn.slice(0, 7) ? undefined : dueOn.slice(0, 7)
     // The account is the one in force on the day the money moved, not the one
     // the commitment hits now: an occurrence confirmed after a move left the
     // old account, and writing it on the new one falsifies both balances.
@@ -674,6 +683,7 @@ export async function confirmNextOccurrence(
         categoryId: commitment.categoryId ?? undefined,
         activityId: commitment.activityId,
         commitmentId: commitment.id,
+        accrualMonth,
       },
       history,
     )

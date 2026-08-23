@@ -120,6 +120,14 @@ de page.
 - **Une fenêtre nommée dans le titre** peut différer de la période de la page quand
   la forme l'exige (« 12 derniers mois » pour un graphe mensuel) : c'est déclaré,
   pas subi.
+- **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
+  porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
+  contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août
+  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne touche que les
+  flux : un solde n'a qu'une lecture, et sa section le rappelle quand l'autre est
+  choisie. Chaque chiffre porte alors le nom de la lecture qui l'a produit, et une
+  fenêtre glissante lue au rattachement se renomme par les mois entiers qu'elle couvre :
+  c'est ce qu'elle a répondu.
 - **Rien n'est dessiné avant mesure du conteneur.** Une largeur devinée pousse les
   marques hors cadre au lieu de les mettre à l'échelle ; la place est réservée par
   `minHeight` pour éviter le saut.
@@ -202,6 +210,13 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   français, accents ignorés (« etats » trouve USD), le code passant devant ; les
   devises courantes ouvrent la liste, le déclencheur reste compact et montre le code,
   EUR par défaut. Posé à côté du montant, dont il qualifie l'unité.
+- **Un mois se choisit dans une grille d'année** (`MonthField`), jamais dans un Select :
+  une liste de mois fait chercher une valeur que la personne connaît déjà, ce que NN/g
+  donne en exemple contre les dropdowns, et une année en déborde le plafond de dix
+  options qu'elle accorde à un dropdown de date. Douze boutons montrent l'année entière,
+  donc un mois est à un clic et une autre année à deux. Même forme que `DateField`
+  (déclencheur + popover), parce que c'est la même chose d'un cran plus grossier ;
+  `react-day-picker` s'arrête au jour, d'où la grille composée sur `Popover`.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais
   étalées dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne
   doivent pas concurrencer ses chiffres. Vaut pour les mouvements (corriger,

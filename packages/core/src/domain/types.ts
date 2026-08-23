@@ -38,6 +38,13 @@ export interface Actor {
 
 export type MovementKind = 'transfer' | 'expense' | 'income'
 
+/**
+ * Which month a movement counts in. `cash` is the day the money moved, which
+ * is what a balance is made of and the only reading a balance ever has.
+ * `accrual` is the month the movement is about, declared when the two differ.
+ */
+export type Reading = 'cash' | 'accrual'
+
 export interface Movement {
   id: string
   userId: string
@@ -63,6 +70,15 @@ export interface Movement {
    * currency: `amount` is then its EUR counter-value, frozen at declaration. */
   originalAmount: string | null
   originalCurrency: string | null
+  /**
+   * The month this movement is about, when it is not the month it settled in
+   * (a salary paid on the 2nd, a rent paid the month before). First day of
+   * that month, or null: never materialised, so an unattached movement follows
+   * its date and an attached one survives a date correction.
+   */
+  accrualMonth: string | null
+  /** Resolved by the database: the attachment, or the settlement day's month. */
+  countedInMonth: string
 }
 
 export type CommitmentKind = 'subscription' | 'financing'

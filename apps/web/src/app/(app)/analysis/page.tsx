@@ -8,9 +8,17 @@ import { BreakdownBars } from '@/components/breakdown-bars'
 import { FlowChart } from '@/components/flow-chart'
 import { FilterBar, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
+import { ReadingTabs } from '@/components/reading-tabs'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
-import { monthsInPeriod, previousWindow, resolvePeriod, seriesFrom } from '@/lib/period'
+import {
+  monthsInPeriod,
+  previousWindow,
+  readingLabel,
+  resolvePeriod,
+  resolveReading,
+  seriesFrom,
+} from '@/lib/period'
 import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +36,7 @@ type Ranked = (typeof GROUPS)[number]
 export default async function AnalysisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; ref?: string; by?: string; flow?: string }>
+  searchParams: Promise<{ period?: string; ref?: string; by?: string; flow?: string; reading?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -37,16 +45,18 @@ export default async function AnalysisPage({
   const params = await searchParams
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
+  const reading = resolveReading(params)
+  const scope = readingLabel(period, reading)
 
   const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '') ? (params.by as Ranked) : 'category'
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
 
   const firstDay = await firstMovementDay(userId)
   const [breakdown, totals, previousTotals, monthly] = await Promise.all([
-    spendingBreakdown(userId, period.from, period.to, groupBy, kind),
-    flowTotals(userId, period.from, period.to),
-    previous ? flowTotals(userId, previous.from, previous.to) : null,
-    monthlyFlows(userId, seriesFrom(period, firstDay), period.to),
+    spendingBreakdown(userId, period.from, period.to, groupBy, kind, reading),
+    flowTotals(userId, period.from, period.to, reading),
+    previous ? flowTotals(userId, previous.from, previous.to, reading) : null,
+    monthlyFlows(userId, seriesFrom(period, firstDay), period.to, reading),
   ])
 
   const expenseNet = Number(totals.expenseNet)
@@ -70,6 +80,9 @@ export default async function AnalysisPage({
       <PageHeader title="Analyse" description="où part l’argent, d’où il vient" />
       <FilterBar>
         <PeriodPicker period={period} />
+        {/* The reading belongs to the period: it says how the window is read,
+            not what is shown in it. The divider marks that boundary. */}
+        <ReadingTabs />
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
         <UrlTabs
           param="flow"
@@ -96,7 +109,7 @@ export default async function AnalysisPage({
         <StatRow>
           <StatTile
             hero
-            label={`Dépensé · ${period.label}`}
+            label={`Dépensé · ${scope}`}
             value={eur(expenseNet)}
             delta={
               previousTotals
@@ -110,7 +123,7 @@ export default async function AnalysisPage({
             hint={expenseGross !== expenseNet ? `brut ${eur(expenseGross)}` : undefined}
           />
           <StatTile
-            label={`Reçu · ${period.label}`}
+            label={`Reçu · ${scope}`}
             value={eur(income)}
             delta={
               previousTotals
@@ -142,7 +155,7 @@ export default async function AnalysisPage({
         </StatRow>
 
         {monthly.length > 1 && (
-          <Section title="Ce qui rentre, ce qui sort" description={`${period.label}, mois par mois`}>
+          <Section title="Ce qui rentre, ce qui sort" description={`${scope}, mois par mois`}>
             <FlowChart
               currentMonth={now.slice(0, 7)}
               rows={monthly.map((m) => ({

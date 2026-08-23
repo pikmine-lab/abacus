@@ -61,6 +61,27 @@ export interface DeclareMovementInput {
    * same transaction, so the account balance never lies in between.
    */
   refundedNow?: boolean
+  /**
+   * The month this movement is about, when it is not the month it settles in:
+   * "YYYY-MM" (a full date is accepted and truncated to its month). Omitted,
+   * the movement counts in the month of its date, and keeps following it.
+   */
+  accrualMonth?: string | null
+}
+
+/**
+ * A declared month as the column holds it: that month's first day. "YYYY-MM"
+ * is the form both interfaces speak, and a full date is accepted because
+ * "attach it to the month of the 5th" states the same thing.
+ */
+function monthStart(value: string): string {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])(-\d{2})?$/.exec(value)
+  if (!match) throw new DomainError('bad_month', `"${value}" is not a month: write it as YYYY-MM`)
+  return `${match[1]}-${match[2]}-01`
+}
+
+function monthOrNothing(value: string | null | undefined): string | undefined {
+  return value ? monthStart(value) : undefined
 }
 
 async function requireAccount(tx: Executor, userId: string, id: string, role: string): Promise<Account> {
@@ -124,7 +145,8 @@ export async function declareMovementIn(
   input: DeclareMovementInput,
   history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
-  const resolved = await inAccountCurrency(tx, input, history)
+  const declared = { ...input, accrualMonth: monthOrNothing(input.accrualMonth) }
+  const resolved = await inAccountCurrency(tx, declared, history)
   const activityId = await checkMovement(tx, userId, resolved)
   const { refundedNow, eurAmount: _, ...row } = resolved
   const movement = await insertMovement(tx, { ...row, userId, activityId })
@@ -190,6 +212,11 @@ async function checkMovement(
   const isTransfer = Boolean(input.sourceAccountId && input.targetAccountId)
   if (isTransfer && input.categoryId)
     throw new DomainError('transfer_has_no_category', 'An internal transfer carries no category')
+  if (isTransfer && input.accrualMonth)
+    throw new DomainError(
+      'transfer_has_no_accrual',
+      'An internal transfer enters no period total, so there is no month for it to be about',
+    )
 
   const externalActor = input.targetActorId
     ? await requireActor(tx, userId, input.targetActorId, 'target')
@@ -273,11 +300,19 @@ export interface CorrectMovementInput {
   note?: string | null
   expectedRefundFromActorId?: string | null
   expectedRefundAmount?: number | null
+  /**
+   * The month the movement is about: "YYYY-MM" attaches it, null detaches it
+   * (it then follows its date again). Absent, the stored one is kept, which is
+   * the whole point of storing it: correcting a date must not move a month
+   * that was stated on purpose.
+   */
+  accrualMonth?: string | null
 }
 
 const CORRECTABLE = [
   'happenedOn',
   'amount',
+  'accrualMonth',
   'sourceAccountId',
   'sourceActorId',
   'targetAccountId',
@@ -355,6 +390,13 @@ export async function correctMovementIn(
   // A movement corrected into a transfer moves euros: an original left over
   // from the expense it was would dress an internal move as a foreign payment.
   const becomesTransfer = Boolean(merged.sourceAccountId && merged.targetAccountId)
+  // Same for the month it was about: a transfer enters no period total, so an
+  // attachment inherited from the expense it was is dropped here. One asked
+  // for explicitly is refused instead, by checkMovement below.
+  merged.accrualMonth =
+    becomesTransfer && input.accrualMonth === undefined
+      ? undefined
+      : monthOrNothing(input.accrualMonth !== undefined ? input.accrualMonth : current.accrualMonth)
   const resolved = moneyTouched
     ? await inAccountCurrency(tx, merged, history)
     : {

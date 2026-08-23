@@ -40,6 +40,17 @@ export function frDate(iso: string): string {
   return `${d}/${m}/${y!.slice(2)}`
 }
 
+/** A month, short: what a movement's attachment reads as next to its date. */
+export function frMonth(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  return new Date(y!, m! - 1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' })
+}
+
+export function frMonthLong(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  return new Date(y!, m! - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+}
+
 export function frDateLong(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y!, m! - 1, d!).toLocaleDateString('fr-FR', {

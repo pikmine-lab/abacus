@@ -129,6 +129,8 @@ const FR: Record<string, string> = {
   advance_below_refunds: 'La part attendue est déjà dépassée par ce qui a été remboursé.',
   advance_settled: 'Cette avance est déjà remboursée en entier.',
   transfer_stays_eur: 'Un virement entre tes comptes se déclare en euros.',
+  transfer_has_no_accrual: 'Un virement interne n’entre dans aucun total de période : pas de rattachement.',
+  bad_month: 'Ce mois est invalide.',
   needless_eur_amount: 'Le montant est déjà en euros : la contre-valeur ne s’applique pas.',
   no_exchange_rate:
     'Aucun cours connu pour cette devise à cette date. Vérifie le code, ou saisis les euros débités.',
@@ -275,6 +277,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
       note: opt(formData, 'note'),
+      accrualMonth: opt(formData, 'accrualMonth'),
       refundsMovementId: opt(formData, 'refundsMovementId'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
@@ -343,6 +346,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       categoryId: opt(formData, 'categoryId') ?? null,
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
+      // The form rebuilds the movement whole, so a closed (or unrendered)
+      // attachment block detaches it, the way it drops a claim.
+      accrualMonth: opt(formData, 'accrualMonth') ?? null,
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : null,

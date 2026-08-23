@@ -14,9 +14,10 @@ import { MovementRowActions } from '@/components/movement-row-actions'
 import { OutstandingAdvances } from '@/components/outstanding-advances'
 import { FilterBar, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
+import { ReadingTabs } from '@/components/reading-tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { resolvePeriod } from '@/lib/period'
-import { eur, frDate, idParam, money } from '@/lib/utils'
+import { resolvePeriod, resolveReading } from '@/lib/period'
+import { eur, frDate, frMonth, idParam, money } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,6 +58,7 @@ export default async function MovementsPage({
   const filters = {
     from: period.from,
     to: period.to,
+    reading: resolveReading(params),
     kind: KINDS.includes(params.type as MovementKind) ? (params.type as MovementKind) : undefined,
     accountId: known(idParam(params.account), accounts),
     categoryId: known(idParam(params.category), categories),
@@ -130,6 +132,7 @@ export default async function MovementsPage({
 
       <FilterBar>
         <PeriodPicker period={period} />
+        <ReadingTabs />
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
         <MovementFilters
           accounts={options.accounts}
@@ -214,6 +217,16 @@ export default async function MovementsPage({
                   <TableRow key={m.id}>
                     <TableCell className="font-mono text-[11.5px] text-faint">
                       {frDate(m.happenedOn)}
+                      {/* Only when it differs from the date's own month: the
+                          arrow is there to be noticed, not to repeat. */}
+                      {m.accrualMonth && (
+                        <span
+                          className="block text-[10.5px] text-primary"
+                          title={`Compté dans le mois de ${frMonth(m.accrualMonth)}`}
+                        >
+                          → {frMonth(m.accrualMonth)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-0">
                       <span className="block truncate text-[13px]">{counterparty}</span>
@@ -272,6 +285,7 @@ export default async function MovementsPage({
                           categoryId: m.categoryId ?? undefined,
                           activityId: m.activityId ?? undefined,
                           note: m.note ?? undefined,
+                          accrualMonth: m.accrualMonth?.slice(0, 7),
                           refundFromActorName: m.expectedRefundFromActorId
                             ? (actorName.get(m.expectedRefundFromActorId) ?? '')
                             : undefined,

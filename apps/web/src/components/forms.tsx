@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarIcon } from 'lucide-react'
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { createContext, useActionState, useContext, useEffect, useRef, useState } from 'react'
 import { fr } from 'react-day-picker/locale'
 import { useFormStatus } from 'react-dom'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { FormState } from '@/lib/actions'
-import { cn } from '@/lib/utils'
+import { cn, frMonthLong } from '@/lib/utils'
 
 /**
  * Per-field messages from the last submit. A context rather than props because
@@ -178,6 +178,133 @@ export function DateField({
               setOpen(false)
             }}
           />
+        </PopoverContent>
+      </Popover>
+    </>
+  )
+}
+
+/** Rendered once, from the locale, rather than kept as a fourth hardcoded list. */
+const MONTH_LABELS = Array.from({ length: 12 }, (_, i) =>
+  new Date(2000, i, 1).toLocaleDateString('fr-FR', { month: 'short' }),
+)
+
+/**
+ * A month, picked out of a year laid flat. Same shape as `DateField` because
+ * it is the same thing one notch coarser: a trigger showing the value, and a
+ * calendar under it.
+ *
+ * A grid rather than a list of months: a dropdown holding a value the reader
+ * already knows makes them hunt for it, which is the case NN/g names against
+ * dropdowns, and a year of them overflows the under-ten options a date
+ * dropdown is worth. Twelve buttons show the whole year at once, which is the
+ * range this field is ever used over, so any month is one click and any other
+ * year two. `react-day-picker` stops at day granularity (its modes are single,
+ * multiple and range), hence the grid composed here from Popover and Button.
+ *
+ * `anchor` is the day the month is stated against: its own month is marked,
+ * and choosing it means "no month of its own" rather than writing a default.
+ */
+export function MonthField({
+  name,
+  anchor,
+  value,
+  onValueChange,
+}: {
+  name: string
+  /** The movement's day, "YYYY-MM-DD". */
+  anchor: string
+  /** "YYYY-MM", or null when the month follows the day above. */
+  value: string | null
+  onValueChange: (month: string | null) => void
+}) {
+  const own = anchor.slice(0, 7)
+  const shown = value ?? own
+  const [open, setOpen] = useState(false)
+  const [year, setYear] = useState(Number(shown.slice(0, 4)))
+  const pick = (month: string | null) => {
+    onValueChange(month === own ? null : month)
+    setOpen(false)
+  }
+  return (
+    <>
+      <input type="hidden" name={name} value={value ?? ''} />
+      <Popover
+        open={open}
+        // Reopening lands on the year of the current value: the date may have
+        // moved since it was last opened.
+        onOpenChange={(next) => {
+          if (next) setYear(Number(shown.slice(0, 4)))
+          setOpen(next)
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-between font-normal">
+            {value ? (
+              <span className="text-primary">{frMonthLong(value)}</span>
+            ) : (
+              <span className="text-muted-foreground">{frMonthLong(own)} · le mois de la date</span>
+            )}
+            <CalendarIcon className="text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-3" align="start">
+          <div className="flex items-center justify-between pb-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Année précédente"
+              onClick={() => setYear(year - 1)}
+            >
+              <ChevronLeftIcon className="size-4" />
+            </Button>
+            <span className="text-sm font-medium tabular">{year}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Année suivante"
+              onClick={() => setYear(year + 1)}
+            >
+              <ChevronRightIcon className="size-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {MONTH_LABELS.map((label, index) => {
+              const month = `${year}-${String(index + 1).padStart(2, '0')}`
+              const selected = month === value
+              return (
+                <Button
+                  key={month}
+                  type="button"
+                  variant={selected ? 'default' : 'ghost'}
+                  size="sm"
+                  aria-pressed={selected}
+                  // The movement's own month is marked the way the calendar
+                  // marks today: it is the value the field already means.
+                  className={cn(
+                    'h-8 w-16 font-normal',
+                    !selected && month === own && 'bg-accent text-accent-foreground',
+                  )}
+                  onClick={() => pick(month)}
+                >
+                  {label}
+                </Button>
+              )
+            })}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 h-8 w-full font-normal text-muted-foreground"
+            onClick={() => pick(null)}
+          >
+            Le mois de la date
+          </Button>
         </PopoverContent>
       </Popover>
     </>

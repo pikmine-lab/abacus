@@ -1,3 +1,4 @@
+import type { Reading } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 
 /**
@@ -192,6 +193,58 @@ function daysSpan(from: string, to: string): number {
 export function seriesFrom(period: Period, firstMovementDay: string | null): string {
   if (!firstMovementDay) return period.to
   return period.from > firstMovementDay ? period.from : firstMovementDay
+}
+
+const SHORT_MONTHS = [
+  'janv.',
+  'févr.',
+  'mars',
+  'avr.',
+  'mai',
+  'juin',
+  'juil.',
+  'août',
+  'sept.',
+  'oct.',
+  'nov.',
+  'déc.',
+]
+
+/**
+ * Which month a movement counts in, read from the URL like the period itself:
+ * the day the money moved, or the month it is about. Absent means cash, so a
+ * link written before this existed keeps its meaning.
+ */
+export function resolveReading(params: { reading?: string }): Reading {
+  return params.reading === 'accrual' ? 'accrual' : 'cash'
+}
+
+/**
+ * The period as the chosen reading actually read it, named. Under cash it is
+ * the period's own label. Under accrual two things change and both have to
+ * show: the reading is named, because the same month has two legitimate
+ * totals; and a rolling window is renamed after the whole months it covers,
+ * because an attachment holds a month and nothing finer, so "90 derniers
+ * jours" is not what was answered.
+ */
+export function readingLabel(period: Period, reading: Reading): string {
+  if (reading === 'cash') return period.label
+  const covered = monthsCovered(period)
+  // A label already carrying a remark ("août (en cours)") takes this one in the
+  // same parenthesis: two of them in a row read as a stutter.
+  return covered.endsWith(')') ? `${covered.slice(0, -1)}, rattachement)` : `${covered} (rattachement)`
+}
+
+function monthsCovered(period: Period): string {
+  if (period.preset === 'month' || period.preset === 'year' || period.preset === 'all') return period.label
+  const from = shortMonth(period.from)
+  const to = shortMonth(period.to)
+  return from === to ? from : `${from} → ${to}`
+}
+
+function shortMonth(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  return `${SHORT_MONTHS[m! - 1]} ${y}`
 }
 
 /** Number of months the period spans, for "≈ x €/mois" readings. */
