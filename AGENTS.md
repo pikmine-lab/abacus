@@ -364,5 +364,28 @@ en correction, et jamais sur un financement, dont l'échéancier est écrit tout
 dans sa devise (la synchronisation échéance↔mouvement passe alors par le côté payé,
 `original_amount`).
 
+**Un mouvement peut concerner un autre mois que celui où l'argent bouge** (2026-08-23,
+issue #44) : le mouvement porte un **mois de rattachement** optionnel (`accrual_month`,
+migration `0011`), et la colonne générée `counted_in_month` en donne la lecture résolue,
+pour qu'aucune analyse n'ait de cas vide à gérer. L'analyse se lit alors de deux façons,
+« date réelle » ou « mois concerné », par un sélecteur présent sur les trois écrans de
+flux (vue d'ensemble, analyse, mouvements) et écrit dans l'URL comme la période.
+
+L'invariant tient tout : **aucun calcul de solde ne regarde ce champ**. Soldes affichés,
+graphe de soldes, pointage et soldage d'écart restent des sommes par date de flux, sinon
+le pointage cesserait de détecter un oubli de saisie. Deux conséquences travaillées :
+
+- une lecture par rattachement ne sait répondre qu'en **mois entiers**, donc une fenêtre
+  glissante (90 jours, 12 mois) s'arrondit à eux et se **renomme** par eux plutôt que
+  d'emprunter le nom de la fenêtre en jours, qui n'est pas ce qui a été lu ;
+- **confirmer une échéance rattache toute seule** au mois de l'échéance théorique, et
+  seulement quand il diffère du mois du règlement : la valeur par défaut n'est jamais
+  matérialisée, ce qui fait qu'un mouvement non rattaché suit sa date quand on la corrige
+  et qu'un rattachement explicite survit à la même correction.
+
+Côté MCP : `month` sur `declare_movements` et `fix_movement` (« none » détache), `reading`
+sur `list_movements` et `analyze_spending`, dont la réponse nomme désormais la lecture et
+la fenêtre qu'elle a servies.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

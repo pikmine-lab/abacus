@@ -1,4 +1,21 @@
+import type { Reading } from '../../domain/types.ts'
 import type { Executor } from '../client.ts'
+
+/**
+ * The period clause of an analysis, in the reading it was asked for.
+ *
+ * Cash compares days. Accrual compares months, so the window rounds out to
+ * whole months: an attachment holds a month and nothing finer, and cutting
+ * September off on the 12th would drop everything attached to it without
+ * saying so. A calendar period (a month, a year) is unaffected; only a rolling
+ * window widens, and the caller is the one that names what it read.
+ */
+function inPeriod(tx: Executor, from: string, to: string, reading: Reading) {
+  return reading === 'accrual'
+    ? tx`and m.counted_in_month >= date_trunc('month', ${from}::date)
+         and m.counted_in_month <= date_trunc('month', ${to}::date)`
+    : tx`and m.happened_on >= ${from} and m.happened_on <= ${to}`
+}
 
 export interface BalancePoint {
   day: string
@@ -13,6 +30,9 @@ export interface BalancePoint {
  * The window is honoured exactly as asked, days before the first movement
  * included (they are legitimately zero). Choosing a sensible `from` is the
  * caller's job: see `firstMovementDay`.
+ *
+ * No reading to pick here, and there never will be one: a balance is the money
+ * on the account on that day, so it sums settlement days and nothing else.
  */
 export async function balanceSeries(
   tx: Executor,
@@ -94,6 +114,7 @@ export async function spendingBreakdown(
   to: string,
   groupBy: BreakdownGroup,
   kind: FlowKind = 'expense',
+  reading: Reading = 'cash',
 ): Promise<BreakdownRow[]> {
   const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
   const entity = tx`left join category g on g.id = m.category_id`
@@ -124,8 +145,7 @@ export async function spendingBreakdown(
     ) r on true
     where m.user_id = ${userId}
       and m.kind = ${kind}
-      and m.happened_on >= ${from}
-      and m.happened_on <= ${to}
+      ${inPeriod(tx, from, to, reading)}
       ${kind === 'income' ? tx`and m.refunds_movement_id is null` : tx``}
     group by 1, 2
     order by gross desc
@@ -152,6 +172,7 @@ export async function flowTotals(
   userId: string,
   from: string,
   to: string,
+  reading: Reading = 'cash',
 ): Promise<FlowTotals> {
   const [row] = await tx<FlowTotals[]>`
     select
@@ -165,8 +186,7 @@ export async function flowTotals(
       select sum(amount) as total from movement r where r.refunds_movement_id = m.id
     ) r on true
     where m.user_id = ${userId}
-      and m.happened_on >= ${from}
-      and m.happened_on <= ${to}
+      ${inPeriod(tx, from, to, reading)}
   `
   return row!
 }
@@ -189,13 +209,15 @@ export async function monthlyFlows(
   userId: string,
   from: string,
   to: string,
+  reading: Reading = 'cash',
 ): Promise<MonthlyFlow[]> {
+  const month = reading === 'accrual' ? tx`m.counted_in_month` : tx`date_trunc('month', m.happened_on)::date`
   return await tx<MonthlyFlow[]>`
     with months as (
       select generate_series(date_trunc('month', ${from}::date), date_trunc('month', ${to}::date), interval '1 month')::date as month
     ),
     flows as (
-      select date_trunc('month', m.happened_on)::date as month,
+      select ${month} as month,
              sum(m.amount) filter (where m.kind = 'expense') as expense_gross,
              sum(m.amount - coalesce(r.total, 0)) filter (where m.kind = 'expense') as expense_net,
              sum(m.amount) filter (where m.kind = 'income' and m.refunds_movement_id is null) as income
@@ -204,8 +226,7 @@ export async function monthlyFlows(
         select sum(amount) as total from movement r where r.refunds_movement_id = m.id
       ) r on true
       where m.user_id = ${userId}
-        and m.happened_on >= ${from}
-        and m.happened_on <= ${to}
+        ${inPeriod(tx, from, to, reading)}
       group by 1
     )
     select ms.month,

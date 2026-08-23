@@ -80,23 +80,36 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'analyze_spending',
     {
       description:
-        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received). Internal transfers never appear here. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list; rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income).',
+        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received). Internal transfers never appear here. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list; rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income). A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
         groupBy: z.enum(['category', 'actor', 'activity', 'categoryGroup']),
+        reading: z
+          .enum(['cash', 'accrual'])
+          .optional()
+          .describe(
+            'cash (default): every movement counts on the day the money moved, which is what the bank statement says. accrual: a movement attached to another month counts in that month, which is what makes a month comparable to the next when a salary lands late or a rent is paid ahead. Use accrual to answer "how was August really", cash to answer "what left the accounts in August"',
+          ),
       }),
     },
-    async ({ from, to, groupBy }) =>
+    async ({ from, to, groupBy, reading = 'cash' }) =>
       run(async () => {
-        const rows = await spendingBreakdown(userId, from, to, groupBy)
-        return ok(
-          rows.map((r) => ({
+        const rows = await spendingBreakdown(userId, from, to, groupBy, 'expense', reading)
+        // The reading is part of the answer, not part of the question: two
+        // totals exist for one month, and a table without its label is unusable.
+        return ok({
+          reading,
+          window:
+            reading === 'accrual'
+              ? `movements attached to ${from.slice(0, 7)} → ${to.slice(0, 7)} (whole months)`
+              : `movements settled between ${from} and ${to}`,
+          rows: rows.map((r) => ({
             [groupBy]: r.label ?? '(none)',
             gross: Number(r.gross),
             net: Number(r.net),
           })),
-        )
+        })
       }),
   )
 }

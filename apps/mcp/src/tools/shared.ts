@@ -16,6 +16,10 @@ export const GUIDANCE: Record<string, string> = {
   account_closed: 'This account is closed at that date. Check the movement date or the targeted account.',
   transfer_has_no_category:
     'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
+  transfer_has_no_accrual:
+    'An internal transfer enters no period total, so it is about no month: drop month. Only an expense or an income can be attached to another month.',
+  bad_month:
+    'A month is written YYYY-MM (2026-08). Pass the month the movement is about, not a description of it.',
   not_an_advance:
     'The referenced movement is not marked as an advance, so a refund cannot be linked to it. Check the id with list_outstanding_advances.',
   advance_needs_amount:

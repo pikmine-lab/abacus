@@ -80,6 +80,24 @@ externe), activité (héritée/surchargée), note, référence d'origine (abonne
   jamais compté en dépense) ; compte → acteur = dépense ; acteur → compte = revenu.
 - Granularité : transaction par transaction (décision du 2026-08-19), la saisie quotidienne
   étant assumée par une routine + le MCP (déclaration en langage naturel par lot).
+- **Mois de rattachement** optionnel : le mois que le mouvement concerne, quand ce n'est pas
+  celui où l'argent a bougé (un salaire versé le 2 pour le mois d'avant, un loyer payé fin
+  août pour septembre, des billets pris en août pour un séjour en septembre). Un mois, un
+  seul, jamais une période ni une clé de répartition : l'étalement existe déjà par le coût
+  mensuel lissé des engagements. N'a d'objet que pour une dépense ou un revenu, un virement
+  interne n'entrant dans aucun total de période.
+  - **Aucun calcul de solde ne le regarde.** Le solde d'un compte à une date, le pointage
+    et le soldage d'écart restent des sommes par date de flux. Un pointage qui raisonnerait
+    par rattachement ne détecterait plus un oubli de saisie, et c'est le seul garde-fou
+    d'une comptabilité entièrement déclarative.
+  - **Stocké nullable, résolu à la lecture.** Non renseigné, le mouvement compte dans le
+    mois de sa date et continue de la suivre quand on la corrige ; renseigné, le
+    rattachement survit à la même correction. Une échéance confirmée se rattache d'elle-même
+    au mois de son échéance théorique, sans aucune saisie : sinon il faudrait le retaper à
+    chaque paie et à chaque loyer, ce qui annule le bénéfice.
+  - **Toute lecture d'analyse dit laquelle des deux elle donne**, parce qu'un même mois a
+    dès lors deux totaux également légitimes. Une lecture par rattachement ne répond qu'en
+    mois entiers, donc une fenêtre glissante s'arrondit à eux et se renomme par eux.
 
 ### Catégorie
 Définie par l'utilisateur. À plat, avec groupe optionnel (pas d'arborescence profonde).

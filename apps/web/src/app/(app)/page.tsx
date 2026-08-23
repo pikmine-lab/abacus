@@ -36,10 +36,11 @@ import {
   SectionLink,
 } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
+import { ReadingTabs } from '@/components/reading-tabs'
 import { SpendingDonut } from '@/components/spending-donut'
 import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
-import { previousWindow, resolvePeriod, seriesFrom } from '@/lib/period'
+import { previousWindow, readingLabel, resolvePeriod, resolveReading, seriesFrom } from '@/lib/period'
 import { daysBetween, eur, frDate, freshness } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -56,14 +57,19 @@ const STALE_CHECK_DAYS = 45
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; ref?: string }>
+  searchParams: Promise<{ period?: string; ref?: string; reading?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
   const now = today()
-  const period = resolvePeriod(await searchParams, now)
+  const params = await searchParams
+  const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
+  const reading = resolveReading(params)
+  // Everything made of flows is named after the reading it was read in.
+  // Balances keep the bare period label: they have one reading and only one.
+  const scope = readingLabel(period, reading)
 
   const [
     accounts,
@@ -79,13 +85,13 @@ export default async function OverviewPage({
   ] = await Promise.all([
     listAccounts(userId),
     firstMovementDay(userId),
-    flowTotals(userId, period.from, period.to),
-    previous ? flowTotals(userId, previous.from, previous.to) : null,
+    flowTotals(userId, period.from, period.to, reading),
+    previous ? flowTotals(userId, previous.from, previous.to, reading) : null,
     // A month-by-month chart needs months: this window is named in the
     // section title and is deliberately not the page period.
-    monthlyFlows(userId, shiftMonths(now, -11), now),
-    spendingBreakdown(userId, period.from, period.to, 'category'),
-    spendingBreakdown(userId, period.from, period.to, 'categoryGroup'),
+    monthlyFlows(userId, shiftMonths(now, -11), now, reading),
+    spendingBreakdown(userId, period.from, period.to, 'category', 'expense', reading),
+    spendingBreakdown(userId, period.from, period.to, 'categoryGroup', 'expense', reading),
     pendingOccurrences(userId),
     outstandingAdvances(userId),
     listCommitmentsWithProgress(userId),
@@ -184,6 +190,7 @@ export default async function OverviewPage({
       <PageHeader title="Vue d’ensemble" description={`Période : ${period.label}`} />
       <FilterBar>
         <PeriodPicker period={period} />
+        <ReadingTabs />
       </FilterBar>
 
       <PageBody>
@@ -210,7 +217,7 @@ export default async function OverviewPage({
             spark={wealthSpark}
           />
           <StatTile
-            label={`Épargné · ${period.label}`}
+            label={`Épargné · ${scope}`}
             value={eur(saved)}
             delta={
               previousTotals
@@ -229,7 +236,7 @@ export default async function OverviewPage({
             )}
           />
           <StatTile
-            label={`Dépensé · ${period.label}`}
+            label={`Dépensé · ${scope}`}
             value={eur(expenseNet)}
             href="/analysis?from=overview"
             delta={
@@ -333,7 +340,7 @@ export default async function OverviewPage({
 
         <Section
           title="Soldes"
-          description={`${period.label} · calculé depuis les mouvements déclarés`}
+          description={`${period.label}${reading === 'accrual' ? ' (date réelle)' : ''} · calculé depuis les mouvements déclarés`}
           action={<SectionLink href="/accounts?from=overview">Comptes</SectionLink>}
         >
           <BalanceChart
@@ -345,19 +352,21 @@ export default async function OverviewPage({
 
         <Section
           title="Ce qui rentre, ce qui sort"
-          description="12 derniers mois · clic sur un mois pour cadrer la page dessus"
+          description={`12 derniers mois${
+            reading === 'accrual' ? ' (rattachement)' : ''
+          } · clic sur un mois pour cadrer la page dessus`}
         >
           <FlowChart rows={monthlyRows} currentMonth={now.slice(0, 7)} />
         </Section>
 
         <div className="grid gap-8 lg:grid-cols-2">
-          <Section title="Dépenses par groupe" description={period.label}>
+          <Section title="Dépenses par groupe" description={scope}>
             <SpendingDonut rows={amounts(byGroup)} emptyLabel="Aucune dépense déclarée sur cette période." />
           </Section>
 
           <Section
             title="Dépenses par catégorie"
-            description={period.label}
+            description={scope}
             action={<SectionLink href="/analysis?from=overview">Analyse</SectionLink>}
           >
             <BreakdownBars

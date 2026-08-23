@@ -1,4 +1,4 @@
-import type { Movement, MovementKind } from '../../domain/types.ts'
+import type { Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
 export interface NewMovement {
@@ -20,6 +20,8 @@ export interface NewMovement {
   refundsMovementId?: string | null
   originalAmount?: number | null
   originalCurrency?: string | null
+  /** First day of the month the movement is about; null follows its date. */
+  accrualMonth?: string | null
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {
@@ -54,6 +56,12 @@ export async function getMovement(tx: Executor, userId: string, id: string): Pro
 export interface MovementFilters {
   from?: string
   to?: string
+  /**
+   * What the window above selects on: the settlement day (`cash`, the
+   * default), or the month the movement is about (`accrual`, which rounds the
+   * window out to whole months, as every accrual reading does).
+   */
+  reading?: Reading
   kind?: MovementKind
   accountId?: string
   actorId?: string
@@ -73,10 +81,11 @@ export interface MovementFilters {
  */
 function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
   const term = f.search?.trim() ? `%${f.search.trim()}%` : null
+  const accrual = f.reading === 'accrual'
   return tx`
     where m.user_id = ${userId}
-    ${f.from ? tx`and m.happened_on >= ${f.from}` : tx``}
-    ${f.to ? tx`and m.happened_on <= ${f.to}` : tx``}
+    ${f.from ? (accrual ? tx`and m.counted_in_month >= date_trunc('month', ${f.from}::date)` : tx`and m.happened_on >= ${f.from}`) : tx``}
+    ${f.to ? (accrual ? tx`and m.counted_in_month <= date_trunc('month', ${f.to}::date)` : tx`and m.happened_on <= ${f.to}`) : tx``}
     ${f.kind ? tx`and m.kind = ${f.kind}` : tx``}
     ${f.accountId ? tx`and (m.source_account_id = ${f.accountId} or m.target_account_id = ${f.accountId})` : tx``}
     ${f.actorId ? tx`and (m.source_actor_id = ${f.actorId} or m.target_actor_id = ${f.actorId})` : tx``}

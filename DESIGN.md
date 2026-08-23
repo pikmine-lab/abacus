@@ -120,6 +120,14 @@ de page.
 - **Une fenêtre nommée dans le titre** peut différer de la période de la page quand
   la forme l'exige (« 12 derniers mois » pour un graphe mensuel) : c'est déclaré,
   pas subi.
+- **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
+  porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
+  contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août
+  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne touche que les
+  flux : un solde n'a qu'une lecture, et sa section le rappelle quand l'autre est
+  choisie. Chaque chiffre porte alors le nom de la lecture qui l'a produit, et une
+  fenêtre glissante lue au rattachement se renomme par les mois entiers qu'elle couvre :
+  c'est ce qu'elle a répondu.
 - **Rien n'est dessiné avant mesure du conteneur.** Une largeur devinée pousse les
   marques hors cadre au lieu de les mettre à l'échelle ; la place est réservée par
   `minHeight` pour éviter le saut.

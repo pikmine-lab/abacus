@@ -789,10 +789,57 @@ test('spending reads back by category group through the MCP surface', async () =
     to: '2026-08-31',
     groupBy: 'categoryGroup',
   })
-  assert.deepEqual(byGroup.json(), [
-    { categoryGroup: 'Vie quotidienne', gross: 90, net: 90 },
-    { categoryGroup: '(none)', gross: 10, net: 10 },
-  ])
+  // The reading travels with the figures: the same month has two legitimate
+  // totals, so a table without its label could not be read out loud.
+  assert.deepEqual(byGroup.json(), {
+    reading: 'cash',
+    window: 'movements settled between 2026-08-01 and 2026-08-31',
+    rows: [
+      { categoryGroup: 'Vie quotidienne', gross: 90, net: 90 },
+      { categoryGroup: '(none)', gross: 10, net: 10 },
+    ],
+  })
+})
+
+test('a movement declared for another month reads back in that month', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+
+  // August's salary, paid on the 2nd of September.
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-09-02',
+        amount: 2400,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Employeur',
+        month: '2026-08',
+      },
+    ],
+  })
+  assert.equal((declared.json() as { results: { month?: string }[] }).results[0]!.month, '2026-08')
+
+  const inAugust = async (reading?: string) =>
+    (await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', reading })).json() as {
+      id: string
+      month?: string
+    }[]
+
+  assert.equal((await inAugust()).length, 0)
+  const [attached] = await inAugust('accrual')
+  assert.equal(attached!.month, '2026-08')
+
+  // Detaching it puts it back on its own date, on both sides.
+  const fixed = await call(client, 'fix_movement', {
+    movement: attached!.id,
+    action: 'correct',
+    month: 'none',
+  })
+  assert.equal((fixed.json() as { month?: string }).month, undefined)
+  assert.equal((await inAugust('accrual')).length, 0)
 })
 
 test('investments: funding is a movement, what happens inside is an operation', async () => {
@@ -876,7 +923,7 @@ test('investments: funding is a movement, what happens inside is an operation', 
     to: '2026-12-31',
     groupBy: 'category',
   })
-  assert.equal((spending.json() as unknown[]).length, 0)
+  assert.equal((spending.json() as { rows: unknown[] }).rows.length, 0)
 
   // What the interface must refuse, and say why.
   const onChecking = await call(client, 'record_investment_operations', {

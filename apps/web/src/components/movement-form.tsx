@@ -1,15 +1,17 @@
 'use client'
 
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { CurrencySelect } from '@/components/currency-select'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correctMovementAction, declareMovementAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { eur, frMonthLong } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -43,6 +45,8 @@ export interface MovementDraft {
   categoryId?: string
   activityId?: string
   note?: string
+  /** "YYYY-MM" when this movement is about a month other than its date's. */
+  accrualMonth?: string
   /** Advance carried by this expense: who owes, and the share expected back. */
   refundFromActorName?: string
   expectedRefundAmount?: number
@@ -70,6 +74,12 @@ export function MovementForm({
 }) {
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(draft?.type ?? 'expense')
   const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
+  const [monthOpen, setMonthOpen] = useState(draft?.accrualMonth !== undefined)
+  // The month the movement is about is stated against the month of its date,
+  // so the date is watched here: moving the date moves what "no attachment"
+  // means, and an attached month stays where it was put.
+  const [day, setDay] = useState(draft?.happenedOn ?? today)
+  const [month, setMonth] = useState<string | null>(draft?.accrualMonth ?? null)
   // The expense amount, watched because the expected share reads as a
   // percentage of it, live.
   const [amount, setAmount] = useState(draft?.originalAmount ?? draft?.amount ?? '')
@@ -95,6 +105,9 @@ export function MovementForm({
         setCurrency('EUR')
         setEurAmount('')
         setEurCleared(false)
+        setMonthOpen(false)
+        setDay(today)
+        setMonth(null)
       }}
     >
       <input type="hidden" name="type" value={type} />
@@ -126,7 +139,7 @@ export function MovementForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date" name="date">
-          <DateField name="date" defaultValue={draft?.happenedOn ?? today} />
+          <DateField name="date" defaultValue={draft?.happenedOn ?? today} onValueChange={setDay} />
         </Field>
         <Field label="Montant" name="amount">
           <div className="flex gap-2">
@@ -170,6 +183,27 @@ export function MovementForm({
               onValueChange={setEurAmount}
             />
           </Field>
+        </div>
+      )}
+
+      {type !== 'transfer' && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setMonthOpen((v) => !v)}
+            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            aria-expanded={monthOpen}
+          >
+            {monthOpen ? '− Rattacher à un autre mois' : '+ Rattacher à un autre mois'}
+          </button>
+          {/* Closing the block detaches the movement: the field stops being
+              submitted, and the action reads an absent month as "none". The
+              open state is the attachment, exactly as it is for an advance. */}
+          {monthOpen && (
+            <Field className="mt-2" label="Compté dans le mois de" name="accrualMonth">
+              <MonthStepper day={day} value={month} onChange={setMonth} />
+            </Field>
+          )}
         </div>
       )}
 
@@ -281,6 +315,77 @@ export function MovementForm({
 
       <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Déclarer'}</SubmitButton>
     </ActionForm>
+  )
+}
+
+function shiftMonth(ym: string, by: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  const total = y! * 12 + (m! - 1) + by
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+/**
+ * The month a movement is about, stepped from the month of its own date.
+ *
+ * Not a list of months: a dropdown is the wrong control twice over here. It
+ * only holds a value the user has to hunt for, and what is being stated is
+ * relative anyway ("that one is for the month before"). NN/g names the month
+ * of a date as the textbook case for not using a dropdown, and caps a date
+ * dropdown at under ten options; a year of months is seventeen and scrolls.
+ * Stepping is one click for the salary and the rent, which is every real case,
+ * and it reuses the app's own month idiom (PeriodPicker).
+ *
+ * The date's own month is the neutral state, and it says so: coming back to it
+ * detaches the movement rather than writing a default into the database.
+ */
+function MonthStepper({
+  day,
+  value,
+  onChange,
+}: {
+  day: string
+  value: string | null
+  onChange: (month: string | null) => void
+}) {
+  const own = day.slice(0, 7)
+  const shown = value ?? own
+  const step = (by: number) => {
+    const next = shiftMonth(shown, by)
+    onChange(next === own ? null : next)
+  }
+  return (
+    <>
+      <input type="hidden" name="accrualMonth" value={value ?? ''} />
+      <div className="flex items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          aria-label="Mois précédent"
+          onClick={() => step(-1)}
+        >
+          <ChevronLeftIcon />
+        </Button>
+        <span
+          aria-live="polite"
+          className={`min-w-[8.5rem] text-center text-[13px] ${value ? 'font-medium text-primary' : 'text-muted-foreground'}`}
+        >
+          {frMonthLong(shown)}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          aria-label="Mois suivant"
+          onClick={() => step(1)}
+        >
+          <ChevronRightIcon />
+        </Button>
+        {!value && <span className="text-[11.5px] text-faint">le mois de la date</span>}
+      </div>
+    </>
   )
 }
 
