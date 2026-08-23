@@ -170,6 +170,8 @@ const GUIDANCE: Record<string, string> = {
   no_operations: 'There is nothing to record: pass at least one operation.',
   operation_not_found:
     'No such operation for this user. Get a current id from list_investment_operations: an id from an earlier answer may already be gone.',
+  amount_or_unit_price:
+    'An operation carries either a total amount or a unit price, not both: passing both would state two different totals. Pick the one the user actually gave.',
   asset_exists:
     'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
   asset_is_quoted:
@@ -1483,7 +1485,7 @@ export function buildServer(userId: string): McpServer {
     'record_investment_operations',
     {
       description:
-        "Records what happens inside an investment account: a purchase, a sale, a dividend received, account fees. Not for moving money in or out of that account: funding a PEA or taking cash back out is a plain internal transfer (declare_movements), and buying inside it is an operation. That separation is the model, not a detail: a purchase is not an expense, it changes the form of the money. Amounts are always positive and are what really left or entered the account, order fees included, so the average cost matches the broker's. Assets are named, and must exist (manage_assets). Unlike declare_movements, the batch is one declaration: if a line is refused nothing is recorded, because a purchase and the fee that came with it are one event.",
+        "Records what happens inside an investment account: a purchase, a sale, a dividend received, account fees. Not for moving money in or out of that account: funding a PEA or taking cash back out is a plain internal transfer (declare_movements), and buying inside it is an operation. That separation is the model, not a detail: a purchase is not an expense, it changes the form of the money. Amounts are always positive and are what really left or entered the account, order fees included, so the average cost matches the broker's. When the user gives a price a share rather than a total (which is what a broker shows, as the average acquisition price), pass unitPrice and let the total be computed: never derive a total from a valuation minus a gain, because the valuation uses our price and the gain theirs, and the difference would settle into the cost basis for good. Assets are named, and must exist (manage_assets). Unlike declare_movements, the batch is one declaration: if a line is refused nothing is recorded, because a purchase and the fee that came with it are one event.",
       inputSchema: z.object({
         operations: z
           .array(
@@ -1505,7 +1507,17 @@ export function buildServer(userId: string): McpServer {
               amount: z
                 .number()
                 .positive()
-                .describe('What left or entered the account, order fees included, always positive'),
+                .optional()
+                .describe(
+                  'What left or entered the account, order fees included, always positive. Give this or unitPrice, never both',
+                ),
+              unitPrice: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  'buy/sell: the price of one unit, which is what a broker displays as the average acquisition price. The total is computed from the quantity. Use it whenever the user gives a price a share, and never multiply it yourself',
+                ),
               note: z.string().optional(),
             }),
           )
@@ -1524,6 +1536,7 @@ export function buildServer(userId: string): McpServer {
               type: o.type,
               quantity: o.quantity,
               amount: o.amount,
+              unitPrice: o.unitPrice,
               operatedOn: o.date,
               note: o.note,
             }
@@ -1653,7 +1666,18 @@ export function buildServer(userId: string): McpServer {
         account: z.string().optional().describe('correct: move it to another investment account, by name'),
         date: isoDate.optional().describe('correct: the day it really happened'),
         quantity: z.number().positive().optional().describe('correct: buy/sell only'),
-        amount: z.number().positive().optional().describe('correct: what really left or entered the account'),
+        amount: z
+          .number()
+          .positive()
+          .optional()
+          .describe('correct: what really left or entered the account. This or unitPrice, never both'),
+        unitPrice: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            "correct: the price of one unit, a broker's average acquisition price. The total is recomputed from the quantity, so this is the field to use when the user corrects a price a share",
+          ),
         note: z.string().optional().describe('correct: "none" clears it'),
       }),
     },
@@ -1668,6 +1692,7 @@ export function buildServer(userId: string): McpServer {
           accountId: account?.id,
           quantity: a.quantity,
           amount: a.amount,
+          unitPrice: a.unitPrice,
           operatedOn: a.date,
           note: clearable(a.note),
         })

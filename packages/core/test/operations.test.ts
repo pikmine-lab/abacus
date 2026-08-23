@@ -231,3 +231,76 @@ test('a balance check on an investment account sees its operations', async () =>
   assert.equal(check.computedBalance, '-4795.10')
   assert.equal(gap, 4807.6)
 })
+
+test('a trade declared by its unit price stores the exact cost basis', async () => {
+  const user = await seedUser()
+  const account = await pea(user)
+  const world = await declareAsset(user, { name: 'World', instrument: WORLD })
+  // How an existing position gets typed in: the quantity and the average
+  // acquisition price the broker shows, never a total rebuilt from a valuation.
+  await recordOperations(user, [
+    {
+      accountId: account.id,
+      assetId: world.id,
+      type: 'buy',
+      quantity: 12.5,
+      unitPrice: 22.57,
+      operatedOn: '2026-08-23',
+    },
+  ])
+  const [position] = await positions(user)
+  // 12,5 x 22,57 = 282,125, and the total is what leaves the account, so it is
+  // the one rounded to the cent. The average cost is derived from it and carries
+  // the remainder: 22,5704 rather than 22,57, which is four ten-thousandths of a
+  // euro and invisible at two decimals. Rounding the other way round would put
+  // the error on the cash, where it would show up in a balance check forever.
+  assert.equal(position!.costBasis, '282.13')
+  assert.equal(position!.averageCost, '22.57040000')
+  assert.equal(Number(position!.averageCost).toFixed(2), '22.57')
+
+  // Both at once would state two different totals.
+  await assert.rejects(
+    recordOperations(user, [
+      {
+        accountId: account.id,
+        assetId: world.id,
+        type: 'buy',
+        quantity: 1,
+        amount: 20,
+        unitPrice: 22.57,
+        operatedOn: '2026-08-23',
+      },
+    ]),
+    (e: DomainError) => e.code === 'amount_or_unit_price',
+  )
+  // A unit price with nothing to apply it to is not a total.
+  await assert.rejects(
+    recordOperations(user, [{ accountId: account.id, type: 'fee', unitPrice: 3, operatedOn: '2026-08-23' }]),
+    (e: DomainError) => e.code === 'needs_quantity',
+  )
+})
+
+test('a correction by unit price recomputes the total from the quantity', async () => {
+  const user = await seedUser()
+  const account = await pea(user)
+  const world = await declareAsset(user, { name: 'World', instrument: WORLD })
+  const [bought] = await recordOperations(user, [
+    {
+      accountId: account.id,
+      assetId: world.id,
+      type: 'buy',
+      quantity: 10,
+      unitPrice: 100,
+      operatedOn: '2026-01-05',
+    },
+  ])
+  assert.equal(bought!.amount, '1000.00')
+
+  await correctOperation(user, bought!.id, { unitPrice: 130 })
+  assert.equal((await positions(user))[0]!.costBasis, '1300.00')
+  // Quantity and unit price together: the total follows the corrected quantity.
+  await correctOperation(user, bought!.id, { quantity: 4, unitPrice: 130 })
+  const [position] = await positions(user)
+  assert.equal(position!.quantity, '4.00000000')
+  assert.equal(position!.costBasis, '520.00')
+})

@@ -820,6 +820,39 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.ok(!twice.isError, twice.text)
   assert.equal((twice.json() as { name: string }).name, 'Monde')
 
+  // A price a share, which is what a broker displays: the MCP multiplies nothing
+  // itself, so the cost basis cannot pick up a rounding of its own.
+  const byUnit = await call(client, 'record_investment_operations', {
+    operations: [
+      {
+        date: '2026-04-02',
+        account: 'PEA',
+        type: 'buy',
+        asset: 'Monde',
+        quantity: 12.5,
+        unitPrice: 22.57,
+      },
+    ],
+  })
+  assert.ok(!byUnit.isError, byUnit.text)
+  assert.equal((byUnit.json() as { operations: { amount: number }[] }).operations[0]!.amount, 282.13)
+
+  const both = await call(client, 'record_investment_operations', {
+    operations: [
+      {
+        date: '2026-04-02',
+        account: 'PEA',
+        type: 'buy',
+        asset: 'Monde',
+        quantity: 1,
+        amount: 20,
+        unitPrice: 22.57,
+      },
+    ],
+  })
+  assert.ok(both.isError)
+  assert.match(both.text, /either a total amount or a unit price/)
+
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
-  assert.equal((operations.json() as unknown[]).length, 4)
+  assert.equal((operations.json() as unknown[]).length, 5)
 })

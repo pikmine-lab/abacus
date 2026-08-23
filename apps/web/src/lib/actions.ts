@@ -952,9 +952,6 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
   const invalid = checkFields(formData, rules)
   if (invalid) return { fields: invalid }
   const quantity = trade ? num(formData, 'quantity') : undefined
-  const amount = unitPriced
-    ? Math.round(num(formData, 'unitPrice') * quantity! * 100) / 100
-    : num(formData, 'amount')
 
   let assetId = opt(formData, 'assetId')
   if (picked) {
@@ -981,7 +978,10 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
         assetId,
         type,
         quantity,
-        amount,
+        // One place turns a unit price into a total: the service, so both
+        // interfaces round it the same way.
+        amount: unitPriced ? undefined : num(formData, 'amount'),
+        unitPrice: unitPriced ? num(formData, 'unitPrice') : undefined,
         operatedOn: str(formData, 'operatedOn'),
         note: opt(formData, 'note'),
       },

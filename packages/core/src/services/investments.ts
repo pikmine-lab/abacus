@@ -112,9 +112,34 @@ export interface RecordOperationInput {
   assetId?: string
   type: InvestmentOperationType
   quantity?: number
-  amount: number
+  /** What left or entered the account. Omit it to give `unitPrice` instead. */
+  amount?: number
+  /**
+   * The price of one unit, which is what a broker displays: the total is then
+   * `quantity x unitPrice`, rounded to the cent. Reconstructing a total from a
+   * valuation instead would fold the difference between two venues' prices into
+   * the cost basis, and leave it there for as long as the holding is held.
+   */
+  unitPrice?: number
   operatedOn: string
   note?: string
+}
+
+/** The total of an operation, however it was expressed. */
+function totalOf(input: RecordOperationInput): number {
+  if (input.amount !== undefined && input.unitPrice !== undefined)
+    throw new DomainError(
+      'amount_or_unit_price',
+      'Give either the total amount or the unit price, not both: they would contradict each other',
+    )
+  if (input.unitPrice !== undefined) {
+    if (!(input.quantity && input.quantity > 0))
+      throw new DomainError('needs_quantity', 'A unit price needs the quantity it applies to')
+    return Math.round(input.unitPrice * input.quantity * 100) / 100
+  }
+  if (input.amount === undefined)
+    throw new DomainError('bad_amount', 'An operation needs its amount, or a unit price and a quantity')
+  return input.amount
 }
 
 /**
@@ -150,7 +175,8 @@ async function recordOperationIn(
     )
   if (account.closedOn)
     throw new DomainError('account_closed', `"${account.name}" is closed: reopen it before writing to it`)
-  if (!(input.amount > 0)) throw new DomainError('bad_amount', 'An amount is always positive')
+  const amount = totalOf(input)
+  if (!(amount > 0)) throw new DomainError('bad_amount', 'An amount is always positive')
 
   const trade = input.type === 'buy' || input.type === 'sell'
   if (trade && !(input.quantity && input.quantity > 0))
@@ -181,7 +207,7 @@ async function recordOperationIn(
     assetId: input.assetId ?? null,
     type: input.type,
     quantity: trade ? String(input.quantity) : null,
-    amount: String(input.amount),
+    amount: String(amount),
     operatedOn: input.operatedOn,
     note: input.note ?? null,
   })
@@ -371,6 +397,8 @@ export interface CorrectOperationInput {
   accountId?: string
   quantity?: number
   amount?: number
+  /** As on declaration: the total follows from the quantity it applies to. */
+  unitPrice?: number
   operatedOn?: string
   note?: string | null
 }
@@ -400,6 +428,16 @@ export async function correctOperation(
       throw new DomainError('needs_quantity', 'A quantity is always positive')
     if (input.amount !== undefined && !(input.amount > 0))
       throw new DomainError('bad_amount', 'An amount is always positive')
+    if (input.amount !== undefined && input.unitPrice !== undefined)
+      throw new DomainError(
+        'amount_or_unit_price',
+        'Give either the total amount or the unit price, not both: they would contradict each other',
+      )
+    // A unit price applies to a quantity, the corrected one when there is one.
+    const unitTotal =
+      input.unitPrice === undefined
+        ? undefined
+        : Math.round(input.unitPrice * (input.quantity ?? Number(before.quantity)) * 100) / 100
 
     if (input.accountId && input.accountId !== before.accountId) {
       const account = await getAccount(tx, userId, input.accountId)
@@ -415,6 +453,7 @@ export async function correctOperation(
     if (input.accountId) patch.accountId = input.accountId
     if (input.quantity !== undefined) patch.quantity = String(input.quantity)
     if (input.amount !== undefined) patch.amount = String(input.amount)
+    if (unitTotal !== undefined) patch.amount = String(unitTotal)
     if (input.operatedOn) patch.operatedOn = input.operatedOn
     if (input.note !== undefined) patch.note = input.note
     const after = Object.keys(patch).length > 0 ? await updateOperationRow(tx, userId, id, patch) : before

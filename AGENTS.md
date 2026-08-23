@@ -306,6 +306,13 @@ nets, l'écart entre les deux étant la performance. Un placement mène à sa pr
 (`/investments/[assetId]`) : cours en courbe, valorisation, opérations. `BalanceChart` a été
 généralisé pour ça (ses props parlent de `lines`, plus de comptes) plutôt que dupliqué.
 
+**Une opération se déclare par son total ou par son prix unitaire** (`unitPrice` côté MCP, un
+choix explicite côté web), parce que c'est le prix d'acquisition moyen qu'un courtier affiche
+et que reconstruire un total depuis « valorisation moins plus-value » y ferait entrer l'écart
+entre deux places, à demeure dans le prix de revient. La multiplication vit dans le service,
+pas dans les deux interfaces. Le **total** est l'arrondi au centime, le PRU porte le reste :
+l'argent qui sort du compte est en centimes, un PRU ne l'est pas.
+
 **Une opération se corrige et se supprime** (UI : menu de la ligne ; MCP :
 `fix_investment_operation`). Le garde-fou n'est pas la quantité finale mais la **quantité
 courante minimale** : réduire un achat peut rendre une vente postérieure impossible, et
