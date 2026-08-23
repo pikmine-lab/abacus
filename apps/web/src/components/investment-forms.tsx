@@ -667,7 +667,7 @@ function AssetRow({ asset }: { asset: AssetEntry & { price: string | null } }) {
       <span className="tabular shrink-0 text-[12.5px] text-muted-foreground">
         {asset.price ? amount(asset.price, '€') : '—'}
       </span>
-      <AssetMenu id={asset.id} name={asset.name} />
+      <AssetMenu id={asset.id} name={asset.name} followed={asset.followed} />
     </div>
   )
 }
