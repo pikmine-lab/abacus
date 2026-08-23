@@ -210,6 +210,36 @@ test('corrects the euros alone, redeclares the paid side, or drops a wrong origi
   assert.equal(plain.originalCurrency, null)
 })
 
+test('correcting a foreign expense into a transfer drops the original', async () => {
+  const { user, checking, shop } = await seedLedger()
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  const { history } = stubHistory()
+  const declared = await declareMovement(
+    user,
+    {
+      happenedOn: '2026-01-02',
+      amount: 99,
+      currency: 'USD',
+      sourceAccountId: checking.id,
+      targetActorId: shop.id,
+    },
+    history,
+  )
+
+  // The euros move between two owned accounts: the foreign original would
+  // dress an internal move as a payment, so it goes.
+  const transfer = await correctMovement(user, declared.id, {
+    amount: Number(declared.amount),
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+    targetActorId: null,
+  })
+  assert.equal(transfer.kind, 'transfer')
+  assert.equal(transfer.amount, '89.10')
+  assert.equal(transfer.originalAmount, null)
+  assert.equal(transfer.originalCurrency, null)
+})
+
 test('declares an income in a foreign currency too', async () => {
   const { user, checking, shop } = await seedLedger()
   const { history } = stubHistory([{ quotedOn: '2026-01-02', price: '0.85' }])

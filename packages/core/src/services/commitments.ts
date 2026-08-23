@@ -275,19 +275,32 @@ export async function createFinancing(
  */
 export type CommitmentWithEur = Commitment & { amountEur: string | null }
 
+/** The latest known rate of every foreign currency these commitments bill in. */
+async function latestRates(
+  tx: Executor,
+  commitments: Commitment[],
+  history: HistoryFetcher,
+): Promise<Map<string, string | null>> {
+  const codes = [...new Set(commitments.map((c) => c.currency).filter((c) => c !== 'EUR'))]
+  const rates = new Map<string, string | null>()
+  for (const code of codes) rates.set(code, await eurRateLatest(tx, code, history))
+  return rates
+}
+
+/** A stated amount re-said in euros at the latest rate; null when none is known. */
+function eurOf(amount: string, currency: string, rates: Map<string, string | null>): string | null {
+  if (currency === 'EUR') return amount
+  const rate = rates.get(currency)
+  return rate ? toEur(Number(amount), rate).toFixed(2) : null
+}
+
 async function withEurAmounts<T extends Commitment>(
   tx: Executor,
   commitments: T[],
   history: HistoryFetcher,
 ): Promise<(T & { amountEur: string | null })[]> {
-  const codes = [...new Set(commitments.map((c) => c.currency).filter((c) => c !== 'EUR'))]
-  const rates = new Map<string, string | null>()
-  for (const code of codes) rates.set(code, await eurRateLatest(tx, code, history))
-  return commitments.map((c) => {
-    if (c.currency === 'EUR') return { ...c, amountEur: c.amount }
-    const rate = rates.get(c.currency)
-    return { ...c, amountEur: rate ? toEur(Number(c.amount), rate).toFixed(2) : null }
-  })
+  const rates = await latestRates(tx, commitments, history)
+  return commitments.map((c) => ({ ...c, amountEur: eurOf(c.amount, c.currency, rates) }))
 }
 
 export async function listCommitments(
@@ -302,8 +315,10 @@ export async function listCommitments(
 export interface FinancingProgress {
   paidInstallments: number
   paidTotal: string
-  /** Sum of the installments still owed, so an adjusted plan stays exact. */
+  /** Sum of the installments still owed, in the plan's own currency. */
   remainingDue: number
+  /** The same in euros at the latest rate: what a sum across plans adds up. */
+  remainingDueEur: number | null
   /** Amount of the next installment, which may differ from the others. */
   nextAmount: number | null
 }
@@ -315,18 +330,23 @@ export async function listCommitmentsWithProgress(
   history: HistoryFetcher = fetchHistory,
 ): Promise<(CommitmentWithEur & { progress: FinancingProgress | null })[]> {
   const sql = db()
-  const commitments = await withEurAmounts(sql, await listCommitmentsDs(sql, userId, { activeOnly }), history)
+  const raw = await listCommitmentsDs(sql, userId, { activeOnly })
+  const rates = await latestRates(sql, raw, history)
   return await Promise.all(
-    commitments.map(async (c) => {
-      if (c.kind !== 'financing') return { ...c, progress: null }
+    raw.map(async (c) => {
+      const amountEur = eurOf(c.amount, c.currency, rates)
+      if (c.kind !== 'financing') return { ...c, amountEur, progress: null }
       const progress = await scheduleProgress(sql, c.id)
-      if (!progress) return { ...c, progress: null }
+      if (!progress) return { ...c, amountEur, progress: null }
+      const remainingDueEur = eurOf(progress.remainingDue, c.currency, rates)
       return {
         ...c,
+        amountEur,
         progress: {
           paidInstallments: progress.paid,
           paidTotal: progress.paidAmount,
           remainingDue: Number(progress.remainingDue),
+          remainingDueEur: remainingDueEur === null ? null : Number(remainingDueEur),
           nextAmount: progress.nextAmount === null ? null : Number(progress.nextAmount),
         },
       }
@@ -807,17 +827,25 @@ export async function reviseSchedule(
       const existing = known.get(line.id)!
       // A settled line and its movement say the same thing, whichever side is
       // edited: revising one carries the correction over to the other.
-      if (existing.movementId && (Number(existing.amount) !== line.amount || existing.dueOn !== line.dueOn))
+      const amountChanged = Number(existing.amount) !== line.amount
+      if (existing.movementId && (amountChanged || existing.dueOn !== line.dueOn))
         // The plan is written in the commitment's currency, so on a foreign
-        // one the revision redeclares the paid side: the movement's euros are
-        // reconverted at the (possibly new) day's rate.
+        // one a changed amount redeclares the paid side and the euros are
+        // reconverted at the day's rate. A date moved alone keeps the euros:
+        // what the bank did is not rewritten for a calendar fix (same rule as
+        // fix_movement), and an old line stays revisable even when the stored
+        // rate history no longer covers its day.
         await correctMovementIn(
           tx,
           userId,
           existing.movementId,
           {
-            amount: line.amount,
-            currency: commitment.currency !== 'EUR' ? commitment.currency : undefined,
+            ...(amountChanged
+              ? {
+                  amount: line.amount,
+                  currency: commitment.currency !== 'EUR' ? commitment.currency : undefined,
+                }
+              : {}),
             happenedOn: line.dueOn,
           },
           history,

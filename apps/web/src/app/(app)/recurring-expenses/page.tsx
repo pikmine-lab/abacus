@@ -79,7 +79,8 @@ export default async function RecurringExpensesPage({
   const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
 
   const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
-  const remainingDue = financings.reduce((sum, c) => sum + (c.progress?.remainingDue ?? 0), 0)
+  // In euros at the latest rate: a USD plan's remainder cannot be added as-is.
+  const remainingDue = financings.reduce((sum, c) => sum + (c.progress?.remainingDueEur ?? 0), 0)
   const toCancel = subscriptions.filter((c) => c.judgment === 'to_cancel')
   const reducible = subscriptions.filter((c) => c.judgment === 'reducible')
   const savable = [...toCancel, ...reducible].reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)

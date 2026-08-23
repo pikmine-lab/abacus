@@ -352,12 +352,16 @@ export async function correctMovementIn(
           : undefined,
     refundsMovementId: current.refundsMovementId ?? undefined,
   }
+  // A movement corrected into a transfer moves euros: an original left over
+  // from the expense it was would dress an internal move as a foreign payment.
+  const becomesTransfer = Boolean(merged.sourceAccountId && merged.targetAccountId)
   const resolved = moneyTouched
     ? await inAccountCurrency(tx, merged, history)
     : {
         ...merged,
-        originalAmount: current.originalAmount !== null ? Number(current.originalAmount) : undefined,
-        originalCurrency: current.originalCurrency ?? undefined,
+        originalAmount:
+          !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
+        originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
       }
   const activityId = await checkMovement(tx, userId, resolved)
 
@@ -393,10 +397,17 @@ export async function correctMovementIn(
   // debited and the day it was debited. Correcting one corrects the other, or
   // the plan drifts away from what actually left the account. On a foreign
   // plan the installment is written in the billing currency, which on the
-  // movement is the original side, not its EUR counter-value.
+  // movement is the original side, not its EUR counter-value: the plan is only
+  // realigned when the movement still speaks that currency, so a correction to
+  // another one cannot write its units into the plan.
   const settled = await installmentByMovement(tx, id)
   const paid = updated.originalAmount !== null ? Number(updated.originalAmount) : Number(updated.amount)
-  if (settled && (Number(settled.amount) !== paid || settled.dueOn !== updated.happenedOn)) {
+  const paidCurrency = updated.originalCurrency ?? 'EUR'
+  if (
+    settled &&
+    paidCurrency === settled.planCurrency &&
+    (Number(settled.amount) !== paid || settled.dueOn !== updated.happenedOn)
+  ) {
     await alignInstallmentOnMovement(tx, settled.id, { amount: paid, on: updated.happenedOn })
     await resyncFinancing(tx, settled.commitmentId)
   }

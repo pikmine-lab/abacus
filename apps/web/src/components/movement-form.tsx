@@ -76,6 +76,8 @@ export function MovementForm({
   const [currency, setCurrency] = useState(draft?.originalCurrency ?? 'EUR')
   // What hit the account when the statement says it; the share reads on it.
   const [eurAmount, setEurAmount] = useState(draft?.originalCurrency ? (draft?.amount ?? '') : '')
+  // Editing the paid amount voids the prefilled statement euros.
+  const [eurCleared, setEurCleared] = useState(false)
 
   const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
   const editing = draft !== undefined
@@ -92,6 +94,7 @@ export function MovementForm({
         setAmount('')
         setCurrency('EUR')
         setEurAmount('')
+        setEurCleared(false)
       }}
     >
       <input type="hidden" name="type" value={type} />
@@ -101,7 +104,17 @@ export function MovementForm({
           {draft.origin} Corriger le montant ou la date ici ne défait pas ce lien.
         </p>
       )}
-      <Tabs value={type} onValueChange={(v) => setType(v as typeof type)}>
+      <Tabs
+        value={type}
+        onValueChange={(v) => {
+          const next = v as typeof type
+          setType(next)
+          // A transfer moves euros: editing a foreign movement, the amount
+          // field flips to the EUR counter-value (and back to the paid amount).
+          if (editing && draft?.originalCurrency)
+            setAmount(next === 'transfer' ? draft.amount : (draft.originalAmount ?? draft.amount))
+        }}
+      >
         <TabsList className="w-full">
           {TYPES.map((t) => (
             <TabsTrigger key={t.value} value={t.value}>
@@ -118,16 +131,29 @@ export function MovementForm({
         <Field label="Montant" name="amount">
           <div className="flex gap-2">
             <AmountInput
+              // The key remounts the field when the unit it shows changes.
+              key={
+                editing && draft?.originalCurrency
+                  ? `amount-${type === 'transfer' ? 'eur' : 'paid'}`
+                  : 'amount'
+              }
               name="amount"
               placeholder="12,50"
-              defaultValue={draft?.originalAmount ?? draft?.amount ?? ''}
-              onValueChange={setAmount}
+              defaultValue={
+                type === 'transfer' ? (draft?.amount ?? '') : (draft?.originalAmount ?? draft?.amount ?? '')
+              }
+              onValueChange={(value) => {
+                setAmount(value)
+                // The paid amount moved: the prefilled euros stop applying,
+                // the day's rate takes over unless retyped from the statement.
+                if (editing && draft?.originalCurrency && Number(value) !== Number(draft.originalAmount)) {
+                  setEurCleared(true)
+                  setEurAmount('')
+                }
+              }}
             />
             {type !== 'transfer' && (
-              <CurrencySelect
-                defaultValue={draft?.originalCurrency ?? 'EUR'}
-                onValueChange={(v) => setCurrency(v || 'EUR')}
-              />
+              <CurrencySelect value={currency} onValueChange={(v) => setCurrency(v || 'EUR')} />
             )}
           </div>
         </Field>
@@ -137,9 +163,10 @@ export function MovementForm({
         <div className="grid grid-cols-2 gap-3">
           <Field label={`En euros (${type === 'income' ? 'crédités' : 'débités'})`} name="eurAmount">
             <AmountInput
+              key={eurCleared ? 'eur-cleared' : 'eur'}
               name="eurAmount"
               placeholder="au cours du jour"
-              defaultValue={draft?.originalCurrency ? (draft?.amount ?? '') : ''}
+              defaultValue={!eurCleared && draft?.originalCurrency ? (draft?.amount ?? '') : ''}
               onValueChange={setEurAmount}
             />
           </Field>

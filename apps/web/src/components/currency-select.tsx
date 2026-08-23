@@ -59,19 +59,23 @@ function fold(text: string): string {
  */
 export function CurrencySelect({
   name = 'currency',
+  value: controlled,
   defaultValue = 'EUR',
   onValueChange,
 }: {
   name?: string
+  /** Controlled: the caller owns the state (a form whose fields depend on it). */
+  value?: string
   defaultValue?: string
   onValueChange?: (value: string) => void
 }) {
-  const [value, setValue] = useState(defaultValue)
+  const [inner, setInner] = useState(defaultValue)
+  const value = controlled ?? inner
   const [open, setOpen] = useState(false)
   const { frequent, others } = useMemo(rows, [])
 
   const pick = (code: string) => {
-    setValue(code)
+    setInner(code)
     setOpen(false)
     onValueChange?.(code)
   }

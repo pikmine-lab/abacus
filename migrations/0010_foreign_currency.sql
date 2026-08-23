@@ -21,6 +21,15 @@ alter table instrument add constraint instrument_kind_check
 -- movement. Its dated events state amounts in the currency of their day,
 -- which a price change can move, so each event carries its own.
 alter table commitment_event add column currency char(3);
+-- Events written before this column existed were stated in their commitment's
+-- currency (EUR until now): backfilled, so "EUR" is never encoded two ways.
+update commitment_event e
+  set currency = c.currency
+  from commitment c
+  where c.id = e.commitment_id and e.amount is not null;
+-- An amount without its currency could not be read out loud.
+alter table commitment_event add constraint commitment_event_amount_has_currency
+  check (amount is null or currency is not null);
 
 alter table movement
   add column original_amount numeric(12,2) check (original_amount > 0),

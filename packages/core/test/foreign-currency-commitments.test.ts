@@ -203,3 +203,59 @@ test('a USD financing keeps its whole plan in USD and syncs both ways in it', as
     (e: DomainError) => e.code === 'financing_keeps_currency',
   )
 })
+
+test('a plan is not realigned from a movement corrected into another currency', async () => {
+  const { user, checking, saas } = await seedLedger()
+  const { history } = stubHistory()
+  const financing = await createFinancing(user, {
+    label: 'EUR gear x2',
+    actorId: saas.id,
+    accountId: checking.id,
+    installmentsTotal: 2,
+    totalAmount: 100,
+    firstDueOn: today(),
+  })
+  await confirmNextOccurrence(user, financing.id)
+  const [movement] = await listMovements(user, { commitmentId: financing.id })
+
+  // A EUR plan, its settling movement redeclared in USD: 100 USD is not 100
+  // EUR, so the plan line keeps its own truth instead of taking the units.
+  await correctMovement(user, movement!.id, { amount: 100, currency: 'USD' }, history)
+  const [first] = await financingSchedule(user, financing.id)
+  assert.equal(first?.amount, '50.00')
+})
+
+test('revising only the date of a paid foreign installment keeps the statement euros', async () => {
+  const { user, checking, saas } = await seedLedger()
+  const { history } = stubHistory()
+  const financing = await createFinancing(
+    user,
+    {
+      label: 'US gear x2',
+      actorId: saas.id,
+      accountId: checking.id,
+      installmentsTotal: 2,
+      totalAmount: 100,
+      currency: 'USD',
+      firstDueOn: '2026-08-01',
+    },
+    history,
+  )
+  await confirmNextOccurrence(user, financing.id, { eurAmount: 43.21 }, history)
+
+  const schedule = await financingSchedule(user, financing.id)
+  await reviseSchedule(
+    user,
+    financing.id,
+    schedule.map((line, index) => ({
+      id: line.id,
+      dueOn: index === 0 ? '2026-08-03' : line.dueOn,
+      amount: Number(line.amount),
+    })),
+    history,
+  )
+  const [movement] = await listMovements(user, { commitmentId: financing.id })
+  assert.equal(movement?.happenedOn, '2026-08-03')
+  assert.equal(movement?.amount, '43.21')
+  assert.equal(movement?.originalAmount, '50.00')
+})
