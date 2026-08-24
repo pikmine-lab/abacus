@@ -429,5 +429,41 @@ Chaque ligne dit aussi son nombre de mouvements, que l'écran affiche au survol,
 description déclare l'ordre : classé par net, le plus gros d'abord, à conserver en restituant,
 puisque c'est l'ordre que la personne a sous les yeux.
 
+**Le graphe des placements se lit de deux façons, et sa fenêtre se choisit** (2026-08-24,
+issue #56) : la valorisation contre les apports, ou **la performance**, qui est l'écart
+entre les deux avec les apports posés à plat. La seconde n'est pas une version dégradée
+de la première : la valorisation seule saute à chaque apport sans que rien n'ait été
+gagné, là où l'écart ne bouge que de ce que le marché a fait. Elle se vérifie à l'œil,
+son dernier point valant la tuile *Performance* de la page (`value − netContributions`,
+dividendes et frais compris). Recadrer l'axe n'aurait pas suffi : les apports montent en
+escalier, donc même sans le zéro l'écart restait écrasé ; c'est la donnée tracée qui
+change.
+
+La fenêtre (1S · 1M · 1A · Tout) **se pose sur la section du graphe, pas dans une rangée
+de filtres**, et c'est une exception écrite à `DESIGN.md` § Graphes : une rangée scope
+tout ce qui suit, or ici les tuiles, les positions et les opérations sont des instantanés
+qu'elle ne cadre pas. Ce qui se déplace est le contrôle, pas le reste : il écrit dans
+l'URL (`window`, `chart`) comme la rangée le ferait. Même contrôle sur la page d'un
+placement, dont la courbe de cours était cadrée sur un an en dur.
+
+Trois défauts du composant de courbe ont été démasqués par là et corrigés, tous écrits
+pour des soldes de comptes et faux dès qu'il sert autre chose. Deux d'échelle : un **pas
+de grille constant à 500 €** (deux traits pour une action à 709 €, un seul pour une
+performance de 312 €), devenu un nombre rond taillé sur l'amplitude, et le **zéro forcé
+dans l'échelle**, qui aplatit un cours en ligne droite ; le zéro n'y entre plus que quand
+la série se lit contre lui (solde, valorisation, performance). Le troisième était un
+graphe **qui se vidait au changement de lecture** et revenait au rechargement : les
+séries visibles sont un état (pour que les bascules de la légende survivent à un
+recadrage), initialisé au seul montage, donc après un changement de lecture il désignait
+des séries disparues et le filtre ne laissait plus rien passer. L'état se resynchronise
+maintenant quand le jeu de lignes change d'identité, pendant le rendu et non dans un
+effet, pour que rien ne soit jamais peint vide. Enfin la légende ne s'affiche plus sous
+deux séries, comme `DESIGN.md` le demandait déjà.
+
+Côté MCP, `get_portfolio_history` : aucun outil n'exposait d'évolution, `get_portfolio`
+ne connaissant que le présent. Il rend la fenêtre **déjà totalisée** (début, fin, plus
+haut, plus bas, et des jalons par jour sur une fenêtre courte, par dernier jour de mois
+au-delà), parce qu'une série brute d'un an ferait additionner le modèle, ce qu'il rate.
+
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

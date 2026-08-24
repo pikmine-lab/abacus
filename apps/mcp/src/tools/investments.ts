@@ -13,6 +13,7 @@ import {
   refreshQuotes,
   setManualPrice,
   stopFollowing,
+  valuationHistory,
 } from '@abacus/core/services/investments'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
@@ -276,6 +277,25 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
             })),
           })),
         })
+      }),
+  )
+
+  server.registerTool(
+    'get_portfolio_history',
+    {
+      description:
+        'How the portfolio moved over a window, already totalled: where it started, where it ended, its best and worst day, and milestones in between. Use it for anything about evolution ("what has it made since March", "is it going up") — `get_portfolio` only knows the present. `performance` is the whole point: it is the value minus the net contributions, dividends and fees included, the same figure `get_portfolio` returns as `totalReturn`. Read it rather than the valuation, which jumps every time money comes in without anything having been earned. `step` says what one milestone covers: a day on a short window, the last known day of each month beyond, so a milestone is always a closing figure and never an average. `high` and `low` are measured on every day of the window, not on the milestones. Everything comes back in euros, for all investment accounts together. Two limits worth stating when you report: a position with no price counts as nothing, so the performance is understated rather than wrong, and the window never reaches back before the first operation.',
+      inputSchema: z.object({
+        from: isoDate.optional().describe('Start of the window; defaults to the first operation ever'),
+        to: isoDate.optional().describe('End of the window; defaults to today'),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        await refreshQuotes(userId)
+        const history = await valuationHistory(userId, a.from, a.to)
+        if (!history) return ok({ history: null, note: 'Nothing has been bought yet: no history to read.' })
+        return ok(history)
       }),
   )
 
