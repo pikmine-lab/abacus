@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import type { Judgment } from '@abacus/core/domain'
+import { useOptimistic, useState, useTransition } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { CurrencySelect } from '@/components/currency-select'
 import { FinancingAmountFields } from '@/components/financing-fields'
@@ -330,19 +331,36 @@ export function MoveAccountForm({
   )
 }
 
+/**
+ * The judgment of a subscription, changed in one gesture from its row.
+ *
+ * The action is called straight from the change, without a form around it:
+ * React resets a form once its action returns, Radix restores on that reset
+ * the value the select had at mount, and the resubmit that followed wrote the
+ * old judgment back over the new one. Nothing here needs a form anyway, there
+ * is no submit button and Radix needs its script either way.
+ */
 export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; value: string | null }) {
-  const formRef = useRef<HTMLFormElement>(null)
-  const [judgment, setJudgment] = useState(value ?? '')
-
-  // Submit after render so the hidden select carries the new value.
-  useEffect(() => {
-    if (judgment && judgment !== (value ?? '')) formRef.current?.requestSubmit()
-  }, [judgment, value])
+  const [pending, startTransition] = useTransition()
+  const [failed, setFailed] = useState<string | null>(null)
+  // The pill says the new judgment while the write travels, and falls back to
+  // the stored one on its own: on success that is the same value, on failure
+  // it is the truth the message next to it explains.
+  const [judgment, showJudgment] = useOptimistic(value ?? '')
 
   return (
-    <form action={setJudgmentAction} ref={formRef}>
-      <input type="hidden" name="commitmentId" value={commitmentId} />
-      <Select name="judgment" value={judgment} onValueChange={setJudgment}>
+    <div className="flex items-center gap-2">
+      {failed && <span className="text-[11px] text-destructive">{failed}</span>}
+      <Select
+        value={judgment}
+        disabled={pending}
+        onValueChange={(chosen) =>
+          startTransition(async () => {
+            showJudgment(chosen)
+            setFailed(await setJudgmentAction(commitmentId, chosen as Judgment))
+          })
+        }
+      >
         <SelectTrigger size="sm" className="h-7 rounded-full px-2.5 text-[11px]" aria-label="Jugement">
           <SelectValue placeholder="à juger" />
         </SelectTrigger>
@@ -352,6 +370,6 @@ export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; 
           <SelectItem value="to_cancel">à résilier</SelectItem>
         </SelectContent>
       </Select>
-    </form>
+    </div>
   )
 }

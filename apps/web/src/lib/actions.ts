@@ -96,6 +96,7 @@ const FR: Record<string, string> = {
   schedule_empty: 'Un financement garde au moins une échéance : clos-le plutôt que de vider son plan.',
   installment_not_found: 'Une échéance de ce plan n’existe plus : rouvre le panneau pour repartir à jour.',
   installment_repeated: 'La même échéance apparaît deux fois dans le plan.',
+  commitment_not_found: 'Cet engagement n’existe plus.',
   cancelled: 'Cet engagement est résilié.',
   already_cancelled: 'Cet engagement est déjà résilié.',
   no_gap: 'Ce pointage n’a aucun écart à solder.',
@@ -642,12 +643,20 @@ export async function skipOccurrenceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
-export async function setJudgmentAction(formData: FormData): Promise<void> {
+/**
+ * Judges a subscription. Called straight from the row rather than through a
+ * form: the judgment travels as an argument, so there is no empty field to
+ * swallow, and a refusal comes back to the row that asked for it.
+ */
+export async function setJudgmentAction(commitmentId: string, judgment: Judgment): Promise<string | null> {
   const userId = await requireUserId()
-  const judgment = str(formData, 'judgment')
-  if (judgment === '') return
-  await setJudgment(userId, str(formData, 'commitmentId'), judgment as Judgment)
+  try {
+    await setJudgment(userId, commitmentId, judgment)
+  } catch (e) {
+    return frError(e)
+  }
   refreshAll()
+  return null
 }
 
 /**
