@@ -150,8 +150,16 @@ export interface BalanceCheck {
  * A quoted thing: public data, owned by nobody, shared by every user. Its
  * identity is where its price comes from and its reference over there.
  */
-export type InstrumentKind = 'security' | 'crypto' | 'currency'
+export type InstrumentKind = 'security' | 'equity' | 'fund' | 'crypto' | 'currency'
 export type PriceSource = 'yahoo' | 'coingecko'
+
+/**
+ * The mass a holding belongs to, which is what an allocation is read by. The
+ * first three come from the price source, the others only from whoever declares
+ * an asset no source quotes; `other` also takes a quoted thing whose source has
+ * not said what it is yet.
+ */
+export type AssetNature = 'equity' | 'fund' | 'crypto' | 'bond' | 'real_estate' | 'other'
 
 export interface Instrument {
   id: string
@@ -174,6 +182,8 @@ export interface Asset {
   userId: string
   name: string
   instrumentId: string | null
+  /** Declared here only when no instrument answers for it. */
+  nature: AssetNature | null
   /** Set only on an asset with no instrument, and always with its day. */
   manualPrice: string | null
   manualPricedOn: string | null
@@ -206,6 +216,8 @@ export interface Position {
   assetId: string
   assetName: string
   instrumentId: string | null
+  /** Resolved: the instrument's when there is one, the asset's otherwise. */
+  nature: AssetNature
   quantity: string
   /** Weighted average cost of one unit still held (PMP), order fees included. */
   averageCost: string

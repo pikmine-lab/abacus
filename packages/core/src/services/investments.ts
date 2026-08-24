@@ -23,6 +23,7 @@ import {
   type NewInstrument,
   positions as positionsDs,
   setInstrumentCurrency,
+  setInstrumentKind,
   updateAssetRow,
   updateOperationRow,
   upsertAssetPrice,
@@ -33,10 +34,12 @@ import {
   valuationSeries,
 } from '../db/datasources/investments.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
+import { natureOf } from '../domain/nature.ts'
 import { today } from '../domain/period.ts'
 import type {
   Account,
   Asset,
+  AssetNature,
   Instrument,
   InvestmentOperation,
   InvestmentOperationType,
@@ -57,6 +60,11 @@ export interface DeclareAssetInput {
   name: string
   /** Absent for something priced by hand: unlisted shares, an SCPI, a property. */
   instrument?: NewInstrument
+  /**
+   * The mass it belongs to, and only for an asset with no instrument: a quoted
+   * one is typed by its source, at declaration and again at every price read.
+   */
+  nature?: AssetNature
 }
 
 /**
@@ -71,8 +79,17 @@ export interface DeclareAssetInput {
  * instrument is one holding (two names would split a position in half), so the
  * second declaration has nothing left to do. That also makes declaring an asset
  * and an operation together safe to retry.
+ *
+ * Its nature is asked for only when no source can say it. Given alongside a
+ * source it is refused rather than dropped: the source is the authority there,
+ * and an accepted-then-ignored declaration would read as a stored fact.
  */
 export async function declareAsset(userId: string, input: DeclareAssetInput): Promise<Asset> {
+  if (input.instrument && input.nature)
+    throw new DomainError(
+      'nature_comes_from_source',
+      'A quoted asset is typed by its price source: leave the nature out, or drop the source',
+    )
   const sql = db()
   return await sql.begin(async (tx) => {
     const instrument = input.instrument ? await upsertInstrument(tx, input.instrument) : null
@@ -81,21 +98,40 @@ export async function declareAsset(userId: string, input: DeclareAssetInput): Pr
       if (existing) return existing
     }
     try {
-      return await insertAsset(tx, userId, input.name, instrument?.id ?? null)
+      // Unclassified is what "other" says, so an asset declared without a
+      // nature still lands in a mass rather than in no list at all.
+      return await insertAsset(
+        tx,
+        userId,
+        input.name,
+        instrument?.id ?? null,
+        instrument ? null : (input.nature ?? 'other'),
+      )
     } catch (e) {
       rethrowUnique(e, 'asset_exists', `You already hold something named "${input.name}"`)
     }
   })
 }
 
-export async function listAssets(userId: string): Promise<(Asset & { instrument: Instrument | null })[]> {
+/**
+ * Everything the user holds or follows, each with the instrument behind it and
+ * the mass it belongs to. The mass is resolved here rather than left to the
+ * callers: a followed asset carries no position, so nothing else would resolve
+ * it, and the watchlist mixes natures exactly as a portfolio does.
+ */
+export async function listAssets(
+  userId: string,
+): Promise<(Omit<Asset, 'nature'> & { instrument: Instrument | null; nature: AssetNature })[]> {
   const sql = db()
   const assets = await listAssetsDs(sql, userId)
   const instruments = await listInstruments(sql, [
     ...new Set(assets.map((a) => a.instrumentId).filter((id): id is string => id !== null)),
   ])
   const byId = new Map(instruments.map((i) => [i.id, i]))
-  return assets.map((a) => ({ ...a, instrument: a.instrumentId ? (byId.get(a.instrumentId) ?? null) : null }))
+  return assets.map((a) => {
+    const instrument = a.instrumentId ? (byId.get(a.instrumentId) ?? null) : null
+    return { ...a, instrument, nature: natureOf(instrument?.kind ?? null, a.nature) }
+  })
 }
 
 /**
@@ -299,6 +335,11 @@ export async function refreshQuotes(
 
       if (!quote) return
       try {
+        // What the source says it is, before anything can go wrong with the
+        // price: this is how an instrument stored before the nature existed
+        // gets typed, and how a source correcting itself is followed.
+        if (quote.kind && quote.kind !== candidate.instrumentKind)
+          await setInstrumentKind(sql, candidate.instrumentId, quote.kind)
         const day = quote.quotedAt.toISOString().slice(0, 10)
         // Stored prices are EUR counter-values by construction, whatever the
         // venue quotes in: every read below (positions, curve) stays a plain
@@ -346,6 +387,25 @@ export async function setManualPrice(
   return updated!
 }
 
+/**
+ * One nature of holding, with its own total: shares, funds, crypto, and what no
+ * source quotes. The split between them is the allocation, which is the first
+ * thing an account is read for and the decision that gets revised, so it is
+ * totalled here rather than in each interface: a reader adding up lines by hand
+ * (a person or an AI) gets it wrong.
+ */
+export interface PositionMass {
+  nature: AssetNature
+  positions: Position[]
+  /** Every position with a price, cash excluded: a mass is what is held. */
+  value: string
+  costBasis: string
+  /** Null while any position here lacks a price, which would understate it. */
+  gain: string | null
+  /** How many positions carry no price, so the value says how partial it is. */
+  unpriced: number
+}
+
 export interface PortfolioAccount {
   account: Account
   /**
@@ -355,6 +415,8 @@ export interface PortfolioAccount {
    */
   cash: string
   positions: Position[]
+  /** The same positions, grouped by nature, biggest mass first. */
+  masses: PositionMass[]
   /** What the holdings of this account cost, order fees included. */
   costBasis: string
   /** Cash plus every position that has a price. */
@@ -376,6 +438,37 @@ export interface PortfolioAccount {
 }
 
 /**
+ * Positions grouped into the masses they belong to, each carrying its total.
+ * Ordered by what they are worth, biggest first: that ranking *is* the reading
+ * (which mass weighs the most), and it puts an unpriced mass last on its own.
+ * Positions keep the order they came in, which is alphabetical.
+ */
+export function byNature(held: Position[]): PositionMass[] {
+  const masses = new Map<AssetNature, Position[]>()
+  for (const position of held) {
+    const group = masses.get(position.nature)
+    if (group) group.push(position)
+    else masses.set(position.nature, [position])
+  }
+  return [...masses]
+    .map(([nature, positions]) => {
+      const priced = positions.filter((p) => p.value !== null)
+      return {
+        nature,
+        positions,
+        value: priced.reduce((sum, p) => sum + Number(p.value), 0).toFixed(2),
+        costBasis: positions.reduce((sum, p) => sum + Number(p.costBasis), 0).toFixed(2),
+        gain:
+          priced.length === positions.length
+            ? priced.reduce((sum, p) => sum + Number(p.gain), 0).toFixed(2)
+            : null,
+        unpriced: positions.length - priced.length,
+      }
+    })
+    .sort((a, b) => Number(b.value) - Number(a.value))
+}
+
+/**
  * What is held, account by account, valued at the last known price. Prices are
  * refreshed by `refreshQuotes`, which the interfaces call before reading: this
  * function only reads, so it never depends on the network.
@@ -394,6 +487,7 @@ export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
         account,
         cash: account.balance,
         positions: held,
+        masses: byNature(held),
         costBasis: held.reduce((sum, p) => sum + Number(p.costBasis), 0).toFixed(2),
         value: value.toFixed(2),
         unpriced: held.length - priced.length,

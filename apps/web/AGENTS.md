@@ -211,6 +211,16 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   la voie sûre en premier (l'ISIN, affiché par la banque).
 - **Ce que l'application ne sait pas tenir reste visible et désactivé, avec son motif** :
   disparaître sans un mot se lirait « pas trouvé ».
+- **Les positions se lisent par masse.** Actions, fonds, crypto et ce qu'aucun marché ne cote ne
+  se lisent pas ensemble : la répartition est la première question posée à un compte, et la
+  reconstituer demandait de reconnaître chaque ligne à son nom. Chaque masse porte donc son total
+  et se déplie sur ses lignes, ouverte par défaut : le repli est un geste qu'on demande, pas un
+  péage. Un compte qui ne tient qu'une masse n'affiche pas d'en-tête, dont le total répéterait le
+  sien, et une masse dont aucune ligne n'a de cours affiche un tiret, jamais zéro. Les actifs
+  suivis se regroupent pareil, sans total : rien n'y est détenu.
+- **La nature d'un actif hors marché se demande à sa déclaration**, dans une liste déroulante
+  comme les autres champs du panneau : elle ne concerne que ce qu'aucune source ne cote, donc
+  elle ne pèse pas plus qu'un champ ordinaire. Un actif coté ne la demande pas, sa source la dit.
 - **Un placement mène à son détail.** Une ligne de position s'ouvre sur sa propre page : son
   cours en courbe, sa valorisation, ses opérations. Rien n'est un cul-de-sac, et le retour est
   nommé.
