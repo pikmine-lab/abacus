@@ -40,6 +40,11 @@ function gapOf(check: BalanceCheck): number {
  * app) with what the recorded movements add up to. A non-zero gap means
  * undeclared movements; it is settled by declaring them or by an explicit
  * adjustment, never silently.
+ *
+ * On an investment account what is checked is the cash, never the holdings:
+ * their value comes from a price nobody here declares, so a gap measured
+ * against it would be permanent by construction and would no longer say
+ * anything about a missing entry.
  */
 export async function recordBalanceCheck(
   userId: string,

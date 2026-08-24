@@ -1,15 +1,21 @@
 # abacus
 
-Application web de gestion de finances personnelles de Pierre, multi-utilisateur, self-hosted.
+Application web de gestion de finances personnelles, multi-utilisateur, self-hosted : ce
+qui est dépensé aujourd'hui, ce à quoi on est engagé demain, les placements et l'activité
+freelance. Pierre est le premier utilisateur, pas un cas particulier du code.
 
 **URL cible** : `abacus.payangar.dev`
 **Hôte** : VPS `pikmine`, déploiement via Dokploy (mêmes conventions que radar)
 **Rigueur** : durable. Ce projet est fait pour tenir, pas pour démontrer.
 
-**`SPEC.md` est la référence du modèle de domaine.** Ne pas redécider ici ce qui y est tranché.
+**Le modèle de domaine se lit dans le code** : les migrations (`migrations/*.sql`) pour ce
+que le schéma garantit, les services (`packages/core/src/services/`) pour ce que chaque
+geste fait et refuse. Leurs commentaires portent le pourquoi, à côté de ce qu'il gouverne ;
+ne pas redécider ailleurs ce qui y est écrit.
 
-**`DESIGN.md` est la référence de l'interface.** À lire avant toute modification d'UI : palette,
-règles de graphes et usages de composants y sont tranchés, pas ici.
+**`DESIGN.md` est la référence de l'interface.** À lire avant toute modification d'UI :
+palette, règles de graphes et principes d'écran y sont tranchés, pas ici.
+**`apps/web/AGENTS.md`** porte les règles de code du front, et se lit avant d'y toucher.
 
 ## Les principes qui gouvernent ce dépôt
 
@@ -18,6 +24,14 @@ règles de graphes et usages de composants y sont tranchés, pas ici.
 - **Le cas d'usage de Pierre n'entre jamais dans le code.** Banques, catégories, activités,
   taux : ce sont des données. Si une PR contient « Fortuneo » ou « URSSAF » en dur, elle est
   fausse par principe.
+- **Fiabilité par pointage.** Une comptabilité entièrement déclarative dérive si rien ne la
+  rapproche du réel : le pointage de solde est le garde-fou de première classe du modèle,
+  pas une commodité. Ce qui l'affaiblit affaiblit tout le reste.
+- **La propriété est une colonne, pas une architecture.** Chaque entité du domaine
+  appartient à un utilisateur et n'est visible que de lui ; une colonne de propriété et une
+  authentification sérieuse suffisent. Seule exception, qui découle du premier principe :
+  une donnée publique n'appartient à personne, donc un instrument coté et ses cours sont
+  partagés par tous, quand ce que chacun en détient reste à lui.
 - **API-first.** Le cœur est la couche service de `packages/core`. Le front Next.js et le
   serveur MCP sont deux clients sans logique propre.
 - **Le MCP est une interface pour une IA, portée par le code.** L'IA qui le consomme n'a
@@ -34,12 +48,42 @@ règles de graphes et usages de composants y sont tranchés, pas ici.
   fichier : ce qu'une personne lit devant l'application est en français, tout ce que seul
   le code lit est en anglais. Segments d'URL, clés et valeurs de paramètres de requête,
   noms de champs de formulaire, identifiants, noms de fichiers, slugs de branches,
-  commentaires et messages de commit : anglais. Les documents du dépôt (`SPEC.md`,
-  `DESIGN.md`, ce fichier) et les issues restent en français.
+  commentaires et messages de commit : anglais. Les documents du dépôt (`DESIGN.md`, ce
+  fichier, les `AGENTS.md` imbriqués) et les issues restent en français.
 - **Intégrité par construction.** La nature d'un mouvement (dépense, revenu, virement
   interne) est une colonne générée depuis ses extrémités ; les règles du modèle sont des
   contraintes SQL, pas des validations applicatives dupliquées.
 
+## Où s'écrit une décision
+
+Chaque chose a un endroit et un seul. Se tromper d'endroit ne se voit pas le jour même :
+ça se voit des semaines plus tard, quand deux fichiers disent la même chose et qu'un seul
+a été mis à jour.
+
+| Ce qui vient d'être décidé | Où ça s'écrit |
+|---|---|
+| Un invariant du modèle : ce qu'une donnée garantit, ce qu'un calcul ne doit jamais regarder | En commentaire de la migration qui pose la contrainte |
+| Une règle de geste : ce qui se déclare, se corrige, se refuse, et pourquoi | En commentaire du service de `packages/core` qui la porte, là où les deux interfaces la lisent |
+| Une règle d'apparence : couleur, densité, forme d'un graphe, ton des textes | `DESIGN.md` |
+| Une règle de code front : piège React/Next, usage du système de composants, forme d'un écran | `apps/web/AGENTS.md` |
+| Le récit : ce qui a été mesuré, ce qui a été écarté, ce qui a causé quoi | L'issue |
+
+Trois conséquences, qui valent pour les cinq lignes :
+
+- **Rien ici ne porte de date ni de numéro d'issue en guise d'histoire.** Ces fichiers
+  décrivent l'état actuel, au présent. Une décision qui en corrige une autre la
+  **remplace** au lieu de s'ajouter à côté : deux formulations d'un même fait valent zéro,
+  et c'est la périmée qu'on croira. Git dit quand, l'issue dit pourquoi. Un renvoi vers une
+  issue **ouverte** reste légitime : c'est un pointeur vers une décision en cours, pas du
+  récit.
+- **Rien ici ne tient d'état des lieux.** Un inventaire de ce qui existe (nombre d'outils
+  MCP, écrans livrés, migrations appliquées) se périme au commit suivant sans que rien ne
+  le signale, et une IA le croit au lieu d'aller lire. Ce qui est fait se lit dans le code,
+  ce qui reste à faire dans les issues ouvertes.
+- **Avant de toucher un geste du domaine, lire le service qui le porte** dans
+  `packages/core/src/services/`. Son commentaire d'en-tête dit ce que le geste garantit et
+  ce qu'il refuse : le contrat vit là, en anglais comme tout commentaire, pas dans un
+  document à part qui se périmerait en silence.
 ## Stack
 
 - **Next.js + Postgres** (instance partagée du socle, base et rôle `abacus`). L'accès
@@ -91,7 +135,7 @@ fonctionnalité ou un bug qu'il ne traite pas dans la session, proposer de le tr
 
 La skill `issue-tracking` détaille la rédaction, les types et les liens.
 
-## Flux de travail (depuis le 2026-08-19)
+## Flux de travail
 
 **`main` = production, déploiement continu.** Chaque commit sur `main` déclenche
 tests → build des deux images → déploiement Dokploy. En conséquence :
@@ -125,6 +169,9 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
   (obligatoire en production, sinon crash à la première requête), `PORT` (MCP), `MCP_URL`
   (web : l'endpoint MCP donné à l'utilisateur, écrit par le provisionneur depuis `SPEC`).
 - Actions GitHub épinglées par commit, jamais par tag.
+- **Aucune sauvegarde Postgres** sur le socle, et ces données ne sont pas recollectables.
+  Risque assumé, suivi par l'issue #14 : ne pas le redécouvrir à chaque session, ne pas le
+  retrancher seul.
 - **Piège** : les checks requis de la protection de `main` portent les noms complets des
   jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un Dockerfile ou la matrice
   casse silencieusement le merge des PR (checks « attendus » à jamais) : mettre à jour la
@@ -142,328 +189,3 @@ Une clé ne branche que les clients qui acceptent un en-tête HTTP (Claude Code,
 VS Code, Codex). Les connecteurs personnalisés de l'application Claude ne prennent qu'une
 URL et un OAuth, que le serveur MCP ne sait pas encore servir.
 
-## État (2026-08-20)
-
-**En production** sur `abacus.payangar.dev` : auth multi-utilisateur, serveur MCP
-(17 outils), déploiement continu opérationnel (validé de bout en bout par PR).
-
-**Interface refondue le 2026-08-20** (voir `DESIGN.md`, qui a été réécrit) : navigation
-latérale pliable groupée par question posée, palette bleu-nuit / cuivre mesurée, saisie
-sortie des pages de lecture vers un panneau latéral, engagements coupés en dépenses et
-revenus récurrents, période pilotable depuis l'URL sur toutes les vues, filtres complets
-sur les mouvements, correction et suppression d'un mouvement, écran d'accueil guidé,
-identité (marque abaque + favicon). Les cas d'usage ouverts dans l'UI existent aussi
-côté MCP : `fix_movement` (corriger ou supprimer une déclaration erronée) et, sur
-`confirm_due_movements`, la qualification d'un écart (ponctuel ou nouveau montant de
-référence, historisé).
-
-**Raccordement d'une IA** (2026-08-21) : la création de clé a quitté Réglages pour son
-propre écran, **Brancher une IA** (menu du compte) : deux pas numérotés, créer la clé puis
-coller la commande complète, en deux formes (CLI Claude Code, bloc `mcpServers` pour les
-clients à fichier). Rien n'est mémorisé du client choisi : la commande entière n'existe
-que le temps où la clé est visible. Le premier jet, trop bavard, a produit la règle
-`DESIGN.md` § *Ce qu'on écrit à l'écran*, qui vaut pour tous les écrans.
-
-**Échéanciers de financement** (2026-08-20) : un financement porte un échéancier
-écrit (`financing_installment`, migration `0003`), chaque échéance ayant sa date et
-son montant, ajustables à la création depuis l'UI comme depuis le MCP. Le restant dû
-est la somme des échéances non réglées.
-
-**Révision d'un échéancier** (2026-08-21, issue #13) : ce plan se révise après coup, en
-bloc (UI : « Réviser l'échéancier » dans le menu de la ligne ; MCP :
-`manage_financing_schedule`). L'échéancier fait foi : `total_amount`, le nombre
-d'échéances, le montant nominal et la prochaine échéance sont recalculés depuis ses
-lignes. Une échéance réglée et son mouvement restent synchronisés dans les deux sens :
-montant et date, corriger l'un corrige l'autre, retirer la ligne supprime le mouvement.
-
-**Correction d'un engagement** (2026-08-21) : ce qu'un engagement dit de lui-même se
-corrige (nom, acteur, compte, catégorie, périodicité) : UI « Modifier » dans le menu de
-la ligne, MCP `update_commitment`. La correction vaut pour les échéances à venir ; les
-mouvements déjà déclarés ne sont jamais réécrits, ils constatent ce qui s'est passé sur
-le compte où ça s'est passé. Restent hors correction : le montant, qui est une histoire
-datée (`change_price`), et la direction, qui ferait d'un engagement un autre.
-
-**Chaque entité déclarée se corrige** (2026-08-21, issue #21) : un compte (nom,
-établissement, type, et réouverture après une clôture), un acteur (nom, activité, note),
-une catégorie (nom, groupe), une activité (nom) et un pointage de solde (montant lu, date,
-suppression). Côté MCP, une action `update` sur chaque outil `manage_*` et un nouvel outil
-`manage_balance_checks` (list, correct, delete).
-
-Deux points tranchés au passage :
-
-- le **type d'un compte** se corrige, sauf quand le compte porte des opérations
-  d'investissement, que seul ce type peut porter ;
-- **corriger un pointage, c'est le refaire** : l'écart est recalculé sur l'historique du
-  jour, pour la date donnée, son propre ajustement exclu du calcul ; l'ajustement qui le
-  soldait suit (réaligné, ou supprimé quand il n'y a plus rien à solder), et supprimer le
-  pointage l'emporte avec lui. La migration `0004` fait de « un ajustement par pointage »
-  une contrainte SQL plutôt qu'une convention.
-
-Réglages est passé en listes de lignes à menu `⋯` (les acteurs avec une recherche), et la
-parité des deux interfaces est rétablie partout où elle manquait :
-
-- l'UI d'engagement propose la périodicité complète (posée comme une seule question :
-  « toutes les 2 semaines »), la fin d'engagement et l'activité ;
-- `list_movements` (MCP) renvoie le compte, la contrepartie et la catégorie de chaque
-  mouvement, que l'UI affichait déjà ;
-- l'UI sait ajouter un alias et fusionner deux acteurs, et solder l'écart d'un pointage.
-  Ces trois-là n'existaient que côté MCP, alors que c'est la saisie web qui fabrique les
-  doublons d'acteurs (un nom qui ne résout pas crée l'acteur) et que le panneau de pointage
-  promettait un ajustement qu'elle ne savait pas créer.
-
-**Avance et remboursement** (2026-08-21, issue #28) : une avance porte la **part
-attendue** (`expected_refund_amount`, migration `0005`), écrite et non plus déduite du
-montant : payer 120 € et n'en attendre que 90 s'exprime. Le remboursement est toujours le
-revenu qui rentre, jamais un drapeau : les avances ouvertes s'affichent en tête des
-mouvements et « Remboursé » écrit ce revenu sur le compte qui a payé (MCP :
-`declare_movements` avec `refundsMovementId`, ou `alreadyRefunded` quand l'argent revient
-le jour même). Solder reste l'autre geste, celui du renoncement. La part et le débiteur se
-corrigent (`fix_movement`) ; le lien d'un remboursement reçu vers son avance, non.
-
-**Le compte d'un engagement est daté** (2026-08-21, issue #35) : un prélèvement qui
-déménage se déclare le jour où on l'apprend, date d'effet future comprise (UI « Changer de
-compte » dans le menu de la ligne, MCP `change_commitment_account`), et chaque échéance
-tombe sur le compte en vigueur à sa date. Une échéance confirmée en retard part donc de
-l'ancien compte, là où l'argent est réellement sorti, au lieu d'être écrite en silence sur
-le nouveau. Le compte a quitté la correction sans date (`update_commitment`), comme le
-montant avant lui. Côté modèle : `commitment.account_id` est le compte de départ, chaque
-déménagement est un événement `account_changed` (migration `0006`), et les lectures
-exposent le compte du jour plus le déménagement annoncé.
-
-**Anglais hors de l'écran** (2026-08-21, issue #24) : les segments d'URL, les clés et les
-valeurs de paramètres de requête et les noms de champs de formulaire sont passés en
-anglais, et le principe « le français s'arrête à ce qui s'affiche » est écrit plus haut.
-Les anciennes adresses ne répondent plus : pas de redirection, rupture assumée pour une
-production de deux jours à un seul utilisateur.
-
-**Le graphe de soldes compare six comptes** (2026-08-21, issue #32) : il s'ouvre sur les
-comptes les mieux garnis et non sur les premiers par ordre alphabétique, n'oppose plus de
-plafond de trois séries, et son label de fin de ligne tient dans le cadre. La palette de
-séries passe de trois à six teintes (`--chart-4..6`), maximum mesuré à côté des trois
-premières : la pire paire tombe dans la bande CVD 6-8, légale uniquement avec un encodage
-secondaire, ce qui fait des labels directs la condition de la palette plutôt qu'un confort.
-D'où le lien entre les trois défauts. `DESIGN.md` § Couleur porte les chiffres.
-
-**Le groupe d'une catégorie sert enfin** (2026-08-21, issue #30) : il se lit au bout de
-la ligne de sa catégorie dans Réglages, là où il occupait une deuxième ligne sous le nom,
-et il agrège les dépenses en grandes masses sur la vue d'ensemble, dans un donut posé à
-côté des barres par catégorie. Cinq groupes gardent leur teinte, la queue fusionne en un
-reste estompé qui se nomme, et le survol relie l'arc à sa ligne de légende (`DESIGN.md`
-§ Graphes et § Couleur portent les deux règles). Côté MCP, `analyze_spending` prend
-`groupBy: categoryGroup`. Le groupe n'entre pas dans Analyse : sans entité derrière lui,
-ses lignes n'auraient rien à cliquer, là où toutes les autres mènent aux mouvements.
-
-**Les placements** (2026-08-21, issue #9) : un compte d'investissement porte des opérations
-(achat, vente, dividende, frais de compte), qui donnent des positions avec quantité, PRU en
-moyenne pondérée et prix de revient. UI *Placements*, MCP `manage_assets`,
-`record_investment_operations`, `get_portfolio`, `list_investment_operations`.
-
-Deux frontières tiennent la suite :
-
-- **un mouvement porte l'argent jusqu'au compte, une opération dit ce qui se passe
-  dedans.** Un achat ne peut pas être un mouvement : la nature est dérivée des extrémités,
-  donc il tomberait en dépense, alors qu'acheter un titre ne dépense rien. Le solde d'un
-  compte d'investissement est donc ses espèces, mouvements et opérations ensemble ;
-- **un cours n'appartient à personne.** `instrument` et ses cours sont partagés par tous
-  les utilisateurs (migration `0007`, qui refait ce que `0002` avait posé de travers) ;
-  seul un cours saisi à la main reste privé, parce que c'est une déclaration. Corollaire à
-  ne pas perdre : la table partagée ne sert jamais d'autocomplétion, sinon elle dirait à
-  chacun ce que les autres détiennent.
-
-**Les cours** (même issue) : rafraîchis **à la lecture**, jamais par un planificateur, avec
-une borne de fraîcheur par source (15 min sur les titres, 60 s en crypto, 1 h quand la place
-est fermée, ce que la réponse de Yahoo dit elle-même via `currentTradingPeriod`). Un
-rafraîchissement ne casse jamais une lecture : il ne lève pas, et un cours périmé affiché
-avec son heure vaut mieux qu'une page en erreur. Une position sans cours n'est pas valorisée
-à zéro, elle n'est pas valorisée, et la performance du compte se tait plutôt que de se
-sous-estimer. Deux chiffres, chacun disant sa méthode : plus-value latente (hors dividendes
-et frais) et performance (dividendes et frais compris, contre les apports nets).
-
-**Trouver un actif** se fait par nom, fournisseur, ticker ou ISIN (`search_instruments` côté
-MCP, un champ de recherche dans le panneau de déclaration côté web) : les références ne se
-saisissent pas de mémoire. Trois choix s'y sont imposés par la mesure :
-
-- **la recherche part deux fois**, sur la requête telle quelle et sur la même suivie de
-  « ucits ». Mesuré : « s&p 500 » ne rend aucun fonds chez Yahoo, « s&p 500 ucits » en rend
-  sept ; « nasdaq 100 » en rend trois, tous américains, contre sept. Sans ça, les seuls
-  résultats sélectionnables étaient des jetons crypto tokenisés imitant l'ETF cherché, et
-  filtrer par capitalisation n'y aurait rien fait (ces jetons sont classés 329 à 625, mieux
-  que Bitcoin SV) ;
-- **un résultat est un fonds, dont les cotations se déplient à la demande**
-  (`list_instrument_venues` côté MCP, un chevron côté web) : le choix par défaut est bon
-  presque toujours, mais il doit pouvoir être vérifié quand un cours ne colle pas au relevé
-  ou quand l'utilisateur nomme un autre ticker. La liste n'est cherchée qu'au dépliement,
-  jamais pour tous les résultats ;
-- **un résultat est un fonds, pas une cotation.** Les places d'un même ETF cotent à 0,01 %
-  près (709,07 / 709,10 / 709,16 € le 2026-08-21), donc le regroupement se fait sur le nom
-  canonique de Yahoo, identique d'une place à l'autre, et l'application retient une cotation
-  en euro sans faire choisir ;
-- **la devise réelle est vérifiée en demandant le cours**, ce qui évite de coder une liste
-  de places : depuis #47 le non-euro se détient (son cours converti, voir plus bas), seule
-  une ligne sans cours lisible reste désactivée. Un fonds sans ligne en euro parmi les
-  résultats voit quand même ses autres places cherchées, parce qu'une ligne en euro reste
-  préférée (aucun bruit de conversion) et qu'un ISIN ne rend chez Yahoo qu'une seule
-  cotation, souvent celle de Londres en livres, quand le même fonds cote en euro à XETRA
-  ou à Milan (mesuré sur `LU1781541252` : Londres en GBP, XETRA et Milan en EUR, Amsterdam
-  en JPY) ;
-- **ce qui départage deux trackers d'un même indice** (l'émetteur, capitalisant ou
-  distribuant) est extrait du nom du fonds, et le cours affiché sert à recouper avec le
-  relevé du courtier. L'ISIN, seul identifiant sans ambiguïté, n'est jamais rendu par Yahoo :
-  il est gardé quand l'utilisateur le saisit.
-
-**Un instrument coté hors euro se détient** (2026-08-23, issue #47) : les cours stockés
-restent des contre-valeurs euro par construction, la conversion se faisant à l'écriture
-avec les paires de #10 : l'historique clôture par clôture (le cours d'un jour au taux de
-ce jour, un an de USD au taux du jour dessinerait la courbe du dollar), le spot au
-dernier cours de la paire. Un jour sans taux est un point manquant, jamais un point
-faux, et un spot sans taux laisse le cours stocké en place. La devise de cotation est
-apprise du cours lui-même (jamais déclarée de mémoire) et gardée sur
-`instrument.currency` ; les lectures (positions, courbe, valorisation) ne changent pas.
-
-**La courbe** (migration `0009`) : un an de clôtures quotidiennes par instrument, récupéré
-d'un appel (256 points, 27 Ko, 186 ms mesurés) au premier passage, puis complété par la
-clôture du jour à chaque rafraîchissement. La vue trace la valorisation contre les apports
-nets, l'écart entre les deux étant la performance. Un placement mène à sa propre page
-(`/investments/[assetId]`) : cours en courbe, valorisation, opérations. `BalanceChart` a été
-généralisé pour ça (ses props parlent de `lines`, plus de comptes) plutôt que dupliqué.
-
-**Une opération se déclare par son total ou par son prix unitaire** (`unitPrice` côté MCP, un
-choix explicite côté web), parce que c'est le prix d'acquisition moyen qu'un courtier affiche
-et que reconstruire un total depuis « valorisation moins plus-value » y ferait entrer l'écart
-entre deux places, à demeure dans le prix de revient. La multiplication vit dans le service,
-pas dans les deux interfaces. Le **total** est l'arrondi au centime, le PRU porte le reste :
-l'argent qui sort du compte est en centimes, un PRU ne l'est pas.
-
-**Une opération se corrige et se supprime** (UI : menu de la ligne ; MCP :
-`fix_investment_operation`). Le garde-fou n'est pas la quantité finale mais la **quantité
-courante minimale** : réduire un achat peut rendre une vente postérieure impossible, et
-c'est cette séquence qui est vérifiée avant de valider.
-
-**Suivre sans détenir** : un actif sans opération est un actif suivi. Rien ne le marque en
-base, l'absence de position suffit, et un achat en fait une position sans redéclaration. On
-arrête de suivre (menu de la ligne, ou `manage_assets action: unfollow`) **uniquement** un
-actif sans opération : celui qui en porte fait l'histoire du compte, et l'oublier emporterait
-une position et son prix de revient. L'instrument partagé, lui, reste : il n'appartient à
-personne et quelqu'un d'autre peut le suivre.
-
-Le cadrage complet, mesures d'API comprises, est en commentaire sur l'issue #9.
-
-**Un mouvement se déclare en devise étrangère** (2026-08-23, issue #10) : une dépense ou
-un revenu se déclare tel que payé (99 USD), sa contre-valeur EUR est calculée **au cours
-du jour de la transaction et figée** (SPEC § Multi-devise porte la décision). `amount`
-reste ce qui a touché le compte, en euros, donc tous les soldes restent des sommes
-brutes ; le montant payé vit à côté (`original_amount`/`original_currency`, migration
-`0010`) et s'affiche sous la contre-valeur. Une paire de change est un `instrument`
-partagé de plus (kind `currency`, `('yahoo', 'USDEUR=X')`), backfillée d'un an de
-clôtures au premier usage ; le taux d'un jour non coté est la dernière clôture avant lui
-(borne 3 jours), et au-delà de 7 jours d'écart l'app refuse plutôt que de mentir, en
-proposant de saisir les euros du relevé (`eurAmount`), qui priment toujours quand le
-relevé les donne. Corriger `amount` seul ajuste les euros sans toucher au montant payé ;
-repasser `currency` redéclare le côté payé ; `EUR` retire un original déclaré à tort. Un
-virement interne reste EUR. UI : sélecteur de devise dans le panneau, champ « En euros »
-optionnel ; MCP : `currency`/`eurAmount` sur `declare_movements` et `fix_movement`,
-`paid` dans `list_movements`.
-
-Les engagements aussi (même issue) : un abonnement, un revenu récurrent ou un
-financement se déclare dans sa devise de facturation, et chaque échéance confirmée
-convertit comme un mouvement, `eurAmount` compris. Deux règles en plus (SPEC
-§ Multi-devise) : une **prévision se réévalue au cours courant** (`amountEur` sur les
-listes, `monthlyEquivalentEur` pour toute somme), là où un mouvement fige ; la devise
-se change par `change_price`, datée et historisée (`commitment_event.currency`), jamais
-en correction, et jamais sur un financement, dont l'échéancier est écrit tout entier
-dans sa devise (la synchronisation échéance↔mouvement passe alors par le côté payé,
-`original_amount`).
-
-**Un mouvement peut concerner un autre mois que celui où l'argent bouge** (2026-08-23,
-issue #44) : le mouvement porte un **mois de rattachement** optionnel (`accrual_month`,
-migration `0011`), et la colonne générée `counted_in_month` en donne la lecture résolue,
-pour qu'aucune analyse n'ait de cas vide à gérer. L'analyse se lit alors de deux façons,
-« date réelle » ou « mois concerné », par un sélecteur présent sur les trois écrans de
-flux (vue d'ensemble, analyse, mouvements) et écrit dans l'URL comme la période.
-
-L'invariant tient tout : **aucun calcul de solde ne regarde ce champ**. Soldes affichés,
-graphe de soldes, pointage et soldage d'écart restent des sommes par date de flux, sinon
-le pointage cesserait de détecter un oubli de saisie. Deux conséquences travaillées :
-
-- une lecture par rattachement ne sait répondre qu'en **mois entiers**, donc une fenêtre
-  glissante (90 jours, 12 mois) s'arrondit à eux et se **renomme** par eux plutôt que
-  d'emprunter le nom de la fenêtre en jours, qui n'est pas ce qui a été lu ;
-- **confirmer une échéance rattache toute seule** au mois de l'échéance théorique, et
-  seulement quand il diffère du mois du règlement : la valeur par défaut n'est jamais
-  matérialisée, ce qui fait qu'un mouvement non rattaché suit sa date quand on la corrige
-  et qu'un rattachement explicite survit à la même correction.
-
-Côté MCP : `month` sur `declare_movements` et `fix_movement` (« none » détache), `reading`
-sur `list_movements` et `analyze_spending`, dont la réponse nomme désormais la lecture et
-la fenêtre qu'elle a servies.
-
-**Analyse agrège par groupe de catégorie** (2026-08-24, issue #45) : l'axe « Groupe » rejoint
-Catégorie, Acteur et Activité, et il devient l'axe par défaut, « où part l'argent » se
-répondant d'abord par grandes masses. #30 avait écarté cet axe faute de quoi cliquer sur une
-ligne de groupe : la réponse est qu'un groupe ne mène nulle part, il se déplie sur les
-catégories qui le composent, et ce sont elles qui mènent aux mouvements. Le dépliement est un
-`<details>` natif animé en CSS (aucun état client, et il tient sans JS) et l'agrégat à deux
-niveaux vit dans le service (`spendingByCategoryGroup`), replié depuis le découpage par
-catégorie et les groupes écrits sur les catégories, jamais dans le front.
-
-Trois décisions d'interface en sont sorties, écrites dans `DESIGN.md` § Graphes :
-
-- **le chiffre est le net, et le classement se fait sur lui** : ordonner par brut place une
-  ligne au-dessus d'une autre qu'elle passe dessous dès le remboursement rentré (`order by net
-  desc, gross desc`, donc côté MCP aussi). Le brut a quitté sa deuxième ligne sous le montant,
-  qui rendait une ligne remboursée plus haute que ses voisines ;
-- **le regroupement se lit à la distance** (rapport de un à quatre entre l'espace intérieur et
-  l'espace entre rangs), avec l'indentation et un filet vertical en renfort, sans fond plein ;
-- **l'infobulle suit le curseur** et n'est plus un `title` de navigateur : elle dit le nombre de
-  mouvements, ce que la ligne agrège, et le brut quand un remboursement l'a séparé du net.
-
-Le donut de la vue d'ensemble a suivi le chiffre net (légende et parts), sinon deux sections
-voisines auraient donné deux nombres pour la même dépense ; sa géométrie ne change pas, l'arc
-dit le brut et le nombre dit ce que ça a coûté.
-
-Côté MCP, `analyze_spending` savait déjà `groupBy: categoryGroup`, mais la parité n'était
-pas faite pour autant : **le dépliement se rend maintenant dans la réponse** (chaque masse
-porte les catégories qu'elle agrège, déjà totalisées et classées), là où l'IA devait sinon
-croiser deux appels et **additionner elle-même**, exactement l'arithmétique qu'un modèle rate.
-Chaque ligne dit aussi son nombre de mouvements, que l'écran affiche au survol, et la
-description déclare l'ordre : classé par net, le plus gros d'abord, à conserver en restituant,
-puisque c'est l'ordre que la personne a sous les yeux.
-
-**Le graphe des placements se lit de deux façons, et sa fenêtre se choisit** (2026-08-24,
-issue #56) : la valorisation contre les apports, ou **la performance**, qui est l'écart
-entre les deux avec les apports posés à plat. La seconde n'est pas une version dégradée
-de la première : la valorisation seule saute à chaque apport sans que rien n'ait été
-gagné, là où l'écart ne bouge que de ce que le marché a fait. Elle se vérifie à l'œil,
-son dernier point valant la tuile *Performance* de la page (`value − netContributions`,
-dividendes et frais compris). Recadrer l'axe n'aurait pas suffi : les apports montent en
-escalier, donc même sans le zéro l'écart restait écrasé ; c'est la donnée tracée qui
-change.
-
-La fenêtre (1S · 1M · 1A · Tout) **se pose sur la section du graphe, pas dans une rangée
-de filtres**, et c'est une exception écrite à `DESIGN.md` § Graphes : une rangée scope
-tout ce qui suit, or ici les tuiles, les positions et les opérations sont des instantanés
-qu'elle ne cadre pas. Ce qui se déplace est le contrôle, pas le reste : il écrit dans
-l'URL (`window`, `chart`) comme la rangée le ferait. Même contrôle sur la page d'un
-placement, dont la courbe de cours était cadrée sur un an en dur.
-
-Trois défauts du composant de courbe ont été démasqués par là et corrigés, tous écrits
-pour des soldes de comptes et faux dès qu'il sert autre chose. Deux d'échelle : un **pas
-de grille constant à 500 €** (deux traits pour une action à 709 €, un seul pour une
-performance de 312 €), devenu un nombre rond taillé sur l'amplitude, et le **zéro forcé
-dans l'échelle**, qui aplatit un cours en ligne droite ; le zéro n'y entre plus que quand
-la série se lit contre lui (solde, valorisation, performance). Le troisième était un
-graphe **qui se vidait au changement de lecture** et revenait au rechargement : les
-séries visibles sont un état (pour que les bascules de la légende survivent à un
-recadrage), initialisé au seul montage, donc après un changement de lecture il désignait
-des séries disparues et le filtre ne laissait plus rien passer. L'état se resynchronise
-maintenant quand le jeu de lignes change d'identité, pendant le rendu et non dans un
-effet, pour que rien ne soit jamais peint vide. Enfin la légende ne s'affiche plus sous
-deux séries, comme `DESIGN.md` le demandait déjà.
-
-Côté MCP, `get_portfolio_history` : aucun outil n'exposait d'évolution, `get_portfolio`
-ne connaissant que le présent. Il rend la fenêtre **déjà totalisée** (début, fin, plus
-haut, plus bas, et des jalons par jour sur une fenêtre courte, par dernier jour de mois
-au-delà), parce qu'une série brute d'un an ferait additionner le modèle, ce qu'il rate.
-
-**Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
-recollectables. Risque assumé au démarrage (décision du 2026-08-19).

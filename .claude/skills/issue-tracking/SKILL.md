@@ -41,7 +41,7 @@ fermée : la nouvelle doit dire ce qui a changé depuis.
 Titre : une phrase d'intention, pas un nom de composant. « Le tableau de bord ne dit pas
 ce qui reste à payer ce mois » plutôt que « KPI dashboard ».
 
-Corps, dans la langue du dépôt (français ici, comme SPEC.md et DESIGN.md) :
+Corps, dans la langue du dépôt (français ici, comme AGENTS.md et DESIGN.md) :
 
 ```md
 ## Intention
@@ -53,8 +53,10 @@ aujourd'hui. Seule section irremplaçable, c'est celle qu'on ne peut pas reconst
 plus tard.
 
 ## Cadre
-Ce qui est déjà tranché ailleurs et s'applique (pointer SPEC.md ou DESIGN.md par
-section, ne pas recopier), ce qui est hors périmètre, les pistes écartées et leur motif.
+Ce qui est déjà tranché ailleurs et s'applique (pointer le fichier et la section : la
+migration ou le service pour une règle du domaine, DESIGN.md pour l'apparence,
+apps/web/AGENTS.md pour le front ; ne pas recopier), ce qui est hors périmètre, les
+pistes écartées et leur motif.
 
 ## Fin
 À quoi on voit que c'est fait. Un critère observable, pas une liste de tâches.
