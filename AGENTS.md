@@ -84,6 +84,7 @@ Trois conséquences, qui valent pour les cinq lignes :
   `packages/core/src/services/`. Son commentaire d'en-tête dit ce que le geste garantit et
   ce qu'il refuse : le contrat vit là, en anglais comme tout commentaire, pas dans un
   document à part qui se périmerait en silence.
+
 ## Stack
 
 - **Next.js + Postgres** (instance partagée du socle, base et rôle `abacus`). L'accès
