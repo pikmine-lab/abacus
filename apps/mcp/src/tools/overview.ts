@@ -6,7 +6,8 @@ import {
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { holdingsValue } from '@abacus/core/services/investments'
-import { spendingBreakdown } from '@abacus/core/services/reports'
+import type { BreakdownRow } from '@abacus/core/services/reports'
+import { spendingBreakdown, spendingByCategoryGroup } from '@abacus/core/services/reports'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { advancesView } from './movements.ts'
@@ -80,7 +81,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'analyze_spending',
     {
       description:
-        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received). Internal transfers never appear here. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list; rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income). A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
+        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received), plus the number of movements behind each row. Rows are ranked by net, biggest first, because the net is what the period actually cost: keep that order when reporting, it is the one the user sees on screen. Internal transfers never appear here. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income). A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
@@ -95,7 +96,25 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     },
     async ({ from, to, groupBy, reading = 'cash' }) =>
       run(async () => {
-        const rows = await spendingBreakdown(userId, from, to, groupBy, 'expense', reading)
+        const line = (r: BreakdownRow, dimension: string) => ({
+          [dimension]: r.label ?? '(none)',
+          gross: Number(r.gross),
+          net: Number(r.net),
+          movements: Number(r.count),
+        })
+        // A group has no entity behind it, so it cannot be drilled into by a
+        // filter: it comes with the categories it merges, the way the screen
+        // unfolds it. Left to a second call, the totals would have to be added
+        // up by whoever asked, which is exactly the arithmetic to avoid.
+        const rows =
+          groupBy === 'categoryGroup'
+            ? (await spendingByCategoryGroup(userId, from, to, 'expense', reading)).map((mass) => ({
+                ...line(mass, 'categoryGroup'),
+                categories: mass.categories.map((c) => line(c, 'category')),
+              }))
+            : (await spendingBreakdown(userId, from, to, groupBy, 'expense', reading)).map((r) =>
+                line(r, groupBy),
+              )
         // The reading is part of the answer, not part of the question: two
         // totals exist for one month, and a table without its label is unusable.
         return ok({
@@ -104,11 +123,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
             reading === 'accrual'
               ? `movements attached to ${from.slice(0, 7)} → ${to.slice(0, 7)} (whole months)`
               : `movements settled between ${from} and ${to}`,
-          rows: rows.map((r) => ({
-            [groupBy]: r.label ?? '(none)',
-            gross: Number(r.gross),
-            net: Number(r.net),
-          })),
+          rows,
         })
       }),
   )

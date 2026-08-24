@@ -409,9 +409,15 @@ Trois décisions d'interface en sont sorties, écrites dans `DESIGN.md` § Graph
 
 Le donut de la vue d'ensemble a suivi le chiffre net (légende et parts), sinon deux sections
 voisines auraient donné deux nombres pour la même dépense ; sa géométrie ne change pas, l'arc
-dit le brut et le nombre dit ce que ça a coûté. Côté MCP, rien à ajouter : `analyze_spending`
-savait déjà `groupBy: categoryGroup`, et creuser un groupe s'y fait par un second appel par
-catégorie.
+dit le brut et le nombre dit ce que ça a coûté.
+
+Côté MCP, `analyze_spending` savait déjà `groupBy: categoryGroup`, mais la parité n'était
+pas faite pour autant : **le dépliement se rend maintenant dans la réponse** (chaque masse
+porte les catégories qu'elle agrège, déjà totalisées et classées), là où l'IA devait sinon
+croiser deux appels et **additionner elle-même**, exactement l'arithmétique qu'un modèle rate.
+Chaque ligne dit aussi son nombre de mouvements, que l'écran affiche au survol, et la
+description déclare l'ordre : classé par net, le plus gros d'abord, à conserver en restituant,
+puisque c'est l'ordre que la personne a sous les yeux.
 
 **Sauvegardes** : le socle n'a pas de sauvegarde Postgres et ces données ne sont pas
 recollectables. Risque assumé au démarrage (décision du 2026-08-19).

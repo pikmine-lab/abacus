@@ -783,7 +783,9 @@ test('spending reads back by category group through the MCP surface', async () =
     ],
   })
 
-  // Two categories, one mass; the groupless one is named as such.
+  // Two categories, one mass; the groupless one is named as such. A mass comes
+  // with what it merges, already totalled and ranked, so the caller never has
+  // to add figures up or ask a second time to see inside it.
   const byGroup = await call(client, 'analyze_spending', {
     from: '2026-08-01',
     to: '2026-08-31',
@@ -795,10 +797,38 @@ test('spending reads back by category group through the MCP surface', async () =
     reading: 'cash',
     window: 'movements settled between 2026-08-01 and 2026-08-31',
     rows: [
-      { categoryGroup: 'Vie quotidienne', gross: 90, net: 90 },
-      { categoryGroup: '(none)', gross: 10, net: 10 },
+      {
+        categoryGroup: 'Vie quotidienne',
+        gross: 90,
+        net: 90,
+        movements: 2,
+        categories: [
+          { category: 'Courses', gross: 60, net: 60, movements: 1 },
+          { category: 'Livraison', gross: 30, net: 30, movements: 1 },
+        ],
+      },
+      {
+        categoryGroup: '(none)',
+        gross: 10,
+        net: 10,
+        movements: 1,
+        categories: [{ category: 'Divers', gross: 10, net: 10, movements: 1 }],
+      },
     ],
   })
+
+  // The other axes answer flat, and every row says how many movements make it,
+  // which is what turns a line into a list_movements call.
+  const byCategory = await call(client, 'analyze_spending', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+  })
+  assert.deepEqual((byCategory.json() as { rows: unknown[] }).rows, [
+    { category: 'Courses', gross: 60, net: 60, movements: 1 },
+    { category: 'Livraison', gross: 30, net: 30, movements: 1 },
+    { category: 'Divers', gross: 10, net: 10, movements: 1 },
+  ])
 })
 
 test('a movement declared for another month reads back in that month', async () => {
