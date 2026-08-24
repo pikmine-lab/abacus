@@ -48,23 +48,35 @@ export function registerBalanceCheckTools(server: McpServer, userId: string): vo
     'settle_check_gap',
     {
       description:
-        'Settles a balance-check gap with an explicit adjustment movement, dated at the check, attributed to an actor of the user\'s choice (e.g. an "Unknown" actor) and categorizable. Last resort when the user cannot reconstruct the detail: always prefer declaring the real movements. Refuses a check without a gap.',
+        'Settles a balance-check gap with an explicit adjustment movement, dated at the check, attributed to an actor of the user\'s choice (e.g. an "Unknown" actor) and categorizable. Last resort when the user cannot reconstruct the detail: always prefer declaring the real movements. The adjustment counts in the analysis like any other movement, because money really did move: set ghost: true only when the gap is a regularisation that says nothing about the flows, and leave it out when the gap stands for entries that were simply forgotten, whose amount belongs in the total for that period. Ask the user which of the two it is. Refuses a check without a gap.',
       inputSchema: z.object({
         checkId: z.string().describe('Balance check id, returned by record_balance_check'),
         actor: z.string().describe('Attribution actor (e.g. "Unknown"). Must already exist'),
         category: z.string().optional(),
         note: z.string().optional(),
+        ghost: z
+          .boolean()
+          .optional()
+          .describe(
+            'true: the adjustment counts in the account balance but in no analysis. For a gap that explains nothing about the flows; never for forgotten entries',
+          ),
       }),
     },
-    async ({ checkId, actor, category, note }) =>
+    async ({ checkId, actor, category, note, ghost }) =>
       run(async () => {
         const actorRow = (await requireActorByName(userId, actor)).actor
         const movement = await createAdjustment(userId, checkId, {
           actorId: actorRow.id,
           categoryId: category ? (await requireCategoryByName(userId, category)).id : undefined,
           note,
+          ghost,
         })
-        return ok({ movementId: movement.id, kind: movement.kind, amount: Number(movement.amount) })
+        return ok({
+          movementId: movement.id,
+          kind: movement.kind,
+          amount: Number(movement.amount),
+          ...(movement.ghost ? { ghost: true } : {}),
+        })
       }),
   )
 

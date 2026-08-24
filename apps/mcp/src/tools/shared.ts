@@ -18,6 +18,8 @@ export const GUIDANCE: Record<string, string> = {
     'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
   transfer_has_no_accrual:
     'An internal transfer enters no period total, so it is about no month: drop month. Only an expense or an income can be attached to another month.',
+  transfer_is_never_ghost:
+    'An internal transfer already counts in no analysis: drop ghost. Only an expense or an income can be left out of one.',
   bad_month:
     'A month is written YYYY-MM (2026-08). Pass the month the movement is about, not a description of it.',
   not_an_advance:

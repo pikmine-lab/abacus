@@ -67,6 +67,14 @@ export interface DeclareMovementInput {
    * the movement counts in the month of its date, and keeps following it.
    */
   accrualMonth?: string | null
+  /**
+   * Out of every analysis: totals, breakdowns, monthly curve. The movement
+   * still counts in every balance and in the balance check, and still shows in
+   * the movement list. For what did reach the account but says nothing about
+   * the flows: an insurance payout, a gift, a regularisation, money from an
+   * account that is not tracked.
+   */
+  ghost?: boolean
 }
 
 /**
@@ -217,6 +225,11 @@ async function checkMovement(
       'transfer_has_no_accrual',
       'An internal transfer enters no period total, so there is no month for it to be about',
     )
+  if (isTransfer && input.ghost)
+    throw new DomainError(
+      'transfer_is_never_ghost',
+      'An internal transfer already enters no period total: it cannot be left out of the analysis',
+    )
 
   const externalActor = input.targetActorId
     ? await requireActor(tx, userId, input.targetActorId, 'target')
@@ -307,12 +320,15 @@ export interface CorrectMovementInput {
    * that was stated on purpose.
    */
   accrualMonth?: string | null
+  /** Out of every analysis, or back in. Absent, the stored value is kept. */
+  ghost?: boolean
 }
 
 const CORRECTABLE = [
   'happenedOn',
   'amount',
   'accrualMonth',
+  'ghost',
   'sourceAccountId',
   'sourceActorId',
   'targetAccountId',
@@ -397,6 +413,11 @@ export async function correctMovementIn(
     becomesTransfer && input.accrualMonth === undefined
       ? undefined
       : monthOrNothing(input.accrualMonth !== undefined ? input.accrualMonth : current.accrualMonth)
+  // And for being left out of the analysis, which a transfer already is: the
+  // flag inherited from the expense it was is dropped, one asked for
+  // explicitly is refused by checkMovement. Always a boolean, never absent:
+  // the column has no null to fall back to.
+  merged.ghost = becomesTransfer && input.ghost === undefined ? false : (input.ghost ?? current.ghost)
   const resolved = moneyTouched
     ? await inAccountCurrency(tx, merged, history)
     : {

@@ -56,7 +56,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'declare_movements',
     {
       description:
-        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). Each line succeeds or fails independently: read the result line by line.',
+        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. A movement that reached the account and says nothing about the flows (an insurance payout, a gift, a regularisation) is declared with ghost: true, which keeps it in the balances and out of every analysis. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). Each line succeeds or fails independently: read the result line by line.',
       inputSchema: z.object({
         movements: z
           .array(
@@ -114,6 +114,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .optional()
                 .describe(
                   'YYYY-MM: the month this expense or income is ABOUT, when the money did not move in it. August salary paid on September 2nd → 2026-08; September rent paid on August 30th → 2026-09; August-bought tickets for a September trip → 2026-09. It moves the movement in the monthly analysis and never in a balance. Leave it out whenever the money moved in the month it concerns, which is almost always: an occurrence confirmed with confirm_due_movements sets it by itself. Never on a transfer',
+                ),
+              ghost: z
+                .boolean()
+                .optional()
+                .describe(
+                  'true: the movement counts in every balance and in no analysis (period totals, breakdowns, monthly curve). For what really reached the account but tells nothing about the flows: an insurance payout, a gift received, a regularisation, money coming from an account that is not tracked. An ordinary expense is never a ghost, however large: ask the user rather than deciding. Never on a transfer, which already counts in no total',
                 ),
               note: z.string().optional(),
               expectedRefundFrom: z
@@ -211,6 +217,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             activityId,
             note: m.note,
             accrualMonth: m.month,
+            ghost: m.ghost,
             expectedRefundFromActorId,
             expectedRefundAmount: m.expectedRefundAmount,
             refundedNow: m.alreadyRefunded,
@@ -222,6 +229,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             movementId: movement.id,
             kind: movement.kind,
             ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
+            ...(movement.ghost ? { ghost: true } : {}),
             // Echo the conversion so the user can hear what was written.
             ...(movement.originalCurrency
               ? {
@@ -246,7 +254,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_spending.',
+        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_spending.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -291,6 +299,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             date: m.happenedOn,
             // Absent when the movement counts in the month of its own date.
             ...(m.accrualMonth ? { month: m.accrualMonth.slice(0, 7) } : {}),
+            // Absent unless the movement is out of the analyses.
+            ...(m.ghost ? { ghost: true } : {}),
             kind: m.kind,
             amount: Number(m.amount),
             // Declared in a foreign currency: amount is its EUR counter-value.
@@ -338,7 +348,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
@@ -390,6 +400,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .optional()
           .describe(
             'correct: YYYY-MM, the month this movement is about when the money did not move in it, or "none" to detach it (it then follows its date again). Absent: the stored month is kept, so correcting a date never moves a month that was stated on purpose',
+          ),
+        ghost: z
+          .boolean()
+          .optional()
+          .describe(
+            'correct: true leaves the movement out of every analysis while keeping it in the balances, false brings it back in. Absent: the stored value is kept',
           ),
         expectedRefundFrom: z
           .string()
@@ -445,6 +461,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           note: clearable(f.note),
           accrualMonth: clearable(f.month),
+          ghost: f.ghost,
           expectedRefundFromActorId: debtor ? (await requireActorByName(userId, debtor)).actor.id : debtor,
           // Dropping the debtor drops the amount with it: half a claim is not a
           // state the model has.
@@ -454,6 +471,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           movementId: movement.id,
           date: movement.happenedOn,
           ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
+          ...(movement.ghost ? { ghost: true } : {}),
           amount: Number(movement.amount),
           kind: movement.kind,
           ...(movement.originalCurrency

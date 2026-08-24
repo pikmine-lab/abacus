@@ -79,6 +79,13 @@ export interface Movement {
   accrualMonth: string | null
   /** Resolved by the database: the attachment, or the settlement day's month. */
   countedInMonth: string
+  /**
+   * Out of every analysis: an exceptional movement (an insurance payout, a
+   * regularisation) that would make the month it lands in unreadable. Balances
+   * and balance checks still count it, and it stays in the movement list,
+   * which is where it is read, corrected and deleted.
+   */
+  ghost: boolean
 }
 
 export type CommitmentKind = 'subscription' | 'financing'

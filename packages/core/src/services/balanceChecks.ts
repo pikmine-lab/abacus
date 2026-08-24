@@ -189,11 +189,17 @@ function adjustmentEndpoints(gap: number, accountId: string, actorId: string): A
 /**
  * Settles a gap with an explicit, categorizable movement dated at the check,
  * against an actor of the user's choice (e.g. an "Unknown" actor).
+ *
+ * The adjustment is a movement like any other, so it enters the analysis:
+ * money really did leave (or reach) the account. `ghost` is offered here
+ * rather than assumed, because only the user knows which of the two a gap is:
+ * a regularisation that explains nothing, or entries that were forgotten and
+ * whose amount belongs in the period's total.
  */
 export async function createAdjustment(
   userId: string,
   balanceCheckId: string,
-  input: { actorId: string; categoryId?: string; note?: string },
+  input: { actorId: string; categoryId?: string; note?: string; ghost?: boolean },
 ): Promise<Movement> {
   const sql = db()
   try {
@@ -212,6 +218,7 @@ export async function createAdjustment(
         targetAccountId: endpoints.targetAccountId ?? undefined,
         categoryId: input.categoryId,
         note: input.note ?? 'Balance adjustment',
+        ghost: input.ghost,
         balanceCheckId,
       })
     })

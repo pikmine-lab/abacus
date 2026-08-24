@@ -264,6 +264,16 @@ export default async function MovementsPage({
                           {money(Number(m.originalAmount), m.originalCurrency)}
                         </span>
                       )}
+                      {/* Under the amount, because that is what it qualifies:
+                          this figure is in no total above and in no analysis. */}
+                      {m.ghost && (
+                        <span
+                          className="block text-[11px] font-normal text-faint"
+                          title="Compté dans les soldes, dans aucune analyse"
+                        >
+                          fantôme
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="pr-1 pl-0 text-right">
                       <MovementRowActions
@@ -286,6 +296,7 @@ export default async function MovementsPage({
                           activityId: m.activityId ?? undefined,
                           note: m.note ?? undefined,
                           accrualMonth: m.accrualMonth?.slice(0, 7),
+                          ghost: m.ghost,
                           refundFromActorName: m.expectedRefundFromActorId
                             ? (actorName.get(m.expectedRefundFromActorId) ?? '')
                             : undefined,
