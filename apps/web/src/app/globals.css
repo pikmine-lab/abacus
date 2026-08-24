@@ -129,4 +129,24 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+  /*
+   * A fold opens instead of jumping open. `interpolate-size` is what allows a
+   * height to animate towards `auto`, and `allow-discrete` carries the
+   * visibility switch along with it. Where a browser has neither, the fold is
+   * instant: the same behaviour as no animation at all.
+   */
+  .fold {
+    interpolate-size: allow-keywords;
+  }
+  .fold::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 180ms ease-out,
+      content-visibility 180ms;
+    transition-behavior: allow-discrete;
+  }
+  .fold[open]::details-content {
+    block-size: auto;
+  }
 }

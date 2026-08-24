@@ -1,10 +1,16 @@
 import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
-import type { FlowKind } from '@abacus/core/services/reports'
-import { firstMovementDay, flowTotals, monthlyFlows, spendingBreakdown } from '@abacus/core/services/reports'
+import type { BreakdownMass, BreakdownRow, FlowKind } from '@abacus/core/services/reports'
+import {
+  firstMovementDay,
+  flowTotals,
+  monthlyFlows,
+  spendingBreakdown,
+  spendingByCategoryGroup,
+} from '@abacus/core/services/reports'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { BreakdownBars } from '@/components/breakdown-bars'
+import { BreakdownBars, UNSET_LABEL } from '@/components/breakdown-bars'
 import { FlowChart } from '@/components/flow-chart'
 import { FilterBar, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
@@ -26,12 +32,22 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Analyse' }
 
 /**
- * The dimensions ranked here. Not the category group: its rows would have
- * nothing to click, a group being a label on categories rather than an entity
- * movements can be filtered by. It is read as masses on the overview.
+ * The dimensions ranked here. The category group leads, and is the default: it
+ * answers "where does the money go" in a handful of masses, then unfolds into
+ * the categories it merges, which carry the link to the movements. It has no
+ * entity of its own, which is why it unfolds instead of linking.
  */
-const GROUPS = ['category', 'actor', 'activity'] as const
+const GROUPS = ['categoryGroup', 'category', 'actor', 'activity'] as const
 type Ranked = (typeof GROUPS)[number]
+const DEFAULT_GROUP: Ranked = 'categoryGroup'
+
+/** How a dimension names itself in a title. */
+const DIMENSION_NOUN: Record<Ranked, string> = {
+  categoryGroup: 'groupe',
+  category: 'catégorie',
+  actor: 'acteur',
+  activity: 'activité',
+}
 
 export default async function AnalysisPage({
   searchParams,
@@ -48,12 +64,20 @@ export default async function AnalysisPage({
   const reading = resolveReading(params)
   const scope = readingLabel(period, reading)
 
-  const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '') ? (params.by as Ranked) : 'category'
+  const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '')
+    ? (params.by as Ranked)
+    : DEFAULT_GROUP
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
 
   const firstDay = await firstMovementDay(userId)
+  // A group comes back with the categories it merges, the other dimensions
+  // with a flat row: one type covering both, so the rows are read once below.
+  const ranking: Promise<(BreakdownRow | BreakdownMass)[]> =
+    groupBy === 'categoryGroup'
+      ? spendingByCategoryGroup(userId, period.from, period.to, kind, reading)
+      : spendingBreakdown(userId, period.from, period.to, groupBy, kind, reading)
   const [breakdown, totals, previousTotals, monthly] = await Promise.all([
-    spendingBreakdown(userId, period.from, period.to, groupBy, kind, reading),
+    ranking,
     flowTotals(userId, period.from, period.to, reading),
     previous ? flowTotals(userId, previous.from, previous.to, reading) : null,
     monthlyFlows(userId, seriesFrom(period, firstDay), period.to, reading),
@@ -66,14 +90,20 @@ export default async function AnalysisPage({
   const savingRate = income > 0 ? Math.round((saved / income) * 100) : null
   const months = monthsInPeriod(period)
 
-  const rows = breakdown.map((r) => ({
+  const amounts = (r: BreakdownRow) => ({
     key: r.key,
     label: r.label,
     gross: Number(r.gross),
     net: Number(r.net),
     count: Number(r.count),
+  })
+  const rows = breakdown.map((r) => ({
+    ...amounts(r),
+    categories: 'categories' in r ? r.categories.map(amounts) : undefined,
   }))
-  const shownTotal = rows.reduce((sum, r) => sum + r.gross, 0)
+  // The net, like every figure the ranking shows, so the section total and the
+  // headline tile answer with the same number.
+  const shownTotal = rows.reduce((sum, r) => sum + r.net, 0)
 
   return (
     <>
@@ -95,9 +125,10 @@ export default async function AnalysisPage({
         />
         <UrlTabs
           param="by"
-          fallback="category"
+          fallback={DEFAULT_GROUP}
           ariaLabel="Regrouper par"
           options={[
+            { value: 'categoryGroup', label: 'Groupe' },
             { value: 'category', label: 'Catégorie' },
             { value: 'actor', label: 'Acteur' },
             { value: 'activity', label: 'Activité' },
@@ -148,8 +179,8 @@ export default async function AnalysisPage({
           ) : (
             <StatTile
               label="Plus gros poste"
-              value={rows[0] ? eur(rows[0].gross) : 'aucune'}
-              hint={rows[0]?.label ?? 'rien sur cette période'}
+              value={rows[0] ? eur(rows[0].net) : 'aucune'}
+              hint={rows[0] ? (rows[0].label ?? UNSET_LABEL[groupBy]) : 'rien sur cette période'}
             />
           )}
         </StatRow>
@@ -169,14 +200,14 @@ export default async function AnalysisPage({
         )}
 
         <Section
-          title={`${kind === 'expense' ? 'Dépenses' : 'Revenus'} par ${
-            { category: 'catégorie', actor: 'acteur', activity: 'activité' }[groupBy]
+          title={`${kind === 'expense' ? 'Dépenses' : 'Revenus'} par ${DIMENSION_NOUN[groupBy]}`}
+          description={`${rows.length} ligne${rows.length > 1 ? 's' : ''} · total ${eur(shownTotal)} · clic pour ${
+            groupBy === 'categoryGroup' ? 'déplier les catégories' : 'voir les mouvements'
           }`}
-          description={`${rows.length} ligne${rows.length > 1 ? 's' : ''} · total ${eur(shownTotal)} · clic pour voir les mouvements`}
         >
           <BreakdownBars
             rows={rows}
-            filterParam={groupBy}
+            dimension={groupBy}
             from="analysis"
             emptyLabel={
               kind === 'expense' ? 'Aucune dépense sur cette période.' : 'Aucun revenu sur cette période.'

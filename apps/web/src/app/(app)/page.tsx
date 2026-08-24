@@ -371,7 +371,7 @@ export default async function OverviewPage({
           >
             <BreakdownBars
               rows={amounts(breakdown)}
-              filterParam="category"
+              dimension="category"
               from="overview"
               max={6}
               emptyLabel="Aucune dépense déclarée sur cette période."

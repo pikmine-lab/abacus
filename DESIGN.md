@@ -139,10 +139,33 @@ de page.
 - **Brut et net ensemble** : la part pleine est le net, la part translucide accolée
   (2px de respiration) est ce qui est revenu en remboursement. Pleine + translucide
   = brut.
+- **Le chiffre est le net, et le classement aussi.** Ce qu'une période a coûté, c'est
+  le net : c'est donc lui qu'un rang affiche et lui qui ordonne les lignes, sinon une
+  ligne se place au-dessus d'une autre qu'elle finit par passer dessous quand le
+  remboursement rentre. Le brut garde sa lecture dans la marque (la queue translucide)
+  et au survol ; il n'a pas de chiffre à lui dans la ligne, un second nombre sous le
+  premier rendant une ligne remboursée plus haute que ses voisines, ce qui casse le
+  rythme vertical dans lequel un classement se lit. Un total de section et la tuile
+  qui le résume répondent alors le même nombre.
+- **Un rang se creuse par proximité, pas par une boîte.** Quand une ligne se déplie
+  (un groupe vers ses catégories), ce qui dit l'appartenance est la distance : le
+  contenu se serre sous son en-tête (4px) et le rang suivant est repoussé (16px), soit
+  un rapport de un à quatre. L'indentation du libellé et un filet vertical gris bleuté
+  le confirment ; un fond plein est la manière lourde de dire la même chose. Les
+  marques restent à la même origine et à la même échelle d'un niveau à l'autre, une
+  longueur valant un montant partout dans la section, et le niveau déplié se dessine
+  plus fin que son en-tête.
 - **Interaction** : crosshair aimanté au point le plus proche, tooltip unique listant
   toutes les séries, légende dès deux séries, labels directs en fin de ligne
   (anticollision). Un mois du graphe de flux est un vrai contrôle (rôle, tabulation,
   Entrée/Espace) qui cadre la page dessus.
+- **Une infobulle suit le curseur** et n'est jamais un `title` de navigateur. Sur une
+  marque qui traverse l'écran (la barre d'un rang), l'ancrer à sa ligne mettrait la
+  réponse loin de l'œil : elle se pose à côté du pointeur, se retourne au bord de la
+  fenêtre, ne passe pas sous la main (rien au doigt, le tap étant une navigation) et
+  porte l'encre des autres infobulles (fond `popover`, filet, montants alignés). Elle
+  ne répète pas ce que la ligne montre déjà : elle dit le nombre de mouvements, ce que
+  la ligne agrège, et le brut quand un remboursement l'a séparé du net.
 - **Le label de fin est mesuré, pas estimé.** La marge droite est taillée sur la largeur
   réelle des labels, dans leur police, et plafonnée au tiers du cadre : un nom qui n'y
   tient pas est raccourci par nous, jamais par le cadre. Le montant ne se coupe pas, lui,

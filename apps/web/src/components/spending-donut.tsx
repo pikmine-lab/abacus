@@ -17,12 +17,17 @@ import { eur } from '@/lib/utils'
  *
  * Hovering an arc or its legend row ties the two together: the others fade,
  * the row lights up, and the hole tells what the legend does not repeat, the
- * net reading and the number of movements. That link is what makes the hues
+ * gross reading and the number of movements. That link is what makes the hues
  * legible at all (DESIGN.md § Couleur, rule 4).
  *
  * An arc carries both readings the way the bars do: the solid part is net, the
  * translucent end is what came back as a linked refund. Scaling is done by the
  * viewBox, so nothing is drawn against a guessed width.
+ *
+ * The figures, on the other hand, are the net, like everywhere the ranking is
+ * read: the amount in the legend and the share it holds of the period. So the
+ * arc says what left the accounts and the number says what it cost, which are
+ * the same thing until a refund comes back.
  */
 
 /** Groups drawn under their own name; the rest folds into one arc. */
@@ -67,14 +72,18 @@ export function SpendingDonut({
   /** What an unset group is called in this dimension. */
   noneLabel = 'Sans groupe',
 }: {
-  /** Ordered by gross, biggest first: the service already returns them so. */
+  /** Ordered by net, biggest first: the service already returns them so. */
   rows: BreakdownItem[]
   emptyLabel?: string
   noneLabel?: string
 }) {
   const [hover, setHover] = useState<number | null>(null)
 
+  // Two totals, one per job: the circle is drawn against the gross, which is
+  // the longest an arc ever gets, and the shares are read against the net,
+  // which is what the period cost.
   const total = rows.reduce((sum, r) => sum + r.gross, 0)
+  const netTotal = rows.reduce((sum, r) => sum + r.net, 0)
   if (rows.length === 0 || total === 0) return <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
 
   const tail = rows.slice(NAMED)
@@ -124,8 +133,8 @@ export function SpendingDonut({
           className="size-[132px] sm:size-[148px]"
           role="img"
           aria-label={`Dépenses par groupe : ${slices
-            .map((s) => `${s.label} ${eur(s.gross)}`)
-            .join(', ')}. Total ${eur(total)}.`}
+            .map((s) => `${s.label} ${eur(s.net)}`)
+            .join(', ')}. Total ${eur(netTotal)}.`}
         >
           {/* Arcs start at noon and run clockwise, biggest first. */}
           <g transform="rotate(-90 50 50)">
@@ -164,9 +173,9 @@ export function SpendingDonut({
             className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center"
             aria-hidden
           >
-            <span className="font-mono text-[13px] font-semibold tabular">{share(on.gross, total)} %</span>
+            <span className="font-mono text-[13px] font-semibold tabular">{share(on.net, netTotal)} %</span>
             {on.net !== on.gross && (
-              <span className="font-mono text-[10.5px] tabular text-faint">net {eur(on.net)}</span>
+              <span className="font-mono text-[10.5px] tabular text-faint">brut {eur(on.gross)}</span>
             )}
             <span className="text-[10px] text-faint">
               {on.count} mouvement{on.count > 1 ? 's' : ''}
@@ -204,10 +213,10 @@ export function SpendingDonut({
               )}
             </span>
             <span className="shrink-0 text-right font-mono text-[12.5px] font-semibold tabular">
-              {eur(slice.gross)}
+              {eur(slice.net)}
             </span>
             <span className="w-9 shrink-0 text-right font-mono text-[11px] tabular text-faint">
-              {share(slice.gross, total)} %
+              {share(slice.net, netTotal)} %
             </span>
           </li>
         ))}
