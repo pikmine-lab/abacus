@@ -1,7 +1,7 @@
 'use server'
 
 import { auth } from '@abacus/core/auth'
-import type { AccountBehavior, Judgment, PeriodUnit } from '@abacus/core/domain'
+import type { AccountBehavior, AssetNature, InstrumentKind, Judgment, PeriodUnit } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
 import { addAlias, createActor, editActor, mergeActors, resolveActor } from '@abacus/core/services/actors'
@@ -928,15 +928,16 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
 }
 
 /**
- * What the user holds. A listed asset names where its price comes from; without
- * a source it is priced by hand, and nothing more is asked.
+ * What the user holds. A listed asset names where its price comes from and is
+ * typed by it; without a source, its nature is the one thing only the holder
+ * can say, so it is asked for instead.
  */
 export async function declareAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const source = opt(formData, 'source')
   const invalid = checkFields(
     formData,
-    source ? [{ name: 'name' }, { name: 'reference' }] : [{ name: 'name' }],
+    source ? [{ name: 'name' }, { name: 'reference' }] : [{ name: 'name' }, { name: 'nature' }],
   )
   if (invalid) return { fields: invalid }
   try {
@@ -944,12 +945,13 @@ export async function declareAssetAction(_prev: FormState, formData: FormData): 
       name: str(formData, 'name'),
       instrument: source
         ? {
-            kind: str(formData, 'kind') as 'security' | 'crypto',
+            kind: str(formData, 'kind') as InstrumentKind,
             priceSource: source as 'yahoo' | 'coingecko',
             priceSourceRef: str(formData, 'reference'),
             name: opt(formData, 'description') ?? str(formData, 'name'),
           }
         : undefined,
+      nature: source ? undefined : (str(formData, 'nature') as AssetNature),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -1007,7 +1009,7 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
       const asset = await declareAsset(userId, {
         name: str(formData, 'assetName'),
         instrument: {
-          kind: str(formData, 'kind') as 'security' | 'crypto',
+          kind: str(formData, 'kind') as InstrumentKind,
           priceSource: source as 'yahoo' | 'coingecko',
           priceSourceRef: picked,
           name: opt(formData, 'description') ?? str(formData, 'assetName'),

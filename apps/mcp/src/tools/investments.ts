@@ -25,7 +25,7 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
     'manage_assets',
     {
       description:
-        "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's). Omit the source at creation for whatever no source quotes. One instrument can only be held under one name: a second name for it would split the position in half.",
+        "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's). Omit the source at creation for whatever no source quotes, and give `nature` instead: it is the mass the holding is read under (shares, funds, property), and nothing else can state it, where a listed asset is typed by its own source. One instrument can only be held under one name: a second name for it would split the position in half.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'rename', 'set_price', 'unfollow']),
         name: z
@@ -46,9 +46,17 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
             'create: its reference at that source: a Yahoo symbol ("CW8.PA") or a CoinGecko id ("bitcoin")',
           ),
         kind: z
-          .enum(['security', 'crypto'])
+          .enum(['security', 'equity', 'fund', 'crypto'])
           .optional()
-          .describe('create: what it is, required as soon as a source is given'),
+          .describe(
+            'create: what the source says it is, required as soon as a source is given. Pass back what search_instruments returned; "security" means the source has not said, and it types itself at the next price read',
+          ),
+        nature: z
+          .enum(['equity', 'fund', 'bond', 'real_estate', 'other'])
+          .optional()
+          .describe(
+            'create without a source: the mass it belongs to, which only the user can say. Defaults to other',
+          ),
         description: z
           .string()
           .optional()
@@ -73,6 +81,9 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
               // Held or merely followed, and what it is worth: an AI could see
               // neither, so it could not tell a watchlist from a portfolio.
               status: holding.has(asset.id) ? 'held' : 'followed',
+              // The mass it is read under, resolved: from its instrument when
+              // one quotes it, from the user's own declaration otherwise.
+              nature: asset.nature,
               price: prices.get(asset.id) ? Number(prices.get(asset.id)) : undefined,
               pricing: asset.instrument
                 ? {
@@ -110,7 +121,12 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
           return fail(
             `create with source ${a.source} requires reference: its symbol or id at that source. Omit both for an asset priced by hand.`,
           )
-        if (a.source && !a.kind) return fail('create with a source requires kind: security or crypto.')
+        if (a.source && !a.kind)
+          return fail('create with a source requires kind: pass back what search_instruments returned.')
+        if (a.source && a.nature)
+          return fail(
+            'A quoted asset is typed by its price source: pass kind, not nature. Nature is for what no source quotes.',
+          )
         const asset = await declareAsset(userId, {
           name: a.name,
           instrument: a.source
@@ -122,6 +138,7 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
                 isin: a.isin,
               }
             : undefined,
+          nature: a.source ? undefined : a.nature,
         })
         return ok({ assetId: asset.id, name: asset.name, pricedByHand: asset.instrumentId === null })
       }),
@@ -244,7 +261,7 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
     'get_portfolio',
     {
       description:
-        'What the user holds, account by account: the cash on each investment account, and every position with its quantity, its weighted average cost per unit (PMP, order fees included), what it cost, the last known price with the moment the market made it, what it is worth now and its unrealized gain. Two figures per account state their own method, and reading them any other way makes them wrong: `unrealizedGain` excludes dividends and fees, `totalReturn` includes both and is measured against `netContributions`, what movements put in net of what they took out. A position with no price is valued at nothing rather than estimated, and `totalReturn` then comes back null rather than understated. Prices are refreshed as this tool runs, within what each source allows: Euronext is 15 minutes delayed by licence, so never present a price as live, present it with its hour.',
+        'What the user holds, account by account: the cash on each investment account, and every position with its quantity, its weighted average cost per unit (PMP, order fees included), what it cost, the last known price with the moment the market made it, what it is worth now and its unrealized gain. Two figures per account state their own method, and reading them any other way makes them wrong: `unrealizedGain` excludes dividends and fees, `totalReturn` includes both and is measured against `netContributions`, what movements put in net of what they took out. A position with no price is valued at nothing rather than estimated, and `totalReturn` then comes back null rather than understated. Each account also comes with `masses`, its positions grouped by nature (shares, funds, crypto, and what no market quotes) and already totalled, biggest first: that split is the allocation, the first thing a portfolio is read for, so answer it from there rather than adding positions up by nature yourself. A mass carrying `unpricedPositions` has that many positions with no price, so its `value` is that much short and its `unrealizedGain` comes back null; one where that count equals `positions` is not worth zero, nothing in it is priced at all. Prices are refreshed as this tool runs, within what each source allows: Euronext is 15 minutes delayed by licence, so never present a price as live, present it with its hour.',
       inputSchema: z.object({
         account: z.string().optional().describe('Restrict to one investment account, by name'),
       }),
@@ -264,8 +281,19 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
             netContributions: Number(h.netContributions),
             totalReturn: h.totalReturn === null ? null : Number(h.totalReturn),
             unpricedPositions: h.unpriced === 0 ? undefined : h.unpriced,
+            masses: h.masses.map((m) => ({
+              nature: m.nature,
+              value: Number(m.value),
+              costBasis: Number(m.costBasis),
+              unrealizedGain: m.gain === null ? null : Number(m.gain),
+              positions: m.positions.length,
+              // Says how partial the value above is, and a mass where it equals
+              // `positions` is not worth zero: nothing in it has a price.
+              unpricedPositions: m.unpriced === 0 ? undefined : m.unpriced,
+            })),
             positions: h.positions.map((p) => ({
               asset: p.assetName,
+              nature: p.nature,
               quantity: Number(p.quantity),
               averageCost: Number(p.averageCost),
               costBasis: Number(p.costBasis),

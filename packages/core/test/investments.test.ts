@@ -369,3 +369,124 @@ test('the window never reaches back before the first operation', async () => {
   assert.equal(history.from, '2026-01-05')
   assert.equal(history.start.day, '2026-01-05')
 })
+
+test('positions gather into masses, each carrying its own total, biggest first', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Compte-titres', behavior: 'investment' })
+  // Priced by hand on purpose: what is being measured is the grouping, and a
+  // hand-typed price needs no source to be read.
+  const fund = await declareAsset(user, { name: 'Fonds maison', nature: 'fund' })
+  const shares = await declareAsset(user, { name: 'Parts non cotées', nature: 'equity' })
+  const scpi = await declareAsset(user, { name: 'Pierres', nature: 'real_estate' })
+  await recordOperations(user, [
+    {
+      accountId: account.id,
+      assetId: fund.id,
+      type: 'buy',
+      quantity: 10,
+      amount: 1000,
+      operatedOn: '2026-01-05',
+    },
+    {
+      accountId: account.id,
+      assetId: shares.id,
+      type: 'buy',
+      quantity: 5,
+      amount: 500,
+      operatedOn: '2026-01-05',
+    },
+    {
+      accountId: account.id,
+      assetId: scpi.id,
+      type: 'buy',
+      quantity: 2,
+      amount: 2000,
+      operatedOn: '2026-01-05',
+    },
+  ])
+  await setManualPrice(user, fund.id, 150, '2026-08-20')
+  await setManualPrice(user, shares.id, 80, '2026-08-20')
+
+  const [held] = await portfolio(user)
+  assert.ok(held)
+  // Ranked by what they are worth, which is the reading: the unpriced mass goes
+  // last on its own, without anything being said about it.
+  assert.deepEqual(
+    held.masses.map((m) => [m.nature, m.value, m.gain]),
+    [
+      ['fund', '1500.00', '500.00'],
+      ['equity', '400.00', '-100.00'],
+      // Nothing priced here: a partial gain would understate it, so it is null.
+      ['real_estate', '0.00', null],
+    ],
+  )
+  assert.deepEqual(
+    held.masses.map((m) => m.positions.map((p) => p.assetName)),
+    [['Fonds maison'], ['Parts non cotées'], ['Pierres']],
+  )
+  assert.equal(held.masses.find((m) => m.nature === 'real_estate')?.unpriced, 1)
+  assert.equal(held.masses.find((m) => m.nature === 'real_estate')?.costBasis, '2000.00')
+  // The masses hold every position, and no position twice.
+  assert.equal(
+    held.masses.reduce((sum, m) => sum + m.positions.length, 0),
+    held.positions.length,
+  )
+})
+
+test('a quoted holding takes its nature from its source, and "other" until the source says', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Compte-titres', behavior: 'investment' })
+  const world = await declareAsset(user, { name: 'World', instrument: { ...WORLD, kind: 'fund' } })
+  const air = await declareAsset(user, {
+    name: 'Air Liquide',
+    instrument: { kind: 'equity', priceSource: 'yahoo', priceSourceRef: 'AI.PA', name: 'Air Liquide' },
+  })
+  const coin = await declareAsset(user, {
+    name: 'Bitcoin',
+    instrument: { kind: 'crypto', priceSource: 'coingecko', priceSourceRef: 'bitcoin', name: 'Bitcoin' },
+  })
+  // Declared before anything typed it, which is every instrument stored until
+  // now: quoted, nature unknown, so it reads as "other" rather than as a guess.
+  const untyped = await declareAsset(user, {
+    name: 'Obscur',
+    instrument: { kind: 'security', priceSource: 'yahoo', priceSourceRef: 'XYZ.PA', name: 'Obscur' },
+  })
+  const bond = await declareAsset(user, { name: 'Obligation maison', nature: 'bond' })
+  for (const asset of [world, air, coin, untyped, bond])
+    await recordOperations(user, [
+      {
+        accountId: account.id,
+        assetId: asset.id,
+        type: 'buy',
+        quantity: 1,
+        amount: 100,
+        operatedOn: '2026-01-05',
+      },
+    ])
+
+  const held = await positions(user)
+  assert.deepEqual(Object.fromEntries(held.map((p) => [p.assetName, p.nature])), {
+    World: 'fund',
+    'Air Liquide': 'equity',
+    Bitcoin: 'crypto',
+    Obscur: 'other',
+    'Obligation maison': 'bond',
+  })
+  // A followed asset carries no position, so the same reading is resolved on
+  // the asset list too: that is what the watchlist groups by.
+  const followed = await listAssets(user)
+  assert.equal(followed.find((a) => a.name === 'World')?.nature, 'fund')
+  assert.equal(followed.find((a) => a.name === 'Obligation maison')?.nature, 'bond')
+})
+
+test('a nature declared alongside a source is refused, not dropped', async () => {
+  const user = await seedUser()
+  await assert.rejects(
+    declareAsset(user, { name: 'World', instrument: WORLD, nature: 'fund' }),
+    (e: DomainError) => e.code === 'nature_comes_from_source',
+  )
+  // And an asset declared with neither is unclassified, which is what "other"
+  // says: it still lands in a mass.
+  const bare = await declareAsset(user, { name: 'Un bien' })
+  assert.equal(bare.nature, 'other')
+})

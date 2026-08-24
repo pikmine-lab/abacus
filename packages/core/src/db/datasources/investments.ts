@@ -1,5 +1,19 @@
-import type { Asset, Instrument, InvestmentOperation, Position } from '../../domain/types.ts'
+import { natureOf } from '../../domain/nature.ts'
+import type {
+  Asset,
+  AssetNature,
+  Instrument,
+  InstrumentKind,
+  InvestmentOperation,
+  Position,
+} from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
+
+/** The two columns a position's nature is resolved from, before it is. */
+interface PositionNature {
+  instrumentKind: InstrumentKind | null
+  declaredNature: AssetNature | null
+}
 
 export interface NewInstrument {
   kind: Instrument['kind']
@@ -41,18 +55,19 @@ export async function insertAsset(
   userId: string,
   name: string,
   instrumentId: string | null,
+  nature: AssetNature | null,
 ): Promise<Asset> {
   const [asset] = await tx<Asset[]>`
-    insert into asset (user_id, name, instrument_id)
-    values (${userId}, ${name}, ${instrumentId})
-    returning id, user_id, name, instrument_id, manual_price, manual_priced_on
+    insert into asset (user_id, name, instrument_id, nature)
+    values (${userId}, ${name}, ${instrumentId}, ${nature})
+    returning id, user_id, name, instrument_id, nature, manual_price, manual_priced_on
   `
   return asset!
 }
 
 export async function getAsset(tx: Executor, userId: string, id: string): Promise<Asset | undefined> {
   const [asset] = await tx<Asset[]>`
-    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
+    select id, user_id, name, instrument_id, nature, manual_price, manual_priced_on from asset
     where user_id = ${userId} and id = ${id}
   `
   return asset
@@ -65,7 +80,7 @@ export async function findAssetByInstrument(
   instrumentId: string,
 ): Promise<Asset | undefined> {
   const [asset] = await tx<Asset[]>`
-    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
+    select id, user_id, name, instrument_id, nature, manual_price, manual_priced_on from asset
     where user_id = ${userId} and instrument_id = ${instrumentId}
   `
   return asset
@@ -73,7 +88,7 @@ export async function findAssetByInstrument(
 
 export async function listAssets(tx: Executor, userId: string): Promise<Asset[]> {
   return await tx<Asset[]>`
-    select id, user_id, name, instrument_id, manual_price, manual_priced_on from asset
+    select id, user_id, name, instrument_id, nature, manual_price, manual_priced_on from asset
     where user_id = ${userId} order by name
   `
 }
@@ -87,7 +102,7 @@ export async function updateAssetRow(
   const [asset] = await tx<Asset[]>`
     update asset set ${tx(patch)}, updated_at = now()
     where user_id = ${userId} and id = ${id}
-    returning id, user_id, name, instrument_id, manual_price, manual_priced_on
+    returning id, user_id, name, instrument_id, nature, manual_price, manual_priced_on
   `
   return asset
 }
@@ -169,7 +184,7 @@ export async function operationsCashDelta(tx: Executor, userId: string): Promise
  * necessary and the arithmetic exact.
  */
 export async function positions(tx: Executor, userId: string, accountId?: string): Promise<Position[]> {
-  return await tx<Position[]>`
+  const rows = await tx<(Omit<Position, 'nature'> & PositionNature)[]>`
     with recursive trades as (
       select o.asset_id,
              o.type,
@@ -211,6 +226,10 @@ export async function positions(tx: Executor, userId: string, accountId?: string
     select h.asset_id,
            a.name as asset_name,
            a.instrument_id,
+           -- Both sides, resolved in one place afterwards: which of the two
+           -- answers is a rule of the model, not of this query.
+           i.kind as instrument_kind,
+           a.nature as declared_nature,
            h.quantity::numeric(20,8) as quantity,
            (h.cost / h.quantity)::numeric(18,8) as average_cost,
            h.cost::numeric(14,2) as cost_basis,
@@ -224,9 +243,14 @@ export async function positions(tx: Executor, userId: string, accountId?: string
            (h.quantity * coalesce(q.price, a.manual_price) - h.cost)::numeric(14,2) as gain
     from held h
     join asset a on a.id = h.asset_id
+    left join instrument i on i.id = a.instrument_id
     left join instrument_quote q on q.instrument_id = a.instrument_id
     order by a.name
   `
+  return rows.map(({ instrumentKind, declaredNature, ...position }) => ({
+    ...position,
+    nature: natureOf(instrumentKind, declaredNature),
+  }))
 }
 
 export interface QuoteRow {
@@ -284,6 +308,8 @@ export interface RefreshCandidate {
   instrumentId: string
   priceSource: Instrument['priceSource']
   priceSourceRef: string
+  /** What it is taken for today, so a re-read only writes what it corrects. */
+  instrumentKind: InstrumentKind
   /** The currency the venue quotes in, as last learnt from a quote. */
   instrumentCurrency: string
   /** When we last asked, which is what the freshness bound reads. */
@@ -300,7 +326,7 @@ export interface RefreshCandidate {
 export async function instrumentsToRefresh(tx: Executor, userId: string): Promise<RefreshCandidate[]> {
   return await tx<RefreshCandidate[]>`
     select distinct i.id as instrument_id, i.price_source, i.price_source_ref,
-           i.currency as instrument_currency,
+           i.kind as instrument_kind, i.currency as instrument_currency,
            q.fetched_at, q.market_open
     from asset a
     join instrument i on i.id = a.instrument_id
@@ -473,6 +499,20 @@ export async function listCloses(
  * itself: declarations never state it from memory, and the stored prices stay
  * EUR counter-values regardless.
  */
+/**
+ * What the price source says this instrument is. Written on every read that
+ * learns it, not once at declaration: the source is the authority on its own
+ * types, and this is how an instrument stored before anyone asked ends up
+ * typed without a hand touching it.
+ */
+export async function setInstrumentKind(
+  tx: Executor,
+  instrumentId: string,
+  kind: InstrumentKind,
+): Promise<void> {
+  await tx`update instrument set kind = ${kind} where id = ${instrumentId}`
+}
+
 export async function setInstrumentCurrency(
   tx: Executor,
   instrumentId: string,

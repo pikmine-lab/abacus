@@ -35,6 +35,7 @@ const YAHOO_PAYLOAD = {
         meta: {
           currency: 'EUR',
           symbol: 'CW8.PA',
+          instrumentType: 'ETF',
           regularMarketPrice: 688.01,
           regularMarketTime: 1787326512,
           exchangeTimezoneName: 'Europe/Paris',
@@ -53,6 +54,15 @@ test('a Yahoo answer parses to a price, its hour, and whether its venue was trad
   // The session window closed at 1787326200, before the quote was stamped: this
   // is a closing price, and the venue is shut.
   assert.equal(quote.marketOpen, false)
+  // The price call states what it is pricing, which is what types a holding
+  // without anyone classifying it. An ETF and a fund are one mass.
+  assert.equal(quote.kind, 'fund')
+})
+
+test('a price call that says nothing about what it prices leaves the kind alone', () => {
+  const { instrumentType, ...meta } = YAHOO_PAYLOAD.chart.result[0]!.meta
+  assert.equal(instrumentType, 'ETF')
+  assert.equal(parseYahoo({ chart: { result: [{ meta }] } }).kind, undefined)
 })
 
 test('an unusable answer is an error, never a zero', () => {
@@ -333,4 +343,34 @@ test('the account return includes dividends and fees, and says nothing when a pr
   // 140 above the 2000 put in: 100 of unrealized gain on the ETF, 20 on the
   // SCPI, 30 of dividend received, 10 of fees paid.
   assert.equal(whole!.totalReturn, '140.00')
+})
+
+test('a refreshed price types the instrument it prices, once', async () => {
+  const user = await seedUser()
+  const pea = await createAccount({ userId: user, name: 'PEA', behavior: 'investment' })
+  // Declared as a plain security, which is every instrument stored before its
+  // nature existed: quoted, nature unknown, so it reads as "other".
+  const world = await declareAsset(user, { name: 'World', instrument: WORLD })
+  await recordOperations(user, [
+    {
+      accountId: pea.id,
+      assetId: world.id,
+      type: 'buy',
+      quantity: 2,
+      amount: 1300,
+      operatedOn: '2026-08-05',
+    },
+  ])
+  const before = await positions(user)
+  assert.equal(before[0]!.nature, 'other')
+
+  const { fetcher } = stubFetcher({ kind: 'fund' })
+  await refreshQuotes(user, fetcher)
+
+  const after = await positions(user)
+  assert.equal(after[0]!.nature, 'fund')
+  // The instrument is shared, so it is the instrument that got typed: a second
+  // holder of the same fund reads it typed without refreshing anything.
+  const [instrument] = await db()`select kind from instrument where price_source_ref = 'CW8.PA'`
+  assert.equal(instrument!.kind, 'fund')
 })

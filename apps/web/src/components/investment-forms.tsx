@@ -1,9 +1,11 @@
 'use client'
 
+import type { AssetNature } from '@abacus/core/domain'
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { MassFold } from '@/components/mass-fold'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
 import {
@@ -35,6 +37,7 @@ import {
   renameAssetAction,
   stopFollowingAction,
 } from '@/lib/actions'
+import { DECLARED_NATURES, NATURE_LABEL, NATURE_ORDER } from '@/lib/nature'
 
 interface Option {
   id: string
@@ -49,6 +52,8 @@ export interface AssetEntry {
   /** The only unambiguous identifier of a fund, when it is known. */
   isin: string | null
   followed: boolean
+  /** The mass it belongs to, resolved by the service. */
+  nature: AssetNature
 }
 
 export interface InstrumentVenue {
@@ -65,7 +70,7 @@ export interface InstrumentHit {
   name: string
   issuer: string | null
   payout: 'accumulating' | 'distributing' | null
-  kind: 'security' | 'crypto'
+  kind: 'security' | 'equity' | 'fund' | 'crypto'
   typeLabel: string
   venue: string | null
   isin: string | null
@@ -187,7 +192,10 @@ function InstrumentSearch({
   const mine = onPickKnown
     ? known.filter((a) => term.length === 0 || a.name.toLowerCase().includes(term))
     : []
-  const securities = hits.filter((h) => h.kind === 'security')
+  // Everything Yahoo answers on one side, coins on the other: a share and a
+  // fund are searched for in the same breath, and the mass they fall into is
+  // read on the portfolio, not here.
+  const securities = hits.filter((h) => h.kind !== 'crypto')
   const coins = hits.filter((h) => h.kind === 'crypto')
 
   const found = (label: string, items: InstrumentHit[]) =>
@@ -331,6 +339,23 @@ function InstrumentSearch({
         {found('Cryptos', coins)}
       </CommandList>
     </Command>
+  )
+}
+
+/**
+ * The mass a hand-priced asset belongs to, which is the only case where anyone
+ * has to say: a quoted asset is typed by its source. A field like the panel's
+ * others, one line tall, since it only ever appears for what no market quotes.
+ */
+function NatureField() {
+  return (
+    <Field label="Nature" name="nature">
+      <FormSelect
+        name="nature"
+        placeholder="Choisir"
+        options={DECLARED_NATURES.map((nature) => ({ value: nature, label: NATURE_LABEL[nature] }))}
+      />
+    </Field>
   )
 }
 
@@ -591,6 +616,9 @@ export function FollowForm() {
         defaultValue={picked ? shortName(picked.name) : ''}
         placeholder="MSCI World"
       />
+      {/* Asked only for what no source quotes: a quoted asset is typed by its
+          source, and re-typed at every price read. */}
+      {!picked && <NatureField />}
       <SubmitButton className="self-start">Suivre</SubmitButton>
     </ActionForm>
   )
@@ -673,12 +701,26 @@ function AssetRow({ asset }: { asset: AssetEntry & { price: string | null } }) {
   )
 }
 
+/**
+ * Followed assets, grouped like the positions are: a watchlist mixes shares,
+ * funds and coins exactly as much, and no total goes on a mass here since
+ * nothing in it is held. One mass alone needs no header of its own.
+ */
 export function AssetRows({ assets }: { assets: (AssetEntry & { price: string | null })[] }) {
+  const masses = NATURE_ORDER.map(
+    (nature) => [nature, assets.filter((a) => a.nature === nature)] as const,
+  ).filter(([, group]) => group.length > 0)
   return (
     <Rows>
-      {assets.map((asset) => (
-        <AssetRow key={asset.id} asset={asset} />
-      ))}
+      {masses.length === 1
+        ? assets.map((asset) => <AssetRow key={asset.id} asset={asset} />)
+        : masses.map(([nature, group]) => (
+            <MassFold key={nature} nature={nature}>
+              {group.map((asset) => (
+                <AssetRow key={asset.id} asset={asset} />
+              ))}
+            </MassFold>
+          ))}
     </Rows>
   )
 }

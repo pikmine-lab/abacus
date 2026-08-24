@@ -1,10 +1,12 @@
 import { auth } from '@abacus/core/auth'
+import type { Position } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
   assetPrices,
   listAssets,
   listOperations,
+  type PositionMass,
   portfolio,
   refreshQuotes,
   valuation,
@@ -22,6 +24,7 @@ import {
   OperationForm,
   OperationRows,
 } from '@/components/investment-forms'
+import { MassFold } from '@/components/mass-fold'
 import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
@@ -50,6 +53,73 @@ function priceStamp(at: Date | null, manual: boolean): string | null {
   // Bare day and hour: it sits under the name, beside the Cours column, so the
   // word "cours" would only cost the room the hour needs.
   return `${day} ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+/**
+ * One holding: what it is, how much of it, what it is worth. The average cost
+ * and the hour of its price ride under the name, so the two numbers one comes
+ * for (its value, what it made) are the ones that always fit.
+ */
+function PositionRow({ position }: { position: Position }) {
+  const stamp = priceStamp(position.pricedAt, position.manualPrice)
+  const gain = position.gain === null ? null : Number(position.gain)
+  return (
+    <div className="group flex items-center gap-3 py-2">
+      <Link
+        href={`/investments/${position.assetId}?from=investments`}
+        className="flex min-w-0 flex-1 flex-col gap-0.5"
+      >
+        <span className="truncate text-[12.5px] group-hover:text-primary">{position.assetName}</span>
+        <span className="truncate text-[11px] text-faint">
+          PRU {eur(Number(position.averageCost), 2)}
+          {stamp ? ` · ${stamp}` : ' · aucun cours connu'}
+        </span>
+      </Link>
+      <span className="tabular w-14 text-right text-[12.5px]">{quantity(position.quantity)}</span>
+      <span className="tabular w-[4.5rem] text-right text-[12.5px] text-muted-foreground">
+        {position.price === null ? '—' : eur(Number(position.price), 2)}
+      </span>
+      <span className="tabular w-[5.5rem] text-right text-[12.5px]">
+        {position.value === null ? '—' : eur(Number(position.value), 2)}
+      </span>
+      <span className={`tabular w-[5.5rem] text-right text-[12.5px] ${gainInk(gain)}`}>
+        {/* The arrow carries the direction; color reinforces it. */}
+        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
+      </span>
+      <RowArrow />
+      <AssetMenu id={position.assetId} name={position.assetName} />
+    </div>
+  )
+}
+
+function gainInk(gain: number | null): string {
+  return gain === null ? 'text-faint' : gain >= 0 ? 'text-good' : 'text-destructive'
+}
+
+/**
+ * A mass's own numbers, in the columns its lines use: the two that add up.
+ * Quantities do not (three shares and two coins are not five of anything) and
+ * neither does a price, so those two columns stay empty rather than answer
+ * something false.
+ */
+function MassFigures({ mass }: { mass: PositionMass }) {
+  const gain = mass.gain === null ? null : Number(mass.gain)
+  // Nothing here has a price: a zero would read as "this mass is worth
+  // nothing", where the header's note says what is actually the case.
+  const blind = mass.unpriced === mass.positions.length
+  return (
+    <>
+      <span className="w-14" />
+      <span className="w-[4.5rem]" />
+      <span className="tabular w-[5.5rem] text-right text-[12.5px] font-semibold">
+        {blind ? '—' : eur(Number(mass.value), 2)}
+      </span>
+      <span className={`tabular w-[5.5rem] text-right text-[12.5px] font-semibold ${gainInk(gain)}`}>
+        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
+      </span>
+      <span className="w-11" />
+    </>
+  )
 }
 
 export default async function InvestmentsPage({
@@ -106,6 +176,7 @@ export default async function InvestmentsPage({
     pricing: asset.instrument ? `${asset.instrument.priceSource} · ${asset.instrument.priceSourceRef}` : null,
     isin: asset.instrument?.isin ?? null,
     followed: !holdingIds.has(asset.id),
+    nature: asset.nature,
   }))
   const followed = assetEntries
     .filter((a) => a.followed)
@@ -247,7 +318,7 @@ export default async function InvestmentsPage({
               </Section>
             )}
 
-            {held.map(({ account, positions, cash: accountCash, value: accountValue }) => (
+            {held.map(({ account, positions, masses, cash: accountCash, value: accountValue }) => (
               <Section
                 key={account.id}
                 title={account.name}
@@ -274,45 +345,28 @@ export default async function InvestmentsPage({
                         <span className="w-[5.5rem] text-right">+/− value</span>
                         <span className="w-11" />
                       </div>
-                      {positions.map((position) => {
-                        const stamp = priceStamp(position.pricedAt, position.manualPrice)
-                        const gain = position.gain === null ? null : Number(position.gain)
-                        return (
-                          <div key={position.assetId} className="group flex items-center gap-3 py-2">
-                            <Link
-                              href={`/investments/${position.assetId}?from=investments`}
-                              className="flex min-w-0 flex-1 flex-col gap-0.5"
+                      {/* A single mass carries no header: its total is the
+                          account's, which the section already states. */}
+                      {masses.length === 1
+                        ? positions.map((position) => (
+                            <PositionRow key={position.assetId} position={position} />
+                          ))
+                        : masses.map((mass) => (
+                            <MassFold
+                              key={mass.nature}
+                              nature={mass.nature}
+                              note={
+                                mass.unpriced > 0
+                                  ? `${mass.unpriced} sans cours, non valorisée${mass.unpriced > 1 ? 's' : ''}`
+                                  : undefined
+                              }
+                              figures={<MassFigures mass={mass} />}
                             >
-                              <span className="truncate text-[12.5px] group-hover:text-primary">
-                                {position.assetName}
-                              </span>
-                              <span className="truncate text-[11px] text-faint">
-                                PRU {eur(Number(position.averageCost), 2)}
-                                {stamp ? ` · ${stamp}` : ' · aucun cours connu'}
-                              </span>
-                            </Link>
-                            <span className="tabular w-14 text-right text-[12.5px]">
-                              {quantity(position.quantity)}
-                            </span>
-                            <span className="tabular w-[4.5rem] text-right text-[12.5px] text-muted-foreground">
-                              {position.price === null ? '—' : eur(Number(position.price), 2)}
-                            </span>
-                            <span className="tabular w-[5.5rem] text-right text-[12.5px]">
-                              {position.value === null ? '—' : eur(Number(position.value), 2)}
-                            </span>
-                            <span
-                              className={`tabular w-[5.5rem] text-right text-[12.5px] ${
-                                gain === null ? 'text-faint' : gain >= 0 ? 'text-good' : 'text-destructive'
-                              }`}
-                            >
-                              {/* The arrow carries the direction; color reinforces it. */}
-                              {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
-                            </span>
-                            <RowArrow />
-                            <AssetMenu id={position.assetId} name={position.assetName} />
-                          </div>
-                        )
-                      })}
+                              {mass.positions.map((position) => (
+                                <PositionRow key={position.assetId} position={position} />
+                              ))}
+                            </MassFold>
+                          ))}
                     </Rows>
                   </div>
                 )}

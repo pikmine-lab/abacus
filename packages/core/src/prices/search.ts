@@ -1,5 +1,5 @@
 import type { InstrumentKind, PriceSource } from '../domain/types.ts'
-import { fetchYahoo } from './sources.ts'
+import { fetchYahoo, kindOfYahooType } from './sources.ts'
 
 /**
  * A candidate to hold, as its source describes it. One entry is one **fund or
@@ -279,7 +279,10 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
       name,
       issuer: isFund ? issuerOf(name) : null,
       payout: isFund ? payoutOf(name) : null,
-      kind: 'security' as const,
+      // Typed from the search when it says, so a holding lands in its mass the
+      // moment it is declared rather than at the next price read. Untyped stays
+      // "security": quoted, nature not known yet.
+      kind: kindOfYahooType(chosen.listing.quoteType) ?? ('security' as const),
       typeLabel: chosen.listing.typeDisp ?? 'Titre',
       venue: chosen.listing.exchDisp ?? null,
       isin,

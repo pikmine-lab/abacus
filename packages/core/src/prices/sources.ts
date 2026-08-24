@@ -1,4 +1,4 @@
-import type { PriceSource } from '../domain/types.ts'
+import type { InstrumentKind, PriceSource } from '../domain/types.ts'
 
 /**
  * A price as a source gave it, with the moment the market made it. Never the
@@ -11,6 +11,25 @@ export interface Quote {
   quotedAt: Date
   /** When the venue is open, so a closed one is not polled for nothing. */
   marketOpen: boolean
+  /** What the source says it is, when it says: absent leaves the stored kind. */
+  kind?: InstrumentKind
+}
+
+/**
+ * Yahoo's own type, in our words. It comes back from the search (`quoteType`)
+ * and from the price call (`instrumentType`), spelled identically, which is
+ * what lets a holding be typed at declaration and re-typed at every read.
+ *
+ * An ETF and a fund quoted by an insurer are one mass: what gets revised is the
+ * share of funds against the share of shares, not the vehicle holding the fund.
+ * Anything else is left untyped rather than guessed.
+ */
+export function kindOfYahooType(type: string | undefined): InstrumentKind | undefined {
+  if (type === 'EQUITY') return 'equity'
+  if (type === 'ETF' || type === 'MUTUALFUND') return 'fund'
+  if (type === 'CRYPTOCURRENCY') return 'crypto'
+  if (type === 'CURRENCY') return 'currency'
+  return undefined
 }
 
 /** How stale a price may get before it is worth asking again. */
@@ -72,6 +91,9 @@ export function parseYahoo(payload: unknown): Quote {
     currency: currency.toUpperCase(),
     quotedAt: new Date(time * 1000),
     marketOpen,
+    // The price call states what it is pricing, so the nature travels with the
+    // price and nobody has to classify a holding by hand.
+    kind: kindOfYahooType(typeof meta?.instrumentType === 'string' ? meta.instrumentType : undefined),
   }
 }
 
