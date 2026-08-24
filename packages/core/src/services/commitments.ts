@@ -500,7 +500,12 @@ export async function setJudgment(
     if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
     if (commitment.kind !== 'subscription')
       throw new DomainError('not_a_subscription', 'Only subscriptions carry a judgment')
-    const updated = await updateCommitment(tx, userId, id, { judgment, judgmentNote: note ?? null })
+    // A judgment posed without a note keeps the note it had: the web offers no
+    // note field, and its gesture must not erase what was written elsewhere.
+    const updated = await updateCommitment(tx, userId, id, {
+      judgment,
+      ...(note !== undefined && { judgmentNote: note }),
+    })
     await insertCommitmentEvent(
       tx,
       id,

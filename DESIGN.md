@@ -347,6 +347,12 @@ avec le registre sont locales et motivées, en commentaire, sur place.
   contour. Une saisie refusée n'est jamais perdue : les champs texte tiennent leur
   valeur en état, car React réinitialise un champ non contrôlé dès qu'une action se
   termine : ce qui est juste après un succès et faux après une erreur.
+- **Un contrôle qui s'envoie tout seul ne vit pas dans un formulaire.** Corollaire du
+  point précédent : React réinitialise le formulaire dès que l'action se termine, le
+  Select Radix restaure alors la valeur qu'il avait au montage, et l'envoi automatique
+  repart pour réécrire l'ancienne valeur par-dessus la nouvelle. Un geste sans bouton
+  d'envoi appelle l'action directement, sa valeur en argument, et affiche son échec à
+  côté de lui.
 - **Un placement se déclare en deux gestes, parce que ce sont deux choses.** Ce qu'on
   détient (un actif, avec la source de son cours) se déclare une fois ; ce qui se passe
   dessus (achat, vente, dividende, frais) se déclare à chaque fois. Le panneau d'opération

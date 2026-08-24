@@ -17,6 +17,7 @@ import {
   moveAccount,
   pendingOccurrences,
   reviseSchedule,
+  setJudgment,
   skipNextOccurrence,
 } from '../src/services/commitments.ts'
 import { correctMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
@@ -99,6 +100,23 @@ test('a price change updates the amount and leaves a dated event', async () => {
   assert.equal(byType.get('created'), '13.49')
   assert.equal(byType.get('price_changed'), '15.99')
   assert.equal(events.length, 2)
+})
+
+test('judging a subscription keeps the note when none is given', async () => {
+  const user = await seedUser()
+  const { subscription } = await subscriptionFixture(user)
+
+  const noted = await setJudgment(user, subscription.id, 'reducible', 'Passer au palier avec pub ?')
+  assert.equal(noted.judgment, 'reducible')
+  assert.equal(noted.judgmentNote, 'Passer au palier avec pub ?')
+
+  // What the web sends: a judgment alone. The note it never offered stays.
+  const rejudged = await setJudgment(user, subscription.id, 'to_cancel')
+  assert.equal(rejudged.judgment, 'to_cancel')
+  assert.equal(rejudged.judgmentNote, 'Passer au palier avec pub ?')
+
+  const types = (await commitmentEvents(user, subscription.id)).map((e) => e.type)
+  assert.equal(types.filter((t) => t === 'judgment_changed').length, 2)
 })
 
 test('a cancelled subscription stops generating occurrences', async () => {
