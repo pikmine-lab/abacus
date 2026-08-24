@@ -113,6 +113,12 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Ce qui est dû a sa colonne**, à côté du montant, pas la ligne de la note : deux faits
   différents ne partagent pas une place. Elle n'apparaît que si la sélection porte une
   créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien.
+- **Un fantôme se coche, et se relit sous son montant.** Un mouvement qui a bien touché le
+  compte sans rien dire des flux se marque d'une case, pas d'un bloc dépliable : c'est un
+  attribut, il n'y a rien à saisir derrière. La liste le garde, seul endroit où il se lit et
+  se corrige, et la mention est collée au montant, qui est ce qu'elle qualifie. Les totaux
+  de la sélection ne le comptent plus, pour qu'ils répondent le même nombre que l'Analyse
+  sur la même fenêtre ; le nombre de mouvements, lui, reste celui des lignes affichées.
 
 ### Engagements et échéances
 
@@ -174,7 +180,9 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Solder un écart est un dernier recours, et il le dit.** L'entrée n'existe que sur un
   pointage dont l'écart n'est pas soldé ; le panneau dit ce qui manque et dans quel sens
   (« 50,00 € de sorties manquent au 21/08 »), puis que déclarer ce qui manque vaut mieux.
-  L'acteur d'attribution se saisit comme dans un mouvement, autocomplété.
+  L'acteur d'attribution se saisit comme dans un mouvement, autocomplété. Une case y demande
+  la seule chose que l'application ne peut pas déduire : un écart qui tient lieu de saisies
+  oubliées appartient aux analyses, une régularisation qui n'explique rien n'y entre pas.
 - **Clore n'est pas un cul-de-sac** : un compte clos garde son menu, s'y corrige et s'y
   réouvre. Une clôture par erreur ne doit pas obliger à recréer un compte, donc à redéclarer
   son historique.

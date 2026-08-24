@@ -22,6 +22,8 @@ export interface NewMovement {
   originalCurrency?: string | null
   /** First day of the month the movement is about; null follows its date. */
   accrualMonth?: string | null
+  /** Out of every analysis, while still counted in balances. */
+  ghost?: boolean
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {
@@ -130,7 +132,15 @@ export interface MovementSelection {
   transfer: string
 }
 
-/** Totals of the current selection, so a filtered list carries its own sum. */
+/**
+ * Totals of the current selection, so a filtered list carries its own sum.
+ *
+ * The sums leave ghosts out, as every analysis does: a selection answering a
+ * different figure than the Analyse screen for the same period would make one
+ * of the two wrong without saying which. The count does not: it says how many
+ * rows the selection holds, which is what the list shows and what "afficher
+ * plus" counts down.
+ */
 export async function selectionTotals(
   tx: Executor,
   userId: string,
@@ -138,9 +148,9 @@ export async function selectionTotals(
 ): Promise<MovementSelection> {
   const [row] = await tx<MovementSelection[]>`
     select count(*) as count,
-           coalesce(sum(m.amount) filter (where m.kind = 'expense'), 0)::numeric(14,2) as expense,
-           coalesce(sum(m.amount) filter (where m.kind = 'income'), 0)::numeric(14,2) as income,
-           coalesce(sum(m.amount) filter (where m.kind = 'transfer'), 0)::numeric(14,2) as transfer
+           coalesce(sum(m.amount) filter (where m.kind = 'expense' and m.ghost = false), 0)::numeric(14,2) as expense,
+           coalesce(sum(m.amount) filter (where m.kind = 'income' and m.ghost = false), 0)::numeric(14,2) as income,
+           coalesce(sum(m.amount) filter (where m.kind = 'transfer' and m.ghost = false), 0)::numeric(14,2) as transfer
     from movement m
     ${movementWhere(tx, userId, f)}
   `

@@ -15,8 +15,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { Label } from '@/components/ui/label'
 import { correctBalanceCheckAction, deleteBalanceCheckAction, settleCheckGapAction } from '@/lib/actions'
 import { eur, frDate } from '@/lib/utils'
 
@@ -153,6 +155,17 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
               />
             </Field>
             <TextField name="note" label="Note" defaultValue="Ajustement de pointage" />
+            {/* The question the app cannot answer for the user: an écart that
+                stands for forgotten entries belongs in the analysis, one that
+                explains nothing does not. Unchecked by default, because the
+                first case is the ordinary one. */}
+            <Label className="flex items-start gap-2 text-[11.5px] font-normal text-muted-foreground">
+              <Checkbox name="ghost" className="mt-px" />
+              <span>
+                fantôme : cet écart ne dit rien de mes flux (régularisation) et ne doit entrer dans aucune
+                analyse
+              </span>
+            </Label>
             <SubmitButton className="self-start">Solder</SubmitButton>
           </ActionForm>
         </DialogContent>

@@ -17,6 +17,17 @@ function inPeriod(tx: Executor, from: string, to: string, reading: Reading) {
     : tx`and m.happened_on >= ${from} and m.happened_on <= ${to}`
 }
 
+/**
+ * What every analysis leaves out. A ghost movement did touch the account, so
+ * balances still sum it, but it says nothing about the flows: left in, one
+ * exceptional movement makes the month it lands in unreadable and every other
+ * month read against it. A refund that is itself a ghost stops reducing the
+ * net for the same reason: it would otherwise still move a figure here.
+ */
+function notGhost(tx: Executor) {
+  return tx`and m.ghost = false`
+}
+
 export interface BalancePoint {
   day: string
   accountId: string
@@ -146,10 +157,11 @@ export async function spendingBreakdown(
     from movement m
     ${dimension.join}
     left join lateral (
-      select sum(amount) as total from movement r where r.refunds_movement_id = m.id
+      select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
     ) r on true
     where m.user_id = ${userId}
       and m.kind = ${kind}
+      ${notGhost(tx)}
       ${inPeriod(tx, from, to, reading)}
       ${kind === 'income' ? tx`and m.refunds_movement_id is null` : tx``}
     group by 1, 2
@@ -188,9 +200,10 @@ export async function flowTotals(
       count(*) filter (where m.kind = 'income' and m.refunds_movement_id is null) as income_count
     from movement m
     left join lateral (
-      select sum(amount) as total from movement r where r.refunds_movement_id = m.id
+      select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
     ) r on true
     where m.user_id = ${userId}
+      ${notGhost(tx)}
       ${inPeriod(tx, from, to, reading)}
   `
   return row!
@@ -228,9 +241,10 @@ export async function monthlyFlows(
              sum(m.amount) filter (where m.kind = 'income' and m.refunds_movement_id is null) as income
       from movement m
       left join lateral (
-        select sum(amount) as total from movement r where r.refunds_movement_id = m.id
+        select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
       ) r on true
       where m.user_id = ${userId}
+        ${notGhost(tx)}
         ${inPeriod(tx, from, to, reading)}
       group by 1
     )

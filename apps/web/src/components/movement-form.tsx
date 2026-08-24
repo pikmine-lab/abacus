@@ -53,6 +53,8 @@ export interface MovementDraft {
   note?: string
   /** "YYYY-MM" when this movement is about a month other than its date's. */
   accrualMonth?: string
+  /** Left out of every analysis, while still counted in the balances. */
+  ghost?: boolean
   /** Advance carried by this expense: who owes, and the share expected back. */
   refundFromActorName?: string
   expectedRefundAmount?: number
@@ -270,6 +272,19 @@ export function MovementForm({
       )}
 
       <TextField name="note" label="Note (optionnelle)" defaultValue={draft?.note ?? ''} />
+
+      {/* A binary attribute, so a checkbox rather than a foldable block: there
+          is nothing to fill in behind it. Absent on a transfer, which counts
+          in no total to begin with and which the service refuses to mark. */}
+      {type !== 'transfer' && (
+        <Label className="flex items-start gap-2 text-[11.5px] font-normal text-muted-foreground">
+          <Checkbox name="ghost" defaultChecked={draft?.ghost} className="mt-px" />
+          <span>
+            mouvement fantôme : compté dans les soldes, dans aucune analyse (sinistre remboursé, don,
+            régularisation)
+          </span>
+        </Label>
+      )}
 
       {type === 'expense' && (
         <div>

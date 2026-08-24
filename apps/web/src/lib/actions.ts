@@ -279,6 +279,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       activityId: opt(formData, 'activityId'),
       note: opt(formData, 'note'),
       accrualMonth: opt(formData, 'accrualMonth'),
+      ghost: formData.get('ghost') !== null,
       refundsMovementId: opt(formData, 'refundsMovementId'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
@@ -350,6 +351,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       // The form rebuilds the movement whole, so a closed (or unrendered)
       // attachment block detaches it, the way it drops a claim.
       accrualMonth: opt(formData, 'accrualMonth') ?? null,
+      // Same: an unchecked (or unrendered) box brings the movement back into
+      // the analyses, which is what the panel shows.
+      ghost: formData.get('ghost') !== null,
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : null,
@@ -428,6 +432,7 @@ export async function settleCheckGapAction(_prev: FormState, formData: FormData)
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
       categoryId: opt(formData, 'categoryId'),
       note: opt(formData, 'note'),
+      ghost: formData.get('ghost') !== null,
     })
   } catch (e) {
     return { error: frError(e) }

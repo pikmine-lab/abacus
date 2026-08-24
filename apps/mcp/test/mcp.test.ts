@@ -872,6 +872,52 @@ test('a movement declared for another month reads back in that month', async () 
   assert.equal((await inAugust('accrual')).length, 0)
 })
 
+test('a ghost movement reads back in the list and in no analysis', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Boulangerie' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Inconnu' })
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-08-10', amount: 40, type: 'expense', account: 'Courant', actor: 'Boulangerie' },
+      {
+        date: '2026-08-12',
+        amount: 500,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Inconnu',
+        ghost: true,
+      },
+    ],
+  })
+  const results = (declared.json() as { results: { movementId: string; ghost?: boolean }[] }).results
+  assert.equal(results[1]!.ghost, true)
+
+  const byActor = async () =>
+    (
+      await call(client, 'analyze_spending', {
+        from: '2026-08-01',
+        to: '2026-08-31',
+        groupBy: 'actor',
+      })
+    ).json() as { rows: { actor: string; gross: number }[] }
+  assert.deepEqual((await byActor()).rows, [{ actor: 'Boulangerie', gross: 40, net: 40, movements: 1 }])
+
+  // Still there to be read and repaired, and saying so.
+  const listed = (await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' })).json() as {
+    id: string
+    ghost?: boolean
+  }[]
+  assert.equal(listed.length, 2)
+  assert.equal(listed.find((m) => m.id === results[1]!.movementId)!.ghost, true)
+
+  // Marked by mistake: bringing it back puts its amount in the analysis again.
+  await call(client, 'fix_movement', { movement: results[1]!.movementId, action: 'correct', ghost: false })
+  assert.equal((await byActor()).rows.length, 2)
+})
+
 test('investments: funding is a movement, what happens inside is an operation', async () => {
   // get_portfolio refreshes prices as it runs, and a test must not depend on
   // Yahoo being up or on what the market did today: the network is cut, which
