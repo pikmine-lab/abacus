@@ -24,6 +24,9 @@ import {
 } from '@/components/investment-forms'
 import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
+import { UrlTabs } from '@/components/url-tabs'
+import { WindowTabs } from '@/components/window-tabs'
+import { resolveChartWindow } from '@/lib/chart-window'
 import { eur, eurSigned, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +52,11 @@ function priceStamp(at: Date | null, manual: boolean): string | null {
   return `${day} ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
 }
 
-export default async function InvestmentsPage() {
+export default async function InvestmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ window?: string; chart?: string }>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
@@ -60,18 +67,19 @@ export default async function InvestmentsPage() {
   await refreshQuotes(userId)
 
   const now = today()
-  const yearAgo = `${Number(now.slice(0, 4)) - 1}${now.slice(4)}`
-  // The curve starts at the first operation when that is later than a year ago:
-  // twelve months of flat zero say nothing and squeeze the part that does.
-  const firstOperation = (await listOperations(userId)).at(-1)?.operatedOn
-  const from = firstOperation && firstOperation > yearAgo ? firstOperation : yearAgo
-  const [accounts, held, assets, operations, quotes, series] = await Promise.all([
+  const params = await searchParams
+  const reading = params.chart === 'performance' ? 'performance' : 'value'
+  // Operations first: the oldest one is where the curve can start at all, so
+  // the window is resolved against it before anything is asked for.
+  const operations = await listOperations(userId)
+  const firstOperation = operations.at(-1)?.operatedOn ?? null
+  const from = firstOperation ? resolveChartWindow(params, now, firstOperation).from : now
+  const [accounts, held, assets, quotes, series] = await Promise.all([
     listAccounts(userId),
     portfolio(userId),
     listAssets(userId),
-    listOperations(userId),
     assetPrices(userId),
-    valuation(userId, from, now),
+    firstOperation ? valuation(userId, from, now) : Promise.resolve([]),
   ])
   const investmentAccounts = accounts.filter((a) => a.behavior === 'investment' && !a.closedOn)
   const assetNames = new Map(assets.map((a) => [a.id, a.name]))
@@ -179,24 +187,63 @@ export default async function InvestmentsPage() {
 
             {series.some((p) => Number(p.holdings) > 0) && (
               <Section
-                title="Valorisation"
-                description={`depuis le ${frDate(from)}, contre les apports : l’écart entre les deux courbes est la performance`}
+                // The selected tab names the reading, so the title does not
+                // repeat it: "Performance" as a title, as an active tab and as
+                // a tile above said one thing three times.
+                title="Évolution"
+                description={
+                  reading === 'performance'
+                    ? `valorisation − apports, depuis le ${frDate(from)}`
+                    : `contre les apports, depuis le ${frDate(from)}`
+                }
+                action={
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <WindowTabs />
+                    <UrlTabs
+                      param="chart"
+                      fallback="value"
+                      ariaLabel="Lecture du graphe"
+                      options={[
+                        { value: 'value', label: 'Valorisation' },
+                        { value: 'performance', label: 'Performance' },
+                      ]}
+                    />
+                  </div>
+                }
               >
-                <BalanceChart
-                  lines={[
-                    { id: 'value', name: 'Valorisation' },
-                    { id: 'contributions', name: 'Apports' },
-                  ]}
-                  rows={series.flatMap((point) => [
-                    {
+                {reading === 'performance' ? (
+                  // The contributions laid flat. Drawn this way the curve does
+                  // not jump when money comes in (both series rise by the same
+                  // amount), so every move it makes is one the market made.
+                  <BalanceChart
+                    lines={[{ id: 'performance', name: 'Performance' }]}
+                    rows={series.map((point) => ({
                       day: point.day,
-                      lineId: 'value',
-                      balance: Number(point.cash) + Number(point.holdings),
-                    },
-                    { day: point.day, lineId: 'contributions', balance: Number(point.contributions) },
-                  ])}
-                  today={now}
-                />
+                      lineId: 'performance',
+                      balance: Number(point.cash) + Number(point.holdings) - Number(point.contributions),
+                    }))}
+                    today={now}
+                    baseline={{ value: 0, name: 'Apports' }}
+                    ariaLabel="Performance des placements contre les apports"
+                  />
+                ) : (
+                  <BalanceChart
+                    lines={[
+                      { id: 'value', name: 'Valorisation' },
+                      { id: 'contributions', name: 'Apports' },
+                    ]}
+                    rows={series.flatMap((point) => [
+                      {
+                        day: point.day,
+                        lineId: 'value',
+                        balance: Number(point.cash) + Number(point.holdings),
+                      },
+                      { day: point.day, lineId: 'contributions', balance: Number(point.contributions) },
+                    ])}
+                    today={now}
+                    ariaLabel="Valorisation des placements et apports"
+                  />
+                )}
               </Section>
             )}
 

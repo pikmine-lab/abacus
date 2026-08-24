@@ -8,7 +8,9 @@ import {
   portfolio,
   positions,
   recordOperations,
+  setManualPrice,
   stopFollowing,
+  valuationHistory,
 } from '../src/services/investments.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -257,4 +259,113 @@ test('a followed asset is forgotten, one carrying operations is not', async () =
   // The other one is the account's history: forgetting it would take a position
   // and its cost basis with it.
   await assert.rejects(stopFollowing(user, held.id), (e: DomainError) => e.code === 'asset_has_operations')
+})
+
+/**
+ * One holding priced by hand, so the curve can be driven day by day without a
+ * market: prices on chosen dates, a cash account to contribute from, and the
+ * investment account that holds it.
+ */
+async function pricedHolding(
+  prices: [string, number][],
+): Promise<{ user: string; checking: string; pea: string; asset: string }> {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  const pea = await createAccount({ userId: user, name: 'PEA', behavior: 'investment' })
+  const asset = await declareAsset(user, { name: 'SCPI Pierre' })
+  for (const [on, price] of prices) await setManualPrice(user, asset.id, price, on)
+  return { user, checking: checking.id, pea: pea.id, asset: asset.id }
+}
+
+test('there is no portfolio history until something has been bought', async () => {
+  const user = await seedUser()
+  assert.equal(await valuationHistory(user), null)
+})
+
+test('a contribution does not move the performance, a price does', async () => {
+  const { user, checking, pea, asset } = await pricedHolding([
+    ['2026-01-01', 100],
+    ['2026-01-07', 120],
+  ])
+  await declareMovement(user, {
+    happenedOn: '2026-01-01',
+    amount: 1000,
+    sourceAccountId: checking,
+    targetAccountId: pea,
+  })
+  await recordOperations(user, [
+    { accountId: pea, assetId: asset, type: 'buy', quantity: 10, amount: 1000, operatedOn: '2026-01-01' },
+  ])
+  // A second contribution, days later: both series rise by the same 1000, so
+  // the gap between them, which is the performance, must not budge. That is the
+  // whole reason this reading exists next to the valuation.
+  await declareMovement(user, {
+    happenedOn: '2026-01-05',
+    amount: 1000,
+    sourceAccountId: checking,
+    targetAccountId: pea,
+  })
+
+  const history = await valuationHistory(user, '2026-01-01', '2026-01-08')
+  assert.ok(history)
+  assert.equal(history.step, 'day')
+  const on = (day: string) => history.milestones.find((m) => m.day === day)!
+  assert.equal(on('2026-01-01').performance, 0)
+  assert.equal(on('2026-01-04').performance, 0)
+  // The day the money landed: the valuation jumped, the performance did not.
+  assert.equal(on('2026-01-05').value, 2000)
+  assert.equal(on('2026-01-05').contributions, 2000)
+  assert.equal(on('2026-01-05').performance, 0)
+  // The day the price moved: 10 units at 120 instead of 100.
+  assert.equal(on('2026-01-07').performance, 200)
+  assert.equal(history.end.performance, 200)
+})
+
+test('a long window is milestoned by month ends, and a peak between two of them is kept', async () => {
+  const { user, checking, pea, asset } = await pricedHolding([
+    ['2026-01-01', 100],
+    ['2026-01-15', 300],
+    ['2026-01-16', 100],
+  ])
+  await declareMovement(user, {
+    happenedOn: '2026-01-01',
+    amount: 1000,
+    sourceAccountId: checking,
+    targetAccountId: pea,
+  })
+  await recordOperations(user, [
+    { accountId: pea, assetId: asset, type: 'buy', quantity: 10, amount: 1000, operatedOn: '2026-01-01' },
+  ])
+
+  const history = await valuationHistory(user, '2026-01-01', '2026-03-10')
+  assert.ok(history)
+  assert.equal(history.step, 'month')
+  // The last known day of each month, the window's own end included.
+  assert.deepEqual(
+    history.milestones.map((m) => m.day),
+    ['2026-01-31', '2026-02-28', '2026-03-10'],
+  )
+  // Measured on every day, not on the milestones: mid-January is a peak no
+  // month end ever saw.
+  assert.equal(history.high.day, '2026-01-15')
+  assert.equal(history.high.performance, 2000)
+  assert.equal(history.low.performance, 0)
+})
+
+test('the window never reaches back before the first operation', async () => {
+  const { user, checking, pea, asset } = await pricedHolding([['2026-01-05', 100]])
+  await declareMovement(user, {
+    happenedOn: '2026-01-05',
+    amount: 100,
+    sourceAccountId: checking,
+    targetAccountId: pea,
+  })
+  await recordOperations(user, [
+    { accountId: pea, assetId: asset, type: 'buy', quantity: 1, amount: 100, operatedOn: '2026-01-05' },
+  ])
+
+  const history = await valuationHistory(user, '2020-01-01', '2026-01-08')
+  assert.ok(history)
+  assert.equal(history.from, '2026-01-05')
+  assert.equal(history.start.day, '2026-01-05')
 })

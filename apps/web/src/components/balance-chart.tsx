@@ -5,15 +5,16 @@ import { Toggle } from '@/components/ui/toggle'
 import { eur, frDateLong } from '@/lib/utils'
 
 /**
- * Account balances over time, the reference chart of DESIGN.md: 2px family
- * lines, hairline grid, crosshair snapping to the nearest day, one tooltip
- * listing every visible series, direct end labels on wide screens.
+ * Amounts over time, the reference chart of DESIGN.md: 2px family lines,
+ * hairline grid, crosshair snapping to the nearest day, one tooltip listing
+ * every visible series, direct end labels on wide screens.
  *
- * It has no period control of its own: the page's filter row scopes it, like
- * everything else below that row. The account toggles are the legend, not a
- * filter, and they refuse nothing: comparing more accounts is what the view is
- * for. The palette holds six measured hues and repeats past them, the end
- * label carrying the identity either way.
+ * Its window is the caller's, from the page's filter row or from a control on
+ * its own section: this draws what it is handed. The toggles are the legend,
+ * not a filter, and they refuse nothing: comparing more series is what the
+ * view is for, so they only show once there are two. The palette holds six
+ * measured hues and repeats past them, the end label carrying the identity
+ * either way.
  */
 
 interface Line {
@@ -24,6 +25,11 @@ interface Row {
   day: string
   lineId: string
   balance: number
+}
+/** The horizontal a series is read against: apports for a performance curve. */
+interface Baseline {
+  value: number
+  name: string
 }
 
 /**
@@ -66,6 +72,11 @@ function bestFunded(lines: Line[], rows: Row[], count: number): Line[] {
     .slice(0, count)
 }
 
+/** Which hue each opening line gets. */
+function openingSlots(lines: Line[], rows: Row[]): Map<string, number> {
+  return new Map(bestFunded(lines, rows, SLOT_VARS.length).map((a, i) => [a.id, i]))
+}
+
 /** Trims the name, never the amount: a cut number would be a wrong number. */
 function fitLabel(name: string, amount: string, room: number, measure: (s: string) => number): string {
   const full = `${name} · ${amount}`
@@ -86,23 +97,77 @@ function frMonth(iso: string): string {
   return label.replace('.', '')
 }
 
+/**
+ * The gap between two gridlines: a round number (1, 2 or 5 × a power of ten)
+ * of the right size for four or five of them. A fixed 500 € step was written
+ * for account balances and says nothing anywhere else: a share at 709 € got
+ * two lines, a performance of +312 € got one.
+ */
+function niceStep(range: number): number {
+  const raw = range / 4
+  if (!(raw > 0)) return 1
+  const magnitude = 10 ** Math.floor(Math.log10(raw))
+  for (const m of [1, 2, 5]) if (raw <= m * magnitude) return m * magnitude
+  return 10 * magnitude
+}
+
+/**
+ * A tick, in French. Thousands read as `13,5k`, which is the whole point of
+ * the form; below that the number is written out, because "0,7k" for a share
+ * at 709 € is a worse answer than the price itself.
+ */
+function tickLabel(value: number, step: number): string {
+  // Math.ceil hands back -0 for a floor just under zero, and that formats as "-0".
+  const v = value === 0 ? 0 : value
+  if (step >= 100 && Math.abs(v) >= 1000) return `${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`
+  const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : 2
+  return v.toLocaleString('fr-FR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
 export function BalanceChart({
   lines,
   rows,
   today,
+  baseline,
+  zeroBased = true,
+  ariaLabel = 'Évolution des soldes par compte',
 }: {
   lines: Line[]
   rows: Row[]
   /** Boundary between what happened and what is merely extrapolated. */
   today: string
+  /** Drawn and named, and the area fills from it rather than from the floor. */
+  baseline?: Baseline
+  /**
+   * Whether zero belongs in the frame. It does for a balance, a valuation or a
+   * performance, which are all read against it; it does not for a price, where
+   * forcing it flattens the variation into a straight line.
+   */
+  zeroBased?: boolean
+  ariaLabel?: string
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const inkRef = useRef<CanvasRenderingContext2D | null>(null)
   const [width, setWidth] = useState(0)
-  const [slots, setSlots] = useState<Map<string, number>>(
-    () => new Map(bestFunded(lines, rows, SLOT_VARS.length).map((a, i) => [a.id, i])),
-  )
+  const [slots, setSlots] = useState<Map<string, number>>(() => openingSlots(lines, rows))
   const [hover, setHover] = useState<number | null>(null)
+
+  // Which lines are shown is state, so it survives a rescoping of the same
+  // chart (the toggles are not lost when the window changes). But when the
+  // caller hands over a different *set* of lines, that state designates series
+  // that no longer exist and every one of them is filtered out: the chart goes
+  // blank until it is remounted, which is why a reload used to "fix" it.
+  // Reset during render rather than in an effect, so nothing is ever painted
+  // empty.
+  const identity = lines.map((l) => l.id).join('|')
+  const [known, setKnown] = useState(identity)
+  if (known !== identity) {
+    setKnown(identity)
+    setSlots(openingSlots(lines, rows))
+  }
 
   useEffect(() => {
     const el = wrapRef.current
@@ -173,6 +238,30 @@ export function BalanceChart({
   // repeated hue would stack two washes on top of each other.
   const areaId = series.find((s) => s.slot === 0)?.id
 
+  const allValues = series.flatMap((s) => s.values)
+  // What has to stay in frame besides the data: zero when the series is read
+  // against it, and the baseline when there is one, since a reference nobody
+  // can see is not one.
+  const anchors = [...(zeroBased ? [0] : []), ...(baseline ? [baseline.value] : [])]
+  const min = Math.min(...allValues, ...anchors)
+  const max = Math.max(...allValues, ...anchors)
+  const pad = (max - min) * 0.1 || Math.abs(max) * 0.1 || 50
+  // A baseline keeps room under it: pinned to the frame it merges with the
+  // axis, and a performance that never left zero would then be drawn on the
+  // border itself, which reads as nothing drawn at all.
+  const y0 = zeroBased && min >= 0 && !baseline ? min : min - pad
+  const y1 = max + pad
+  const areaFloor = baseline?.value ?? y0
+
+  const tickStep = niceStep(y1 - y0)
+  const yTicks: number[] = []
+  // Walked by index, not by adding the step: a step of 0,01 accumulates its
+  // own rounding error and lands the labels off the round numbers.
+  for (let i = Math.ceil(y0 / tickStep); i * tickStep <= y1; i++) yTicks.push(i * tickStep)
+  // Amounts to the precision the scale itself resolves. Whole euros read a
+  // balance fine and turn a token at 0,42 € into "0 €".
+  const amount = (v: number) => eur(v, tickStep < 10 ? 2 : 0)
+
   const textWidth = (s: string) => inkRef.current?.measureText(s).width ?? s.length * LABEL_SIZE * 0.56
   // More labels than the height holds are dropped rather than stacked: the
   // legend and the tooltip still name every series.
@@ -184,21 +273,12 @@ export function BalanceChart({
   // The right margin IS the label column, so it is cut to the labels instead of
   // fixed: measured, capped at a third of the frame, and what still does not
   // fit is trimmed by us below rather than by the frame.
-  const wanted = Math.max(0, ...labels.map((l) => textWidth(`${l.name} · ${eur(l.v)}`))) + LABEL_PAD
-  const M = { t: M_T, r: narrow ? 14 : Math.round(Math.min(wanted, width * 0.34)), b: M_B, l: 46 }
-
-  const allValues = series.flatMap((s) => s.values)
-  const min = Math.min(...allValues, 0)
-  const max = Math.max(...allValues, 1)
-  const pad = (max - min) * 0.1 || 50
-  const y0 = min - (min < 0 ? pad : 0)
-  const y1 = max + pad
+  const wanted = Math.max(0, ...labels.map((l) => textWidth(`${l.name} · ${amount(l.v)}`))) + LABEL_PAD
+  // Rounded up, not to the nearest: rounding down half a pixel takes that
+  // half out of `room` below and trims a name that fitted.
+  const M = { t: M_T, r: narrow ? 14 : Math.ceil(Math.min(wanted, width * 0.34)), b: M_B, l: 46 }
   const X = (i: number) => M.l + (i / Math.max(1, days.length - 1)) * (width - M.l - M.r)
   const Y = (v: number) => M.t + (1 - (v - y0) / (y1 - y0)) * (H - M.t - M.b)
-
-  const tickStep = Math.max(500, Math.ceil((y1 - y0) / 4 / 500) * 500)
-  const yTicks: number[] = []
-  for (let v = Math.ceil(y0 / tickStep) * tickStep; v <= y1; v += tickStep) yTicks.push(v)
 
   // Day labels on short windows, month labels beyond: the tick has to stay
   // readable, and repeating "août" eight times says nothing.
@@ -218,7 +298,7 @@ export function BalanceChart({
   // the frame from both edges: pushing down alone walked off the bottom.
   const room = M.r - LABEL_PAD
   const ends = labels
-    .map((l) => ({ ...l, text: fitLabel(l.name, eur(l.v), room, textWidth), y: Y(l.v) }))
+    .map((l) => ({ ...l, text: fitLabel(l.name, amount(l.v), room, textWidth), y: Y(l.v) }))
     .sort((a, b) => a.y - b.y)
   for (let i = 1; i < ends.length; i++) {
     if (ends[i]!.y - ends[i - 1]!.y < LABEL_GAP) ends[i]!.y = ends[i - 1]!.y + LABEL_GAP
@@ -243,26 +323,30 @@ export function BalanceChart({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-1">
-        {lines.map((a) => {
-          const on = slots.has(a.id)
-          return (
-            <Toggle
-              key={a.id}
-              size="sm"
-              pressed={on}
-              onPressedChange={() => toggle(a.id)}
-              className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
-            >
-              <span
-                className="h-0.5 w-3.5 rounded-full"
-                style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
-              />
-              {a.name}
-            </Toggle>
-          )
-        })}
-      </div>
+      {/* A legend of one is noise: it names what the section title already
+          says, and its toggle refuses to turn off. */}
+      {lines.length > 1 && (
+        <div className="flex flex-wrap gap-1">
+          {lines.map((a) => {
+            const on = slots.has(a.id)
+            return (
+              <Toggle
+                key={a.id}
+                size="sm"
+                pressed={on}
+                onPressedChange={() => toggle(a.id)}
+                className="h-7 gap-1.5 px-2 text-xs font-normal text-faint data-[state=on]:text-muted-foreground"
+              >
+                <span
+                  className="h-0.5 w-3.5 rounded-full"
+                  style={{ background: on ? SLOT_VARS[slots.get(a.id)!] : 'var(--faint)' }}
+                />
+                {a.name}
+              </Toggle>
+            )
+          })}
+        </div>
+      )}
 
       <div
         ref={wrapRef}
@@ -274,7 +358,7 @@ export function BalanceChart({
         {/* Nothing is drawn before the container has been measured: a guessed
             width pushes the marks out of frame instead of scaling them. */}
         {width > 0 && (
-          <svg width="100%" height={H} role="img" aria-label="Évolution des soldes par compte">
+          <svg width="100%" height={H} role="img" aria-label={ariaLabel}>
             {yTicks.map((v) => (
               <g key={v}>
                 <line x1={M.l} x2={width - M.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" />
@@ -286,11 +370,27 @@ export function BalanceChart({
                   fontSize={10.5}
                   fill="var(--faint)"
                 >
-                  {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                  {tickLabel(v, tickStep)}
                 </text>
               </g>
             ))}
             <line x1={M.l} x2={width - M.r} y1={Y(y0)} y2={Y(y0)} stroke="var(--border)" />
+            {baseline && (
+              <g>
+                {/* Solid, and heavier than the grid: dashes are taken, they mean
+                    "extrapolated" everywhere else on this chart. */}
+                <line
+                  x1={M.l}
+                  x2={width - M.r}
+                  y1={Y(baseline.value)}
+                  y2={Y(baseline.value)}
+                  stroke="var(--muted-foreground)"
+                />
+                <text x={M.l + 5} y={Y(baseline.value) - 5} fontSize={10} fill="var(--muted-foreground)">
+                  {baseline.name}
+                </text>
+              </g>
+            )}
             {hasFuture && (
               <g>
                 {/* The flag marks where measured history stops. One word, no essay. */}
@@ -348,7 +448,10 @@ export function BalanceChart({
                 <g key={s.id}>
                   {s.id === areaId && (
                     <polygon
-                      points={`${M.l},${Y(y0)} ${past} ${X(lastPast)},${Y(y0)}`}
+                      // From the baseline when there is one: the wash is then
+                      // what the curve gained or lost against it, which is the
+                      // whole reading. From the floor otherwise, as before.
+                      points={`${M.l},${Y(areaFloor)} ${past} ${X(lastPast)},${Y(areaFloor)}`}
                       fill={SLOT_VARS[0]}
                       opacity={0.08}
                     />
@@ -424,7 +527,7 @@ export function BalanceChart({
                 <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />
                 <span className="text-muted-foreground">{s.name}</span>
                 <span className="ml-auto pl-3 font-mono font-semibold tabular">
-                  {eur(s.values[hover] ?? 0)}
+                  {amount(s.values[hover] ?? 0)}
                 </span>
               </p>
             ))}

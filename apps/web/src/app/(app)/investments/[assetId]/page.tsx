@@ -14,16 +14,25 @@ import { BalanceChart } from '@/components/balance-chart'
 import { OperationRows } from '@/components/investment-forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
+import { WindowTabs } from '@/components/window-tabs'
+import { resolveChartWindow } from '@/lib/chart-window'
 import { eur, eurSigned } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
 /** One holding, and the two things one wants of it: its curve and its history. */
-export default async function AssetPage({ params }: { params: Promise<{ assetId: string }> }) {
+export default async function AssetPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ assetId: string }>
+  searchParams: Promise<{ window?: string }>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
   const { assetId } = await params
+  const query = await searchParams
 
   const assets = await listAssets(userId)
   const asset = assets.find((a) => a.id === assetId)
@@ -42,6 +51,10 @@ export default async function AssetPage({ params }: { params: Promise<{ assetId:
   const mine = operations.filter((o) => o.assetId === assetId)
   const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
   const gain = position?.gain === null || position === null ? null : Number(position.gain)
+  // The window is cut here rather than in SQL: a year of closes is 256 points,
+  // which the page already holds to say how many sessions are known.
+  const from = history[0] ? resolveChartWindow(query, today(), history[0].quotedOn).from : null
+  const shown = from === null ? [] : history.filter((point) => point.quotedOn >= from)
 
   return (
     <>
@@ -81,15 +94,19 @@ export default async function AssetPage({ params }: { params: Promise<{ assetId:
         )}
 
         {history.length > 1 && (
-          <Section title="Cours" description={`${history.length} séances connues`}>
+          <Section title="Cours" description={`${shown.length} séances connues`} action={<WindowTabs />}>
             <BalanceChart
               lines={[{ id: 'price', name: 'Cours' }]}
-              rows={history.map((point) => ({
+              rows={shown.map((point) => ({
                 day: point.quotedOn,
                 lineId: 'price',
                 balance: Number(point.price),
               }))}
               today={today()}
+              // A price is not read against zero: forcing it in draws a share
+              // at 709 € as a flat line and hides the very move being looked at.
+              zeroBased={false}
+              ariaLabel={`Cours de ${asset.name}`}
             />
           </Section>
         )}

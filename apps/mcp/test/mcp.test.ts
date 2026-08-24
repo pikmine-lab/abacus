@@ -1048,3 +1048,60 @@ test('investments: funding is a movement, what happens inside is an operation', 
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
   assert.equal((operations.json() as unknown[]).length, 5)
 })
+
+test('investments: the history answers "what did it make", already totalled', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'PEA', behavior: 'investment' })
+
+  // Nothing bought yet is not a flat history, it is no history at all, and the
+  // answer says so in words rather than handing back an empty shape.
+  const empty = (await call(client, 'get_portfolio_history')).json() as { history: null; note: string }
+  assert.equal(empty.history, null)
+  assert.match(empty.note, /Nothing has been bought/)
+
+  await call(client, 'manage_assets', { action: 'create', name: 'SCPI' })
+  await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 100,
+    pricedOn: '2026-01-01',
+  })
+  await call(client, 'declare_movements', {
+    movements: [{ date: '2026-01-01', amount: 1000, type: 'transfer', account: 'Courant', toAccount: 'PEA' }],
+  })
+  await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-01', account: 'PEA', type: 'buy', asset: 'SCPI', quantity: 10, amount: 1000 },
+    ],
+  })
+  await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 130,
+    pricedOn: '2026-01-06',
+  })
+
+  const history = (
+    await call(client, 'get_portfolio_history', {
+      from: '2026-01-01',
+      to: '2026-01-08',
+    })
+  ).json() as {
+    step: string
+    start: { performance: number }
+    end: { performance: number; value: number }
+    high: { day: string; performance: number }
+    milestones: unknown[]
+  }
+  assert.equal(history.step, 'day')
+  assert.equal(history.start.performance, 0)
+  // 10 units at 130 against 1000 put in: the reader never has to do that itself.
+  assert.equal(history.end.value, 1300)
+  assert.equal(history.end.performance, 300)
+  // The first day the peak was reached, not the last one holding it: "at its
+  // high since the 6th" is what a reader can do something with.
+  assert.equal(history.high.day, '2026-01-06')
+  assert.equal(history.milestones.length, 8)
+})

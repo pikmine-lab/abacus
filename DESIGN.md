@@ -115,11 +115,33 @@ de page.
 ## Graphes
 
 - **Une seule rangée de filtres**, au-dessus du contenu, qui scope tout ce qui suit.
-  Jamais de contrôle de période par graphe. Le sélecteur écrit dans l'URL, donc une
-  vue cadrée se partage, se recharge et se défait au bouton retour.
+  Le sélecteur écrit dans l'URL, donc une vue cadrée se partage, se recharge et se
+  défait au bouton retour.
+- **Un contrôle de période se pose là où porte sa portée.** La rangée est la forme
+  d'un écran dont tout se lit sur une période. Quand seul un graphe en a une, ses
+  durées se posent sur sa section (Placements : les tuiles, les positions et les
+  opérations sont des instantanés), parce qu'une rangée y promettrait de cadrer ce
+  qu'elle ne cadre pas. Ce qui se déplace est le contrôle, pas le reste : il écrit
+  dans l'URL comme la rangée, et un écran ne porte jamais deux périodes.
 - **Une fenêtre nommée dans le titre** peut différer de la période de la page quand
   la forme l'exige (« 12 derniers mois » pour un graphe mensuel) : c'est déclaré,
   pas subi.
+- **Deux lectures d'une même série, nommées par l'onglet actif.** Un portefeuille se
+  lit en valorisation contre les apports (« combien j'ai mis, combien ça vaut ») ou en
+  écart entre les deux, apports posés à plat (« combien ça a fait ») : deux questions,
+  pas une version dégradée de l'autre. La seconde existe parce que la première écrase
+  l'écart, du même ordre de grandeur que les courbes, et parce qu'elle seule ne saute
+  pas quand un apport rentre. Le titre de section ne redit pas l'onglet sélectionné ;
+  la description dit la méthode (« valorisation − apports »).
+- **Une horizontale de référence se trace et se nomme**, en trait plein plus marqué
+  que la grille : le pointillé veut dire « extrapolé » partout ailleurs. L'aire part
+  d'elle, pas du plancher, pour que le lavis soit ce qui a été gagné ou perdu.
+- **Le zéro n'entre dans l'échelle que quand la série se lit contre lui** : un solde,
+  une valorisation, une performance. Un cours ne se lit pas contre zéro, et l'y forcer
+  aplatit en ligne droite la variation qu'on est venu voir. Le pas de la grille est un
+  nombre rond taillé sur l'amplitude (1, 2 ou 5 fois une puissance de dix), jamais une
+  constante : un pas de 500 € écrit pour des soldes ne donnait qu'un trait à une action
+  à 709 € comme à une performance de 312 €.
 - **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
   porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
   contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août

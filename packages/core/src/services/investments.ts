@@ -33,6 +33,7 @@ import {
   valuationSeries,
 } from '../db/datasources/investments.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
+import { today } from '../domain/period.ts'
 import type {
   Account,
   Asset,
@@ -409,6 +410,96 @@ export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
  */
 export async function valuation(userId: string, from: string, to: string): Promise<ValuationPoint[]> {
   return await valuationSeries(db(), userId, from, to)
+}
+
+/** One day of the portfolio, and what it had made by then. */
+export interface ValuationMilestone {
+  day: string
+  /** Cash plus holdings, at the last close known that day. */
+  value: number
+  /** What movements had put in, net of what they had taken out. */
+  contributions: number
+  /** Value minus contributions: dividends and fees included, they went through the cash. */
+  performance: number
+}
+
+export interface ValuationHistory {
+  from: string
+  to: string
+  /** What one milestone covers: a day on short windows, a month beyond. */
+  step: 'day' | 'month'
+  start: ValuationMilestone
+  end: ValuationMilestone
+  /** Best and worst the performance ever got, over the whole window. */
+  high: ValuationMilestone
+  low: ValuationMilestone
+  milestones: ValuationMilestone[]
+}
+
+/** Milestones by day up to this many, by month beyond: a year is 365 lines. */
+const DAILY_LIMIT = 45
+
+function milestone(point: ValuationPoint): ValuationMilestone {
+  const value = round(Number(point.cash) + Number(point.holdings))
+  const contributions = round(Number(point.contributions))
+  return { day: point.day, value, contributions, performance: round(value - contributions) }
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/**
+ * How the portfolio moved over a window, already totalled: where it started,
+ * where it ended, its best and worst day, and milestones in between. The daily
+ * series behind it is what the web draws; a reader that cannot check its own
+ * arithmetic gets the conclusions instead, and never a year of raw points to
+ * add up itself.
+ *
+ * Null when nothing has ever been bought: there is no history to speak of, as
+ * opposed to a flat one.
+ */
+export async function valuationHistory(
+  userId: string,
+  from?: string,
+  to?: string,
+): Promise<ValuationHistory | null> {
+  const sql = db()
+  const first = (await listOperationsDs(sql, userId)).at(-1)?.operatedOn
+  if (!first) return null
+  const end = to ?? today()
+  // Never earlier than the first operation: the window asked for can reach
+  // back further than anything happened, and empty days say nothing.
+  const start = from && from > first ? from : first
+  if (start > end) return null
+
+  const series = await valuationSeries(sql, userId, start, end)
+  const points = series.map(milestone)
+  if (points.length === 0) return null
+
+  const step = points.length <= DAILY_LIMIT ? 'day' : 'month'
+  // A month's milestone is its last known day, so the closing figure is the
+  // one being reported rather than an average of something.
+  const milestones =
+    step === 'day'
+      ? points
+      : points.filter(
+          (p, i) => i === points.length - 1 || points[i + 1]!.day.slice(0, 7) !== p.day.slice(0, 7),
+        )
+
+  return {
+    from: start,
+    to: end,
+    step,
+    start: points[0]!,
+    end: points[points.length - 1]!,
+    // Measured on every day, not on the milestones: a peak between two month
+    // ends is still a peak. A tie keeps the first day it was reached, which is
+    // the one that says something: "at its high since the 6th".
+    high: points.reduce((best, p) => (p.performance > best.performance ? p : best)),
+    low: points.reduce((worst, p) => (p.performance < worst.performance ? p : worst)),
+    milestones,
+  }
 }
 
 /** The price history of one asset, for its own view. */

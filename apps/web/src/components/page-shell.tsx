@@ -72,7 +72,9 @@ export function Section({
       <div className="flex items-baseline gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">{title}</h2>
         {description && <p className="min-w-0 truncate text-[11.5px] text-faint">{description}</p>}
-        {action && <div className="ml-auto shrink-0">{action}</div>}
+        {/* No shrink-0: an action carrying several controls wraps them rather
+            than pushing the row past the page edge on a narrow screen. */}
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       {children}
     </section>
