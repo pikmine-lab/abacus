@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
+import { db } from '../src/db/client.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import { issuerOf, parseGeckoSearch, parseYahooSearch, payoutOf } from '../src/prices/search.ts'
 import { parseCoinGecko, parseYahoo, type Quote } from '../src/prices/sources.ts'
@@ -162,19 +163,84 @@ test('a refreshed price values the position, and the freshness bound stops the n
   assert.deepEqual(calls, ['CW8.PA'])
 })
 
-test('a price in another currency is refused rather than mixed into euros', async () => {
+/** Daily closes per reference: the instrument's own, and the pair's. */
+function stubHistories(byRef: Record<string, { quotedOn: string; price: string }[]>) {
+  const calls: string[] = []
+  return {
+    calls,
+    history: async (_source: string, reference: string) => {
+      calls.push(reference)
+      return byRef[reference] ?? []
+    },
+  }
+}
+
+test('a foreign quote converts to euros at its day rate, history close by close', async () => {
   const user = await seedUser()
-  const pea = await createAccount({ userId: user, name: 'CTO', behavior: 'investment' })
+  const cto = await createAccount({ userId: user, name: 'CTO', behavior: 'investment' })
   const apple = await declareAsset(user, {
     name: 'Apple',
     instrument: { ...WORLD, priceSourceRef: 'AAPL', name: 'Apple Inc.' },
   })
   await recordOperations(user, [
-    { accountId: pea.id, assetId: apple.id, type: 'buy', quantity: 1, amount: 250, operatedOn: '2026-08-05' },
+    { accountId: cto.id, assetId: apple.id, type: 'buy', quantity: 1, amount: 250, operatedOn: '2026-08-05' },
+  ])
+
+  const { fetcher } = stubFetcher({ currency: 'USD', price: '300' })
+  const { history, calls } = stubHistories({
+    AAPL: [
+      { quotedOn: '2026-08-19', price: '200' },
+      // A close on a day the pair never quoted: skipped, never guessed.
+      { quotedOn: '2026-06-01', price: '100' },
+    ],
+    'USDEUR=X': [
+      { quotedOn: '2026-08-18', price: '0.8' },
+      { quotedOn: '2026-08-21', price: '0.85' },
+    ],
+  })
+  await refreshQuotes(user, fetcher, history)
+
+  // The spot converts at the last pair close; the position is valued in euros.
+  const [position] = await positions(user)
+  assert.equal(position!.price, '255.00000000')
+  assert.equal(position!.value, '255.00')
+
+  // The backfilled close converts at its own day's rate (0.8, not 0.85), and
+  // the uncovered day is a missing point, not a wrong one.
+  const rows = await db()<{ quotedOn: string; price: string }[]>`
+    select p.quoted_on, p.price from instrument_price p
+    join instrument i on i.id = p.instrument_id
+    where i.price_source_ref = 'AAPL' order by p.quoted_on
+  `
+  assert.deepEqual(
+    rows.map((r) => [r.quotedOn, Number(r.price)]),
+    [
+      ['2026-08-19', 160],
+      ['2026-08-21', 255],
+    ],
+  )
+  // The venue's currency is learnt from the quote itself.
+  const [instrument] = await db()<{ currency: string }[]>`
+    select currency from instrument where price_source_ref = 'AAPL'
+  `
+  assert.equal(instrument!.currency, 'USD')
+  assert.deepEqual(calls.sort(), ['AAPL', 'USDEUR=X'])
+})
+
+test('a foreign quote with no usable rate leaves the position unpriced', async () => {
+  const user = await seedUser()
+  const cto = await createAccount({ userId: user, name: 'CTO', behavior: 'investment' })
+  const apple = await declareAsset(user, {
+    name: 'Apple',
+    instrument: { ...WORLD, priceSourceRef: 'AAPL', name: 'Apple Inc.' },
+  })
+  await recordOperations(user, [
+    { accountId: cto.id, assetId: apple.id, type: 'buy', quantity: 1, amount: 250, operatedOn: '2026-08-05' },
   ])
 
   const { fetcher } = stubFetcher({ currency: 'USD', price: '309' })
-  await refreshQuotes(user, fetcher)
+  const { history } = stubHistories({})
+  await refreshQuotes(user, fetcher, history)
   const [position] = await positions(user)
   assert.equal(position!.price, null)
   assert.equal(position!.value, null)

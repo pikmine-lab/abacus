@@ -26,7 +26,10 @@ export interface InstrumentHit {
   isin: string | null
   price: string | null
   currency: string | null
-  /** False when nothing quotes it in euros, which this app cannot hold yet. */
+  /**
+   * False when no venue answered a price at all: a foreign one converts at
+   * read (issue #47), so only the unpriceable stays out of reach.
+   */
   available: boolean
   /** Other venues of the same fund, so the grouping can be seen, not guessed. */
   otherVenues: number
@@ -183,7 +186,7 @@ export async function searchInstruments(query: string): Promise<InstrumentHit[]>
     // European lines without that word, and without them the only selectable
     // results left were tokenized crypto imitations of the very ETF being
     // looked for. UCITS is not a preference, it is the regulatory frame of the
-    // funds this application can hold, since it values euros only.
+    // funds a European saver actually buys.
     isin || /ucits/i.test(term) ? Promise.resolve([] as YahooQuote[]) : searchYahoo(`${encoded}%20ucits`),
     getJson(`https://api.coingecko.com/api/v3/search?query=${encoded}`)
       .then(parseGeckoSearch)
@@ -218,9 +221,8 @@ export async function searchInstruments(query: string): Promise<InstrumentHit[]>
 /**
  * One entry per fund, holding the listing to read prices from. Every listing is
  * priced in parallel, then each fund keeps its cheapest-to-read line: one quoted
- * in euros if it has any, since that is the only kind this application can
- * value, and its first line otherwise so the fund can still be shown as out of
- * reach instead of vanishing.
+ * in euros if it has any (a euro line needs no conversion, so it stays the
+ * default), and its first line otherwise, which converts at read.
  */
 async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Promise<InstrumentHit[]> {
   const priced = await Promise.all(
@@ -246,11 +248,11 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
     else byFund.set(key, [entry])
   }
 
-  // A fund with no euro line among the results is not out of reach: Yahoo simply
-  // did not return the venue that has one. Asked for an ISIN it answers a single
+  // A fund with no euro line among the results often has one: Yahoo simply did
+  // not return the venue that carries it. Asked for an ISIN it answers a single
   // listing, and it is regularly the London one in pounds while the same fund
-  // trades in euros on XETRA and Milan. So the ones that look unavailable get
-  // their other venues fetched before being written off.
+  // trades in euros on XETRA and Milan. A euro line needs no conversion, so it
+  // is still worth looking for before settling on a foreign one.
   const entries = [...byFund.entries()]
   const withoutEuro = entries.filter(([, group]) => !group.some((e) => e.currency === 'EUR'))
   // In parallel: four of these in a row was the whole second and a half a wide
@@ -283,7 +285,8 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
       isin,
       price: chosen.price,
       currency: chosen.currency,
-      available: euro !== undefined,
+      // Priceable at all: a foreign quote converts, an unpriced line cannot.
+      available: chosen.price !== null,
       otherVenues: Math.max(venues - 1, 0),
     }
   })
@@ -302,9 +305,9 @@ export async function listVenues(name: string): Promise<InstrumentVenue[]> {
     venue: entry.listing.exchDisp ?? null,
     price: entry.price,
     currency: entry.currency,
-    // Only euros can be held until multi-currency lands (issue #10), so the
-    // others are shown with their currency rather than hidden.
-    available: entry.currency === 'EUR',
+    // A foreign quote converts at read: only a line whose price could not be
+    // read stays unpickable.
+    available: entry.price !== null,
   }))
 }
 

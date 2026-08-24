@@ -284,6 +284,8 @@ export interface RefreshCandidate {
   instrumentId: string
   priceSource: Instrument['priceSource']
   priceSourceRef: string
+  /** The currency the venue quotes in, as last learnt from a quote. */
+  instrumentCurrency: string
   /** When we last asked, which is what the freshness bound reads. */
   fetchedAt: Date | null
   /** Null when never fetched; false buys the longer closed-market bound. */
@@ -298,6 +300,7 @@ export interface RefreshCandidate {
 export async function instrumentsToRefresh(tx: Executor, userId: string): Promise<RefreshCandidate[]> {
   return await tx<RefreshCandidate[]>`
     select distinct i.id as instrument_id, i.price_source, i.price_source_ref,
+           i.currency as instrument_currency,
            q.fetched_at, q.market_open
     from asset a
     join instrument i on i.id = a.instrument_id
@@ -451,6 +454,31 @@ export async function insertPriceHistory(
     insert into instrument_price ${tx(rows, 'instrumentId', 'quotedOn', 'price')}
     on conflict (instrument_id, quoted_on) do update set price = excluded.price
   `
+}
+
+/** Every stored close of one instrument, oldest first. */
+export async function listCloses(
+  tx: Executor,
+  instrumentId: string,
+): Promise<{ quotedOn: string; price: string }[]> {
+  return await tx<{ quotedOn: string; price: string }[]>`
+    select quoted_on, price from instrument_price
+    where instrument_id = ${instrumentId}
+    order by quoted_on
+  `
+}
+
+/**
+ * Records the currency a venue actually quotes in, learnt from the quote
+ * itself: declarations never state it from memory, and the stored prices stay
+ * EUR counter-values regardless.
+ */
+export async function setInstrumentCurrency(
+  tx: Executor,
+  instrumentId: string,
+  currency: string,
+): Promise<void> {
+  await tx`update instrument set currency = ${currency} where id = ${instrumentId}`
 }
 
 /** The last close at or before a day: what "that day's rate" means on a weekend. */
