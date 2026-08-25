@@ -181,10 +181,10 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 - **Aucune sauvegarde Postgres** sur le socle, et ces données ne sont pas recollectables.
   Risque assumé, suivi par l'issue #14 : ne pas le redécouvrir à chaque session, ne pas le
   retrancher seul.
-- **Piège** : les checks requis de la protection de `main` portent les noms complets des
-  jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un Dockerfile ou la matrice
-  casse silencieusement le merge des PR (checks « attendus » à jamais) : mettre à jour la
-  protection en même temps.
+- **Piège** : `main` est gouvernée par le ruleset du même nom, et ses checks requis portent
+  les noms complets des jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un
+  Dockerfile ou la matrice casse silencieusement le merge des PR (checks « attendus » à
+  jamais) : mettre à jour le ruleset en même temps.
 
 ## Se connecter au MCP de production
 
