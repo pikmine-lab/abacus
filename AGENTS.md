@@ -144,6 +144,14 @@ tests → build des deux images → déploiement Dokploy. En conséquence :
 - **Les features passent par une pull request.** Branche courte, PR vers `main`, la CI
   (lint, typecheck, tests, build web et images) doit être verte avant merge. Le merge
   déploie, il n'y a pas d'étape manuelle.
+- **Le merge passe par la file d'attente de GitHub.** « Merge when ready » met la PR en
+  file au lieu de la poser sur `main` : GitHub rejoue la CI sur une branche temporaire qui
+  porte `main`, les PR situées devant et la candidate, et ne merge que si ce run est vert.
+  C'est ce qui laisse un contrôle voir une PR encore non mergée, seul endroit d'où deux
+  branches parallèles sont visibles ensemble (`scripts/check-migration-numbers.sh` s'en
+  sert pour refuser deux migrations de même numéro). En conséquence, **un job requis ne
+  porte jamais de filtre d'événement** : un check requis qui ne se déclenche pas sur
+  `merge_group` ne se reporte jamais et la PR reste en file jusqu'au timeout.
 - Un commit direct sur `main` reste techniquement possible mais réservé aux corrections
   triviales ; tout ce qui porte du comportement passe en PR.
 - Rollback : relancer le provisionneur avec un tag antérieur

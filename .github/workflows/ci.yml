@@ -3,6 +3,12 @@
 # repository through the embedded provisioner (provision/). Pull requests run
 # the tests and a build without pushing anything.
 #
+# The same jobs run on merge_group, the event the merge queue fires on the
+# temporary branch holding main plus the pull requests queued ahead. A required
+# check missing from that event never reports, and the pull request then sits in
+# the queue until it times out, so every required job stays free of an event
+# filter. Only deploy is held back, by the ref guard it already had.
+#
 # The deploy job is separate on purpose: environment secrets are only handed to
 # the job that declares the environment, so the Dokploy token (instance-wide,
 # not scoped to one project) never shares a process with the Docker actions.
@@ -15,8 +21,23 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The check reads back to the merge base against origin/main, which
+          # the shallow single-branch clone checkout takes by default has
+          # neither of.
+          fetch-depth: 0
+      - run: scripts/check-migration-numbers.sh
+
   test:
     runs-on: ubuntu-latest
     permissions:
