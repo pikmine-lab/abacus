@@ -254,7 +254,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_spending.',
+        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),

@@ -18,7 +18,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check, commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_spending).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check, commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -78,14 +78,20 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
   )
 
   server.registerTool(
-    'analyze_spending',
+    'analyze_flows',
     {
       description:
-        'Breaks spending down over a period by category, actor, activity, or the group its categories belong to. Always returns two readings: gross (what actually left the accounts) and net (gross minus linked refunds actually received), plus the number of movements behind each row. Rows are ranked by net, biggest first, because the net is what the period actually cost: keep that order when reporting, it is the one the user sees on screen. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". For freelance revenue, group by activity and look at incomes through list_movements (kind: income). A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
+        'Breaks a period down by category, actor, activity, or the group its categories belong to, on either side of the ledger: spending by default, what came in with kind: income. Rows are ranked biggest first, the order the user sees on screen: keep it when reporting. An expense row carries two readings, gross (what actually left the accounts) and net (gross minus linked refunds actually received), and the ranking follows the net, because the net is what the period actually cost. An income row carries one amount: a refund is an advance coming back, not money earned, so refunds are left out of the income side rather than deducted from it. Every row says how many movements make it. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". Freelance revenue is kind: income grouped by activity. A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
         groupBy: z.enum(['category', 'actor', 'activity', 'categoryGroup']),
+        kind: z
+          .enum(['expense', 'income'])
+          .optional()
+          .describe(
+            'Which side of the ledger to break down. expense (default): where the money went. income: where it came from. An internal transfer is neither, so it never shows in either',
+          ),
         reading: z
           .enum(['cash', 'accrual'])
           .optional()
@@ -94,12 +100,17 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           ),
       }),
     },
-    async ({ from, to, groupBy, reading = 'cash' }) =>
+    async ({ from, to, groupBy, kind = 'expense', reading = 'cash' }) =>
       run(async () => {
+        // An income has one figure where an expense has two: a refund never
+        // enters the income side, so a gross and a net there would be the same
+        // number written twice, and reading them as a pair would invent a
+        // difference.
         const line = (r: BreakdownRow, dimension: string) => ({
           [dimension]: r.label ?? '(none)',
-          gross: Number(r.gross),
-          net: Number(r.net),
+          ...(kind === 'expense'
+            ? { gross: Number(r.gross), net: Number(r.net) }
+            : { amount: Number(r.gross) }),
           movements: Number(r.count),
         })
         // A group has no entity behind it, so it cannot be drilled into by a
@@ -108,16 +119,16 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         // up by whoever asked, which is exactly the arithmetic to avoid.
         const rows =
           groupBy === 'categoryGroup'
-            ? (await spendingByCategoryGroup(userId, from, to, 'expense', reading)).map((mass) => ({
+            ? (await spendingByCategoryGroup(userId, from, to, kind, reading)).map((mass) => ({
                 ...line(mass, 'categoryGroup'),
                 categories: mass.categories.map((c) => line(c, 'category')),
               }))
-            : (await spendingBreakdown(userId, from, to, groupBy, 'expense', reading)).map((r) =>
-                line(r, groupBy),
-              )
-        // The reading is part of the answer, not part of the question: two
-        // totals exist for one month, and a table without its label is unusable.
+            : (await spendingBreakdown(userId, from, to, groupBy, kind, reading)).map((r) => line(r, groupBy))
+        // Both defaults travel back with the figures: the side read is no
+        // longer in the tool's name, and one month has two legitimate totals.
+        // A table saying neither cannot be read out loud.
         return ok({
+          kind,
           reading,
           window:
             reading === 'accrual'

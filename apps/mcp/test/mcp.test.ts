@@ -786,14 +786,16 @@ test('spending reads back by category group through the MCP surface', async () =
   // Two categories, one mass; the groupless one is named as such. A mass comes
   // with what it merges, already totalled and ranked, so the caller never has
   // to add figures up or ask a second time to see inside it.
-  const byGroup = await call(client, 'analyze_spending', {
+  const byGroup = await call(client, 'analyze_flows', {
     from: '2026-08-01',
     to: '2026-08-31',
     groupBy: 'categoryGroup',
   })
-  // The reading travels with the figures: the same month has two legitimate
-  // totals, so a table without its label could not be read out loud.
+  // The side read and the reading travel with the figures: neither is in the
+  // tool's name any more, and the same month has two legitimate totals, so a
+  // table without those labels could not be read out loud.
   assert.deepEqual(byGroup.json(), {
+    kind: 'expense',
     reading: 'cash',
     window: 'movements settled between 2026-08-01 and 2026-08-31',
     rows: [
@@ -819,7 +821,7 @@ test('spending reads back by category group through the MCP surface', async () =
 
   // The other axes answer flat, and every row says how many movements make it,
   // which is what turns a line into a list_movements call.
-  const byCategory = await call(client, 'analyze_spending', {
+  const byCategory = await call(client, 'analyze_flows', {
     from: '2026-08-01',
     to: '2026-08-31',
     groupBy: 'category',
@@ -828,6 +830,78 @@ test('spending reads back by category group through the MCP surface', async () =
     { category: 'Courses', gross: 60, net: 60, movements: 1 },
     { category: 'Livraison', gross: 30, net: 30, movements: 1 },
     { category: 'Divers', gross: 10, net: 10, movements: 1 },
+  ])
+})
+
+test('incomes read back by who paid them through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME', activity: 'Freelance' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Restaurant' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Alex' })
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-08-01', amount: 2000, type: 'income', account: 'Courant', actor: 'Employeur' },
+      { date: '2026-08-05', amount: 800, type: 'income', account: 'Courant', actor: 'ACME' },
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+        expectedRefundAmount: 90,
+      },
+    ],
+  })
+  const results = (declared.json() as { results: { movementId: string }[] }).results
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-12',
+        amount: 90,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Alex',
+        refundsMovementId: results[2]!.movementId,
+      },
+    ],
+  })
+
+  // One figure per row on this side, and Alex is not one of them: the 90 that
+  // came back is an advance closing, not money earned.
+  const byActor = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'actor',
+    kind: 'income',
+  })
+  assert.deepEqual(byActor.json(), {
+    kind: 'income',
+    reading: 'cash',
+    window: 'movements settled between 2026-08-01 and 2026-08-31',
+    rows: [
+      { actor: 'Employeur', amount: 2000, movements: 1 },
+      { actor: 'ACME', amount: 800, movements: 1 },
+    ],
+  })
+
+  // The freelance question, answered in one call: the activity travels with
+  // the actor, so what is not freelance lands in the row no activity accounts
+  // for.
+  const byActivity = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'activity',
+    kind: 'income',
+  })
+  assert.deepEqual((byActivity.json() as { rows: unknown[] }).rows, [
+    { activity: '(none)', amount: 2000, movements: 1 },
+    { activity: 'Freelance', amount: 800, movements: 1 },
   ])
 })
 
@@ -897,7 +971,7 @@ test('a ghost movement reads back in the list and in no analysis', async () => {
 
   const byActor = async () =>
     (
-      await call(client, 'analyze_spending', {
+      await call(client, 'analyze_flows', {
         from: '2026-08-01',
         to: '2026-08-31',
         groupBy: 'actor',
@@ -994,7 +1068,7 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.equal(scpi!.unrealizedGain, 80)
 
   // The purchase is nowhere near the expenses: it is not one.
-  const spending = await call(client, 'analyze_spending', {
+  const spending = await call(client, 'analyze_flows', {
     from: '2026-01-01',
     to: '2026-12-31',
     groupBy: 'category',
