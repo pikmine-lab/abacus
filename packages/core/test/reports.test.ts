@@ -5,7 +5,7 @@ import { createActor } from '../src/services/actors.ts'
 import { createCategory } from '../src/services/catalog.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import {
-  firstMovementDay,
+  firstDeclaredDay,
   flowTotals,
   monthlyFlows,
   spendingBreakdown,
@@ -212,9 +212,9 @@ test('a group breakdown folds every category carrying it into one mass, and unfo
   )
 })
 
-test('the first movement day is null until something is declared', async () => {
+test('the first declared day is null until something is declared', async () => {
   const user = await seedUser()
-  assert.equal(await firstMovementDay(user), null)
+  assert.equal(await firstDeclaredDay(user), null)
 
   const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
   const shop = await createActor(user, { name: 'Shop' })
@@ -224,5 +224,5 @@ test('the first movement day is null until something is declared', async () => {
     sourceAccountId: account.id,
     targetActorId: shop.id,
   })
-  assert.equal(await firstMovementDay(user), '2026-02-14')
+  assert.equal(await firstDeclaredDay(user), '2026-02-14')
 })

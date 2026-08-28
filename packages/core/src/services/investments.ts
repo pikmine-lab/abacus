@@ -19,8 +19,8 @@ import {
   listInstruments,
   listOperations as listOperationsDs,
   lowestRunningQuantity,
-  movementsNetPerAccount,
   type NewInstrument,
+  netContributionsPerAccount,
   positions as positionsDs,
   setInstrumentCurrency,
   setInstrumentKind,
@@ -409,9 +409,10 @@ export interface PositionMass {
 export interface PortfolioAccount {
   account: Account
   /**
-   * The cash sitting on the account: what movements brought in and out, plus
-   * what operations moved inside it. Not the account's worth, which is this
-   * plus what the holdings are worth.
+   * The cash sitting on the account: what it already held when it was taken
+   * over, what movements brought in and out, and what operations moved inside
+   * it. Not the account's worth, which is this plus what the holdings are
+   * worth.
    */
   cash: string
   positions: Position[]
@@ -424,9 +425,10 @@ export interface PortfolioAccount {
   /** How many positions carry no price, so the value above says how partial it is. */
   unpriced: number
   /**
-   * What movements put in, net of what they took out. The reference the whole
-   * account is judged against: everything else that happened (dividends in,
-   * fees out, purchases, sales) stayed inside the account.
+   * What was put in: the cash the account already held when it was taken over,
+   * plus what movements brought, net of what they took out. The reference the
+   * whole account is judged against: everything else that happened (dividends
+   * in, fees out, purchases, sales) stayed inside the account.
    */
   netContributions: string
   /**
@@ -476,7 +478,7 @@ export function byNature(held: Position[]): PositionMass[] {
 export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
   const sql = db()
   const accounts = (await listAccountsWithBalance(sql, userId)).filter((a) => a.behavior === 'investment')
-  const contributions = await movementsNetPerAccount(sql, userId)
+  const contributions = await netContributionsPerAccount(sql, userId)
   return await Promise.all(
     accounts.map(async (account) => {
       const held = await positionsDs(sql, userId, account.id)
@@ -511,7 +513,7 @@ export interface ValuationMilestone {
   day: string
   /** Cash plus holdings, at the last close known that day. */
   value: number
-  /** What movements had put in, net of what they had taken out. */
+  /** What had been put in by then, opening cash and movements alike. */
   contributions: number
   /** Value minus contributions: dividends and fees included, they went through the cash. */
   performance: number

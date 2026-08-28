@@ -7,6 +7,7 @@ export interface NewAccount {
   institution?: string | null
   behavior: Account['behavior']
   currency?: string
+  openingBalance?: number
   openedOn?: string | null
 }
 
@@ -29,7 +30,9 @@ export async function listAccountsWithBalance(
   userId: string,
 ): Promise<(Account & { balance: string })[]> {
   return await tx<(Account & { balance: string })[]>`
-    select a.*, (coalesce(m.delta, 0) + coalesce(o.delta, 0))::numeric(14,2) as balance
+    -- A balance starts at what the account already held before the ledger
+    -- began; the movements pile onto that, never onto zero.
+    select a.*, (a.opening_balance + coalesce(m.delta, 0) + coalesce(o.delta, 0))::numeric(14,2) as balance
     from account a
     left join lateral (
       select sum(case when mv.target_account_id = a.id then mv.amount else -mv.amount end) as delta

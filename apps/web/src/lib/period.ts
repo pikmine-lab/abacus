@@ -187,12 +187,12 @@ function daysSpan(from: string, to: string): number {
 /**
  * Start day to ask a day-by-day or month-by-month series for. The open-ended
  * preset reaches back to the epoch, which would generate thousands of empty
- * rows; clamping it to the first declared movement asks for the same data
- * without the void in front of it.
+ * rows; clamping it to the first declared day asks for the same data without
+ * the void in front of it.
  */
-export function seriesFrom(period: Period, firstMovementDay: string | null): string {
-  if (!firstMovementDay) return period.to
-  return period.from > firstMovementDay ? period.from : firstMovementDay
+export function seriesFrom(period: Period, firstDeclaredDay: string | null): string {
+  if (!firstDeclaredDay) return period.to
+  return period.from > firstDeclaredDay ? period.from : firstDeclaredDay
 }
 
 const SHORT_MONTHS = [

@@ -35,12 +35,13 @@ export interface BalancePoint {
 }
 
 /**
- * Daily balance of every open account over a period: the running sum of all
- * movements up to each day. One query; the chart layer does no arithmetic.
+ * Daily balance of every open account over a period: what the account already
+ * held on its opening day, plus the running sum of all movements up to each
+ * day. One query; the chart layer does no arithmetic.
  *
- * The window is honoured exactly as asked, days before the first movement
- * included (they are legitimately zero). Choosing a sensible `from` is the
- * caller's job: see `firstMovementDay`.
+ * The window is honoured exactly as asked, days before the account opened
+ * included (it holds nothing there, which is what an opening says). Choosing a
+ * sensible `from` is the caller's job: see `firstDeclaredDay`.
  *
  * No reading to pick here, and there never will be one: a balance is the money
  * on the account on that day, so it sums settlement days and nothing else.
@@ -67,7 +68,8 @@ export async function balanceSeries(
       group by f.account_id, f.happened_on
     )
     select d.day, a.id as account_id,
-           coalesce(sum(fl.delta) filter (where fl.happened_on <= d.day), 0)::numeric(14,2) as balance
+           (case when a.opened_on <= d.day then a.opening_balance else 0 end
+            + coalesce(sum(fl.delta) filter (where fl.happened_on <= d.day), 0))::numeric(14,2) as balance
     from days d
     cross join account a
     left join flows fl on fl.account_id = a.id
@@ -78,13 +80,21 @@ export async function balanceSeries(
 }
 
 /**
- * Day of the earliest declared movement, or null when nothing is declared.
- * Views that offer an open-ended period ("everything") clamp their window to
- * it, so a series does not start at the epoch.
+ * Day the declared history starts, or null when nothing is declared. Views
+ * that offer an open-ended period ("everything") clamp their window to it, so
+ * a series does not start at the epoch.
+ *
+ * An account taken over with what it already held starts on its opening day,
+ * before any movement: cutting the window at the first movement would hide the
+ * plateau the opening draws, which is the whole account until then. An opening
+ * of zero draws no plateau, so it does not stretch the window.
  */
-export async function firstMovementDay(tx: Executor, userId: string): Promise<string | null> {
+export async function firstDeclaredDay(tx: Executor, userId: string): Promise<string | null> {
   const [row] = await tx<{ day: string | null }[]>`
-    select min(happened_on) as day from movement where user_id = ${userId}
+    select least(
+      (select min(happened_on) from movement where user_id = ${userId}),
+      (select min(opened_on) from account where user_id = ${userId} and opening_balance <> 0)
+    ) as day
   `
   return row?.day ?? null
 }

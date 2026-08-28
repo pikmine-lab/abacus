@@ -12,7 +12,7 @@ import { outstandingAdvances } from '@abacus/core/services/movements'
 import type { BreakdownRow } from '@abacus/core/services/reports'
 import {
   balanceSeries,
-  firstMovementDay,
+  firstDeclaredDay,
   flowTotals,
   monthlyFlows,
   spendingBreakdown,
@@ -84,7 +84,7 @@ export default async function OverviewPage({
     commitments,
   ] = await Promise.all([
     listAccounts(userId),
-    firstMovementDay(userId),
+    firstDeclaredDay(userId),
     flowTotals(userId, period.from, period.to, reading),
     previous ? flowTotals(userId, previous.from, previous.to, reading) : null,
     // A month-by-month chart needs months: this window is named in the
