@@ -15,15 +15,21 @@ import { today } from '../domain/period.ts'
 import type { BalanceCheck, Movement } from '../domain/types.ts'
 import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
 
-export interface BalanceCheckResult {
+export interface BalanceCheckEntry {
   check: BalanceCheck
-  /** declared minus computed; zero means the books match reality. */
+  /** declared minus computed; zero means the books matched reality that day. */
   gap: number
-}
-
-export interface BalanceCheckEntry extends BalanceCheckResult {
   /** The adjustment that settled the gap, when one was created. */
   adjustmentId: string | null
+  /**
+   * What the check still leaves unexplained: its gap until an adjustment
+   * settles it, zero once one does. The computed side stored on a check is
+   * frozen at the moment it was taken, on purpose, so settling a gap never
+   * shrinks `gap`. Anything that counts gaps outstanding reads this instead:
+   * built on the raw gap, an indicator stays lit on work already done, and a
+   * safety net nobody looks at any more protects nothing.
+   */
+  openGap: number
 }
 
 export interface BalanceCheckCorrection extends BalanceCheckEntry {
@@ -33,6 +39,12 @@ export interface BalanceCheckCorrection extends BalanceCheckEntry {
 
 function gapOf(check: BalanceCheck): number {
   return Math.round((Number(check.declaredBalance) - Number(check.computedBalance)) * 100) / 100
+}
+
+function entryOf(row: BalanceCheckRow): BalanceCheckEntry {
+  const { adjustmentId, ...check } = row
+  const gap = gapOf(check)
+  return { check, gap, adjustmentId, openGap: adjustmentId ? 0 : gap }
 }
 
 /**
@@ -52,7 +64,7 @@ export async function recordBalanceCheck(
   declaredBalance: number,
   checkedOn?: string,
   note?: string,
-): Promise<BalanceCheckResult> {
+): Promise<BalanceCheckEntry> {
   const sql = db()
   return await sql.begin(async (tx) => {
     const account = await getAccount(tx, userId, accountId)
@@ -67,13 +79,13 @@ export async function recordBalanceCheck(
       computedBalance: computed,
       note: note ?? null,
     })
-    return { check, gap: gapOf(check) }
+    return entryOf({ ...check, adjustmentId: null })
   })
 }
 
-export async function latestCheck(userId: string, accountId: string): Promise<BalanceCheckResult | null> {
-  const check = await latestBalanceCheck(db(), userId, accountId)
-  return check ? { check, gap: gapOf(check) } : null
+export async function latestCheck(userId: string, accountId: string): Promise<BalanceCheckEntry | null> {
+  const row = await latestBalanceCheck(db(), userId, accountId)
+  return row ? entryOf(row) : null
 }
 
 /** The checks of an account (or of every account), most recent first. */
@@ -84,11 +96,6 @@ export async function listChecks(
 ): Promise<BalanceCheckEntry[]> {
   const rows = await listBalanceChecks(db(), userId, accountId, limit)
   return rows.map((row) => entryOf(row))
-}
-
-function entryOf(row: BalanceCheckRow): BalanceCheckEntry {
-  const { adjustmentId, ...check } = row
-  return { check, gap: gapOf(check), adjustmentId }
 }
 
 /** Fields a correction may touch; anything absent keeps its current value. */
@@ -129,17 +136,17 @@ export async function correctBalanceCheck(
       note: input.note !== undefined ? input.note : current.note,
     }))!
     const gap = gapOf(check)
-    if (!adjustment) return { check, gap, adjustmentId: null, adjustment: 'none' }
+    if (!adjustment) return { ...entryOf({ ...check, adjustmentId: null }), adjustment: 'none' }
     if (gap === 0) {
       await deleteMovementIn(tx, userId, adjustment.id)
-      return { check, gap, adjustmentId: null, adjustment: 'removed' }
+      return { ...entryOf({ ...check, adjustmentId: null }), adjustment: 'removed' }
     }
     await correctMovementIn(tx, userId, adjustment.id, {
       happenedOn: checkedOn,
       ...adjustmentEndpoints(gap, check.accountId, actorOf(adjustment)),
       amount: Math.abs(gap),
     })
-    return { check, gap, adjustmentId: adjustment.id, adjustment: 'realigned' }
+    return { ...entryOf({ ...check, adjustmentId: adjustment.id }), adjustment: 'realigned' }
   })
 }
 

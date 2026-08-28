@@ -175,7 +175,7 @@ export default async function OverviewPage({
     .filter(({ account, check }) => {
       if (account.closedOn) return false
       if (!check) return true
-      return check.gap !== 0 || daysBetween(check.check.checkedOn, now) > STALE_CHECK_DAYS
+      return check.openGap !== 0 || daysBetween(check.check.checkedOn, now) > STALE_CHECK_DAYS
     })
 
   const monthlyRows = monthly.map((m) => ({
@@ -311,8 +311,8 @@ export default async function OverviewPage({
                       .slice(0, 3)
                       .map(({ account, check }) =>
                         check
-                          ? check.gap !== 0
-                            ? `${account.name} : écart de ${eur(check.gap, 2)}`
+                          ? check.openGap !== 0
+                            ? `${account.name} : écart de ${eur(check.openGap, 2)}`
                             : `${account.name} : pointé ${freshness(check.check.checkedOn, now)}`
                           : `${account.name} : jamais pointé`,
                       )

@@ -81,7 +81,7 @@ export default async function AccountsPage() {
   const missing = open
     .filter((s) => s.account.behavior === 'investment' && Number(s.account.balance) < 0)
     .reduce((sum, s) => sum - Number(s.account.balance), 0)
-  const gaps = open.filter((s) => s.check && s.check.gap !== 0)
+  const gaps = open.filter((s) => s.check && s.check.openGap !== 0)
   const toCheck = open.filter((s) => !s.check || daysBetween(s.check.check.checkedOn, now) > STALE_CHECK_DAYS)
 
   const newAccountForm = (
@@ -150,7 +150,7 @@ export default async function AccountsPage() {
                 value={
                   gaps.length > 0
                     ? eur(
-                        gaps.reduce((s, g) => s + Math.abs(g.check!.gap), 0),
+                        gaps.reduce((s, g) => s + Math.abs(g.check!.openGap), 0),
                         2,
                       )
                     : 'aucun'
@@ -188,13 +188,13 @@ export default async function AccountsPage() {
                           </div>
                           <span
                             className={`text-[11.5px] ${
-                              check && check.gap !== 0 ? 'text-destructive' : 'text-faint'
+                              check && check.openGap !== 0 ? 'text-destructive' : 'text-faint'
                             }`}
                           >
                             {check
-                              ? check.gap === 0
+                              ? check.openGap === 0
                                 ? `pointé ${freshness(check.check.checkedOn, now)} · aucun écart`
-                                : `écart de ${eur(check.gap, 2)} au dernier pointage`
+                                : `écart de ${eur(check.openGap, 2)} au dernier pointage`
                               : 'jamais pointé'}
                           </span>
                         </div>

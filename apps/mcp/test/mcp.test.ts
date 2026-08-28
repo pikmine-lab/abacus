@@ -110,6 +110,14 @@ test('full declarative session through the MCP surface', async () => {
   ).json() as { amount: number; kind: string }
   assert.equal(settled.amount, 17.5)
   assert.equal(settled.kind, 'expense')
+
+  // Settled: the overview stops reporting a gap on that account, where the
+  // check's own history keeps saying what it found.
+  const afterSettling = (await call(client, 'get_overview')).json() as {
+    accounts: { name: string; lastCheck: unknown }[]
+  }
+  const courant = afterSettling.accounts.find((a) => a.name === 'Courant')!
+  assert.deepEqual(courant.lastCheck, { on: '2026-08-10', openGap: 0 })
 })
 
 test('subscription lifecycle through the MCP surface', async () => {

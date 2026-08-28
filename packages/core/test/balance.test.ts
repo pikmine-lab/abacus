@@ -7,6 +7,7 @@ import {
   correctBalanceCheck,
   createAdjustment,
   deleteBalanceCheck,
+  latestCheck,
   listChecks,
   recordBalanceCheck,
 } from '../src/services/balanceChecks.ts'
@@ -15,6 +16,7 @@ import {
   closeAdvance,
   correctMovement,
   declareMovement,
+  deleteMovement,
   listMovements,
   outstandingAdvances,
   refundAdvance,
@@ -54,6 +56,36 @@ test('a balance check exposes the gap and an adjustment settles it', async () =>
     createAdjustment(user, again.check.id, { actorId: unknown.id }),
     (e: DomainError) => e.code === 'no_gap',
   )
+})
+
+test('a settled gap stops asking for anything, without erasing what it found', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const employer = await createActor(user, { name: 'Employer' })
+  const unknown = await createActor(user, { name: 'Unknown' })
+  await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 1000,
+    sourceActorId: employer.id,
+    targetAccountId: account.id,
+  })
+
+  const check = await recordBalanceCheck(user, account.id, 950, '2026-03-31')
+  assert.equal(check.openGap, -50)
+
+  // The computed side stays frozen at what the app said that day, so the gap
+  // survives the settling: only the open one closes.
+  const adjustment = await createAdjustment(user, check.check.id, { actorId: unknown.id })
+  const after = (await latestCheck(user, account.id))!
+  assert.equal(after.gap, -50)
+  assert.equal(after.openGap, 0)
+  assert.equal(after.adjustmentId, adjustment.id)
+
+  // Removing the adjustment leaves the gap unexplained again.
+  await deleteMovement(user, adjustment.id)
+  const reopened = (await latestCheck(user, account.id))!
+  assert.equal(reopened.openGap, -50)
+  assert.equal(reopened.adjustmentId, null)
 })
 
 test('advances track partial refunds, net vs gross, and explicit write-off', async () => {

@@ -27,22 +27,24 @@ export async function getBalanceCheck(
   return check
 }
 
+/** A check and the adjustment that settled its gap, if one was created. */
+export type BalanceCheckRow = BalanceCheck & { adjustmentId: string | null }
+
 export async function latestBalanceCheck(
   tx: Executor,
   userId: string,
   accountId: string,
-): Promise<BalanceCheck | undefined> {
-  const [check] = await tx<BalanceCheck[]>`
-    select * from balance_check
-    where user_id = ${userId} and account_id = ${accountId}
-    order by checked_on desc, created_at desc
+): Promise<BalanceCheckRow | undefined> {
+  const [check] = await tx<BalanceCheckRow[]>`
+    select c.*, m.id as adjustment_id
+    from balance_check c
+    left join movement m on m.balance_check_id = c.id
+    where c.user_id = ${userId} and c.account_id = ${accountId}
+    order by c.checked_on desc, c.created_at desc
     limit 1
   `
   return check
 }
-
-/** A check and the adjustment that settled its gap, if one was created. */
-export type BalanceCheckRow = BalanceCheck & { adjustmentId: string | null }
 
 export async function listBalanceChecks(
   tx: Executor,

@@ -18,7 +18,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check, commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -33,7 +33,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
               behavior: a.behavior,
               closed: a.closedOn !== null,
               balance: Number(a.balance),
-              lastCheck: check ? { on: check.check.checkedOn, gap: check.gap } : 'never checked',
+              lastCheck: check ? { on: check.check.checkedOn, openGap: check.openGap } : 'never checked',
             }
           }),
         )
