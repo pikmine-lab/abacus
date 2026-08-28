@@ -29,7 +29,7 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_accounts',
     {
       description:
-        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution or the behavior), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). Accounts mirror the user's real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history.",
+        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution, the behavior or the opening), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). An account that already existed before this ledger is declared with the money it already held: openingBalance on openedOn, never as a movement from an invented actor, which would show as a huge income that never happened. That opening is not a flow: no analysis counts it, and every balance starts from it, so the first balance check reports no gap. Accounts mirror the user's real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'update', 'close', 'reopen']),
         name: z
@@ -42,7 +42,17 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           .string()
           .optional()
           .describe('create/update: institution, free text, or "none" to clear it'),
-        openedOn: isoDate.optional().describe('create'),
+        openingBalance: z
+          .number()
+          .optional()
+          .describe(
+            'create/update: what the account already held when the user started declaring, in euros. Negative if it was overdrawn. On an investment account this is the cash only; the positions already held are declared with record_investment_operations, as purchases at their real price and date. Requires openedOn.',
+          ),
+        openedOn: isoDate
+          .optional()
+          .describe(
+            'create/update: the day the account opened, which is the day its opening balance counts from',
+          ),
         closedOn: isoDate.optional().describe('close: defaults to today'),
       }),
     },
@@ -56,6 +66,8 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
               behavior: acc.behavior,
               institution: acc.institution ?? undefined,
               balance: Number(acc.balance),
+              openingBalance: Number(acc.openingBalance) || undefined,
+              openedOn: acc.openedOn ?? undefined,
               closedOn: acc.closedOn ?? undefined,
             })),
           )
@@ -68,6 +80,7 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             name: a.name,
             behavior: a.behavior,
             institution: a.institution ?? null,
+            openingBalance: a.openingBalance,
             openedOn: a.openedOn ?? null,
           })
           return ok({ accountId: account.id, name: account.name })
@@ -78,12 +91,16 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             name: a.newName,
             institution: clearable(a.institution),
             behavior: a.behavior,
+            openingBalance: a.openingBalance,
+            openedOn: a.openedOn,
           })
           return ok({
             accountId: updated.id,
             name: updated.name,
             behavior: updated.behavior,
             institution: updated.institution ?? undefined,
+            openingBalance: Number(updated.openingBalance) || undefined,
+            openedOn: updated.openedOn ?? undefined,
           })
         }
         if (a.action === 'reopen') {

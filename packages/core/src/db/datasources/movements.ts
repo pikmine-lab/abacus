@@ -158,9 +158,10 @@ export async function selectionTotals(
 }
 
 /**
- * Signed sum of everything that entered and left the account. `except` leaves
- * one movement out, which is how a balance check is recomputed without
- * counting the adjustment it produced.
+ * What the account held on that day: its opening plus the signed sum of
+ * everything that entered and left it. `except` leaves one movement out, which
+ * is how a balance check is recomputed without counting the adjustment it
+ * produced.
  */
 export async function accountBalance(
   tx: Executor,
@@ -170,7 +171,16 @@ export async function accountBalance(
 ): Promise<string> {
   const [row] = await tx<{ balance: string }[]>`
     select (
+      -- Where the account started. A check dated before it compares against
+      -- nothing, which is why the opening carries its day: without this the
+      -- first check of an account taken over would report a gap equal to
+      -- everything that happened before the ledger.
       coalesce((
+        select opening_balance from account
+        where id = ${accountId}
+        ${upTo ? tx`and opened_on <= ${upTo}` : tx``}
+      ), 0)
+      + coalesce((
         select sum(case when target_account_id = ${accountId} then amount else -amount end)
         from movement
         where (source_account_id = ${accountId} or target_account_id = ${accountId})

@@ -9,9 +9,10 @@ import { holdingsValue } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AccountRowActions } from '@/components/account-row-actions'
+import { AmountInput } from '@/components/amount-input'
 import type { CheckEntry } from '@/components/balance-check-history'
 import { EntrySheet } from '@/components/entry-sheet'
-import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
 import { createAccountAction } from '@/lib/actions'
@@ -87,7 +88,7 @@ export default async function AccountsPage() {
     <EntrySheet
       label="Ajouter un compte"
       title="Nouveau compte"
-      description="Ton montage bancaire réel, un compte à la fois. Un compte clos garde son historique."
+      description="Ton montage bancaire réel, un compte à la fois. Un compte qui existait déjà porte ce qu’il contenait : son solde d’ouverture, qui n’est pas un revenu."
     >
       <ActionForm action={createAccountAction} successLabel="Compte créé">
         <TextField name="name" label="Nom" placeholder="Courant principal" />
@@ -103,6 +104,16 @@ export default async function AccountsPage() {
           />
         </Field>
         <TextField name="institution" label="Établissement (optionnel)" placeholder="Nom de la banque" />
+        {/* The opening and the day it holds from travel together: one is
+            meaningless without the other, and the service refuses them apart. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Solde d’ouverture (€)" name="openingBalance">
+            <AmountInput name="openingBalance" negatable placeholder="0,00" />
+          </Field>
+          <Field label="Ouvert le" name="openedOn">
+            <DateField name="openedOn" />
+          </Field>
+        </div>
         <SubmitButton className="self-start">Créer le compte</SubmitButton>
       </ActionForm>
     </EntrySheet>
@@ -195,6 +206,8 @@ export default async function AccountsPage() {
                           name={account.name}
                           institution={account.institution ?? ''}
                           behavior={account.behavior}
+                          openingBalance={account.openingBalance}
+                          openedOn={account.openedOn}
                           computedBalance={Number(account.balance)}
                           checks={checkEntries(checks)}
                           settleOptions={settleOptions}
@@ -220,6 +233,8 @@ export default async function AccountsPage() {
                         name={account.name}
                         institution={account.institution ?? ''}
                         behavior={account.behavior}
+                        openingBalance={account.openingBalance}
+                        openedOn={account.openedOn}
                         computedBalance={Number(account.balance)}
                         closed
                         checks={checkEntries(checks)}

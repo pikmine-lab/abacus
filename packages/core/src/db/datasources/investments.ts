@@ -274,13 +274,18 @@ export async function upsertQuote(tx: Executor, instrumentId: string, quote: Quo
   `
 }
 
-/** What movements put into an investment account, net of what they took out. */
-export async function movementsNetPerAccount(tx: Executor, userId: string): Promise<Map<string, string>> {
+/**
+ * What was put into an investment account, net of what was taken out: the cash
+ * it already held when it was taken over, plus what movements brought since.
+ * An opening is money put in like any transfer, never a gain: counting it out
+ * would show the whole takeover as performance the account never made.
+ */
+export async function netContributionsPerAccount(tx: Executor, userId: string): Promise<Map<string, string>> {
   const rows = await tx<{ accountId: string; net: string }[]>`
     select a.id as account_id,
-           coalesce(
+           (a.opening_balance + coalesce(
              sum(case when m.target_account_id = a.id then m.amount else -m.amount end), 0
-           )::numeric(14,2) as net
+           ))::numeric(14,2) as net
     from account a
     left join movement m on m.source_account_id = a.id or m.target_account_id = a.id
     where a.user_id = ${userId} and a.behavior = 'investment'
@@ -357,7 +362,7 @@ export interface ValuationPoint {
   holdings: string
   /** Cash on the investment accounts that day. */
   cash: string
-  /** What movements had put in, net of what they had taken out, by that day. */
+  /** What had been put in by that day: opening cash and movements alike. */
   contributions: string
 }
 
@@ -422,15 +427,22 @@ export async function valuationSeries(
       from held h
       where h.quantity > 0
     ),
-    -- Cash and contributions both walk the same movements; operations move the
-    -- cash inside the account and never touch what was contributed.
+    -- Cash and contributions both walk the same movements, and both start at
+    -- what the account already held when it was taken over; operations move
+    -- the cash inside the account and never touch what was contributed.
     flows as (
       select d.day,
-             coalesce(sum(case when m.target_account_id = a.id then m.amount else -m.amount end), 0) as net
+             sum(
+               case when a.opened_on <= d.day then a.opening_balance else 0 end
+               + coalesce(m.net, 0)
+             ) as net
       from days d
       cross join account a
-      left join movement m
-        on (m.source_account_id = a.id or m.target_account_id = a.id) and m.happened_on <= d.day
+      left join lateral (
+        select sum(case when mv.target_account_id = a.id then mv.amount else -mv.amount end) as net
+        from movement mv
+        where (mv.source_account_id = a.id or mv.target_account_id = a.id) and mv.happened_on <= d.day
+      ) m on true
       where a.user_id = ${userId} and a.behavior = 'investment'
       group by d.day
     ),

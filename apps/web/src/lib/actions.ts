@@ -110,6 +110,7 @@ const FR: Record<string, string> = {
   account_not_found: 'Ce compte n’existe plus.',
   account_has_operations:
     'Ce compte porte des opérations d’investissement : son type ne change plus. Le reste se corrige.',
+  opening_needs_its_day: 'Indique le jour d’ouverture : c’est à partir de là que ce solde compte.',
   actor_not_found: 'Cet acteur n’existe plus.',
   category_exists: 'Une catégorie porte déjà ce nom.',
   category_not_found: 'Cette catégorie n’existe plus.',
@@ -462,6 +463,8 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
       name: str(formData, 'name'),
       behavior: str(formData, 'behavior') as 'payment' | 'savings' | 'investment',
       institution: opt(formData, 'institution') ?? null,
+      openingBalance: optNum(formData, 'openingBalance'),
+      openedOn: opt(formData, 'openedOn') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -470,7 +473,11 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
   return { ok: true }
 }
 
-/** What an account says about itself. Its balance is history, never edited here. */
+/**
+ * What an account says about itself, its opening included. What its movements
+ * did to it is history, never edited here; the panel carries every field, so a
+ * cleared opening means zero.
+ */
 export async function editAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'name' }])
@@ -480,6 +487,8 @@ export async function editAccountAction(_prev: FormState, formData: FormData): P
       name: str(formData, 'name'),
       institution: opt(formData, 'institution') ?? null,
       behavior: str(formData, 'behavior') as AccountBehavior,
+      openingBalance: optNum(formData, 'openingBalance') ?? 0,
+      openedOn: opt(formData, 'openedOn'),
     })
   } catch (e) {
     return { error: frError(e) }

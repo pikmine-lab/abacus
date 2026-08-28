@@ -21,24 +21,36 @@ function groupDigits(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, GROUP)
 }
 
-/** Keeps only digits and one decimal comma, capped at two decimals. */
-function normalizeTyped(raw: string): { integer: string; decimals: string | null } {
+interface Parts {
+  negative: boolean
+  integer: string
+  decimals: string | null
+}
+
+/**
+ * Keeps only digits and one decimal comma, capped at two decimals. A leading
+ * minus survives where the caller allows one, and only there: nearly every
+ * amount here is positive by construction, a balance is the exception.
+ */
+function normalizeTyped(raw: string, negatable = false): Parts {
+  const negative = negatable && raw.trimStart().startsWith('-')
   const cleaned = raw.replace(/[^\d,.]/g, '').replace(/\./g, ',')
   const [first, ...rest] = cleaned.split(',')
   const integer = (first ?? '').replace(/^0+(?=\d)/, '')
-  if (rest.length === 0) return { integer, decimals: null }
-  return { integer, decimals: rest.join('').slice(0, 2) }
+  if (rest.length === 0) return { negative, integer, decimals: null }
+  return { negative, integer, decimals: rest.join('').slice(0, 2) }
 }
 
-function format({ integer, decimals }: { integer: string; decimals: string | null }): string {
+function format({ negative, integer, decimals }: Parts): string {
+  const sign = negative ? '-' : ''
   const head = groupDigits(integer)
-  if (decimals === null) return head
-  return `${head === '' ? '0' : head},${decimals}`
+  if (decimals === null) return `${sign}${head}`
+  return `${sign}${head === '' ? '0' : head},${decimals}`
 }
 
-function toMachine({ integer, decimals }: { integer: string; decimals: string | null }): string {
+function toMachine({ negative, integer, decimals }: Parts): string {
   if (integer === '' && !decimals) return ''
-  return `${integer === '' ? '0' : integer}${decimals ? `.${decimals}` : ''}`
+  return `${negative ? '-' : ''}${integer === '' ? '0' : integer}${decimals ? `.${decimals}` : ''}`
 }
 
 /** How many digits sit left of the caret, the anchor a reformat must preserve. */
@@ -62,18 +74,21 @@ export function AmountInput({
   name,
   defaultValue = '',
   className,
+  negatable,
   onValueChange,
   ...props
 }: Omit<React.ComponentProps<typeof Input>, 'name' | 'defaultValue' | 'value' | 'onChange'> & {
   name: string
   /** Plain number as text, e.g. "15.99". */
   defaultValue?: string | number
+  /** Lets a leading minus through, for the balance of an overdrawn account. */
+  negatable?: boolean
   /** Receives the machine value ("2000000.55"), for callers that react to it. */
   onValueChange?: (value: string) => void
 }) {
-  const initial = normalizeTyped(String(defaultValue).replace('.', ','))
+  const initial = normalizeTyped(String(defaultValue).replace('.', ','), negatable)
   const [text, setText] = useState(() => format(initial))
-  const parts = normalizeTyped(text)
+  const parts = normalizeTyped(text, negatable)
 
   return (
     <>
@@ -86,14 +101,14 @@ export function AmountInput({
           const field = e.target
           const raw = field.value
           const typedCaret = field.selectionStart ?? raw.length
-          const next = format(normalizeTyped(raw))
+          const next = format(normalizeTyped(raw, negatable))
           // Typing at the end stays at the end. Counting digits alone would put
           // the caret before a just-typed decimal comma, and the next keystroke
           // would land on the wrong side of it.
           const caret =
             typedCaret >= raw.length ? next.length : caretAfterDigits(next, digitsBefore(raw, typedCaret))
           setText(next)
-          onValueChange?.(toMachine(normalizeTyped(next)))
+          onValueChange?.(toMachine(normalizeTyped(next, negatable)))
           // Write the formatted value and the caret straight away: React then
           // re-renders the same string, so the caret is never pushed to the end.
           field.value = next

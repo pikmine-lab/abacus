@@ -12,7 +12,27 @@ import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { Account, AccountBehavior } from '../domain/types.ts'
 
+/**
+ * An account is declared with the money it already holds: its opening balance,
+ * what was there before anything was typed in. That money is not a movement,
+ * it has no counterparty and no category, and no analysis of flows ever counts
+ * it; only balances do, from the day the account opened.
+ *
+ * That day is what an opening is stated against, so a non-zero one is refused
+ * without it: it says when the account enters the balances, and a check dated
+ * earlier has nothing to compare against. Negative is fine, an account can be
+ * taken over overdrawn.
+ */
+function checkOpening(openingBalance: number | undefined, openedOn: string | null | undefined): void {
+  if (openingBalance !== undefined && openingBalance !== 0 && !openedOn)
+    throw new DomainError(
+      'opening_needs_its_day',
+      'An opening balance needs the day the account opened: that is the day it starts counting',
+    )
+}
+
 export async function createAccount(input: NewAccount): Promise<Account> {
+  checkOpening(input.openingBalance, input.openedOn)
   try {
     return await insertAccount(db(), input)
   } catch (e) {
@@ -29,16 +49,21 @@ export interface AccountEdit {
   name?: string
   institution?: string | null
   behavior?: AccountBehavior
+  /** What the account already held, and the day it held it: both correctable. */
+  openingBalance?: number
+  openedOn?: string | null
 }
 
-const EDITABLE = ['name', 'institution', 'behavior'] as const
+const EDITABLE = ['name', 'institution', 'behavior', 'openingBalance', 'openedOn'] as const
 
 /**
- * Corrects what an account says about itself, its behavior included: an
- * account typed wrongly would otherwise stay wrong forever, since closing it
- * and creating another would mean redeclaring its whole history. The behavior
- * stops being correctable once the account carries investment operations,
- * which only that behavior can hold.
+ * Corrects what an account says about itself, its behavior and its opening
+ * included: an account typed wrongly would otherwise stay wrong forever, since
+ * closing it and creating another would mean redeclaring its whole history. An
+ * opening read from the wrong statement is the likeliest thing to correct,
+ * since every balance of that account descends from it. The behavior stops
+ * being correctable once the account carries investment operations, which only
+ * that behavior can hold.
  */
 export async function editAccount(userId: string, id: string, input: AccountEdit): Promise<Account> {
   const sql = db()
@@ -53,6 +78,12 @@ export async function editAccount(userId: string, id: string, input: AccountEdit
             `Account "${account.name}" carries investment operations: its behavior cannot change`,
           )
       }
+      // Correcting one of the two says nothing about the other: the stored one
+      // is what the correction lands on.
+      checkOpening(
+        input.openingBalance ?? Number(account.openingBalance),
+        input.openedOn !== undefined ? input.openedOn : account.openedOn,
+      )
       const patch: Record<string, unknown> = {}
       for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
       if (Object.keys(patch).length === 0) return account

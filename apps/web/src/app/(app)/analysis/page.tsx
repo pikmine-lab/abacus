@@ -2,7 +2,7 @@ import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
 import type { BreakdownMass, BreakdownRow, FlowKind } from '@abacus/core/services/reports'
 import {
-  firstMovementDay,
+  firstDeclaredDay,
   flowTotals,
   monthlyFlows,
   spendingBreakdown,
@@ -69,7 +69,7 @@ export default async function AnalysisPage({
     : DEFAULT_GROUP
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
 
-  const firstDay = await firstMovementDay(userId)
+  const firstDay = await firstDeclaredDay(userId)
   // A group comes back with the categories it merges, the other dimensions
   // with a flat row: one type covering both, so the rows are read once below.
   const ranking: Promise<(BreakdownRow | BreakdownMass)[]> =

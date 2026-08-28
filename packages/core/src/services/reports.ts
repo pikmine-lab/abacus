@@ -7,7 +7,7 @@ import {
   balanceSeries as balanceSeriesDs,
   type FlowKind,
   type FlowTotals,
-  firstMovementDay as firstMovementDayDs,
+  firstDeclaredDay as firstDeclaredDayDs,
   flowTotals as flowTotalsDs,
   type MonthlyFlow,
   monthlyFlows as monthlyFlowsDs,
@@ -106,6 +106,6 @@ export async function monthlyFlows(
   return await monthlyFlowsDs(db(), userId, from, to, reading)
 }
 
-export async function firstMovementDay(userId: string): Promise<string | null> {
-  return await firstMovementDayDs(db(), userId)
+export async function firstDeclaredDay(userId: string): Promise<string | null> {
+  return await firstDeclaredDayDs(db(), userId)
 }

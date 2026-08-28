@@ -4,7 +4,7 @@ import { ArchiveIcon, ArchiveRestoreIcon, HistoryIcon, PencilIcon, ScaleIcon } f
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { BalanceCheckHistory, type CheckEntry, type SettleOptions } from '@/components/balance-check-history'
-import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
 import {
   AlertDialog,
@@ -44,6 +44,8 @@ export function AccountRowActions({
   name,
   institution,
   behavior,
+  openingBalance,
+  openedOn,
   computedBalance,
   closed,
   checks,
@@ -53,6 +55,9 @@ export function AccountRowActions({
   name: string
   institution: string
   behavior: string
+  /** What the account already held when it was taken over, and the day it did. */
+  openingBalance: string
+  openedOn: string | null
   computedBalance: number
   closed?: boolean
   /** What was already pointed on this account, repairable from the panel. */
@@ -129,7 +134,7 @@ export function AccountRowActions({
           <DialogHeader>
             <DialogTitle className="text-[15px]">{name}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              Ce que ce compte dit de lui-même. Son solde vient des mouvements, il ne se saisit pas.
+              Ce que ce compte dit de lui-même. Son solde part de son ouverture, puis suit ses mouvements.
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={editAccountAction} onSuccess={() => setEditing(false)}>
@@ -144,6 +149,19 @@ export function AccountRowActions({
             <Field label="Type">
               <FormSelect name="behavior" defaultValue={behavior} options={BEHAVIORS} />
             </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Solde d’ouverture (€)" name="openingBalance">
+                <AmountInput
+                  name="openingBalance"
+                  negatable
+                  defaultValue={Number(openingBalance) === 0 ? '' : openingBalance}
+                  placeholder="0,00"
+                />
+              </Field>
+              <Field label="Ouvert le" name="openedOn">
+                <DateField name="openedOn" defaultValue={openedOn ?? undefined} />
+              </Field>
+            </div>
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
           </ActionForm>
         </DialogContent>

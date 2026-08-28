@@ -11,6 +11,8 @@ export interface Account {
   institution: string | null
   behavior: AccountBehavior
   currency: string
+  /** What the account already held on `openedOn`, before the ledger began. */
+  openingBalance: string
   openedOn: string | null
   closedOn: string | null
 }
