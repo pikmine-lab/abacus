@@ -3,8 +3,10 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
   assetHistory,
+  DEFAULT_OPERATION_SORT,
   listAssets,
   listOperations,
+  OPERATION_SORTS,
   positions,
   refreshQuotes,
 } from '@abacus/core/services/investments'
@@ -16,6 +18,7 @@ import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shel
 import { StatRow, StatTile } from '@/components/stats'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { sorter } from '@/lib/sort'
 import { eur, eurSigned } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +29,7 @@ export default async function AssetPage({
   searchParams,
 }: {
   params: Promise<{ assetId: string }>
-  searchParams: Promise<{ window?: string }>
+  searchParams: Promise<Record<string, string | undefined>>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -40,11 +43,15 @@ export default async function AssetPage({
   // holding: the lookup is scoped to them before anything is read.
   if (!asset) notFound()
 
+  const operationSort = sorter('operations', OPERATION_SORTS, DEFAULT_OPERATION_SORT, query)
+
   await refreshQuotes(userId)
   const [held, history, operations, accounts] = await Promise.all([
     positions(userId),
     assetHistory(userId, assetId),
-    listOperations(userId),
+    // Ordered whole, then narrowed to this asset: nothing is cut here, so the
+    // order the SQL settled survives the filter.
+    listOperations(userId, { sort: operationSort.current }),
     listAccounts(userId),
   ])
   const position = held.find((p) => p.assetId === assetId) ?? null
@@ -116,6 +123,7 @@ export default async function AssetPage({
             <EmptyLine>Aucune opération : cet actif est suivi, pas détenu.</EmptyLine>
           ) : (
             <OperationRows
+              sorter={operationSort}
               operations={mine.map((o) => ({
                 id: o.id,
                 type: o.type,

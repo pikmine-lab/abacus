@@ -9,6 +9,7 @@ import {
   updateCategoryRow,
 } from '../db/datasources/catalog.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
+import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type { Activity, Category } from '../domain/types.ts'
 
 export async function createActivity(userId: string, name: string): Promise<Activity> {
@@ -75,4 +76,44 @@ export async function editCategory(userId: string, id: string, input: CategoryEd
   } catch (e) {
     rethrowUnique(e, 'category_exists', `A category already uses the name "${input.name}"`)
   }
+}
+
+/**
+ * What the vocabulary lists offer to be ordered on. A category opens grouped,
+ * the order it is read in when checking what is filed where; an activity has
+ * its name and nothing else to rank on, and the criterion still exists so the
+ * reversal does.
+ */
+export type CategorySortField = 'name' | 'group'
+
+export const CATEGORY_SORTS: SortFields<CategorySortField> = { name: 'asc', group: 'asc' }
+
+export const DEFAULT_CATEGORY_SORT: SortChoice<CategorySortField> = { field: 'group', direction: 'asc' }
+
+export function sortCategories(
+  categories: Category[],
+  sort: SortChoice<CategorySortField> = DEFAULT_CATEGORY_SORT,
+): Category[] {
+  if (sort.field === 'name') return sortBy(categories, (c) => c.name, sort.direction)
+  // Grouped, then alphabetical inside a group: a group with a single category
+  // would otherwise land wherever the previous order left it.
+  return sortBy(
+    sortBy(categories, (c) => c.name, 'asc'),
+    (c) => c.groupLabel,
+    sort.direction,
+  )
+}
+
+export type NameSortField = 'name'
+
+export const NAME_SORTS: SortFields<NameSortField> = { name: 'asc' }
+
+export const DEFAULT_NAME_SORT: SortChoice<NameSortField> = { field: 'name', direction: 'asc' }
+
+/** Activities and actors rank on their name alone, which is all their row shows. */
+export function sortByName<T extends { name: string }>(
+  entries: T[],
+  sort: SortChoice<NameSortField> = DEFAULT_NAME_SORT,
+): T[] {
+  return sortBy(entries, (entry) => entry.name, sort.direction)
 }

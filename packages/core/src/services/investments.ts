@@ -6,6 +6,7 @@ import {
   countOperationsForAsset,
   deleteAssetRow,
   deleteOperationRow,
+  earliestOperationDate,
   findAssetByInstrument,
   getAsset,
   getOperation,
@@ -21,6 +22,9 @@ import {
   lowestRunningQuantity,
   type NewInstrument,
   netContributionsPerAccount,
+  type OperationQuery,
+  type OperationSortField,
+  type PositionSortField,
   positions as positionsDs,
   setInstrumentCurrency,
   setInstrumentKind,
@@ -36,6 +40,7 @@ import {
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import { natureOf } from '../domain/nature.ts'
 import { today } from '../domain/period.ts'
+import type { SortChoice, SortFields } from '../domain/sort.ts'
 import type {
   Account,
   Asset,
@@ -276,8 +281,34 @@ async function recordOperationIn(
   })
 }
 
-export async function listOperations(userId: string, accountId?: string): Promise<InvestmentOperation[]> {
-  return await listOperationsDs(db(), userId, accountId)
+/**
+ * What a list of operations offers to be ordered on, and what each criterion
+ * opens on. The date, most recent first, stays the default: a journal is read
+ * as a history before it is read as a ranking.
+ */
+/** The criteria the two investment lists offer, as both interfaces read them. */
+export type { OperationQuery, OperationSortField, PositionSortField }
+
+export const OPERATION_SORTS: SortFields<OperationSortField> = {
+  date: 'desc',
+  type: 'asc',
+  asset: 'asc',
+  quantity: 'desc',
+  amount: 'desc',
+}
+
+export const DEFAULT_OPERATION_SORT: SortChoice<OperationSortField> = { field: 'date', direction: 'desc' }
+
+export async function listOperations(
+  userId: string,
+  query: OperationQuery = {},
+): Promise<InvestmentOperation[]> {
+  return await listOperationsDs(db(), userId, query)
+}
+
+/** The day the first operation happened, or null when nothing was ever declared. */
+export async function firstOperationOn(userId: string): Promise<string | null> {
+  return await earliestOperationDate(db(), userId)
 }
 
 /**
@@ -475,13 +506,16 @@ export function byNature(held: Position[]): PositionMass[] {
  * refreshed by `refreshQuotes`, which the interfaces call before reading: this
  * function only reads, so it never depends on the network.
  */
-export async function portfolio(userId: string): Promise<PortfolioAccount[]> {
+export async function portfolio(
+  userId: string,
+  sort: SortChoice<PositionSortField> = DEFAULT_POSITION_SORT,
+): Promise<PortfolioAccount[]> {
   const sql = db()
   const accounts = (await listAccountsWithBalance(sql, userId)).filter((a) => a.behavior === 'investment')
   const contributions = await netContributionsPerAccount(sql, userId)
   return await Promise.all(
     accounts.map(async (account) => {
-      const held = await positionsDs(sql, userId, account.id)
+      const held = await positionsDs(sql, userId, account.id, sort)
       const priced = held.filter((p) => p.value !== null)
       const value = Number(account.balance) + priced.reduce((sum, p) => sum + Number(p.value), 0)
       const net = Number(contributions.get(account.id) ?? 0)
@@ -561,7 +595,7 @@ export async function valuationHistory(
   to?: string,
 ): Promise<ValuationHistory | null> {
   const sql = db()
-  const first = (await listOperationsDs(sql, userId)).at(-1)?.operatedOn
+  const first = await earliestOperationDate(sql, userId)
   if (!first) return null
   const end = to ?? today()
   // Never earlier than the first operation: the window asked for can reach
@@ -611,8 +645,27 @@ export async function assetPrices(userId: string): Promise<Map<string, string | 
   return await assetPricesDs(db(), userId)
 }
 
-export async function positions(userId: string, accountId?: string): Promise<Position[]> {
-  return await positionsDs(db(), userId, accountId)
+/**
+ * What a holdings list offers to be ordered on. It opens on the value,
+ * biggest first: the alphabet answers no question a portfolio is read for,
+ * where "what weighs the most here" is the first one.
+ */
+export const POSITION_SORTS: SortFields<PositionSortField> = {
+  name: 'asc',
+  quantity: 'desc',
+  price: 'desc',
+  value: 'desc',
+  gain: 'desc',
+}
+
+export const DEFAULT_POSITION_SORT: SortChoice<PositionSortField> = { field: 'value', direction: 'desc' }
+
+export async function positions(
+  userId: string,
+  accountId?: string,
+  sort: SortChoice<PositionSortField> = DEFAULT_POSITION_SORT,
+): Promise<Position[]> {
+  return await positionsDs(db(), userId, accountId, sort)
 }
 
 /**

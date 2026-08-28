@@ -1,13 +1,16 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listCategories } from '@abacus/core/services/catalog'
 import {
   closeAdvance,
   correctMovement,
+  DEFAULT_MOVEMENT_SORT,
   declareMovement,
   deleteMovement,
   listMovements,
+  MOVEMENT_SORTS,
   outstandingAdvances,
 } from '@abacus/core/services/movements'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -18,7 +21,7 @@ import {
   requireActorByName,
   requireCategoryByName,
 } from '../resolve.ts'
-import { clearable, fail, GUIDANCE, isoDate, ok, run } from './shared.ts'
+import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 /**
  * An open claim, told in full: what left the account, what is owed back, and
@@ -254,7 +257,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows.',
+        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -270,10 +273,16 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         category: z.string().optional(),
         activity: z.string().optional(),
         limit: z.number().int().min(1).max(500).optional().describe('Default 100'),
+        sortBy: z
+          .enum(['date', 'counterparty', 'account', 'category', 'amount'])
+          .optional()
+          .describe('What the list is ordered on. Default date, newest first'),
+        direction: sortDirection,
       }),
     },
     async (f) =>
       run(async () => {
+        const sort = resolveSort(MOVEMENT_SORTS, DEFAULT_MOVEMENT_SORT, f.sortBy, f.direction)
         const movements = await listMovements(userId, {
           from: f.from,
           to: f.to,
@@ -284,6 +293,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           categoryId: f.category ? (await requireCategoryByName(userId, f.category)).id : undefined,
           activityId: f.activity ? (await requireActivityByName(userId, f.activity)).id : undefined,
           limit: f.limit,
+          sort,
         })
         const [accounts, actors, categories] = await Promise.all([
           listAccounts(userId),
@@ -293,8 +303,9 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const accountName = new Map(accounts.map((a) => [a.id, a.name]))
         const actorName = new Map(actors.map((a) => [a.id, a.name]))
         const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-        return ok(
-          movements.map((m) => ({
+        return ok({
+          order: orderedBy(sort),
+          movements: movements.map((m) => ({
             id: m.id,
             date: m.happenedOn,
             // Absent when the movement counts in the month of its own date.
@@ -314,7 +325,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             category: m.categoryId ? categoryName.get(m.categoryId) : undefined,
             note: m.note ?? undefined,
           })),
-        )
+        })
       }),
   )
 

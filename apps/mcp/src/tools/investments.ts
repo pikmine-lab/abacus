@@ -1,12 +1,17 @@
+import { resolveSort } from '@abacus/core/domain/sort'
 import { listVenues, searchInstruments } from '@abacus/core/prices/search'
 import {
   assetPrices,
   correctOperation,
+  DEFAULT_OPERATION_SORT,
+  DEFAULT_POSITION_SORT,
   declareAsset,
   deleteOperation,
   editAsset,
   listAssets,
   listOperations,
+  OPERATION_SORTS,
+  POSITION_SORTS,
   portfolio,
   positions,
   recordOperations,
@@ -18,7 +23,7 @@ import {
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { requireAccountByName, requireAssetByName } from '../resolve.ts'
-import { clearable, fail, isoDate, ok, run } from './shared.ts'
+import { clearable, fail, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 export function registerInvestmentTools(server: McpServer, userId: string): void {
   server.registerTool(
@@ -261,18 +266,27 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
     'get_portfolio',
     {
       description:
-        'What the user holds, account by account: the cash on each investment account, and every position with its quantity, its weighted average cost per unit (PMP, order fees included), what it cost, the last known price with the moment the market made it, what it is worth now and its unrealized gain. Two figures per account state their own method, and reading them any other way makes them wrong: `unrealizedGain` excludes dividends and fees, `totalReturn` includes both and is measured against `netContributions`, what movements put in net of what they took out. A position with no price is valued at nothing rather than estimated, and `totalReturn` then comes back null rather than understated. Each account also comes with `masses`, its positions grouped by nature (shares, funds, crypto, and what no market quotes) and already totalled, biggest first: that split is the allocation, the first thing a portfolio is read for, so answer it from there rather than adding positions up by nature yourself. A mass carrying `unpricedPositions` has that many positions with no price, so its `value` is that much short and its `unrealizedGain` comes back null; one where that count equals `positions` is not worth zero, nothing in it is priced at all. Prices are refreshed as this tool runs, within what each source allows: Euronext is 15 minutes delayed by licence, so never present a price as live, present it with its hour.',
+        'What the user holds, account by account: the cash on each investment account, and every position with its quantity, its weighted average cost per unit (PMP, order fees included), what it cost, the last known price with the moment the market made it, what it is worth now and its unrealized gain. Two figures per account state their own method, and reading them any other way makes them wrong: `unrealizedGain` excludes dividends and fees, `totalReturn` includes both and is measured against `netContributions`, what movements put in net of what they took out. A position with no price is valued at nothing rather than estimated, and `totalReturn` then comes back null rather than understated. Each account also comes with `masses`, its positions grouped by nature (shares, funds, crypto, and what no market quotes) and already totalled, biggest first: that split is the allocation, the first thing a portfolio is read for, so answer it from there rather than adding positions up by nature yourself. A mass carrying `unpricedPositions` has that many positions with no price, so its `value` is that much short and its `unrealizedGain` comes back null; one where that count equals `positions` is not worth zero, nothing in it is priced at all. Prices are refreshed as this tool runs, within what each source allows: Euronext is 15 minutes delayed by licence, so never present a price as live, present it with its hour. Positions come back biggest first inside each mass, the order the user sees on screen; sortBy reorders them and positionOrder repeats what was used.',
       inputSchema: z.object({
         account: z.string().optional().describe('Restrict to one investment account, by name'),
+        sortBy: z
+          .enum(['name', 'quantity', 'price', 'value', 'gain'])
+          .optional()
+          .describe(
+            'How the positions inside each mass are ordered. Default value, biggest first, the order the user sees on screen',
+          ),
+        direction: sortDirection,
       }),
     },
     async (a) =>
       run(async () => {
         const wanted = a.account ? await requireAccountByName(userId, a.account) : null
         await refreshQuotes(userId)
-        const held = await portfolio(userId)
+        const sort = resolveSort(POSITION_SORTS, DEFAULT_POSITION_SORT, a.sortBy, a.direction)
+        const held = await portfolio(userId, sort)
         const accounts = wanted ? held.filter((h) => h.account.id === wanted.id) : held
         return ok({
+          positionOrder: orderedBy(sort),
           accounts: accounts.map((h) => ({
             account: h.account.name,
             cash: Number(h.cash),
@@ -331,18 +345,30 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
     'list_investment_operations',
     {
       description:
-        'The operations declared on the investment accounts, most recent first: what was bought, sold, received as a dividend or paid in fees. Read it to check what is already recorded before declaring more, or to find the operation behind a position.',
+        'The operations declared on the investment accounts: what was bought, sold, received as a dividend or paid in fees. Read it to check what is already recorded before declaring more, or to find the operation behind a position. Most recent first unless sortBy says otherwise, and the answer repeats the order it used; with a limit, that order decides which rows come back at all, so sortBy: amount with limit 5 returns the five biggest operations and not the five latest.',
       inputSchema: z.object({
         account: z.string().optional().describe('Restrict to one investment account, by name'),
+        sortBy: z
+          .enum(['date', 'type', 'asset', 'quantity', 'amount'])
+          .optional()
+          .describe('What the list is ordered on. Default date, most recent first'),
+        direction: sortDirection,
+        limit: z.number().int().min(1).optional().describe('How many rows. Absent: all of them'),
       }),
     },
     async (a) =>
       run(async () => {
         const account = a.account ? await requireAccountByName(userId, a.account) : undefined
-        const operations = await listOperations(userId, account?.id)
+        const sort = resolveSort(OPERATION_SORTS, DEFAULT_OPERATION_SORT, a.sortBy, a.direction)
+        const operations = await listOperations(userId, {
+          accountId: account?.id,
+          sort,
+          limit: a.limit,
+        })
         const assets = new Map((await listAssets(userId)).map((as) => [as.id, as.name]))
-        return ok(
-          operations.map((o) => ({
+        return ok({
+          order: orderedBy(sort),
+          operations: operations.map((o) => ({
             id: o.id,
             date: o.operatedOn,
             type: o.type,
@@ -351,7 +377,7 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
             amount: Number(o.amount),
             note: o.note ?? undefined,
           })),
-        )
+        })
       }),
   )
 

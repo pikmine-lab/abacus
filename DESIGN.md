@@ -1,7 +1,7 @@
 # Design
 
 Ce document fixe ce qui se voit : parti pris, navigation, couleur, forme des graphes,
-densité, ton des textes, identité. Comment le front se construit (quel composant pour quel
+tri, densité, ton des textes, identité. Comment le front se construit (quel composant pour quel
 besoin, pièges React et Next, ce que chaque écran doit dire) est dans `apps/web/AGENTS.md`.
 
 ## Parti pris
@@ -207,6 +207,33 @@ de page.
   sparkline 12 points (gris estompé, dernier segment et point en accent). **Un seul
   chiffre héro par vue.** Une tuile qui mène quelque part porte une flèche
   ↗ dans son coin haut droit, à taille d'icône.
+
+## Tri
+
+- **Le tri se désigne là où la liste le porte.** Une liste dont les colonnes sont déjà
+  alignées met le contrôle dans son en-tête : le libellé de colonne devient le bouton, et
+  un chevron dit le sens. Une liste faite de blocs à deux étages n'a pas de colonne à
+  cliquer, et ce qui s'y trie vit dans la phrase de contexte (« pointé il y a 3 j »,
+  « prochaine le 05/09 ») : elle porte alors un contrôle nommé (« Trier : Solde ↓ ») au
+  bout de son en-tête de section. Deux formes, un seul geste : désigner un critère
+  l'active dans son sens d'ouverture, le redésigner inverse la liste.
+- **Le sens d'ouverture appartient au critère**, pas au contrôle : un nom part de A, un
+  montant et une date passée partent du plus grand et du plus récent, une échéance part de
+  la plus proche. Désigner « Montant » répond « le plus gros » sans qu'on ait à le demander.
+- **Une liste s'ouvre sur l'ordre qui répond à sa question** : les mouvements sur la date,
+  les positions sur la valorisation, les abonnements sur le coût mensuel. L'alphabet n'est
+  un défaut que là où on cherche une ligne avant de la comparer, comme les comptes et le
+  référentiel. Un tri choisi remplace un ordre décidé le temps d'une lecture ; il ne rend
+  pas ce défaut arbitraire.
+- **Ce qui est inconnu ne devient pas le plus petit.** Une position sans cours, un montant
+  jamais converti restent en fin de liste dans les deux sens : un tiret n'est pas un zéro,
+  et l'inversion ne doit pas le promouvoir en tête.
+- **Le tri s'écrit dans l'URL**, comme la période et les filtres : un ordre est un cadrage,
+  il se partage, se recharge et se défait au bouton retour. Un paramètre par liste, nommé
+  par elle, parce que plusieurs listes partagent un écran et se lisent chacune à son ordre.
+- **Le chevron ne marque que le critère en vigueur.** Aligner une flèche sur chaque colonne
+  ferait du bruit ; les colonnes inactives révèlent la leur au survol, ce qui suffit à dire
+  qu'elles se cliquent.
 
 ## Densité et conteneurs
 

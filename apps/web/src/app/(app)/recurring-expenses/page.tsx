@@ -3,11 +3,15 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
+import type { CommitmentSortField } from '@abacus/core/services/commitments'
 import {
+  COMMITMENT_SORTS,
+  DEFAULT_COMMITMENT_SORT,
   financingSchedule,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
   pendingOccurrences,
+  sortCommitments,
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -16,7 +20,9 @@ import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
+import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
+import { sorter } from '@/lib/sort'
 import { eur, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -28,12 +34,23 @@ const PATH = '/recurring-expenses'
 export default async function RecurringExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<Record<string, string | undefined>>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
-  const { error } = await searchParams
+  const params = await searchParams
+  const { error } = params
+  // Two lists, two orders: subscriptions open on what they cost a month, the
+  // question the review exists for, and financings on what falls next, which
+  // is how a plan is read.
+  const subscriptionSort = sorter('subscriptions', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
+  const financingSort = sorter<CommitmentSortField>(
+    'financings',
+    COMMITMENT_SORTS,
+    { field: 'next', direction: 'asc' },
+    params,
+  )
 
   const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     // Cancelled ones included: a subscription's history is the point of the
@@ -179,24 +196,51 @@ export default async function RecurringExpensesPage({
         <Section
           title="Abonnements"
           description={`${subscriptions.length} actif${subscriptions.length > 1 ? 's' : ''} · le jugement prépare la revue « que couper ? »`}
+          action={
+            subscriptions.length > 1 && (
+              <SortMenu
+                sorter={subscriptionSort}
+                options={[
+                  { field: 'monthly', label: 'Coût mensuel' },
+                  { field: 'amount', label: 'Montant facturé' },
+                  { field: 'next', label: 'Prochaine échéance' },
+                  { field: 'label', label: 'Nom' },
+                ]}
+              />
+            )
+          }
         >
           {subscriptions.length === 0 ? (
             <EmptyLine>Aucun abonnement déclaré. Le bouton « Ajouter » est en haut à droite.</EmptyLine>
           ) : (
             <Rows>
-              {[...subscriptions]
-                .sort((a, b) => monthlyEquivalentEur(b) - monthlyEquivalentEur(a))
-                .map((c) => (
-                  <CommitmentRow key={c.id} commitment={c} showJudgment options={options} today={today()} />
-                ))}
+              {sortCommitments(subscriptions, subscriptionSort.current).map((c) => (
+                <CommitmentRow key={c.id} commitment={c} showJudgment options={options} today={today()} />
+              ))}
             </Rows>
           )}
         </Section>
 
         {financings.length > 0 && (
-          <Section title="Financements en cours" description="s’éteignent seuls à la dernière échéance">
+          <Section
+            title="Financements en cours"
+            description="s’éteignent seuls à la dernière échéance"
+            action={
+              financings.length > 1 && (
+                <SortMenu
+                  sorter={financingSort}
+                  options={[
+                    { field: 'next', label: 'Prochaine échéance' },
+                    { field: 'remaining', label: 'Restant dû' },
+                    { field: 'amount', label: 'Mensualité' },
+                    { field: 'label', label: 'Nom' },
+                  ]}
+                />
+              )
+            }
+          >
             <Rows>
-              {financings.map((c) => (
+              {sortCommitments(financings, financingSort.current).map((c) => (
                 <CommitmentRow
                   key={c.id}
                   commitment={c}

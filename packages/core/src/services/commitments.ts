@@ -28,6 +28,7 @@ import {
 } from '../db/datasources/installments.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
+import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { eurRateLatest, eurRateOn, toEur } from './fx.ts'
@@ -555,6 +556,57 @@ export function monthlyEquivalentEur(
 ): number {
   if (c.amountEur === null) return 0
   return monthlyEquivalent({ amount: c.amountEur, periodUnit: c.periodUnit, periodCount: c.periodCount })
+}
+
+/**
+ * What a commitment list offers to be ordered on. The monthly equivalent is
+ * the default and stays it: "what costs me the most" is the question the
+ * review exists for, and a billing amount alone cannot answer it, a yearly
+ * plan and a monthly one not being comparable as declared.
+ *
+ * Every money criterion ranks on euros, never on the declared amount: a plan
+ * billed in dollars placed among euro ones by its face value would be ranked
+ * by its currency as much as by its cost. What was never priced sorts last
+ * rather than as zero, which would read as the cheapest.
+ */
+export type CommitmentSortField = 'label' | 'amount' | 'monthly' | 'next' | 'remaining'
+
+export const COMMITMENT_SORTS: SortFields<CommitmentSortField> = {
+  label: 'asc',
+  amount: 'desc',
+  monthly: 'desc',
+  // Soonest first: a due date is read as what comes next, not as a ranking.
+  next: 'asc',
+  remaining: 'desc',
+}
+
+export const DEFAULT_COMMITMENT_SORT: SortChoice<CommitmentSortField> = {
+  field: 'monthly',
+  direction: 'desc',
+}
+
+type SortableCommitment = CommitmentWithEur & { progress?: FinancingProgress | null }
+
+function commitmentKey(c: SortableCommitment, field: CommitmentSortField): string | number | null {
+  switch (field) {
+    case 'label':
+      return c.label
+    case 'amount':
+      return c.amountEur === null ? null : Number(c.amountEur)
+    case 'monthly':
+      return c.amountEur === null ? null : monthlyEquivalentEur(c)
+    case 'next':
+      return c.nextDueOn
+    case 'remaining':
+      return c.progress?.remainingDueEur ?? null
+  }
+}
+
+export function sortCommitments<T extends SortableCommitment>(
+  commitments: T[],
+  sort: SortChoice<CommitmentSortField> = DEFAULT_COMMITMENT_SORT,
+): T[] {
+  return sortBy(commitments, (c) => commitmentKey(c, sort.field), sort.direction)
 }
 
 export interface PendingOccurrence {

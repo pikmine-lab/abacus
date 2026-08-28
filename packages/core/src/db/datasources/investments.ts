@@ -1,4 +1,5 @@
 import { natureOf } from '../../domain/nature.ts'
+import type { SortChoice } from '../../domain/sort.ts'
 import type {
   Asset,
   AssetNature,
@@ -141,18 +142,69 @@ export async function insertOperation(tx: Executor, row: NewOperation): Promise<
   return operation!
 }
 
+/**
+ * What a list of operations can be ordered on. The asset is a name held
+ * elsewhere, so ordering on it joins; an account fee carries none and lands
+ * last, as it does in the row that names it.
+ */
+export type OperationSortField = 'date' | 'type' | 'asset' | 'quantity' | 'amount'
+
+function operationOrder(tx: Executor, sort: SortChoice<OperationSortField>) {
+  const key =
+    sort.field === 'type'
+      ? tx`o.type`
+      : sort.field === 'asset'
+        ? tx`a.name`
+        : sort.field === 'quantity'
+          ? tx`o.quantity`
+          : sort.field === 'amount'
+            ? tx`o.amount`
+            : tx`o.operated_on`
+  const way = sort.direction === 'asc' ? tx`asc` : tx`desc`
+  return tx`order by ${key} ${way} nulls last, o.operated_on desc, o.created_at desc`
+}
+
+export interface OperationQuery {
+  accountId?: string
+  /** How the list is ordered; the date, most recent first, by default. */
+  sort?: SortChoice<OperationSortField>
+  /** How many rows to return. Absent: all of them. */
+  limit?: number
+}
+
+/**
+ * The declared operations. The order is settled here rather than on the rows
+ * already read, because a screen and a tool both show a slice of this list:
+ * ordering the slice would rank what was fetched, not what is held.
+ */
 export async function listOperations(
   tx: Executor,
   userId: string,
-  accountId?: string,
+  query: OperationQuery = {},
 ): Promise<InvestmentOperation[]> {
+  const sort = query.sort ?? { field: 'date' as const, direction: 'desc' as const }
   return await tx<InvestmentOperation[]>`
-    select id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
-    from investment_operation
-    where user_id = ${userId}
-      ${accountId ? tx`and account_id = ${accountId}` : tx``}
-    order by operated_on desc, created_at desc
+    select o.id, o.user_id, o.account_id, o.asset_id, o.type, o.quantity, o.amount,
+           o.currency, o.operated_on, o.note
+    from investment_operation o
+    ${sort.field === 'asset' ? tx`left join asset a on a.id = o.asset_id` : tx``}
+    where o.user_id = ${userId}
+      ${query.accountId ? tx`and o.account_id = ${query.accountId}` : tx``}
+    ${operationOrder(tx, sort)}
+    ${query.limit ? tx`limit ${query.limit}` : tx``}
   `
+}
+
+/**
+ * The day the first operation ever happened, which is where a portfolio curve
+ * can start at all. Asked on its own because the list it used to be read from
+ * is now ordered and cut by the caller: its last row is no longer the oldest.
+ */
+export async function earliestOperationDate(tx: Executor, userId: string): Promise<string | null> {
+  const [row] = await tx<{ first: string | null }[]>`
+    select min(operated_on) as first from investment_operation where user_id = ${userId}
+  `
+  return row?.first ?? null
 }
 
 /**
@@ -172,6 +224,30 @@ export async function operationsCashDelta(tx: Executor, userId: string): Promise
 }
 
 /**
+ * What a holdings list can be ordered on: the columns the reader sees. Value
+ * and gain are unknown while no price is, so they sort last either way rather
+ * than counting as zero, which would rank an unvalued line as the smallest.
+ */
+export type PositionSortField = 'name' | 'quantity' | 'price' | 'value' | 'gain'
+
+function positionOrder(tx: Executor, sort: SortChoice<PositionSortField>) {
+  const key =
+    sort.field === 'quantity'
+      ? tx`quantity`
+      : sort.field === 'price'
+        ? tx`price`
+        : sort.field === 'value'
+          ? tx`value`
+          : sort.field === 'gain'
+            ? tx`gain`
+            : tx`a.name`
+  const way = sort.direction === 'asc' ? tx`asc` : tx`desc`
+  // The name closes every sort: two lines worth the same must not swap
+  // places between two reads of an unchanged portfolio.
+  return tx`order by ${key} ${way} nulls last, a.name`
+}
+
+/**
  * Positions from the operations alone: quantity held, weighted average cost of
  * what is still held, and the money still committed to it.
  *
@@ -183,7 +259,12 @@ export async function operationsCashDelta(tx: Executor, userId: string): Promise
  * untouched and takes its share out of the cost, which is what makes the walk
  * necessary and the arithmetic exact.
  */
-export async function positions(tx: Executor, userId: string, accountId?: string): Promise<Position[]> {
+export async function positions(
+  tx: Executor,
+  userId: string,
+  accountId?: string,
+  sort: SortChoice<PositionSortField> = { field: 'value', direction: 'desc' },
+): Promise<Position[]> {
   const rows = await tx<(Omit<Position, 'nature'> & PositionNature)[]>`
     with recursive trades as (
       select o.asset_id,
@@ -245,7 +326,7 @@ export async function positions(tx: Executor, userId: string, accountId?: string
     join asset a on a.id = h.asset_id
     left join instrument i on i.id = a.instrument_id
     left join instrument_quote q on q.instrument_id = a.instrument_id
-    order by a.name
+    ${positionOrder(tx, sort)}
   `
   return rows.map(({ instrumentKind, declaredNature, ...position }) => ({
     ...position,

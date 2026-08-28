@@ -10,6 +10,7 @@ import {
 } from '../db/datasources/accounts.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
+import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type { Account, AccountBehavior } from '../domain/types.ts'
 
 /**
@@ -42,6 +43,47 @@ export async function createAccount(input: NewAccount): Promise<Account> {
 
 export async function listAccounts(userId: string): Promise<(Account & { balance: string })[]> {
   return await listAccountsWithBalance(db(), userId)
+}
+
+/**
+ * What a list of accounts offers to be ordered on. The name is the default:
+ * an account is looked up before it is compared, and the lists are grouped by
+ * behavior anyway, so the ranking runs inside each group.
+ */
+export type AccountSortField = 'name' | 'balance' | 'checked'
+
+export const ACCOUNT_SORTS: SortFields<AccountSortField> = {
+  name: 'asc',
+  balance: 'desc',
+  // Oldest check first: this criterion is read to find what to point next.
+  checked: 'asc',
+}
+
+export const DEFAULT_ACCOUNT_SORT: SortChoice<AccountSortField> = { field: 'name', direction: 'asc' }
+
+/** One account and the day it was last pointed, which is what "checked" ranks on. */
+export interface CheckedAccount {
+  account: Account & { balance: string }
+  lastCheckedOn: string | null
+}
+
+export function sortAccounts<T extends CheckedAccount>(
+  items: T[],
+  sort: SortChoice<AccountSortField> = DEFAULT_ACCOUNT_SORT,
+): T[] {
+  return sortBy(
+    items,
+    (item) =>
+      sort.field === 'balance'
+        ? Number(item.account.balance)
+        : // Never pointed is not a missing value: it is the oldest a check can
+          // be, and the account that most needs one. It ranks as such instead
+          // of being pushed to the end with what is genuinely unknown.
+          sort.field === 'checked'
+          ? (item.lastCheckedOn ?? '')
+          : item.account.name,
+    sort.direction,
+  )
 }
 
 /** Fields a correction may touch; anything absent keeps its current value. */

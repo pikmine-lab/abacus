@@ -1,6 +1,7 @@
 'use client'
 
 import type { AssetNature } from '@abacus/core/domain'
+import type { OperationSortField } from '@abacus/core/services/investments'
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
@@ -8,6 +9,7 @@ import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } fro
 import { MassFold } from '@/components/mass-fold'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
+import { SortColumn } from '@/components/sort'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -38,6 +40,7 @@ import {
   stopFollowingAction,
 } from '@/lib/actions'
 import { DECLARED_NATURES, NATURE_LABEL, NATURE_ORDER } from '@/lib/nature'
+import type { Sorter } from '@/lib/sort'
 
 interface Option {
   id: string
@@ -767,11 +770,13 @@ function OperationRow({ operation, accounts }: { operation: OperationEntry; acco
           {operation.assetName ?? 'frais de compte'}
           {operation.note && <span className="text-faint"> · {operation.note}</span>}
         </span>
-        {operation.quantity && (
-          <span className="tabular w-20 text-right text-[11.5px] text-faint">
-            {Number(operation.quantity).toLocaleString('fr-FR', { maximumFractionDigits: 8 })}
-          </span>
-        )}
+        {/* Always there, empty on a dividend or a fee: a column that comes and
+            goes by row has no header to hang a sort on. */}
+        <span className="tabular w-20 text-right text-[11.5px] text-faint">
+          {operation.quantity
+            ? Number(operation.quantity).toLocaleString('fr-FR', { maximumFractionDigits: 8 })
+            : ''}
+        </span>
         <span className="tabular w-24 text-right text-[12.5px]">{amount(operation.amount, '€')}</span>
         <RowMenu label={`${LABEL[operation.type]} du ${frDay(operation.operatedOn)}`}>
           <DropdownMenuItem onSelect={() => setEditing(true)}>
@@ -854,18 +859,45 @@ function OperationRow({ operation, accounts }: { operation: OperationEntry; acco
   )
 }
 
+/** The criteria this list offers, named as its columns are. */
+const OPERATION_COLUMNS: { field: OperationSortField; label: string; width: string }[] = [
+  { field: 'date', label: 'Date', width: 'w-20' },
+  { field: 'type', label: 'Type', width: 'w-20' },
+  { field: 'asset', label: 'Actif', width: 'min-w-0 flex-1' },
+  { field: 'quantity', label: 'Quantité', width: 'w-20' },
+  { field: 'amount', label: 'Montant', width: 'w-24' },
+]
+
 export function OperationRows({
   operations,
   accounts,
+  sorter,
 }: {
   operations: OperationEntry[]
   accounts: Option[]
+  sorter: Sorter<OperationSortField>
 }) {
   return (
-    <Rows>
-      {operations.map((operation) => (
-        <OperationRow key={operation.id} operation={operation} accounts={accounts} />
-      ))}
-    </Rows>
+    <div className="overflow-x-auto">
+      <Rows className="min-w-[34rem]">
+        <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
+          {OPERATION_COLUMNS.map((column) => (
+            <SortColumn
+              key={column.field}
+              sorter={sorter}
+              field={column.field}
+              label={column.label}
+              align={column.field === 'quantity' || column.field === 'amount' ? 'right' : 'left'}
+              className={`${column.width} shrink-0`}
+            />
+          ))}
+          {/* The row menu's own width, so the header stops where the rows do. */}
+          <span className="w-8" />
+        </div>
+        {operations.map((operation) => (
+          <OperationRow key={operation.id} operation={operation} accounts={accounts} />
+        ))}
+      </Rows>
+    </div>
   )
 }
