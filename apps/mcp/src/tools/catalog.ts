@@ -1,18 +1,26 @@
+import { resolveSort } from '@abacus/core/domain/sort'
 import {
+  ACCOUNT_SORTS,
   closeAccount,
   createAccount,
+  DEFAULT_ACCOUNT_SORT,
   editAccount,
   listAccounts,
   reopenAccount,
+  sortAccounts,
 } from '@abacus/core/services/accounts'
 import { addAlias, createActor, editActor, listActors, mergeActors } from '@abacus/core/services/actors'
+import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
+  CATEGORY_SORTS,
   createActivity,
   createCategory,
+  DEFAULT_CATEGORY_SORT,
   editActivity,
   editCategory,
   listActivities,
   listCategories,
+  sortCategories,
 } from '@abacus/core/services/catalog'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
@@ -22,14 +30,14 @@ import {
   requireActorByName,
   requireCategoryByName,
 } from '../resolve.ts'
-import { clearable, fail, isoDate, ok, run } from './shared.ts'
+import { clearable, fail, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 export function registerCatalogTools(server: McpServer, userId: string): void {
   server.registerTool(
     'manage_accounts',
     {
       description:
-        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution, the behavior or the opening), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). An account that already existed before this ledger is declared with the money it already held: openingBalance on openedOn, never as a movement from an invented actor, which would show as a huge income that never happened. That opening is not a flow: no analysis counts it, and every balance starts from it, so the first balance check reports no gap. Accounts mirror the user's real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history.",
+        'Manages the user\'s accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution, the behavior or the opening), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). An account that already existed before this ledger is declared with the money it already held: openingBalance on openedOn, never as a movement from an invented actor, which would show as a huge income that never happened. That opening is not a flow: no analysis counts it, and every balance starts from it, so the first balance check reports no gap. Accounts mirror the user\'s real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history. Every listed account carries lastCheckedOn, the day its balance was last confronted with reality: sortBy: checked puts the stalest first, which is how "what should I point" is answered, and the answer repeats the order used.',
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'update', 'close', 'reopen']),
         name: z
@@ -54,14 +62,32 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             'create/update: the day the account opened, which is the day its opening balance counts from',
           ),
         closedOn: isoDate.optional().describe('close: defaults to today'),
+        sortBy: z
+          .enum(['name', 'balance', 'checked'])
+          .optional()
+          .describe(
+            'list: what the list is ordered on. name (default), balance (biggest first), checked (the account whose balance check is oldest first, never checked ahead of them all)',
+          ),
+        direction: sortDirection,
       }),
     },
     async (a) =>
       run(async () => {
         if (a.action === 'list') {
+          const sort = resolveSort(ACCOUNT_SORTS, DEFAULT_ACCOUNT_SORT, a.sortBy, a.direction)
           const accounts = await listAccounts(userId)
-          return ok(
-            accounts.map((acc) => ({
+          // The day each one was last pointed comes along: it is what "checked"
+          // ranks on, and an order whose criterion the answer does not show
+          // could not be checked by whoever reads it.
+          const checked = await Promise.all(
+            accounts.map(async (account) => ({
+              account,
+              lastCheckedOn: (await latestCheck(userId, account.id))?.check.checkedOn ?? null,
+            })),
+          )
+          return ok({
+            order: orderedBy(sort),
+            accounts: sortAccounts(checked, sort).map(({ account: acc, lastCheckedOn }) => ({
               name: acc.name,
               behavior: acc.behavior,
               institution: acc.institution ?? undefined,
@@ -69,8 +95,9 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
               openingBalance: Number(acc.openingBalance) || undefined,
               openedOn: acc.openedOn ?? undefined,
               closedOn: acc.closedOn ?? undefined,
+              lastCheckedOn: lastCheckedOn ?? 'never checked',
             })),
-          )
+          })
         }
         if (!a.name) return fail(`${a.action} requires name.`)
         if (a.action === 'create') {
@@ -192,9 +219,14 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_categories',
     {
       description:
-        "Manages expense and income categories (the user's vocabulary, flat, with an optional group). Actions: list, create, update (rename it, or change its group). Renaming propagates on its own: the movements filed under a category point at it, not at its name. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category.",
+        "Manages expense and income categories (the user's vocabulary, flat, with an optional group). Actions: list, create, update (rename it, or change its group). Renaming propagates on its own: the movements filed under a category point at it, not at its name. Never invent a category close to an existing one: list first, and ask the user when in doubt. Internal transfers never have a category. list comes back grouped, then alphabetical inside each group, the order the user reads them in; sortBy: name lists them flat instead, and the answer repeats the order used.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'update']),
+        sortBy: z
+          .enum(['group', 'name'])
+          .optional()
+          .describe('list: grouped (default) or alphabetical; the group order lists what is filed together'),
+        direction: sortDirection,
         name: z.string().optional().describe('create: the name; update: the category to correct'),
         newName: z.string().optional().describe('update: the corrected name'),
         group: z
@@ -207,7 +239,14 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
       run(async () => {
         if (a.action === 'list') {
           const categories = await listCategories(userId)
-          return ok(categories.map((c) => ({ name: c.name, group: c.groupLabel ?? undefined })))
+          const sort = resolveSort(CATEGORY_SORTS, DEFAULT_CATEGORY_SORT, a.sortBy, a.direction)
+          return ok({
+            order: orderedBy(sort),
+            categories: sortCategories(categories, sort).map((c) => ({
+              name: c.name,
+              group: c.groupLabel ?? undefined,
+            })),
+          })
         }
         if (!a.name) return fail(`${a.action} requires name.`)
         if (a.action === 'create') {

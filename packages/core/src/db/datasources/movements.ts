@@ -1,3 +1,4 @@
+import type { SortChoice } from '../../domain/sort.ts'
 import type { Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
@@ -75,6 +76,50 @@ export interface MovementFilters {
   /** Only expenses still awaiting a refund. */
   advancesOnly?: boolean
   limit?: number
+  /** How the selection is ordered; the date, newest first, by default. */
+  sort?: SortChoice<MovementSortField>
+}
+
+/**
+ * What a movement list can be ordered on: the columns a reader sees, and
+ * nothing else. Three of them are names held elsewhere, so the sort joins what
+ * it needs rather than ordering on an id, which would rank by nothing.
+ */
+export type MovementSortField = 'date' | 'counterparty' | 'account' | 'category' | 'amount'
+
+/** Whether ordering needs the names, which only three criteria do. */
+function sortsOnName(field: MovementSortField): boolean {
+  return field === 'counterparty' || field === 'account' || field === 'category'
+}
+
+function orderKey(tx: Executor, field: MovementSortField) {
+  switch (field) {
+    case 'amount':
+      return tx`m.amount`
+    // The counterparty as the row reads it: the actor on either side, and on a
+    // transfer the account the money left, which is what its label starts with.
+    case 'counterparty':
+      return tx`case when m.kind = 'transfer' then sac.name else coalesce(sa.name, ta.name) end`
+    // The owned account the money moved on. A transfer names no single one, so
+    // it sorts as unknown and lands at the end, where the row says so too.
+    case 'account':
+      return tx`case when m.kind = 'transfer' then null else coalesce(sac.name, tac.name) end`
+    case 'category':
+      return tx`cat.name`
+    default:
+      return tx`m.happened_on`
+  }
+}
+
+/**
+ * The ordering clause. The date and the creation stamp close every sort, so
+ * two rows carrying the same amount never swap places between two reads: a
+ * list that reshuffles under an unchanged filter reads as data moving.
+ */
+function movementOrder(tx: Executor, sort: SortChoice<MovementSortField>) {
+  const key = orderKey(tx, sort.field)
+  const way = sort.direction === 'asc' ? tx`asc` : tx`desc`
+  return tx`order by ${key} ${way} nulls last, m.happened_on desc, m.created_at desc`
 }
 
 /**
@@ -117,10 +162,22 @@ export async function listMovements(
   userId: string,
   f: MovementFilters = {},
 ): Promise<Movement[]> {
+  const sort = f.sort ?? { field: 'date' as const, direction: 'desc' as const }
+  // Only when the order asks for them: a list read by date pays for no join.
+  const named = sortsOnName(sort.field)
   return await tx<Movement[]>`
     select m.* from movement m
+    ${
+      named
+        ? tx`left join actor sa on sa.id = m.source_actor_id
+             left join actor ta on ta.id = m.target_actor_id
+             left join account sac on sac.id = m.source_account_id
+             left join account tac on tac.id = m.target_account_id
+             left join category cat on cat.id = m.category_id`
+        : tx``
+    }
     ${movementWhere(tx, userId, f)}
-    order by m.happened_on desc, m.created_at desc
+    ${movementOrder(tx, sort)}
     limit ${f.limit ?? 100}
   `
 }

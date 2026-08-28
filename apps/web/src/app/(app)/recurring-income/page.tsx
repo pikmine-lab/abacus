@@ -4,9 +4,12 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
+  COMMITMENT_SORTS,
+  DEFAULT_COMMITMENT_SORT,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
   pendingOccurrences,
+  sortCommitments,
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -15,7 +18,9 @@ import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
+import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
+import { sorter } from '@/lib/sort'
 import { eur, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -27,12 +32,14 @@ const PATH = '/recurring-income'
 export default async function RecurringIncomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<Record<string, string | undefined>>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
-  const { error } = await searchParams
+  const params = await searchParams
+  const { error } = params
+  const sort = sorter('sources', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
 
   const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
     listCommitmentsWithProgress(userId, false),
@@ -127,24 +134,38 @@ export default async function RecurringIncomePage({
           </Section>
         )}
 
-        <Section title="Sources" description="montant, périodicité et prochaine échéance">
+        <Section
+          title="Sources"
+          description="montant, périodicité et prochaine échéance"
+          action={
+            active.length > 1 && (
+              <SortMenu
+                sorter={sort}
+                options={[
+                  { field: 'monthly', label: 'Équivalent mensuel' },
+                  { field: 'amount', label: 'Montant versé' },
+                  { field: 'next', label: 'Prochaine échéance' },
+                  { field: 'label', label: 'Nom' },
+                ]}
+              />
+            )
+          }
+        >
           {active.length === 0 ? (
             <EmptyLine>
               Aucun revenu récurrent déclaré. Ton salaire ici, et la projection devient utile.
             </EmptyLine>
           ) : (
             <Rows>
-              {[...active]
-                .sort((a, b) => monthlyEquivalentEur(b) - monthlyEquivalentEur(a))
-                .map((c) => (
-                  <CommitmentRow
-                    key={c.id}
-                    commitment={c}
-                    showJudgment={false}
-                    options={options}
-                    today={today()}
-                  />
-                ))}
+              {sortCommitments(active, sort.current).map((c) => (
+                <CommitmentRow
+                  key={c.id}
+                  commitment={c}
+                  showJudgment={false}
+                  options={options}
+                  today={today()}
+                />
+              ))}
             </Rows>
           )}
         </Section>

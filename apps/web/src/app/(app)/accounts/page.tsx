@@ -1,7 +1,12 @@
 import { auth } from '@abacus/core/auth'
 import type { AccountBehavior } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
-import { listAccounts } from '@abacus/core/services/accounts'
+import {
+  ACCOUNT_SORTS,
+  DEFAULT_ACCOUNT_SORT,
+  listAccounts,
+  sortAccounts,
+} from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
 import { listCategories } from '@abacus/core/services/catalog'
@@ -13,9 +18,11 @@ import { AmountInput } from '@/components/amount-input'
 import type { CheckEntry } from '@/components/balance-check-history'
 import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { EmptyLine, FilterBar, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { createAccountAction } from '@/lib/actions'
+import { sorter } from '@/lib/sort'
 import { daysBetween, eur, freshness } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -43,11 +50,20 @@ function checkEntries(entries: BalanceCheckEntry[]): CheckEntry[] {
   }))
 }
 
-export default async function AccountsPage() {
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
   const now = today()
+  const params = await searchParams
+  // One order for every section of the page: the lists are the same objects
+  // split by behavior, so ranking them apart would answer "which account holds
+  // the most" three times, once per group.
+  const sort = sorter('accounts', ACCOUNT_SORTS, DEFAULT_ACCOUNT_SORT, params)
 
   const [accounts, actors, categories] = await Promise.all([
     listAccounts(userId),
@@ -62,11 +78,15 @@ export default async function AccountsPage() {
   // The whole pointing history per account: the row shows the latest, and its
   // panel repairs any of them.
   const histories = await Promise.all(accounts.map((a) => listChecks(userId, a.id, 100)))
-  const state = accounts.map((account, i) => ({
-    account,
-    checks: histories[i]!,
-    check: histories[i]![0] ?? null,
-  }))
+  const state = sortAccounts(
+    accounts.map((account, i) => ({
+      account,
+      checks: histories[i]!,
+      check: histories[i]![0] ?? null,
+      lastCheckedOn: histories[i]![0]?.check.checkedOn ?? null,
+    })),
+    sort.current,
+  )
 
   const open = state.filter((s) => !s.account.closedOn)
   const closed = state.filter((s) => s.account.closedOn)
@@ -124,6 +144,19 @@ export default async function AccountsPage() {
       <PageHeader title="Comptes" description="soldes calculés, confrontés à la réalité par le pointage">
         {newAccountForm}
       </PageHeader>
+
+      {accounts.length > 0 && (
+        <FilterBar>
+          <SortMenu
+            sorter={sort}
+            options={[
+              { field: 'name', label: 'Nom' },
+              { field: 'balance', label: 'Solde' },
+              { field: 'checked', label: 'Dernier pointage' },
+            ]}
+          />
+        </FilterBar>
+      )}
 
       <PageBody>
         {accounts.length === 0 ? (

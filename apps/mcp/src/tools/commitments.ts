@@ -1,11 +1,14 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
+  COMMITMENT_SORTS,
   cancelCommitment,
   changeAmount,
   confirmNextOccurrence,
   createFinancing,
   createSubscription,
+  DEFAULT_COMMITMENT_SORT,
   editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
@@ -14,6 +17,7 @@ import {
   reviseSchedule,
   setJudgment,
   skipNextOccurrence,
+  sortCommitments,
 } from '@abacus/core/services/commitments'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
@@ -24,7 +28,7 @@ import {
   requireCategoryByName,
   requireCommitment,
 } from '../resolve.ts'
-import { clearable, fail, GUIDANCE, isoDate, ok, run } from './shared.ts'
+import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 export function registerCommitmentTools(server: McpServer, userId: string): void {
   server.registerTool(
@@ -325,14 +329,25 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes cancelled ones only with includeCancelled.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes cancelled ones only with includeCancelled. Ranked by monthly-equivalent cost, biggest first, which is the order the user sees on screen and the one "what costs me the most" is answered with: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
+        sortBy: z
+          .enum(['monthly', 'amount', 'next', 'remaining', 'label'])
+          .optional()
+          .describe(
+            'What the list is ordered on: monthly (default, the monthly equivalent in euros), amount (what is billed each time), next (the soonest occurrence first), remaining (financings only, what is still owed), label',
+          ),
+        direction: sortDirection,
       }),
     },
-    async ({ includeCancelled }) =>
+    async ({ includeCancelled, sortBy, direction }) =>
       run(async () => {
-        const commitments = await listCommitmentsWithProgress(userId, !includeCancelled)
+        const sort = resolveSort(COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, sortBy, direction)
+        const commitments = sortCommitments(
+          await listCommitmentsWithProgress(userId, !includeCancelled),
+          sort,
+        )
         const names = new Map((await listAccounts(userId)).map((a) => [a.id, a.name]))
         // A move already declared for a later date belongs in the review: it is
         // state nothing else would show before the day it takes effect.
@@ -377,7 +392,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             nextDueOn: c.nextDueOn,
           }
         })
-        return ok(view)
+        return ok({ order: orderedBy(sort), commitments: view })
       }),
   )
 

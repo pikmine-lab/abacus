@@ -63,6 +63,20 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Un filtre d'URL n'est jamais cru** : un identifiant qui n'a pas la forme voulue, ou qui
   ne désigne rien chez cet utilisateur, est ignoré côté serveur et retombe sur « tous » côté
   contrôle. Une URL bricolée ne casse pas la page.
+- **Un tri se lit dans l'URL et se calcule là où la liste se coupe.** Les critères d'une
+  liste et leur sens d'ouverture sont déclarés par le service qui la construit
+  (`MOVEMENT_SORTS`, `POSITION_SORTS`…), jamais par l'écran : les deux interfaces
+  ordonnent alors la même liste de la même façon. La page résout le paramètre en un
+  `Sorter` (`lib/sort.ts`) et le passe à ses en-têtes ; `SortHead` sert une vraie `Table`,
+  `SortColumn` un en-tête de colonnes fait à la main, `SortMenu` une liste de blocs, et il
+  se réduit à une bascule quand la liste n'a qu'un critère. Une liste tronquée (mouvements,
+  opérations) trie en SQL, sinon la limite couperait avant l'ordre et la page serait
+  classée à la place de la liste ; une liste chargée entière trie dans son service, au
+  collateur français.
+- **`aria-sort` ne sort pas d'une table.** Il vit sur la cellule d'en-tête d'une vraie
+  `<table>` (les mouvements) ; ailleurs les rangées sont des flex et poser les rôles ARIA
+  d'un tableau pour l'attribut ferait promettre une structure qui n'existe pas. Le bouton
+  de tri porte alors tout ce qu'il faut annoncer, critère et sens compris.
 - **Un retour repasse par l'historique.** Les liens qui traversent les pages se taguent
   `?from=<clé>` ; `BackLink` lit ce tag et affiche un retour nommé dans le header, par
   `router.back()`, donc la période et les filtres de la page quittée sont retrouvés intacts.
@@ -255,6 +269,9 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   krach qui n'a pas eu lieu, ce qui est plus faux qu'une approximation dont la fenêtre est
   nommée. Le chiffre du moment garde la règle inverse et reste non valorisé, parce qu'il est lu
   comme exact.
+- **La colonne d'une liste existe sur toutes ses lignes.** La quantité d'une opération est
+  vide sur un dividende ou des frais, jamais absente : une colonne qui apparaît ligne par
+  ligne n'a pas d'en-tête où accrocher son tri, et décale ce qui la suit.
 - **Une opération se corrige et se supprime**, depuis le menu de sa ligne : un montant d'achat
   saisi de travers n'est pas cosmétique, il nourrit le PRU et fausserait la position aussi
   longtemps qu'elle est détenue. Le type et l'actif n'y sont pas : les changer ferait une autre

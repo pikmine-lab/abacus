@@ -4,8 +4,13 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
   assetPrices,
+  DEFAULT_OPERATION_SORT,
+  DEFAULT_POSITION_SORT,
+  firstOperationOn,
   listAssets,
   listOperations,
+  OPERATION_SORTS,
+  POSITION_SORTS,
   type PositionMass,
   portfolio,
   refreshQuotes,
@@ -26,15 +31,20 @@ import {
 } from '@/components/investment-forms'
 import { MassFold } from '@/components/mass-fold'
 import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
+import { SortColumn } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { sorter } from '@/lib/sort'
 import { eur, eurSigned, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Placements' }
+
+/** How much of the journal the page shows at once. */
+const OPERATION_PAGE = 30
 
 /** Quantities are not money: they keep their own precision, trailing zeros cut. */
 function quantity(value: string): string {
@@ -125,7 +135,7 @@ function MassFigures({ mass }: { mass: PositionMass }) {
 export default async function InvestmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ window?: string; chart?: string }>
+  searchParams: Promise<Record<string, string | undefined>>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
@@ -139,17 +149,22 @@ export default async function InvestmentsPage({
   const now = today()
   const params = await searchParams
   const reading = params.chart === 'performance' ? 'performance' : 'value'
-  // Operations first: the oldest one is where the curve can start at all, so
-  // the window is resolved against it before anything is asked for.
-  const operations = await listOperations(userId)
-  const firstOperation = operations.at(-1)?.operatedOn ?? null
+  // Two lists on the page, two orders: each writes its own parameter, so
+  // ranking the holdings never reshuffles the journal under them.
+  const positionSort = sorter('positions', POSITION_SORTS, DEFAULT_POSITION_SORT, params)
+  const operationSort = sorter('operations', OPERATION_SORTS, DEFAULT_OPERATION_SORT, params)
+  // The oldest operation is where the curve can start at all. Asked for on its
+  // own, because the journal below is ordered and cut: its last row is the
+  // last of thirty, not the first one ever declared.
+  const firstOperation = await firstOperationOn(userId)
   const from = firstOperation ? resolveChartWindow(params, now, firstOperation).from : now
-  const [accounts, held, assets, quotes, series] = await Promise.all([
+  const [accounts, held, assets, quotes, series, operations] = await Promise.all([
     listAccounts(userId),
-    portfolio(userId),
+    portfolio(userId, positionSort.current),
     listAssets(userId),
     assetPrices(userId),
     firstOperation ? valuation(userId, from, now) : Promise.resolve([]),
+    listOperations(userId, { sort: operationSort.current, limit: OPERATION_PAGE }),
   ])
   const investmentAccounts = accounts.filter((a) => a.behavior === 'investment' && !a.closedOn)
   const assetNames = new Map(assets.map((a) => [a.id, a.name]))
@@ -221,7 +236,7 @@ export default async function InvestmentsPage({
             </Link>
             , puis déclare ici ce que tu y détiens.
           </EmptyLine>
-        ) : operations.length === 0 && assets.length === 0 ? (
+        ) : firstOperation === null && assets.length === 0 ? (
           // One line, and the two panels the header already carries: a title, a
           // description and a sentence all saying "nothing yet" said it thrice.
           <EmptyLine>
@@ -338,11 +353,40 @@ export default async function InvestmentsPage({
                         that always fit. */}
                     <Rows className="min-w-[30rem]">
                       <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
-                        <span className="min-w-0 flex-1">Actif</span>
-                        <span className="w-14 text-right">Quantité</span>
-                        <span className="w-[4.5rem] text-right">Cours</span>
-                        <span className="w-[5.5rem] text-right">Valorisation</span>
-                        <span className="w-[5.5rem] text-right">+/− value</span>
+                        <SortColumn
+                          sorter={positionSort}
+                          field="name"
+                          label="Actif"
+                          className="min-w-0 flex-1"
+                        />
+                        <SortColumn
+                          sorter={positionSort}
+                          field="quantity"
+                          label="Quantité"
+                          align="right"
+                          className="w-14 shrink-0"
+                        />
+                        <SortColumn
+                          sorter={positionSort}
+                          field="price"
+                          label="Cours"
+                          align="right"
+                          className="w-[4.5rem] shrink-0"
+                        />
+                        <SortColumn
+                          sorter={positionSort}
+                          field="value"
+                          label="Valorisation"
+                          align="right"
+                          className="w-[5.5rem] shrink-0"
+                        />
+                        <SortColumn
+                          sorter={positionSort}
+                          field="gain"
+                          label="+/− value"
+                          align="right"
+                          className="w-[5.5rem] shrink-0"
+                        />
                         <span className="w-11" />
                       </div>
                       {/* A single mass carries no header: its total is the
@@ -379,12 +423,22 @@ export default async function InvestmentsPage({
               </Section>
             )}
 
-            <Section title="Opérations" description="les 30 dernières">
+            <Section
+              title="Opérations"
+              // What the slice holds depends on the order it was cut in, so it
+              // is named rather than left to be assumed.
+              description={
+                operationSort.current.field === 'date' && operationSort.current.direction === 'desc'
+                  ? `les ${OPERATION_PAGE} dernières`
+                  : `${OPERATION_PAGE} au plus, dans cet ordre`
+              }
+            >
               {operations.length === 0 ? (
                 <EmptyLine>Rien de déclaré pour l’instant.</EmptyLine>
               ) : (
                 <OperationRows
-                  operations={operations.slice(0, 30).map((operation) => ({
+                  sorter={operationSort}
+                  operations={operations.map((operation) => ({
                     id: operation.id,
                     type: operation.type,
                     operatedOn: operation.operatedOn,

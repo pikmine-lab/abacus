@@ -4,7 +4,13 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
-import { listMovements, outstandingAdvances, selectionTotals } from '@abacus/core/services/movements'
+import {
+  DEFAULT_MOVEMENT_SORT,
+  listMovements,
+  MOVEMENT_SORTS,
+  outstandingAdvances,
+  selectionTotals,
+} from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -15,8 +21,10 @@ import { OutstandingAdvances } from '@/components/outstanding-advances'
 import { FilterBar, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { PeriodPicker } from '@/components/period-picker'
 import { ReadingTabs } from '@/components/reading-tabs'
+import { SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { resolvePeriod, resolveReading } from '@/lib/period'
+import { sorter } from '@/lib/sort'
 import { eur, frDate, frMonth, idParam, money } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +63,11 @@ export default async function MovementsPage({
   const known = (id: string | undefined, among: { id: string }[]) =>
     id && among.some((entry) => entry.id === id) ? id : undefined
 
+  // The order is part of the framing, like the period and the filters, and it
+  // is settled in SQL: the list is cut at `limit`, so ordering what came back
+  // would rank the page and pass it off as the ledger.
+  const sort = sorter('sort', MOVEMENT_SORTS, DEFAULT_MOVEMENT_SORT, params)
+
   const filters = {
     from: period.from,
     to: period.to,
@@ -66,6 +79,7 @@ export default async function MovementsPage({
     activityId: known(idParam(params.activity), activities),
     search: params.q,
     advancesOnly: params.advances === '1',
+    sort: sort.current,
   }
 
   const [movements, selection] = await Promise.all([
@@ -184,14 +198,17 @@ export default async function MovementsPage({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-20">Date</TableHead>
-                <TableHead>Contrepartie</TableHead>
-                <TableHead className="hidden sm:table-cell">Compte</TableHead>
-                <TableHead className="hidden md:table-cell">Catégorie</TableHead>
+                <SortHead sorter={sort} field="date" label="Date" className="w-20" />
+                <SortHead sorter={sort} field="counterparty" label="Contrepartie" />
+                <SortHead sorter={sort} field="account" label="Compte" className="hidden sm:table-cell" />
+                <SortHead sorter={sort} field="category" label="Catégorie" className="hidden md:table-cell" />
+                {/* Not sortable: the column only exists while the selection
+                    holds a live claim, so an order resting on it would come
+                    and go with the filters. */}
                 {owedInList && (
                   <TableHead className="hidden w-28 text-right md:table-cell">À rembourser</TableHead>
                 )}
-                <TableHead className="w-28 text-right">Montant</TableHead>
+                <SortHead sorter={sort} field="amount" label="Montant" className="w-28 text-right" />
                 <TableHead className="w-9 sr-only">Actions</TableHead>
               </TableRow>
             </TableHeader>

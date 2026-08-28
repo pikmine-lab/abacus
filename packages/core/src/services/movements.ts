@@ -14,6 +14,7 @@ import {
   listOutstandingAdvances,
   type MovementFilters,
   type MovementSelection,
+  type MovementSortField,
   refundedSoFar,
   selectionTotals as selectionTotalsDs,
   setRefundClosed,
@@ -21,6 +22,7 @@ import {
 } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
+import type { SortChoice, SortFields } from '../domain/sort.ts'
 import type { Account, Actor, Movement } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { eurRateOn, toEur } from './fx.ts'
@@ -522,6 +524,26 @@ export async function deleteMovementIn(tx: Executor, userId: string, id: string)
   await deleteMovementRow(tx, userId, id)
   if (movement.commitmentId) await resyncFinancing(tx, movement.commitmentId)
 }
+
+/**
+ * What the ledger can be ordered on, and what each criterion opens on. A
+ * chosen order replaces a decided one for the time of a reading: the default
+ * stays the date, newest first, because a ledger is read as a history before
+ * it is read as a ranking.
+ *
+ * The list is truncated on screen and by the tools, so the order is settled in
+ * SQL: ordering the rows already fetched would rank the page and call it the
+ * list, which is a false answer to "my biggest expense".
+ */
+export const MOVEMENT_SORTS: SortFields<MovementSortField> = {
+  date: 'desc',
+  counterparty: 'asc',
+  account: 'asc',
+  category: 'asc',
+  amount: 'desc',
+}
+
+export const DEFAULT_MOVEMENT_SORT: SortChoice<MovementSortField> = { field: 'date', direction: 'desc' }
 
 export async function listMovements(userId: string, filters: MovementFilters = {}): Promise<Movement[]> {
   return await listMovementsDs(db(), userId, filters)

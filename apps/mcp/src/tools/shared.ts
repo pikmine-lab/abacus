@@ -1,4 +1,5 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import type { SortChoice } from '@abacus/core/domain/sort'
 import * as z from 'zod'
 
 export type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -137,3 +138,24 @@ export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .describe('Date in YYYY-MM-DD format')
+
+/**
+ * How a list tool takes the way its order runs. Absent, the criterion decides:
+ * a figure and a past date open on the biggest and the most recent, a name on
+ * A to Z, a deadline on the soonest, which is what a caller asking for
+ * "the biggest expenses" means without saying it.
+ */
+export const sortDirection = z
+  .enum(['asc', 'desc'])
+  .optional()
+  .describe("Which way the criterion runs. Absent: the criterion's own default")
+
+/**
+ * The order a list came back in, repeated in the answer. A list is nearly
+ * always cut by a limit, so the order decides which rows are in it at all:
+ * without this, ten movements could be the ten biggest or the ten most recent
+ * and nothing in the answer would say which.
+ */
+export function orderedBy<Field extends string>(sort: SortChoice<Field>): string {
+  return `${sort.field} ${sort.direction}`
+}

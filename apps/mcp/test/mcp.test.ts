@@ -34,6 +34,15 @@ interface ToolReply {
   json: () => unknown
 }
 
+/**
+ * The rows of a list tool. They travel under their own key, beside the order
+ * the tool used: a list is nearly always cut by a limit, so which rows came
+ * back depends on how it was sorted, and the answer says it.
+ */
+function rows<T>(reply: ToolReply, key: string): T[] {
+  return (reply.json() as Record<string, T[]>)[key]!
+}
+
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<ToolReply> {
   const result = (await client.callTool({ name, arguments: args })) as {
     isError?: boolean
@@ -88,7 +97,7 @@ test('full declarative session through the MCP surface', async () => {
 
   // The freelance income inherited its activity from the actor.
   const byActivity = await call(client, 'list_movements', { activity: 'Freelance' })
-  assert.equal((byActivity.json() as unknown[]).length, 1)
+  assert.equal(rows(byActivity, 'movements').length, 1)
 
   // Overview: balances reflect the movements, transfer stayed neutral.
   const overview = (await call(client, 'get_overview')).json() as {
@@ -157,7 +166,10 @@ test('subscription lifecycle through the MCP surface', async () => {
   assert.equal(oneOff.results[0]!.amount, 15.99)
   assert.equal(oneOff.results[0]!.expected, 13.49)
   assert.match(oneOff.results[0]!.reference!, /one-off/)
-  assert.equal(((await call(client, 'list_commitments')).json() as { amount: number }[])[0]!.amount, 13.49)
+  assert.equal(
+    rows<{ amount: number }>(await call(client, 'list_commitments'), 'commitments')[0]!.amount,
+    13.49,
+  )
 
   // Said to be the new norm, the same gesture also moves the reference and
   // records it, so the price history shows when it changed.
@@ -174,11 +186,11 @@ test('subscription lifecycle through the MCP surface', async () => {
     judgmentNote: 'Passer au palier avec pub ?',
   })
 
-  const commitments = (await call(client, 'list_commitments')).json() as {
+  const commitments = rows<{
     label: string
     monthlyEquivalent: number
     judgment: string
-  }[]
+  }>(await call(client, 'list_commitments'), 'commitments')
   assert.equal(commitments[0]!.monthlyEquivalent, 15.99)
   assert.equal(commitments[0]!.judgment, 'reducible')
 
@@ -208,20 +220,22 @@ test('subscription lifecycle through the MCP surface', async () => {
   ).json() as { account: string; effectiveOn: string; note: string }
   assert.equal(moved.account, 'Second')
   assert.match(moved.note, /still land on the previous account/)
-  const [reviewed] = (await call(client, 'list_commitments')).json() as {
+  const [reviewed] = rows<{
     account: string
     movingTo?: { account: string; on: string }
-  }[]
+  }>(await call(client, 'list_commitments'), 'commitments')
   assert.equal(reviewed!.account, 'Courant')
   assert.deepEqual(reviewed!.movingTo, { account: 'Second', on: moveOn })
 
   // The movements already recorded keep the account they happened on.
-  const onOldAccount = (
-    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Courant' })
-  ).json() as unknown[]
-  const onNewAccount = (
-    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Second' })
-  ).json() as unknown[]
+  const onOldAccount = rows(
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Courant' }),
+    'movements',
+  )
+  const onNewAccount = rows(
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Second' }),
+    'movements',
+  )
   assert.equal(onOldAccount.length, 2)
   assert.equal(onNewAccount.length, 0)
 
@@ -267,11 +281,11 @@ test('financing tracked to settlement through the MCP surface', async () => {
     ],
   })
 
-  const commitments = (await call(client, 'list_commitments')).json() as {
+  const commitments = rows<{
     label: string
     paidInstallments: string
     remainingDue: number
-  }[]
+  }>(await call(client, 'list_commitments'), 'commitments')
   assert.equal(commitments[0]!.paidInstallments, '2/4')
   assert.equal(commitments[0]!.remainingDue, 500)
 
@@ -309,7 +323,7 @@ test('financing tracked to settlement through the MCP surface', async () => {
     status: 'due',
   })
 
-  const after = (await call(client, 'list_commitments')).json() as { remainingDue: number }[]
+  const after = rows<{ remainingDue: number }>(await call(client, 'list_commitments'), 'commitments')
   assert.equal(after[0]!.remainingDue, 450)
 })
 
@@ -333,7 +347,7 @@ test('a mistyped movement is repaired through the MCP surface', async () => {
       },
     ],
   })
-  const [declared] = (await call(client, 'list_movements')).json() as { id: string; amount: number }[]
+  const [declared] = rows<{ id: string; amount: number }>(await call(client, 'list_movements'), 'movements')
 
   // A typo on the amount: corrected in place, everything else untouched.
   const fixed = (
@@ -365,7 +379,7 @@ test('a mistyped movement is repaired through the MCP surface', async () => {
   assert.match(missing.text, /list_movements/)
 
   await call(client, 'fix_movement', { movement: declared!.id, action: 'delete' })
-  assert.deepEqual((await call(client, 'list_movements')).json(), [])
+  assert.deepEqual(rows(await call(client, 'list_movements'), 'movements'), [])
 })
 
 test('the whole referential corrects itself through the MCP surface', async () => {
@@ -464,14 +478,14 @@ test('a movement reads back with its account and its counterparty', async () => 
     ],
   })
 
-  const rows = (await call(client, 'list_movements')).json() as {
+  const listed = rows<{
     kind: string
     account: string
     counterparty: string
     category?: string
-  }[]
+  }>(await call(client, 'list_movements'), 'movements')
   assert.deepEqual(
-    rows.map((m) => [m.kind, m.account, m.counterparty, m.category]),
+    listed.map((m) => [m.kind, m.account, m.counterparty, m.category]),
     [
       ['transfer', 'Courant', 'Livret', undefined],
       ['income', 'Courant', 'ACME', undefined],
@@ -505,7 +519,7 @@ test('a foreign-currency expense through the MCP surface, statement euros given'
   assert.equal(line?.paid, '99 USD')
   assert.equal(line?.eurAmount, 91.35)
 
-  const [row] = (await call(client, 'list_movements')).json() as { amount: number; paid?: string }[]
+  const [row] = rows<{ amount: number; paid?: string }>(await call(client, 'list_movements'), 'movements')
   assert.equal(row?.amount, 91.35)
   assert.equal(row?.paid, '99 USD')
 
@@ -607,7 +621,7 @@ test('a balance check is corrected through the MCP surface, adjustment included'
   ).json() as { gap: number; adjustment: string }
   assert.equal(wider.gap, -100)
   assert.match(wider.adjustment, /realigned/)
-  const adjustment = ((await call(client, 'list_movements')).json() as { amount: number }[])[0]
+  const adjustment = rows<{ amount: number }>(await call(client, 'list_movements'), 'movements')[0]
   assert.equal(adjustment!.amount, 100)
 
   // Nothing left to settle: the adjustment is removed with the gap.
@@ -620,7 +634,7 @@ test('a balance check is corrected through the MCP surface, adjustment included'
   ).json() as { gap: number; adjustment: string }
   assert.equal(settled.gap, 0)
   assert.match(settled.adjustment, /removed/)
-  assert.equal(((await call(client, 'list_movements')).json() as unknown[]).length, 1)
+  assert.equal(rows(await call(client, 'list_movements'), 'movements').length, 1)
 
   await call(client, 'manage_balance_checks', { action: 'delete', check: check.checkId })
   assert.deepEqual((await call(client, 'manage_balance_checks', { action: 'list' })).json(), [])
@@ -935,10 +949,10 @@ test('a movement declared for another month reads back in that month', async () 
   assert.equal((declared.json() as { results: { month?: string }[] }).results[0]!.month, '2026-08')
 
   const inAugust = async (reading?: string) =>
-    (await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', reading })).json() as {
-      id: string
-      month?: string
-    }[]
+    rows<{ id: string; month?: string }>(
+      await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', reading }),
+      'movements',
+    )
 
   assert.equal((await inAugust()).length, 0)
   const [attached] = await inAugust('accrual')
@@ -988,10 +1002,10 @@ test('a ghost movement reads back in the list and in no analysis', async () => {
   assert.deepEqual((await byActor()).rows, [{ actor: 'Boulangerie', gross: 40, net: 40, movements: 1 }])
 
   // Still there to be read and repaired, and saying so.
-  const listed = (await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' })).json() as {
-    id: string
-    ghost?: boolean
-  }[]
+  const listed = rows<{ id: string; ghost?: boolean }>(
+    await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' }),
+    'movements',
+  )
   assert.equal(listed.length, 2)
   assert.equal(listed.find((m) => m.id === results[1]!.movementId)!.ghost, true)
 
@@ -1174,7 +1188,7 @@ test('investments: funding is a movement, what happens inside is an operation', 
   assert.match(stillHeld.text, /part of the history/)
 
   const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
-  assert.equal((operations.json() as unknown[]).length, 5)
+  assert.equal(rows(operations, 'operations').length, 5)
 })
 
 test('investments: the history answers "what did it make", already totalled', async () => {
