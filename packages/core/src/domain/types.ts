@@ -90,7 +90,7 @@ export interface Movement {
   ghost: boolean
 }
 
-export type CommitmentKind = 'subscription' | 'financing'
+export type CommitmentKind = 'subscription' | 'financing' | 'investment_plan'
 export type CommitmentDirection = 'outgoing' | 'incoming'
 export type PeriodUnit = 'week' | 'month' | 'year'
 export type Judgment = 'essential' | 'reducible' | 'to_cancel'
@@ -101,13 +101,18 @@ export interface Commitment {
   kind: CommitmentKind
   direction: CommitmentDirection
   label: string
-  actorId: string
+  /** Null on an investment plan alone: an internal transfer bills nobody. */
+  actorId: string | null
   /**
    * The account it hits today. What a commitment hits is a dated history (a
    * recurring payment moves from one account to another on a date), so this is
    * resolved on read; an occurrence reads the account of its own date.
    */
   accountId: string
+  /** Investment plan only: the investment account each occurrence feeds. */
+  targetAccountId: string | null
+  /** Investment plan only: what each occurrence buys there. */
+  assetId: string | null
   /** The move already announced for a later date, when there is one. */
   nextAccountMove: { accountId: string; effectiveOn: string } | null
   categoryId: string | null
@@ -215,6 +220,8 @@ export interface InvestmentOperation {
   currency: string
   operatedOn: string
   note: string | null
+  /** The internal transfer that funded it, when an investment plan wrote both. */
+  movementId: string | null
 }
 
 /**

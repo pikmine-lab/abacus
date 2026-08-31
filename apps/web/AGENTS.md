@@ -276,6 +276,17 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   saisi de travers n'est pas cosmétique, il nourrit le PRU et fausserait la position aussi
   longtemps qu'elle est détenue. Le type et l'actif n'y sont pas : les changer ferait une autre
   opération, donc une suppression et une nouvelle déclaration, ce qui est ce qui s'est passé.
+- **Un versement programmé vit ici, pas dans les dépenses récurrentes.** Il porte deux comptes
+  et un actif, pas un acteur : sa place est là où l'actif se cherche déjà. Sa ligne dit vers
+  quel compte il part et ce qu'il achète, les deux faits qu'aucun montant ne donne, et le
+  panneau de correction est le sien (ni acteur, ni catégorie, ni date de fin). Ce qu'il engage
+  par mois se lit dans sa **propre tuile**, jamais additionné au coût mensuel engagé : cet
+  argent reste celui de la personne, il change de forme.
+- **Son échéance se confirme là aussi, et elle demande la quantité.** C'est la seule
+  confirmation qui n'est pas un oui/non même quand le montant est juste : l'ordre s'exécute à
+  un cours intraday, donc rien ne peut déduire les parts, et le bouton reste inerte tant
+  qu'elles manquent. Le cas rare (le courtier n'a pas tout investi, un reliquat reste en
+  espèces) est dans le menu de la ligne, pas dans le chemin.
 
 ### Brancher une IA
 

@@ -4,6 +4,7 @@ import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { type CommitmentOptions, JudgmentSelect } from '@/components/commitment-forms'
 import { CommitmentRowActions } from '@/components/commitment-row-actions'
 import type { ScheduleLine } from '@/components/financing-schedule-form'
+import type { PlacementOptions } from '@/components/investment-plan-forms'
 import { ProgressRing } from '@/components/progress-ring'
 import { Badge } from '@/components/ui/badge'
 import { eur, frDate, money } from '@/lib/utils'
@@ -32,6 +33,7 @@ export function CommitmentRow({
   schedule,
   today,
   options,
+  placement,
 }: {
   commitment: CommitmentWithProgress
   showJudgment: boolean
@@ -40,9 +42,15 @@ export function CommitmentRow({
   today?: string
   /** References the row's correction panel offers; without them, no panel. */
   options?: CommitmentOptions
+  /**
+   * Investment plans only: what the row says beyond the amount (where it goes,
+   * what it buys) and what its own correction panel needs.
+   */
+  placement?: { options: PlacementOptions; assetName: string }
 }) {
   const incoming = c.direction === 'incoming'
   const financing = c.kind === 'financing'
+  const plan = c.kind === 'investment_plan'
   const foreign = c.currency !== 'EUR'
   // Amounts read in the billing currency; only the monthly hint converts.
   const inCurrency = (value: number, decimals = 0) =>
@@ -95,6 +103,13 @@ export function CommitmentRow({
               sur {inCurrency(Number(c.totalAmount))}
             </span>
           )}
+          {/* Where the money goes and what it buys: the two facts that make a
+              placement readable, and that no amount can say. */}
+          {plan && placement && (
+            <span>
+              vers {accountName(c.targetAccountId ?? '')} · achète {placement.assetName}
+            </span>
+          )}
         </div>
       </div>
 
@@ -122,6 +137,15 @@ export function CommitmentRow({
         today={today}
         options={options}
         defaults={defaults}
+        placement={
+          placement && c.targetAccountId && c.assetId
+            ? {
+                options: placement.options,
+                targetAccountId: c.targetAccountId,
+                assetId: c.assetId,
+              }
+            : undefined
+        }
       />
     </div>
   )

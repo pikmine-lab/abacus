@@ -2,6 +2,12 @@ import { auth } from '@abacus/core/auth'
 import type { Position } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
+import { listActivities } from '@abacus/core/services/catalog'
+import {
+  listCommitmentsWithProgress,
+  monthlyEquivalentEur,
+  pendingOccurrences,
+} from '@abacus/core/services/commitments'
 import {
   assetPrices,
   DEFAULT_OPERATION_SORT,
@@ -20,6 +26,7 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { BalanceChart } from '@/components/balance-chart'
+import { CommitmentRow } from '@/components/commitment-blocks'
 import { EntrySheet } from '@/components/entry-sheet'
 import {
   type AssetEntry,
@@ -29,8 +36,10 @@ import {
   OperationForm,
   OperationRows,
 } from '@/components/investment-forms'
+import { InvestmentPlanForm, type PlacementOptions } from '@/components/investment-plan-forms'
 import { MassFold } from '@/components/mass-fold'
 import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
+import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortColumn } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
@@ -158,14 +167,20 @@ export default async function InvestmentsPage({
   // last of thirty, not the first one ever declared.
   const firstOperation = await firstOperationOn(userId)
   const from = firstOperation ? resolveChartWindow(params, now, firstOperation).from : now
-  const [accounts, held, assets, quotes, series, operations] = await Promise.all([
-    listAccounts(userId),
-    portfolio(userId, positionSort.current),
-    listAssets(userId),
-    assetPrices(userId),
-    firstOperation ? valuation(userId, from, now) : Promise.resolve([]),
-    listOperations(userId, { sort: operationSort.current, limit: OPERATION_PAGE }),
-  ])
+  const [accounts, held, assets, quotes, series, operations, commitments, pending, activities] =
+    await Promise.all([
+      listAccounts(userId),
+      portfolio(userId, positionSort.current),
+      listAssets(userId),
+      assetPrices(userId),
+      firstOperation ? valuation(userId, from, now) : Promise.resolve([]),
+      listOperations(userId, { sort: operationSort.current, limit: OPERATION_PAGE }),
+      // Cancelled ones left out: a stopped placement is history, and this page
+      // is read for what is running.
+      listCommitmentsWithProgress(userId, true),
+      pendingOccurrences(userId),
+      listActivities(userId),
+    ])
   const investmentAccounts = accounts.filter((a) => a.behavior === 'investment' && !a.closedOn)
   const assetNames = new Map(assets.map((a) => [a.id, a.name]))
   const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
@@ -197,6 +212,26 @@ export default async function InvestmentsPage({
     .filter((a) => a.followed)
     .map((a) => ({ ...a, price: quotes.get(a.id) ?? null }))
 
+  // Scheduled placements: declared once here, and each occurrence confirmed
+  // here too, because that confirmation buys.
+  const plans = commitments.filter((c) => c.kind === 'investment_plan')
+  const monthlyInvested = plans.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
+  const duePlacements = pending.filter((p) => p.placement !== null)
+  const placementOptions: PlacementOptions = {
+    accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
+    investmentAccounts: investmentAccounts.map((a) => ({ id: a.id, name: a.name })),
+    assets: assetEntries,
+    activities: activities.map((a) => ({ id: a.id, name: a.name })),
+  }
+  // The row's shared correction panel reads its references from here; a
+  // placement carries no actor and no category, so those lists stay empty.
+  const commitmentOptions = {
+    accounts: placementOptions.accounts,
+    actors: [],
+    categories: [],
+    activities: placementOptions.activities,
+  }
+
   const entry = (
     <>
       <EntrySheet
@@ -206,6 +241,14 @@ export default async function InvestmentsPage({
         variant="outline"
       >
         <FollowForm />
+      </EntrySheet>
+      <EntrySheet
+        label="Programmer un versement"
+        title="Versement programmé"
+        description="Une somme qui part d’un compte vers un compte d’investissement à intervalle régulier, et y achète. Le virement et l’achat s’écrivent ensemble à chaque échéance."
+        variant="outline"
+      >
+        <InvestmentPlanForm options={placementOptions} today={now} />
       </EntrySheet>
       <EntrySheet
         label="Déclarer une opération"
@@ -236,7 +279,7 @@ export default async function InvestmentsPage({
             </Link>
             , puis déclare ici ce que tu y détiens.
           </EmptyLine>
-        ) : firstOperation === null && assets.length === 0 ? (
+        ) : firstOperation === null && assets.length === 0 && plans.length === 0 ? (
           // One line, and the two panels the header already carries: a title, a
           // description and a sentence all saying "nothing yet" said it thrice.
           <EmptyLine>
@@ -269,7 +312,54 @@ export default async function InvestmentsPage({
                     : `dividendes et frais compris, contre ${eur(contributions)} d’apports`
                 }
               />
+              {/* Counted apart, never beside the committed costs: this money
+                  stays the user's, it only changes form. */}
+              {plans.length > 0 && (
+                <StatTile
+                  label="Épargne programmée"
+                  value={`${eur(monthlyInvested, 2)}/mois`}
+                  hint={`${eur(monthlyInvested * 12)} par an · ${plans.length} versement${plans.length > 1 ? 's' : ''}`}
+                />
+              )}
             </StatRow>
+
+            {plans.length > 0 && (
+              <Section title="Versements programmés" description="le virement et l’achat, d’un même geste">
+                {duePlacements.length > 0 && (
+                  <PendingOccurrences
+                    back="/investments"
+                    items={duePlacements.map((p) => ({
+                      commitmentId: p.commitment.id,
+                      label: p.commitment.label,
+                      dueOn: p.dueOn,
+                      amount: p.amount,
+                      currency: p.commitment.currency,
+                      incoming: false,
+                      account: accountNames.get(p.accountId) ?? '',
+                      placement: {
+                        targetAccount: accountNames.get(p.placement!.targetAccountId) ?? '',
+                        asset: assetNames.get(p.placement!.assetId) ?? '',
+                      },
+                    }))}
+                  />
+                )}
+                <Rows>
+                  {plans.map((plan) => (
+                    <CommitmentRow
+                      key={plan.id}
+                      commitment={plan}
+                      showJudgment={false}
+                      today={now}
+                      options={commitmentOptions}
+                      placement={{
+                        options: placementOptions,
+                        assetName: assetNames.get(plan.assetId ?? '') ?? '',
+                      }}
+                    />
+                  ))}
+                </Rows>
+              </Section>
+            )}
 
             {series.some((p) => Number(p.holdings) > 0) && (
               <Section

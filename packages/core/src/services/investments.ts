@@ -1,5 +1,6 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount, listAccountsWithBalance } from '../db/datasources/accounts.ts'
+import { countPlansForAsset } from '../db/datasources/commitments.ts'
 import {
   assetHistory as assetHistoryDs,
   assetPrices as assetPricesDs,
@@ -159,6 +160,9 @@ export async function editAsset(userId: string, id: string, name: string): Promi
  * one that carries operations is part of the history, and forgetting it would
  * take a position and its cost with it. The shared instrument stays: it belongs
  * to no one, and someone else may well be following it.
+ *
+ * An asset an investment plan buys is in use too, before its first occurrence:
+ * forgetting it would leave a plan with nothing to buy.
  */
 export async function stopFollowing(userId: string, assetId: string): Promise<void> {
   const sql = db()
@@ -170,6 +174,12 @@ export async function stopFollowing(userId: string, assetId: string): Promise<vo
       throw new DomainError(
         'asset_has_operations',
         `"${asset.name}" carries ${operations} operation${operations > 1 ? 's' : ''}: delete those first, or keep it`,
+      )
+    const plans = await countPlansForAsset(tx, assetId)
+    if (plans > 0)
+      throw new DomainError(
+        'asset_has_plans',
+        `"${asset.name}" is what ${plans > 1 ? `${plans} scheduled placements buy` : 'a scheduled placement buys'}: stop the placement first, or keep it`,
       )
     await deleteAssetRow(tx, userId, assetId)
   })
@@ -229,10 +239,17 @@ export async function recordOperations(
   })
 }
 
-async function recordOperationIn(
+/**
+ * One operation inside a transaction someone else owns: an investment plan's
+ * occurrence writes its purchase beside the transfer that funded it, and both
+ * must land or neither. Exported for that alone, so the checks below stay the
+ * only place an operation is judged.
+ */
+export async function recordOperationIn(
   tx: Executor,
   userId: string,
   input: RecordOperationInput,
+  opts: { movementId?: string } = {},
 ): Promise<InvestmentOperation> {
   const account = await getAccount(tx, userId, input.accountId)
   if (!account) throw new DomainError('account_not_found', `No account ${input.accountId} for this user`)
@@ -278,6 +295,7 @@ async function recordOperationIn(
     amount: String(amount),
     operatedOn: input.operatedOn,
     note: input.note ?? null,
+    movementId: opts.movementId ?? null,
   })
 }
 

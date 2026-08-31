@@ -63,7 +63,10 @@ export default async function RecurringExpensesPage({
     listActivities(userId),
   ])
 
-  const outgoing = commitments.filter((c) => c.direction === 'outgoing')
+  // A scheduled placement leaves an account like a subscription does, and it is
+  // no cost: it lives in Placements, with the asset it buys, and it enters
+  // neither these lists nor the committed cost below.
+  const outgoing = commitments.filter((c) => c.direction === 'outgoing' && c.kind !== 'investment_plan')
   const active = outgoing.filter((c) => !c.cancelledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription')
   const financings = active.filter((c) => c.kind === 'financing')
@@ -93,7 +96,7 @@ export default async function RecurringExpensesPage({
       ),
     ),
   )
-  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
+  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing' && p.placement === null)
 
   const monthlyCost = active.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   // In euros at the latest rate: a USD plan's remainder cannot be added as-is.

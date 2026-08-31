@@ -7,8 +7,15 @@ export interface NewCommitment {
   kind: Commitment['kind']
   direction?: Commitment['direction']
   label: string
-  actorId: string
+  actorId?: string | null
   accountId: string
+  targetAccountId?: string | null
+  /**
+   * Written whenever a target is, because the composite foreign key that keeps
+   * the target an investment account is satisfied as soon as one side is null.
+   */
+  targetAccountBehavior?: 'investment' | null
+  assetId?: string | null
   categoryId?: string | null
   activityId?: string | null
   amount: number
@@ -179,6 +186,17 @@ export async function accountTimeline(tx: Executor, commitmentId: string): Promi
     ) periods
     order by since asc nulls first, created_at asc
   `
+}
+
+/**
+ * The plans that buy an asset, cancelled ones included: a plan that ran is part
+ * of the history even once stopped, and its occurrences name the asset.
+ */
+export async function countPlansForAsset(tx: Executor, assetId: string): Promise<number> {
+  const [row] = await tx<{ count: string }[]>`
+    select count(*) as count from commitment where asset_id = ${assetId}
+  `
+  return Number(row!.count)
 }
 
 export async function listCommitmentEvents(tx: Executor, commitmentId: string): Promise<CommitmentEvent[]> {

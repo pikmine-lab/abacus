@@ -100,7 +100,10 @@ export default async function OverviewPage({
   const active = commitments.filter((c) => !c.cancelledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription' && c.direction === 'outgoing')
   const financings = active.filter((c) => c.kind === 'financing')
-  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing')
+  // A placement's occurrence is confirmed where it buys, so it counts as its
+  // own line rather than among the debits.
+  const pendingPlacements = pending.filter((p) => p.placement !== null)
+  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing' && p.placement === null)
   const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
 
   if (accounts.length === 0 || firstDay === null) {
@@ -163,8 +166,11 @@ export default async function OverviewPage({
   const expenseGross = Number(totals.expenseGross)
   const income = Number(totals.income)
   const saved = income - expenseNet
+  // Saving is not cost: a scheduled placement leaves the account like a
+  // subscription, but the money stays the user's, so it is counted in
+  // Placements and not here.
   const monthlyCommitted = active
-    .filter((c) => c.direction === 'outgoing')
+    .filter((c) => c.direction === 'outgoing' && c.kind !== 'investment_plan')
     .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   // What is owed back, not what was spent: an advance covers a share of its
   // expense, so the claim is that share minus what already came back.
@@ -276,8 +282,19 @@ export default async function OverviewPage({
               {/* One line per direction: an occurrence to confirm lives on the
                   page of its own kind, and a single link could only guess. */}
               {[
-                { items: pendingOut, href: '/recurring-expenses', noun: 'prélèvement' },
-                { items: pendingIn, href: '/recurring-income', noun: 'versement' },
+                {
+                  items: pendingOut,
+                  href: '/recurring-expenses',
+                  one: 'prélèvement',
+                  many: 'prélèvements',
+                },
+                { items: pendingIn, href: '/recurring-income', one: 'versement', many: 'versements' },
+                {
+                  items: pendingPlacements,
+                  href: '/investments',
+                  one: 'versement programmé',
+                  many: 'versements programmés',
+                },
               ]
                 .filter((group) => group.items.length > 0)
                 .map((group) => (
@@ -288,8 +305,7 @@ export default async function OverviewPage({
                   >
                     <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
                     <span className="text-[13px]">
-                      {group.items.length} {group.noun}
-                      {group.items.length > 1 ? 's' : ''} à confirmer
+                      {group.items.length} {group.items.length > 1 ? group.many : group.one} à confirmer
                     </span>
                     <span className="text-[11.5px] text-faint">
                       attendu{group.items.length > 1 ? 's' : ''} depuis le {frDate(group.items[0]!.dueOn)}

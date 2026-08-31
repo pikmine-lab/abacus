@@ -26,12 +26,21 @@ import {
   shiftPositions,
   updateInstallmentPlan,
 } from '../db/datasources/installments.ts'
+import { getAsset } from '../db/datasources/investments.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
 import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
-import type { Commitment, CommitmentEvent, Judgment, Movement, PeriodUnit } from '../domain/types.ts'
+import type {
+  Commitment,
+  CommitmentEvent,
+  InvestmentOperation,
+  Judgment,
+  Movement,
+  PeriodUnit,
+} from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { eurRateLatest, eurRateOn, toEur } from './fx.ts'
+import { recordOperationIn } from './investments.ts'
 import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
 
 /**
@@ -63,6 +72,28 @@ async function requireAccount(tx: Executor, userId: string, accountId: string): 
 async function requireRefs(tx: Executor, userId: string, actorId: string, accountId: string): Promise<void> {
   await requireActor(tx, userId, actorId)
   await requireAccount(tx, userId, accountId)
+}
+
+/**
+ * The account a plan feeds. Only an investment account carries the purchase its
+ * occurrences write, and a closed one carries nothing at all: refusing here
+ * says which account is wrong, where the database would only say a plan is.
+ */
+async function requireInvestmentAccount(tx: Executor, userId: string, accountId: string): Promise<void> {
+  const account = await getAccount(tx, userId, accountId)
+  if (!account) throw new DomainError('account_not_found', `No account ${accountId} for this user`)
+  if (account.behavior !== 'investment')
+    throw new DomainError(
+      'not_an_investment_account',
+      `"${account.name}" is not an investment account: a scheduled placement can only feed one`,
+    )
+  if (account.closedOn)
+    throw new DomainError('account_closed', `"${account.name}" is closed: reopen it before writing to it`)
+}
+
+async function requireAsset(tx: Executor, userId: string, assetId: string): Promise<void> {
+  if (!(await getAsset(tx, userId, assetId)))
+    throw new DomainError('asset_not_found', `No asset ${assetId} for this user`)
 }
 
 /**
@@ -268,6 +299,68 @@ export async function createFinancing(
   })
 }
 
+export interface InvestmentPlanInput {
+  label: string
+  /** The account the money leaves: any account the user owns, bank or broker cash. */
+  accountId: string
+  /** The investment account it feeds, where the purchase lands. */
+  targetAccountId: string
+  /** What each occurrence buys there. */
+  assetId: string
+  amount: number
+  periodUnit: PeriodUnit
+  periodCount?: number
+  firstDueOn: string
+  activityId?: string
+}
+
+/**
+ * Declares a scheduled placement: a fixed sum leaving one account for an
+ * investment account at a regular interval, and buying an asset there.
+ *
+ * It bills nobody, so it carries no actor and no category: what an occurrence
+ * produces is an internal transfer, neutral by construction, plus the purchase
+ * that transfer funded. The two accounts are both the user's, and they cannot
+ * be the same one.
+ *
+ * Euros only, unlike the other kinds. An occurrence writes an operation, and
+ * operations are not multi-currency yet: accepting a foreign plan would price
+ * the purchase in euros behind the user's back, which is exactly the kind of
+ * invented number the average cost must never carry.
+ */
+export async function createInvestmentPlan(userId: string, input: InvestmentPlanInput): Promise<Commitment> {
+  const sql = db()
+  return await sql.begin(async (tx) => {
+    await requireAccount(tx, userId, input.accountId)
+    await requireInvestmentAccount(tx, userId, input.targetAccountId)
+    await requireAsset(tx, userId, input.assetId)
+    if (input.accountId === input.targetAccountId)
+      throw new DomainError(
+        'same_account',
+        'A placement moves money from one account to another: those two are the same',
+      )
+    const commitment = await insertCommitment(tx, {
+      userId,
+      kind: 'investment_plan',
+      direction: 'outgoing',
+      label: input.label,
+      actorId: null,
+      accountId: input.accountId,
+      targetAccountId: input.targetAccountId,
+      targetAccountBehavior: 'investment',
+      assetId: input.assetId,
+      activityId: input.activityId ?? null,
+      amount: input.amount,
+      currency: 'EUR',
+      periodUnit: input.periodUnit,
+      periodCount: input.periodCount ?? 1,
+      nextDueOn: input.firstDueOn,
+    })
+    await insertCommitmentEvent(tx, commitment.id, today(), 'created', input.amount, null, null, 'EUR')
+    return commitment
+  })
+}
+
 /**
  * A commitment with its amount re-said in euros at the latest known rate.
  * `amount` stays in the billing currency (it is what the provider states);
@@ -427,6 +520,11 @@ export async function moveAccount(
     const commitment = await getCommitmentForUpdate(tx, userId, id)
     if (!commitment) throw new DomainError('commitment_not_found', `No commitment ${id} for this user`)
     await requireAccount(tx, userId, accountId)
+    if (accountId === commitment.targetAccountId)
+      throw new DomainError(
+        'same_account',
+        'A placement moves money from one account to another: this is the account it feeds',
+      )
     await insertCommitmentEvent(tx, id, effectiveOn ?? today(), 'account_changed', null, null, accountId)
     return (await getCommitment(tx, userId, id))!
   })
@@ -452,6 +550,14 @@ export interface CommitmentEdit {
   periodUnit?: PeriodUnit
   periodCount?: number
   engagedUntil?: string | null
+  /**
+   * Investment plan only: the investment account it feeds, and what it buys
+   * there. Both are corrections and not history, unlike the source account: the
+   * occurrences already confirmed keep the account they landed on and the asset
+   * they bought, which is what happened.
+   */
+  targetAccountId?: string
+  assetId?: string
 }
 
 const EDITABLE = [
@@ -462,6 +568,8 @@ const EDITABLE = [
   'periodUnit',
   'periodCount',
   'engagedUntil',
+  'targetAccountId',
+  'assetId',
 ] as const
 
 /**
@@ -481,6 +589,28 @@ export async function editCommitment(userId: string, id: string, input: Commitme
         'financing_has_no_lock_in',
         'A financing ends at its last installment: it carries no lock-in date',
       )
+    const plan = commitment.kind === 'investment_plan'
+    if (plan && (input.actorId !== undefined || input.categoryId || input.engagedUntil))
+      throw new DomainError(
+        'placement_has_no_actor',
+        'A scheduled placement pays nobody: it carries no actor, no category and no lock-in date',
+      )
+    if (!plan && (input.targetAccountId !== undefined || input.assetId !== undefined))
+      throw new DomainError(
+        'not_a_placement',
+        'Only a scheduled placement feeds an investment account and buys an asset',
+      )
+    if (input.targetAccountId !== undefined) {
+      await requireInvestmentAccount(tx, userId, input.targetAccountId)
+      // Read on the commitment rather than on the timeline: the source it moved
+      // to is the account the next occurrences will leave.
+      if (input.targetAccountId === commitment.accountId)
+        throw new DomainError(
+          'same_account',
+          'A placement moves money from one account to another: those two are the same',
+        )
+    }
+    if (input.assetId !== undefined) await requireAsset(tx, userId, input.assetId)
 
     const patch: Record<string, unknown> = {}
     for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
@@ -625,6 +755,20 @@ export interface PendingOccurrence {
    * a move is exactly the case that used to land on the wrong account.
    */
   accountId: string
+  /**
+   * Investment plan only: where the money goes, and what it buys there. An
+   * occurrence of a plan is a transfer plus a purchase, so both interfaces need
+   * both before they can ask for the one thing that cannot be derived, the
+   * quantity bought.
+   */
+  placement: { targetAccountId: string; assetId: string } | null
+}
+
+/** The placement side of an occurrence, for the one kind that has one. */
+function placementOf(commitment: Commitment): PendingOccurrence['placement'] {
+  return commitment.kind === 'investment_plan'
+    ? { targetAccountId: commitment.targetAccountId!, assetId: commitment.assetId! }
+    : null
 }
 
 /**
@@ -648,6 +792,7 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
           dueOn: installment.dueOn,
           amount: Number(installment.amount),
           accountId: accountAt(timeline, installment.dueOn),
+          placement: null,
         })
       continue
     }
@@ -658,12 +803,20 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
         dueOn,
         amount: Number(commitment.amount),
         accountId: accountAt(timeline, dueOn),
+        placement: placementOf(commitment),
       })
       dueOn = addPeriod(dueOn, commitment.periodUnit, commitment.periodCount)
     }
   }
   pending.sort((a, b) => a.dueOn.localeCompare(b.dueOn))
   return pending
+}
+
+/** What confirming an occurrence wrote: always a movement, plus the purchase a placement funded. */
+export interface ConfirmedOccurrence {
+  movement: Movement
+  /** The buy an investment plan's occurrence also wrote, in the same transaction. */
+  operation: InvestmentOperation | null
 }
 
 /**
@@ -678,6 +831,12 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
  * and only the person confirming knows which, so it is asked, not guessed.
  * Both writes share this transaction: a recorded raise without its movement,
  * or the reverse, would be worse than either.
+ *
+ * An investment plan's occurrence is two writes rather than one: the internal
+ * transfer that funds it, and the purchase it paid for. Both land here or
+ * neither, which is what makes them one event instead of the two unrelated
+ * gestures this replaces. It is the one kind whose confirmation cannot be a
+ * yes/no: the quantity bought is required, see `quantity`.
  */
 export async function confirmNextOccurrence(
   userId: string,
@@ -692,9 +851,25 @@ export async function confirmNextOccurrence(
      * computed at the occurrence day's rate, like any declared movement.
      */
     eurAmount?: number
+    /**
+     * Investment plan only, and required there: how many units the order
+     * actually bought. It is never derived from the amount, because the order
+     * executes at an intraday price that no daily close reproduces: computing
+     * the quantity from a close would write an average cost that is wrong from
+     * the first occurrence and drifts further with every one after it.
+     */
+    quantity?: number
+    /**
+     * Investment plan only: what was really invested, when it is not the whole
+     * instalment. A broker that does not buy fractions leaves the remainder in
+     * the account's cash, which is where it truly sits. Omitted, the purchase
+     * is the instalment: order fees belong in it, so the average cost that
+     * comes out matches the broker's own.
+     */
+    investedAmount?: number
   } = {},
   history: HistoryFetcher = fetchHistory,
-): Promise<Movement> {
+): Promise<ConfirmedOccurrence> {
   const sql = db()
   return await sql.begin(async (tx) => {
     const commitment = await getCommitmentForUpdate(tx, userId, id)
@@ -709,6 +884,14 @@ export async function confirmNextOccurrence(
 
     const expected = installment ? Number(installment.amount) : Number(commitment.amount)
     const outgoing = commitment.direction === 'outgoing'
+    const plan = commitment.kind === 'investment_plan'
+    // The one thing the app cannot know and cannot guess. Refused before
+    // anything is written, so a plan never advances on a half-declaration.
+    if (plan && !(overrides.quantity && overrides.quantity > 0))
+      throw new DomainError(
+        'needs_quantity',
+        'A scheduled placement buys at the price the order executed at, which no daily close reproduces: pass the quantity the broker shows',
+      )
     const happenedOn = overrides.happenedOn ?? installment?.dueOn ?? commitment.nextDueOn
     const dueOn = installment?.dueOn ?? commitment.nextDueOn
     // An occurrence is about the month it was due, not the month it was paid.
@@ -718,7 +901,9 @@ export async function confirmNextOccurrence(
     // the point of the field. Written only when the two months differ, so the
     // default stays unmaterialised and an ordinary occurrence keeps following
     // its date.
-    const accrualMonth = dueOn.slice(0, 7) === happenedOn.slice(0, 7) ? undefined : dueOn.slice(0, 7)
+    // A placement's occurrence is an internal transfer, which enters no period
+    // total: there is no month for it to be about, and declaring one is refused.
+    const accrualMonth = plan || dueOn.slice(0, 7) === happenedOn.slice(0, 7) ? undefined : dueOn.slice(0, 7)
     // The account is the one in force on the day the money moved, not the one
     // the commitment hits now: an occurrence confirmed after a move left the
     // old account, and writing it on the new one falsifies both balances.
@@ -733,10 +918,13 @@ export async function confirmNextOccurrence(
         amount: overrides.amount ?? expected,
         currency: commitment.currency !== 'EUR' ? commitment.currency : undefined,
         eurAmount: overrides.eurAmount,
+        // A placement moves money between two accounts of the same person, so
+        // both endpoints are accounts and the movement is a transfer. The other
+        // kinds have an actor on the side the money comes from or goes to.
         sourceAccountId: outgoing ? accountId : undefined,
-        targetActorId: outgoing ? commitment.actorId : undefined,
-        sourceActorId: outgoing ? undefined : commitment.actorId,
-        targetAccountId: outgoing ? undefined : accountId,
+        targetActorId: outgoing && !plan ? commitment.actorId! : undefined,
+        sourceActorId: outgoing ? undefined : commitment.actorId!,
+        targetAccountId: plan ? commitment.targetAccountId! : outgoing ? undefined : accountId,
         categoryId: commitment.categoryId ?? undefined,
         activityId: commitment.activityId,
         commitmentId: commitment.id,
@@ -745,6 +933,24 @@ export async function confirmNextOccurrence(
       history,
     )
     const confirmedAmount = overrides.amount ?? expected
+    // The purchase the transfer paid for. Its amount is the instalment unless
+    // the broker invested less (it does not buy fractions): the remainder then
+    // stays in the account's cash, which is where it sits at the broker too.
+    const operation = plan
+      ? await recordOperationIn(
+          tx,
+          userId,
+          {
+            accountId: commitment.targetAccountId!,
+            assetId: commitment.assetId!,
+            type: 'buy',
+            quantity: overrides.quantity,
+            amount: overrides.investedAmount ?? confirmedAmount,
+            operatedOn: movement.happenedOn,
+          },
+          { movementId: movement.id },
+        )
+      : null
 
     if (installment) {
       // The schedule records what was really paid, and when: the remaining due
@@ -756,7 +962,7 @@ export async function confirmNextOccurrence(
       })
       const next = await nextPendingInstallment(tx, commitment.id)
       await updateCommitment(tx, userId, id, { nextDueOn: next?.dueOn ?? installment.dueOn })
-      return movement
+      return { movement, operation }
     }
 
     const becomesTheNorm = overrides.updateReference === true && confirmedAmount !== Number(commitment.amount)
@@ -775,15 +981,15 @@ export async function confirmNextOccurrence(
         null,
         commitment.currency,
       )
-    return movement
+    return { movement, operation }
   })
 }
 
 /**
  * Advances past an occurrence that will not happen (paused service, free
- * month). On a financing this is refused: a written plan does not lose an
- * installment silently, either it was paid (confirm) or the plan changed,
- * which is a different, explicit act.
+ * month, a placement suspended for a month). On a financing this is refused: a
+ * written plan does not lose an installment silently, either it was paid
+ * (confirm) or the plan changed, which is a different, explicit act.
  */
 export async function skipNextOccurrence(userId: string, id: string): Promise<Commitment> {
   const sql = db()

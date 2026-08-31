@@ -407,6 +407,88 @@ function PickedFields({ hit, name }: { hit: InstrumentHit; name: string }) {
 }
 
 /**
+ * Choosing what an asset-shaped gesture is about: one already known, or one
+ * looked up on the spot and created by the submit. Shared by the operation
+ * panel and the scheduled placement, because both ask the same question and a
+ * second copy of this would drift from the search it wraps.
+ *
+ * `onChosen` reports whether something is selected, so the form that owns the
+ * submit button can refuse to send an asset-less declaration.
+ */
+export function AssetPicker({
+  known: assets,
+  onChosen,
+}: {
+  known: AssetEntry[]
+  onChosen?: (chosen: boolean) => void
+}) {
+  const [known, setKnown] = useState<AssetEntry | null>(assets[0] ?? null)
+  const [picked, setPicked] = useState<InstrumentHit | null>(null)
+  const [name, setName] = useState('')
+  const [choosing, setChoosing] = useState(assets.length === 0)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs text-muted-foreground">Actif</span>
+      {choosing ? (
+        <InstrumentSearch
+          known={assets}
+          onPickKnown={(asset) => {
+            setKnown(asset)
+            setPicked(null)
+            setChoosing(false)
+            onChosen?.(true)
+          }}
+          onPickNew={(hit) => {
+            setPicked(hit)
+            setKnown(null)
+            setName(shortName(hit.name))
+            setChoosing(false)
+            onChosen?.(true)
+          }}
+        />
+      ) : picked ? (
+        <>
+          <Picked
+            hit={picked}
+            onChange={() => {
+              setChoosing(true)
+              onChosen?.(false)
+            }}
+          />
+          <PickedFields hit={picked} name={name} />
+          <Field label="Sous quel nom le suivre">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+        </>
+      ) : (
+        known && (
+          <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
+            <input type="hidden" name="assetId" value={known.id} />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-[12.5px]">{known.name}</span>
+              <span className="truncate text-[11px] text-faint">
+                {known.isin ?? known.pricing ?? 'cours saisi à la main'}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setChoosing(true)
+                onChosen?.(false)
+              }}
+              className="shrink-0 text-[11.5px] text-muted-foreground hover:text-primary"
+            >
+              Changer
+            </button>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+/**
  * What happens inside an investment account. Looking the asset up lives here,
  * not in an errand beforehand: one searches for what one bought at the moment
  * one declares having bought it, and an unknown asset is created by the same
@@ -425,10 +507,7 @@ export function OperationForm({
   today: string
 }) {
   const [type, setType] = useState<OperationType>('buy')
-  const [known, setKnown] = useState<AssetEntry | null>(assets[0] ?? null)
-  const [picked, setPicked] = useState<InstrumentHit | null>(null)
-  const [name, setName] = useState('')
-  const [choosing, setChoosing] = useState(assets.length === 0)
+  const [chosen, setChosen] = useState(assets.length > 0)
   // What the broker shows decides what gets typed: a total, or a price a share.
   const [basis, setBasis] = useState<'total' | 'unit'>('total')
   const [quantity, setQuantity] = useState('')
@@ -457,54 +536,7 @@ export function OperationForm({
         />
       </Field>
 
-      {needsAsset && (
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-muted-foreground">Actif</span>
-          {choosing ? (
-            <InstrumentSearch
-              known={assets}
-              onPickKnown={(asset) => {
-                setKnown(asset)
-                setPicked(null)
-                setChoosing(false)
-              }}
-              onPickNew={(hit) => {
-                setPicked(hit)
-                setKnown(null)
-                setName(shortName(hit.name))
-                setChoosing(false)
-              }}
-            />
-          ) : picked ? (
-            <>
-              <Picked hit={picked} onChange={() => setChoosing(true)} />
-              <PickedFields hit={picked} name={name} />
-              <Field label="Sous quel nom le suivre">
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-              </Field>
-            </>
-          ) : (
-            known && (
-              <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-2.5 py-2">
-                <input type="hidden" name="assetId" value={known.id} />
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[12.5px]">{known.name}</span>
-                  <span className="truncate text-[11px] text-faint">
-                    {known.isin ?? known.pricing ?? 'cours saisi à la main'}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setChoosing(true)}
-                  className="shrink-0 text-[11.5px] text-muted-foreground hover:text-primary"
-                >
-                  Changer
-                </button>
-              </div>
-            )
-          )}
-        </div>
-      )}
+      {needsAsset && <AssetPicker known={assets} onChosen={setChosen} />}
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date" name="operatedOn">
@@ -565,7 +597,7 @@ export function OperationForm({
       )}
 
       <TextField name="note" label="Note (optionnel)" placeholder="" />
-      <SubmitButton className="self-start" disabled={needsAsset && !known && !picked}>
+      <SubmitButton className="self-start" disabled={needsAsset && !chosen}>
         Déclarer
       </SubmitButton>
     </ActionForm>
