@@ -968,6 +968,68 @@ test('a movement declared for another month reads back in that month', async () 
   assert.equal((await inAugust('accrual')).length, 0)
 })
 
+test('the settled reading is the one the tools answer in when none is asked for', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-09-02',
+        amount: 2400,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Employeur',
+        month: '2026-08',
+      },
+    ],
+  })
+
+  const august = async () => await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' })
+
+  // Nothing settled yet: the default, and the answer says so.
+  assert.deepEqual((await call(client, 'manage_preferences', { action: 'show' })).json(), {
+    reading: 'cash',
+  })
+  assert.deepEqual((await august()).json(), { order: 'date desc', reading: 'cash', movements: [] })
+
+  assert.deepEqual(
+    (await call(client, 'manage_preferences', { action: 'update', reading: 'accrual' })).json(),
+    { reading: 'accrual' },
+  )
+
+  // Same call, no reading passed: August is now the month the salary is about.
+  const listed = await august()
+  assert.equal((listed.json() as { reading: string }).reading, 'accrual')
+  assert.equal(rows<{ month?: string }>(listed, 'movements')[0]!.month, '2026-08')
+
+  const flows = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'actor',
+    kind: 'income',
+  })
+  assert.deepEqual(flows.json(), {
+    kind: 'income',
+    reading: 'accrual',
+    window: 'movements attached to 2026-08 → 2026-08 (whole months)',
+    rows: [{ actor: 'Employeur', amount: 2400, movements: 1 }],
+  })
+
+  // The state to take over from carries it, so an analysis can be named.
+  const overview = (await call(client, 'get_overview')).json() as { reading: string }
+  assert.equal(overview.reading, 'accrual')
+
+  // An explicit reading still wins: the preference is a default, not a lock.
+  const cash = await call(client, 'list_movements', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    reading: 'cash',
+  })
+  assert.deepEqual(cash.json(), { order: 'date desc', reading: 'cash', movements: [] })
+})
+
 test('a ghost movement reads back in the list and in no analysis', async () => {
   const user = await seedUser()
   const client = await clientFor(user)

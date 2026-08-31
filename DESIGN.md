@@ -143,7 +143,14 @@ de page.
 - **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
   porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
   contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août
-  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne touche que les
+  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne cadre pas
+  l'écran qui le porte : basculé une fois, il tient sur les trois tant qu'on circule
+  dans l'application, parce que ce qu'il change n'est pas un cadrage mais ce que les
+  chiffres veulent dire. Il ne survit pas à un chargement de page : recharger, coller un
+  lien ou ouvrir un onglet repart de la lecture réglée dans Réglages, seul endroit où
+  une lecture durable s'écrit, et la bascule ne l'y écrit jamais. L'URL, elle, dit
+  toujours ce que l'écran compte, donc un lien qui la porte rouvre la même lecture. Il
+  ne touche que les
   flux : un solde n'a qu'une lecture, et sa section le rappelle quand l'autre est
   choisie. Chaque chiffre porte alors le nom de la lecture qui l'a produit, et une
   fenêtre glissante lue au rattachement se renomme par les mois entiers qu'elle couvre :

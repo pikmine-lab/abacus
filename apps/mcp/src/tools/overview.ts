@@ -6,6 +6,7 @@ import {
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { holdingsValue } from '@abacus/core/services/investments'
+import { readingPreference } from '@abacus/core/services/preferences'
 import type { BreakdownRow } from '@abacus/core/services/reports'
 import { spendingBreakdown, spendingByCategoryGroup } from '@abacus/core/services/reports'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -18,7 +19,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -55,6 +56,9 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         // add on top, at the last known price.
         const holdings = await holdingsValue(userId)
         return ok({
+          // Balances have one reading; this one governs the flows, and it
+          // rides along here because it is what every later total is in.
+          reading: await readingPreference(userId),
           accounts: accountsView,
           holdings:
             holdings.value > 0
@@ -114,12 +118,16 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           .enum(['cash', 'accrual'])
           .optional()
           .describe(
-            'cash (default): every movement counts on the day the money moved, which is what the bank statement says. accrual: a movement attached to another month counts in that month, which is what makes a month comparable to the next when a salary lands late or a rent is paid ahead. Use accrual to answer "how was August really", cash to answer "what left the accounts in August"',
+            'Absent: the reading the user counts in, the one their screens show (manage_preferences says which). cash: every movement counts on the day the money moved, which is what the bank statement says. accrual: a movement attached to another month counts in that month, which is what makes a month comparable to the next when a salary lands late or a rent is paid ahead. Pass one to answer "how was August really" (accrual) or "what left the accounts in August" (cash)',
           ),
       }),
     },
-    async ({ from, to, groupBy, kind = 'expense', reading = 'cash' }) =>
+    async ({ from, to, groupBy, kind = 'expense', reading: asked }) =>
       run(async () => {
+        // Absent, the figures come back in the reading the user counts in:
+        // answering in the other one without being asked would put a table in
+        // front of them that no screen of theirs shows.
+        const reading = asked ?? (await readingPreference(userId))
         // An income has one figure where an expense has two: a refund never
         // enters the income side, so a gross and a net there would be the same
         // number written twice, and reading them as a pair would invent a
@@ -142,9 +150,10 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
                 categories: mass.categories.map((c) => line(c, 'category')),
               }))
             : (await spendingBreakdown(userId, from, to, groupBy, kind, reading)).map((r) => line(r, groupBy))
-        // Both defaults travel back with the figures: the side read is no
-        // longer in the tool's name, and one month has two legitimate totals.
-        // A table saying neither cannot be read out loud.
+        // Both travel back with the figures: the side read is no longer in the
+        // tool's name, and one month has two legitimate totals. A table saying
+        // neither cannot be read out loud, and neither was necessarily asked
+        // for here: one of them is the user's own reading.
         return ok({
           kind,
           reading,

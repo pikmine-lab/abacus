@@ -47,6 +47,12 @@ export type MovementKind = 'transfer' | 'expense' | 'income'
  */
 export type Reading = 'cash' | 'accrual'
 
+/** What a person settled once, and every session then opens in. */
+export interface UserPreference {
+  userId: string
+  reading: Reading
+}
+
 export interface Movement {
   id: string
   userId: string

@@ -23,7 +23,8 @@ import { PeriodPicker } from '@/components/period-picker'
 import { ReadingTabs } from '@/components/reading-tabs'
 import { SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { resolvePeriod, resolveReading } from '@/lib/period'
+import { resolvePeriod } from '@/lib/period'
+import { currentReading } from '@/lib/reading'
 import { sorter } from '@/lib/sort'
 import { eur, frDate, frMonth, idParam, money } from '@/lib/utils'
 
@@ -67,11 +68,12 @@ export default async function MovementsPage({
   // is settled in SQL: the list is cut at `limit`, so ordering what came back
   // would rank the page and pass it off as the ledger.
   const sort = sorter('sort', MOVEMENT_SORTS, DEFAULT_MOVEMENT_SORT, params)
+  const reading = await currentReading(params, userId)
 
   const filters = {
     from: period.from,
     to: period.to,
-    reading: resolveReading(params),
+    reading,
     kind: KINDS.includes(params.type as MovementKind) ? (params.type as MovementKind) : undefined,
     accountId: known(idParam(params.account), accounts),
     categoryId: known(idParam(params.category), categories),
@@ -146,7 +148,7 @@ export default async function MovementsPage({
 
       <FilterBar>
         <PeriodPicker period={period} />
-        <ReadingTabs />
+        <ReadingTabs value={reading} />
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
         <MovementFilters
           accounts={options.accounts}

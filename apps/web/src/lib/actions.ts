@@ -41,9 +41,11 @@ import {
   deleteMovement,
   refundAdvance,
 } from '@abacus/core/services/movements'
+import { setReadingPreference } from '@abacus/core/services/preferences'
 import { revalidatePath } from 'next/cache'
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { parseReading, READING_COOKIE } from '@/lib/reading'
 
 export interface FormState {
   /** Message that belongs to the form as a whole (a rejected domain rule). */
@@ -973,6 +975,26 @@ export async function createActivityAction(_prev: FormState, formData: FormData)
   }
   refreshAll()
   return { ok: true }
+}
+
+/**
+ * Settles the reading every page load starts from. This is the only gesture
+ * that writes it, and it drops whatever a screen was switched to along the
+ * way: naming the way you count is not asking to keep reading the other way
+ * for the rest of the visit.
+ */
+export async function setReadingPreferenceAction(reading: string): Promise<string | null> {
+  const userId = await requireUserId()
+  const value = parseReading(reading)
+  if (!value) return 'Lecture inconnue.'
+  try {
+    await setReadingPreference(userId, value)
+  } catch (e) {
+    return frError(e)
+  }
+  ;(await cookies()).delete(READING_COOKIE)
+  refreshAll()
+  return null
 }
 
 export interface ApiKeyFormState extends FormState {

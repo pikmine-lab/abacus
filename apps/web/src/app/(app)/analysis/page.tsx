@@ -17,14 +17,8 @@ import { PeriodPicker } from '@/components/period-picker'
 import { ReadingTabs } from '@/components/reading-tabs'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
-import {
-  monthsInPeriod,
-  previousWindow,
-  readingLabel,
-  resolvePeriod,
-  resolveReading,
-  seriesFrom,
-} from '@/lib/period'
+import { monthsInPeriod, previousWindow, readingLabel, resolvePeriod, seriesFrom } from '@/lib/period'
+import { currentReading } from '@/lib/reading'
 import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -61,7 +55,7 @@ export default async function AnalysisPage({
   const params = await searchParams
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
-  const reading = resolveReading(params)
+  const reading = await currentReading(params, userId)
   const scope = readingLabel(period, reading)
 
   const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '')
@@ -112,7 +106,7 @@ export default async function AnalysisPage({
         <PeriodPicker period={period} />
         {/* The reading belongs to the period: it says how the window is read,
             not what is shown in it. The divider marks that boundary. */}
-        <ReadingTabs />
+        <ReadingTabs value={reading} />
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
         <UrlTabs
           param="flow"
