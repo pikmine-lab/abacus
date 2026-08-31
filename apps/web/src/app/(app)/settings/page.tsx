@@ -10,10 +10,12 @@ import {
   sortByName,
   sortCategories,
 } from '@abacus/core/services/catalog'
+import { readingPreference } from '@abacus/core/services/preferences'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
+import { ReadingPreference } from '@/components/reading-preference'
 import { ActivityRows, ActorRows, CategoryRows } from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
 import { Input } from '@/components/ui/input'
@@ -37,17 +39,25 @@ export default async function SettingsPage({
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, actors] = await Promise.all([
+  const [categories, activities, actors, reading] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
     listActorsWithAliases(userId),
+    readingPreference(userId),
   ])
 
   return (
     <>
-      <PageHeader title="Réglages" description="ton vocabulaire" />
+      <PageHeader title="Réglages" description="tes préférences et ton vocabulaire" />
 
       <PageBody>
+        <Section
+          title="Mois compté"
+          description="la lecture dans laquelle chaque session s’ouvre : le jour où l’argent a bougé, ou le mois concerné."
+        >
+          <ReadingPreference value={reading} />
+        </Section>
+
         <Section
           title="Catégories"
           description="la nature d’un mouvement : « Courses », « Loyer », « Salaire ». À plat, groupe optionnel."

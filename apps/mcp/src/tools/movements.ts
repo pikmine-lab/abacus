@@ -13,6 +13,7 @@ import {
   MOVEMENT_SORTS,
   outstandingAdvances,
 } from '@abacus/core/services/movements'
+import { readingPreference } from '@abacus/core/services/preferences'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import {
@@ -265,7 +266,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .enum(['cash', 'accrual'])
           .optional()
           .describe(
-            'What from/to select on. cash (default): the day the money moved. accrual: the month each movement is about, so a salary paid on September 2nd for August comes back in August. An accrual window covers whole months (a month is the finest attachment there is), so it rounds out to them',
+            'What from/to select on. Absent: the reading the user counts in, the one their screens show (manage_preferences says which). cash: the day the money moved. accrual: the month each movement is about, so a salary paid on September 2nd for August comes back in August. An accrual window covers whole months (a month is the finest attachment there is), so it rounds out to them',
           ),
         kind: z.enum(['expense', 'income', 'transfer']).optional(),
         account: z.string().optional().describe('Account name'),
@@ -283,10 +284,13 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     async (f) =>
       run(async () => {
         const sort = resolveSort(MOVEMENT_SORTS, DEFAULT_MOVEMENT_SORT, f.sortBy, f.direction)
+        // Absent, the window selects the way the user counts: asking for
+        // August must return the August their screens show.
+        const reading = f.reading ?? (await readingPreference(userId))
         const movements = await listMovements(userId, {
           from: f.from,
           to: f.to,
-          reading: f.reading,
+          reading,
           kind: f.kind,
           accountId: f.account ? (await requireAccountByName(userId, f.account)).id : undefined,
           actorId: f.actor ? (await requireActorByName(userId, f.actor)).actor.id : undefined,
@@ -305,6 +309,10 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const categoryName = new Map(categories.map((c) => [c.id, c.name]))
         return ok({
           order: orderedBy(sort),
+          // What the window selected on, only where there was a window: the
+          // reading is no longer necessarily the one the caller passed, and a
+          // list of "August" that says nothing cannot be read out loud.
+          ...(f.from || f.to ? { reading } : {}),
           movements: movements.map((m) => ({
             id: m.id,
             date: m.happenedOn,

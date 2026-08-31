@@ -211,15 +211,6 @@ const SHORT_MONTHS = [
 ]
 
 /**
- * Which month a movement counts in, read from the URL like the period itself:
- * the day the money moved, or the month it is about. Absent means cash, so a
- * link written before this existed keeps its meaning.
- */
-export function resolveReading(params: { reading?: string }): Reading {
-  return params.reading === 'accrual' ? 'accrual' : 'cash'
-}
-
-/**
  * The period as the chosen reading actually read it, named. Under cash it is
  * the period's own label. Under accrual two things change and both have to
  * show: the reading is named, because the same month has two legitimate

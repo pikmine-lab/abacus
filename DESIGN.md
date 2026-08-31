@@ -143,7 +143,12 @@ de page.
 - **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
   porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
   contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août
-  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne touche que les
+  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne cadre pas
+  l'écran qui le porte : basculé une fois, il tient sur les trois jusqu'à la fin de la
+  session, parce que ce qu'il change n'est pas un cadrage mais ce que les chiffres
+  veulent dire. Sa valeur de départ se règle dans Réglages ; la bascule ne la réécrit
+  jamais, un coup d'œil dans l'autre lecture n'étant pas un changement d'habitude. Il ne
+  touche que les
   flux : un solde n'a qu'une lecture, et sa section le rappelle quand l'autre est
   choisie. Chaque chiffre porte alors le nom de la lecture qui l'a produit, et une
   fenêtre glissante lue au rattachement se renomme par les mois entiers qu'elle couvre :

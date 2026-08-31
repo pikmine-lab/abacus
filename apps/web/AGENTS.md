@@ -83,6 +83,12 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   Il ne retombe sur la route nue que sans historique (lien collé).
 - **L'état de la barre latérale est lu côté serveur** dans le cookie `sidebar_state`, pour
   que le premier rendu ait déjà la bonne largeur.
+- **Le mois compté se résout en trois endroits, dans cet ordre** : le paramètre d'URL, le
+  cookie de session, la préférence du profil (`lib/reading.ts`). Ce n'est pas un cadrage
+  d'écran comme la période ou le tri : la bascule écrit l'URL **et** le cookie, pour que le
+  choix suive d'un écran à l'autre sans cesser d'être partageable, rechargeable et
+  défaisable. Le paramètre est toujours écrit en clair, jamais retiré sur la valeur par
+  défaut, sinon l'écran repasserait au cookie. Seule la page Réglages écrit la préférence.
 - **Rien n'est dessiné avant mesure du conteneur.** Une largeur devinée pousse les marques
   hors cadre au lieu de les mettre à l'échelle ; la place est réservée par `minHeight` pour
   éviter le saut.

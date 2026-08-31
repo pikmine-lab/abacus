@@ -40,7 +40,8 @@ import { ReadingTabs } from '@/components/reading-tabs'
 import { SpendingDonut } from '@/components/spending-donut'
 import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
-import { previousWindow, readingLabel, resolvePeriod, resolveReading, seriesFrom } from '@/lib/period'
+import { previousWindow, readingLabel, resolvePeriod, seriesFrom } from '@/lib/period'
+import { currentReading } from '@/lib/reading'
 import { daysBetween, eur, frDate, freshness } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -66,7 +67,7 @@ export default async function OverviewPage({
   const params = await searchParams
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
-  const reading = resolveReading(params)
+  const reading = await currentReading(params, userId)
   // Everything made of flows is named after the reading it was read in.
   // Balances keep the bare period label: they have one reading and only one.
   const scope = readingLabel(period, reading)
@@ -196,7 +197,7 @@ export default async function OverviewPage({
       <PageHeader title="Vue d’ensemble" description={`Période : ${period.label}`} />
       <FilterBar>
         <PeriodPicker period={period} />
-        <ReadingTabs />
+        <ReadingTabs value={reading} />
       </FilterBar>
 
       <PageBody>

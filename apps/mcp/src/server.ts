@@ -5,6 +5,7 @@ import { registerCommitmentTools } from './tools/commitments.ts'
 import { registerInvestmentTools } from './tools/investments.ts'
 import { registerMovementTools } from './tools/movements.ts'
 import { registerOverviewTools } from './tools/overview.ts'
+import { registerPreferenceTools } from './tools/preferences.ts'
 
 /**
  * The files under tools/ ARE the interface. The AI using these tools never
@@ -24,5 +25,6 @@ export function buildServer(userId: string): McpServer {
   registerCommitmentTools(server, userId)
   registerCatalogTools(server, userId)
   registerInvestmentTools(server, userId)
+  registerPreferenceTools(server, userId)
   return server
 }
