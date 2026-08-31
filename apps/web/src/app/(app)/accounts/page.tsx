@@ -1,6 +1,7 @@
 import { auth } from '@abacus/core/auth'
 import type { AccountBehavior } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
+import type { AccountSortField } from '@abacus/core/services/accounts'
 import {
   ACCOUNT_SORTS,
   DEFAULT_ACCOUNT_SORT,
@@ -18,7 +19,7 @@ import { AmountInput } from '@/components/amount-input'
 import type { CheckEntry } from '@/components/balance-check-history'
 import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { EmptyLine, FilterBar, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { createAccountAction } from '@/lib/actions'
@@ -37,6 +38,17 @@ const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
   investment: { label: 'Investissement', blurb: 'espèces ici, positions dans Placements' },
 }
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
+
+/**
+ * What an account list orders on. The same three everywhere on the page, since
+ * every section shows the same order: the control is repeated where the lists
+ * are, the order behind it is one.
+ */
+const SORT_OPTIONS: { field: AccountSortField; label: string }[] = [
+  { field: 'name', label: 'Nom' },
+  { field: 'balance', label: 'Solde' },
+  { field: 'checked', label: 'Dernier pointage' },
+]
 
 /** What the correction panel needs of a check, and nothing more. */
 function checkEntries(entries: BalanceCheckEntry[]): CheckEntry[] {
@@ -62,7 +74,9 @@ export default async function AccountsPage({
   const params = await searchParams
   // One order for every section of the page: the lists are the same objects
   // split by behavior, so ranking them apart would answer "which account holds
-  // the most" three times, once per group.
+  // the most" three times, once per group. Each section header carries the
+  // control anyway, next to the list it reorders, rather than a filter row
+  // above the figures holding a single menu that filters nothing.
   const sort = sorter('accounts', ACCOUNT_SORTS, DEFAULT_ACCOUNT_SORT, params)
 
   const [accounts, actors, categories] = await Promise.all([
@@ -145,19 +159,6 @@ export default async function AccountsPage({
         {newAccountForm}
       </PageHeader>
 
-      {accounts.length > 0 && (
-        <FilterBar>
-          <SortMenu
-            sorter={sort}
-            options={[
-              { field: 'name', label: 'Nom' },
-              { field: 'balance', label: 'Solde' },
-              { field: 'checked', label: 'Dernier pointage' },
-            ]}
-          />
-        </FilterBar>
-      )}
-
       <PageBody>
         {accounts.length === 0 ? (
           <EmptyLine>
@@ -205,12 +206,17 @@ export default async function AccountsPage({
               />
             </StatRow>
 
-            {ORDER.filter((behavior) => open.some((s) => s.account.behavior === behavior)).map((behavior) => (
-              <Section key={behavior} title={BEHAVIOR[behavior].label} description={BEHAVIOR[behavior].blurb}>
-                <Rows>
-                  {open
-                    .filter((s) => s.account.behavior === behavior)
-                    .map(({ account, check, checks }) => (
+            {ORDER.filter((behavior) => open.some((s) => s.account.behavior === behavior)).map((behavior) => {
+              const rows = open.filter((s) => s.account.behavior === behavior)
+              return (
+                <Section
+                  key={behavior}
+                  title={BEHAVIOR[behavior].label}
+                  description={BEHAVIOR[behavior].blurb}
+                  action={rows.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+                >
+                  <Rows>
+                    {rows.map(({ account, check, checks }) => (
                       <div key={account.id} className="flex items-center gap-3 py-3">
                         <div className="flex min-w-0 flex-col gap-0.5">
                           <div className="flex flex-wrap items-baseline gap-2">
@@ -247,12 +253,17 @@ export default async function AccountsPage({
                         />
                       </div>
                     ))}
-                </Rows>
-              </Section>
-            ))}
+                  </Rows>
+                </Section>
+              )
+            })}
 
             {closed.length > 0 && (
-              <Section title="Comptes clos" description="l’historique survit au montage bancaire du moment">
+              <Section
+                title="Comptes clos"
+                description="l’historique survit au montage bancaire du moment"
+                action={closed.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+              >
                 <Rows>
                   {closed.map(({ account, checks }) => (
                     <div key={account.id} className="flex items-center gap-3 py-2 text-faint">
