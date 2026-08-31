@@ -200,6 +200,12 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Clore n'est pas un cul-de-sac** : un compte clos garde son menu, s'y corrige et s'y
   réouvre. Une clôture par erreur ne doit pas obliger à recréer un compte, donc à redéclarer
   son historique.
+- **Un seul ordre, un contrôle par section.** Les comptes se rangent en trois sections
+  (courants, épargne, investissement) plus les clos, mais ce sont les mêmes objets découpés
+  par nature : le tri se choisit dans l'en-tête de chacune, et tous les menus affichent et
+  pilotent le même ordre. Trier chaque section à part répondrait quatre fois « quel compte
+  porte le plus » ; et un menu seul dans une barre de filtres se lit avant les chiffres,
+  loin des listes qu'il déplace.
 
 ### Placements
 
@@ -282,6 +288,13 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   panneau de correction est le sien (ni acteur, ni catégorie, ni date de fin). Ce qu'il engage
   par mois se lit dans sa **propre tuile**, jamais additionné au coût mensuel engagé : cet
   argent reste celui de la personne, il change de forme.
+- **Ce qui se relit rarement se replie, le travail à faire jamais.** Les versements
+  programmés se déclarent une fois et poussent vers le bas ce qu'on vient regarder : leur
+  section se replie derrière son titre (`FoldSection`, le `<details>` natif des masses),
+  s'ouvre fermée, et porte son ordre dans son en-tête comme les abonnements. Rien ne
+  mémorise le repli et un rechargement le referme : c'est un geste de lecture, pas un
+  réglage. Les échéances à confirmer ont donc leur propre section, dépliée : une échéance
+  en attente est un travail à faire, et on ne déplie pas pour découvrir qu'on en a.
 - **Son échéance se confirme là aussi, et elle demande la quantité.** C'est la seule
   confirmation qui n'est pas un oui/non même quand le montant est juste : l'ordre s'exécute à
   un cours intraday, donc rien ne peut déduire les parts, et le bouton reste inerte tant

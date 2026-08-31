@@ -4,9 +4,12 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActivities } from '@abacus/core/services/catalog'
 import {
+  COMMITMENT_SORTS,
+  DEFAULT_COMMITMENT_SORT,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
   pendingOccurrences,
+  sortCommitments,
 } from '@abacus/core/services/commitments'
 import {
   assetPrices,
@@ -28,6 +31,7 @@ import { redirect } from 'next/navigation'
 import { BalanceChart } from '@/components/balance-chart'
 import { CommitmentRow } from '@/components/commitment-blocks'
 import { EntrySheet } from '@/components/entry-sheet'
+import { FoldSection } from '@/components/fold-section'
 import {
   type AssetEntry,
   AssetMenu,
@@ -40,7 +44,7 @@ import { InvestmentPlanForm, type PlacementOptions } from '@/components/investme
 import { MassFold } from '@/components/mass-fold'
 import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
-import { SortColumn } from '@/components/sort'
+import { SortColumn, SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
@@ -158,10 +162,11 @@ export default async function InvestmentsPage({
   const now = today()
   const params = await searchParams
   const reading = params.chart === 'performance' ? 'performance' : 'value'
-  // Two lists on the page, two orders: each writes its own parameter, so
+  // Three lists on the page, three orders: each writes its own parameter, so
   // ranking the holdings never reshuffles the journal under them.
   const positionSort = sorter('positions', POSITION_SORTS, DEFAULT_POSITION_SORT, params)
   const operationSort = sorter('operations', OPERATION_SORTS, DEFAULT_OPERATION_SORT, params)
+  const planSort = sorter('plans', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
   // The oldest operation is where the curve can start at all. Asked for on its
   // own, because the journal below is ordered and cut: its last row is the
   // last of thirty, not the first one ever declared.
@@ -323,28 +328,53 @@ export default async function InvestmentsPage({
               )}
             </StatRow>
 
+            {/* Its own section, outside the fold below: an occurrence waiting
+                to be confirmed is work to do, and folding the plans away must
+                not take it out of sight. */}
+            {duePlacements.length > 0 && (
+              <Section
+                title="Échéances à confirmer"
+                description="le virement et l’achat s’écrivent ensemble, la quantité reçue en plus"
+              >
+                <PendingOccurrences
+                  back="/investments"
+                  items={duePlacements.map((p) => ({
+                    commitmentId: p.commitment.id,
+                    label: p.commitment.label,
+                    dueOn: p.dueOn,
+                    amount: p.amount,
+                    currency: p.commitment.currency,
+                    incoming: false,
+                    account: accountNames.get(p.accountId) ?? '',
+                    placement: {
+                      targetAccount: accountNames.get(p.placement!.targetAccountId) ?? '',
+                      asset: assetNames.get(p.placement!.assetId) ?? '',
+                    },
+                  }))}
+                />
+              </Section>
+            )}
+
             {plans.length > 0 && (
-              <Section title="Versements programmés" description="le virement et l’achat, d’un même geste">
-                {duePlacements.length > 0 && (
-                  <PendingOccurrences
-                    back="/investments"
-                    items={duePlacements.map((p) => ({
-                      commitmentId: p.commitment.id,
-                      label: p.commitment.label,
-                      dueOn: p.dueOn,
-                      amount: p.amount,
-                      currency: p.commitment.currency,
-                      incoming: false,
-                      account: accountNames.get(p.accountId) ?? '',
-                      placement: {
-                        targetAccount: accountNames.get(p.placement!.targetAccountId) ?? '',
-                        asset: assetNames.get(p.placement!.assetId) ?? '',
-                      },
-                    }))}
-                  />
-                )}
+              <FoldSection
+                title="Versements programmés"
+                description="ce qui part tout seul vers un compte d’investissement"
+                action={
+                  plans.length > 1 && (
+                    <SortMenu
+                      sorter={planSort}
+                      options={[
+                        { field: 'monthly', label: 'Épargne mensuelle' },
+                        { field: 'amount', label: 'Montant versé' },
+                        { field: 'next', label: 'Prochaine échéance' },
+                        { field: 'label', label: 'Nom' },
+                      ]}
+                    />
+                  )
+                }
+              >
                 <Rows>
-                  {plans.map((plan) => (
+                  {sortCommitments(plans, planSort.current).map((plan) => (
                     <CommitmentRow
                       key={plan.id}
                       commitment={plan}
@@ -358,7 +388,7 @@ export default async function InvestmentsPage({
                     />
                   ))}
                 </Rows>
-              </Section>
+              </FoldSection>
             )}
 
             {series.some((p) => Number(p.holdings) > 0) && (
