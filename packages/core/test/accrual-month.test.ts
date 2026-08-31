@@ -64,7 +64,7 @@ test('confirming an occurrence attaches it to the month it was due', async () =>
   })
 
   // September's rent, debited two days early: nobody types the month.
-  const movement = await confirmNextOccurrence(user, rent.id, { happenedOn: '2026-08-30' })
+  const movement = (await confirmNextOccurrence(user, rent.id, { happenedOn: '2026-08-30' })).movement
   assert.equal(movement.happenedOn, '2026-08-30')
   assert.equal(movement.accrualMonth, '2026-09-01')
 
@@ -88,7 +88,7 @@ test('an occurrence paid in the month it was due carries no attachment', async (
 
   // Three days late, same month: the default is never materialised, so the
   // movement keeps following its own date.
-  const movement = await confirmNextOccurrence(user, rent.id, { happenedOn: '2026-09-04' })
+  const movement = (await confirmNextOccurrence(user, rent.id, { happenedOn: '2026-09-04' })).movement
   assert.equal(movement.accrualMonth, null)
   assert.equal(movement.countedInMonth, '2026-09-01')
 })

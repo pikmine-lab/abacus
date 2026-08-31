@@ -58,6 +58,14 @@ export const GUIDANCE: Record<string, string> = {
   alias_taken: 'This alias already resolves to an actor: pick another one or merge the actors.',
   merge_self: 'An actor cannot be merged into itself.',
   not_a_subscription: 'Only subscriptions carry a judgment (essential / reducible / to_cancel).',
+  same_account:
+    'A placement moves money between two different accounts of the user: the one it leaves and the investment account it feeds. Those two are the same here.',
+  placement_has_no_actor:
+    'A scheduled placement pays nobody: it is an internal transfer, so it carries no actor, no category and no lock-in date. Drop those fields.',
+  not_a_placement:
+    'Only a scheduled placement feeds an investment account and buys an asset: asset and targetAccount do not apply to this commitment.',
+  asset_has_plans:
+    'A scheduled placement buys this asset, so forgetting it would leave the plan with nothing to buy. Cancel the placement first (manage_investment_plan), or keep the asset.',
   movement_not_found:
     'No such movement for this user. Get a current id from list_movements: an id from an earlier answer may already be gone.',
   refunded_movement:
@@ -95,10 +103,11 @@ export const GUIDANCE: Record<string, string> = {
   check_already_settled:
     'An adjustment already settles this check. Correct or delete that movement with fix_movement, or correct the check itself with manage_balance_checks.',
   not_an_investment_account:
-    'Only an investment account carries operations. Money reaching or leaving that account is a plain movement (declare_movements); what happens inside it is an operation.',
+    'Only an investment account carries operations, so only one can be bought inside or fed by a scheduled placement. Money reaching or leaving that account is a plain movement (declare_movements); what happens inside it is an operation. Check the account name, or declare it with behavior investment.',
   oversold:
     'That would sell more than the account holds. Check the quantity, and check the account: a holding bought on one account cannot be sold from another.',
-  needs_quantity: 'A buy or a sell needs the quantity it moved, not just the amount.',
+  needs_quantity:
+    'A buy or a sell needs the quantity it moved, not just the amount, and confirming a scheduled placement needs it too: it writes the purchase its transfer funded. Ask the user for the units the broker states, and never work them out from a price: the order executed at an intraday price, so a quantity computed from a daily close would set a wrong average cost for as long as the holding is held.',
   unexpected_quantity: 'Only a buy or a sell moves a quantity. A dividend and a fee are amounts alone.',
   needs_asset: 'This operation is about an asset: name the one it concerns.',
   no_operations: 'There is nothing to record: pass at least one operation.',

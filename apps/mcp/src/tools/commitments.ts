@@ -7,6 +7,7 @@ import {
   changeAmount,
   confirmNextOccurrence,
   createFinancing,
+  createInvestmentPlan,
   createSubscription,
   DEFAULT_COMMITMENT_SORT,
   editCommitment,
@@ -19,12 +20,14 @@ import {
   skipNextOccurrence,
   sortCommitments,
 } from '@abacus/core/services/commitments'
+import { listAssets } from '@abacus/core/services/investments'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import {
   requireAccountByName,
   requireActivityByName,
   requireActorByName,
+  requireAssetByName,
   requireCategoryByName,
   requireCommitment,
 } from '../resolve.ts'
@@ -135,7 +138,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'update_commitment',
     {
       description:
-        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, and a subscription lock-in date. Works on subscriptions, recurring incomes and financings alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, a subscription lock-in date, and for an investment plan the asset it buys and the account it feeds. Works on subscriptions, recurring incomes, financings and investment plans alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
       inputSchema: z.object({
         commitment: z.string().describe('Label (or id) of the commitment to correct'),
         label: z.string().optional().describe('New label'),
@@ -151,6 +154,16 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .string()
           .optional()
           .describe('Subscription only: end of the contractual lock-in as YYYY-MM-DD, or "none" to clear it'),
+        asset: z
+          .string()
+          .optional()
+          .describe(
+            'Investment plan only: the asset its next occurrences buy. The occurrences already confirmed keep what they really bought',
+          ),
+        targetAccount: z
+          .string()
+          .optional()
+          .describe('Investment plan only: the investment account it feeds from now on'),
       }),
     },
     async (u) =>
@@ -166,6 +179,10 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           periodUnit: u.periodUnit,
           periodCount: u.periodCount,
           engagedUntil: clearable(u.engagedUntil),
+          assetId: u.asset ? (await requireAssetByName(userId, u.asset)).id : undefined,
+          targetAccountId: u.targetAccount
+            ? (await requireAccountByName(userId, u.targetAccount)).id
+            : undefined,
         })
         return ok({
           commitmentId: updated.id,
@@ -326,6 +343,83 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
   )
 
   server.registerTool(
+    'manage_investment_plan',
+    {
+      description:
+        "Manages a scheduled placement: a fixed sum in euros that leaves one account for an investment account at a regular interval and buys an asset there (an automatic monthly payment into an ETF at a broker). Actions: create, change_amount (the instalment moved: the dated history is kept), cancel (no more occurrences). It is not a subscription and not an expense: an occurrence is an internal transfer, so it carries no actor and no category, and buying changes the form of the money rather than spending it. Both accounts are the user's own: the source is any account, often the broker's own cash account, and the target must be an investment account. The asset must already exist (manage_assets, which is also where an unknown fund is looked up). Each occurrence is confirmed through confirm_due_movements, which requires the quantity bought: nothing here can derive it. To correct what the plan says about itself (label, periodicity, the asset, the account it feeds) use update_commitment; to move the account the money leaves, change_commitment_account.",
+      inputSchema: z.object({
+        action: z.enum(['create', 'change_amount', 'cancel']),
+        commitment: z.string().optional().describe('change_amount/cancel: label (or id) of the plan'),
+        label: z.string().optional().describe('create: what the user calls it (e.g. "Versement MSCI World")'),
+        account: z.string().optional().describe('create: the account the money leaves'),
+        targetAccount: z
+          .string()
+          .optional()
+          .describe('create: the investment account it feeds, where the purchase lands'),
+        asset: z.string().optional().describe('create: the asset each occurrence buys. Must already exist'),
+        amount: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            'create: what is paid in each period, in euros; change_amount: the new instalment. Euros only: an occurrence writes a purchase, and operations are not multi-currency',
+          ),
+        periodUnit: z.enum(['week', 'month', 'year']).optional().describe('create: defaults to month'),
+        periodCount: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('create: every N periods, defaults to 1'),
+        firstDueOn: isoDate.optional().describe('create: next expected occurrence'),
+        activity: z.string().optional().describe('create: sphere of the generated transfers, if any'),
+        effectiveOn: isoDate.optional().describe('change_amount/cancel: effective date, defaults to today'),
+      }),
+    },
+    async (p) =>
+      run(async () => {
+        if (p.action === 'create') {
+          if (!p.label || !p.account || !p.targetAccount || !p.asset || !p.amount || !p.firstDueOn)
+            return fail('create requires label, account, targetAccount, asset, amount and firstDueOn.')
+          const target = await requireAccountByName(userId, p.targetAccount)
+          const asset = await requireAssetByName(userId, p.asset)
+          const plan = await createInvestmentPlan(userId, {
+            label: p.label,
+            accountId: (await requireAccountByName(userId, p.account)).id,
+            targetAccountId: target.id,
+            assetId: asset.id,
+            amount: p.amount,
+            periodUnit: p.periodUnit ?? 'month',
+            periodCount: p.periodCount,
+            firstDueOn: p.firstDueOn,
+            activityId: p.activity ? (await requireActivityByName(userId, p.activity)).id : undefined,
+          })
+          return ok({
+            commitmentId: plan.id,
+            label: plan.label,
+            buys: asset.name,
+            into: target.name,
+            nextDueOn: plan.nextDueOn,
+            note: 'Confirm each occurrence with confirm_due_movements, passing the quantity the broker shows.',
+          })
+        }
+        if (!p.commitment) return fail(`${p.action} requires commitment (label or id).`)
+        const plan = await requireCommitment(userId, p.commitment)
+        if (p.action === 'change_amount') {
+          if (!p.amount) return fail('change_amount requires amount (the new instalment).')
+          const updated = await changeAmount(userId, plan.id, p.amount, p.effectiveOn)
+          return ok({
+            commitmentId: updated.id,
+            amount: Number(updated.amount),
+            note: 'Change recorded in the dated history.',
+          })
+        }
+        const cancelled = await cancelCommitment(userId, plan.id, p.effectiveOn)
+        return ok({ commitmentId: cancelled.id, cancelledOn: cancelled.cancelledOn })
+      }),
+  )
+
+  server.registerTool(
     'list_commitments',
     {
       description:
@@ -357,7 +451,25 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             ? { account: names.get(c.nextAccountMove.accountId), on: c.nextAccountMove.effectiveOn }
             : undefined,
         })
+        const assetNames = new Map((await listAssets(userId)).map((a) => [a.id, a.name]))
         const view = commitments.map((c) => {
+          if (c.kind === 'investment_plan') {
+            return {
+              type: 'investment_plan',
+              label: c.label,
+              id: c.id,
+              ...account(c),
+              amount: Number(c.amount),
+              every: `${c.periodCount} ${c.periodUnit}`,
+              // Saving, not spending: the caller must not add this into a cost
+              // total beside the subscriptions.
+              monthlyInvested: monthlyEquivalentEur(c),
+              buys: assetNames.get(c.assetId ?? ''),
+              into: names.get(c.targetAccountId ?? ''),
+              cancelledOn: c.cancelledOn ?? undefined,
+              nextDueOn: c.nextDueOn,
+            }
+          }
           if (c.kind === 'financing' && c.progress) {
             return {
               type: 'financing',
@@ -400,7 +512,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'confirm_due_movements',
     {
       description:
-        'Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service). When reality differed, pass the real amount : recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. Always prefer this tool over declare_movements for a subscription debit, otherwise the occurrence stays pending.',
+        "Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service, a placement suspended for a month). When reality differed, pass the real amount : recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. An investment plan is the one kind that cannot be confirmed on its own: it also writes the purchase, so it requires quantity, the units the broker says the order bought. Never compute that from a price: the order executed at an intraday price, and a quantity derived from a daily close would set a false average cost that drifts further with every occurrence. If the user has not given it, ask. Always prefer this tool over declare_movements for a subscription debit, and over record_investment_operations for a plan's purchase, otherwise the occurrence stays pending.",
       inputSchema: z.object({
         items: z
           .array(
@@ -426,6 +538,20 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
                 .describe(
                   "confirm, foreign-currency commitment only: the euros the bank actually moved, when the statement shows them. Omitted: computed at the occurrence day's rate. The amount field stays in the commitment's own currency either way",
                 ),
+              quantity: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  'confirm, investment plan only and required there: how many units the order bought, as the broker states them. Fractions are normal. Never derive it from a price',
+                ),
+              investedAmount: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  'confirm, investment plan only: what was really invested, when the broker did not invest the whole instalment (it buys no fractions). The remainder then stays in the account cash, which is where it sits at the broker. Omitted: the whole instalment, order fees included, which is what makes the average cost match theirs',
+                ),
             }),
           )
           .min(1),
@@ -442,11 +568,13 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             results.push({ commitment: commitment.label, skipped: true, nextDueOn: updated.nextDueOn })
           } else {
             const expected = Number(commitment.amount)
-            const movement = await confirmNextOccurrence(userId, commitment.id, {
+            const { movement, operation } = await confirmNextOccurrence(userId, commitment.id, {
               amount: item.amount,
               happenedOn: item.date,
               updateReference: item.amountIsTheNewNorm,
               eurAmount: item.eurAmount,
+              quantity: item.quantity,
+              investedAmount: item.investedAmount,
             })
             const diverged = item.amount !== undefined && item.amount !== expected
             results.push({
@@ -455,6 +583,19 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               amount: Number(movement.amount),
               ...(movement.originalCurrency
                 ? { paid: `${Number(movement.originalAmount)} ${movement.originalCurrency}` }
+                : {}),
+              // A plan wrote a purchase too, and its cash remainder is the one
+              // thing a reader cannot infer from the amounts above.
+              ...(operation
+                ? {
+                    bought: Number(operation.quantity),
+                    invested: Number(operation.amount),
+                    ...(Number(operation.amount) !== Number(movement.amount)
+                      ? {
+                          leftAsCash: Number((Number(movement.amount) - Number(operation.amount)).toFixed(2)),
+                        }
+                      : {}),
+                  }
                 : {}),
               // The account of the movement's own date: an occurrence confirmed
               // after the commitment moved lands on the one it really left.

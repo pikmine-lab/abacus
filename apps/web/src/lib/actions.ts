@@ -17,6 +17,7 @@ import {
   changeAmount,
   confirmNextOccurrence,
   createFinancing,
+  createInvestmentPlan,
   createSubscription,
   editCommitment,
   moveAccount,
@@ -146,8 +147,14 @@ const FR: Record<string, string> = {
   asset_has_operations:
     'Cet actif porte des opérations : elles font l’histoire du compte. Supprime-les d’abord, ou garde-le.',
   oversold: 'Tu vends plus que ce compte détient. Vérifie la quantité, et le compte.',
-  needs_quantity: 'Un achat ou une vente porte une quantité.',
+  needs_quantity:
+    'Indique la quantité achetée, telle que le courtier l’affiche : le cours d’exécution seul peut la dire.',
   needs_asset: 'Indique l’actif concerné.',
+  same_account: 'Un versement va d’un compte vers un autre : ces deux-là sont le même.',
+  placement_has_no_actor:
+    'Un versement programmé ne paie personne : ni acteur, ni catégorie, ni date de fin d’engagement.',
+  not_a_placement: 'Seul un versement programmé alimente un compte d’investissement et achète un actif.',
+  asset_has_plans: 'Un versement programmé achète cet actif : arrête le versement d’abord, ou garde l’actif.',
   asset_exists: 'Ce nom est pris, ou tu détiens déjà cet instrument sous un autre nom.',
   asset_not_found: 'Cet actif n’existe plus.',
 }
@@ -554,6 +561,44 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
 }
 
 /**
+ * A scheduled placement: the two accounts, what it buys, and how often. No
+ * actor and no category, because what it produces is an internal transfer.
+ */
+export async function createInvestmentPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const rules: FieldRule[] = [
+    { name: 'label' },
+    { name: 'accountId' },
+    { name: 'targetAccountId' },
+    { name: 'amount', kind: 'amount' },
+    { name: 'firstDueOn', kind: 'date' },
+  ]
+  // Looked up on the spot, the asset arrives as its instrument reference and is
+  // declared by this submit, exactly as in the operation panel.
+  if (opt(formData, 'reference') === undefined) rules.push({ name: 'assetId' })
+  const invalid = checkFields(formData, rules)
+  if (invalid) return { fields: invalid }
+  const every = period(formData)
+  if (!every) return { fields: { period: 'À renseigner.' } }
+  try {
+    await createInvestmentPlan(userId, {
+      label: str(formData, 'label'),
+      accountId: str(formData, 'accountId'),
+      targetAccountId: str(formData, 'targetAccountId'),
+      assetId: (await assetIdFrom(userId, formData))!,
+      amount: num(formData, 'amount'),
+      ...every,
+      firstDueOn: str(formData, 'firstDueOn'),
+      activityId: opt(formData, 'activityId'),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
  * The schedule as edited line by line, or undefined when the editor was left
  * closed. Dates and amounts arrive as parallel lists in contractual order,
  * which is the order the rows were rendered in.
@@ -640,6 +685,10 @@ export async function confirmOccurrenceAction(formData: FormData): Promise<void>
       // as a one-off month.
       updateReference: formData.get('newAmount') !== null,
       eurAmount: optNum(formData, 'eurAmount'),
+      // A placement also buys: the quantity is required there, and the amount
+      // invested only differs when the broker left a remainder in cash.
+      quantity: optNum(formData, 'quantity'),
+      investedAmount: optNum(formData, 'investedAmount'),
     })
   } catch (e) {
     errorRedirect(formData, frError(e))
@@ -680,20 +729,35 @@ export async function setJudgmentAction(commitmentId: string, judgment: Judgment
  */
 export async function editCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'actor' }])
+  // A placement pays nobody, so its panel shows no actor and asks for what it
+  // buys instead: the two shapes are validated for what they each carry.
+  const placement = formData.get('placement') !== null
+  const invalid = checkFields(
+    formData,
+    placement
+      ? [{ name: 'label' }, { name: 'targetAccountId' }, { name: 'assetId' }]
+      : [{ name: 'label' }, { name: 'actor' }],
+  )
   if (invalid) return { fields: invalid }
   const every = period(formData)
   if (!every) return { fields: { period: 'À renseigner.' } }
   try {
     await editCommitment(userId, str(formData, 'commitmentId'), {
       label: str(formData, 'label'),
-      actorId: await actorIdFromName(userId, str(formData, 'actor')),
-      categoryId: opt(formData, 'categoryId') ?? null,
+      ...(placement
+        ? {
+            targetAccountId: str(formData, 'targetAccountId'),
+            assetId: str(formData, 'assetId'),
+          }
+        : {
+            actorId: await actorIdFromName(userId, str(formData, 'actor')),
+            categoryId: opt(formData, 'categoryId') ?? null,
+            // Financings never carry one, and the panel does not show the field
+            // for them: an empty value clears it rather than being refused.
+            engagedUntil: opt(formData, 'engagedUntil') ?? null,
+          }),
       activityId: opt(formData, 'activityId') ?? null,
       ...every,
-      // Financings never carry one, and the panel does not show the field for
-      // them: an empty value clears it rather than being refused.
-      engagedUntil: opt(formData, 'engagedUntil') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -983,6 +1047,30 @@ export async function renameAssetAction(_prev: FormState, formData: FormData): P
 }
 
 /**
+ * The asset a panel is about: the one that was picked from what is already
+ * known, or the instrument looked up on the spot, declared here. Shared by the
+ * operation panel and the scheduled placement, which ask it the same way.
+ *
+ * Declaring is idempotent, so a rejected submit can be corrected and sent again
+ * without tripping over the asset it already created.
+ */
+async function assetIdFrom(userId: string, formData: FormData): Promise<string | undefined> {
+  const reference = opt(formData, 'reference')
+  if (!reference) return opt(formData, 'assetId')
+  const asset = await declareAsset(userId, {
+    name: str(formData, 'assetName'),
+    instrument: {
+      kind: str(formData, 'kind') as InstrumentKind,
+      priceSource: str(formData, 'source') as 'yahoo' | 'coingecko',
+      priceSourceRef: reference,
+      name: opt(formData, 'description') ?? str(formData, 'assetName'),
+      isin: opt(formData, 'isin') ?? null,
+    },
+  })
+  return asset.id
+}
+
+/**
  * One operation per submit: the panel stays open and empties itself, because
  * declaring happens in bursts. The batch API exists for the MCP, which receives
  * a whole session at once.
@@ -1005,30 +1093,18 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
     { name: unitPriced ? 'unitPrice' : 'amount', kind: 'amount' },
   ]
   if (trade) rules.push({ name: 'quantity', kind: 'amount' })
-  const source = opt(formData, 'source')
-  const picked = opt(formData, 'reference')
-  if (type !== 'fee' && !picked) rules.push({ name: 'assetId' })
+  // An asset looked up on the spot arrives as its instrument reference; a known
+  // one as its id. Either satisfies "this operation is about an asset".
+  if (type !== 'fee' && opt(formData, 'reference') === undefined) rules.push({ name: 'assetId' })
   const invalid = checkFields(formData, rules)
   if (invalid) return { fields: invalid }
   const quantity = trade ? num(formData, 'quantity') : undefined
 
-  let assetId = opt(formData, 'assetId')
-  if (picked) {
-    try {
-      const asset = await declareAsset(userId, {
-        name: str(formData, 'assetName'),
-        instrument: {
-          kind: str(formData, 'kind') as InstrumentKind,
-          priceSource: source as 'yahoo' | 'coingecko',
-          priceSourceRef: picked,
-          name: opt(formData, 'description') ?? str(formData, 'assetName'),
-          isin: opt(formData, 'isin') ?? null,
-        },
-      })
-      assetId = asset.id
-    } catch (e) {
-      return { error: frError(e) }
-    }
+  let assetId: string | undefined
+  try {
+    assetId = await assetIdFrom(userId, formData)
+  } catch (e) {
+    return { error: frError(e) }
   }
   try {
     await recordOperations(userId, [

@@ -1014,6 +1014,95 @@ test('a ghost movement reads back in the list and in no analysis', async () => {
   assert.equal((await byActor()).rows.length, 2)
 })
 
+test('a scheduled placement is declared once, then confirmed with its quantity', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Espèces', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Titres', behavior: 'investment' })
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Monde',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+    description: 'Amundi MSCI World',
+  })
+
+  const created = await call(client, 'manage_investment_plan', {
+    action: 'create',
+    label: 'Versement Monde',
+    account: 'Espèces',
+    targetAccount: 'Titres',
+    asset: 'Monde',
+    amount: 200,
+    firstDueOn: today(),
+  })
+  assert.equal((created.json() as { buys: string; into: string }).buys, 'Monde')
+  assert.equal((created.json() as { into: string }).into, 'Titres')
+
+  // The overview announces what the occurrence needs, so the confirmation is
+  // not attempted without it.
+  const overview = (await call(client, 'get_overview')).json() as {
+    pendingOccurrences: { commitment: string; needs?: string }[]
+    monthlyCommittedCost: number
+    monthlyScheduledInvestment?: number
+  }
+  assert.match(overview.pendingOccurrences[0]!.needs!, /quantity/)
+  // Saving is counted apart from what is spent: adding it into the cost would
+  // answer "what do I spend" with money the user still has.
+  assert.equal(overview.monthlyCommittedCost, 0)
+  assert.equal(overview.monthlyScheduledInvestment, 200)
+
+  const refused = await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Versement Monde', action: 'confirm' }],
+  })
+  assert.match(JSON.stringify(refused.json()), /never work them out from a price/)
+
+  const confirmed = await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Versement Monde', action: 'confirm', quantity: 3, investedAmount: 195 }],
+  })
+  const [result] = rows<{ bought: number; invested: number; leftAsCash?: number }>(confirmed, 'results')
+  assert.equal(result!.bought, 3)
+  assert.equal(result!.invested, 195)
+  // The five euros the broker did not invest are where they really are.
+  assert.equal(result!.leftAsCash, 5)
+
+  // The purchase is there, once, and the account cash holds the remainder.
+  // Read through the operations and the balances rather than get_portfolio,
+  // which refreshes prices: a test must not depend on a market being up.
+  const operations = rows<{ type: string; asset?: string; quantity?: string; amount: number }>(
+    await call(client, 'list_investment_operations', { account: 'Titres' }),
+    'operations',
+  )
+  assert.equal(operations.length, 1)
+  assert.equal(operations[0]!.type, 'buy')
+  assert.equal(operations[0]!.asset, 'Monde')
+  assert.equal(Number(operations[0]!.quantity), 3)
+  assert.equal(operations[0]!.amount, 195)
+  const balances = (await call(client, 'get_overview')).json() as {
+    accounts: { name: string; balance: number }[]
+  }
+  assert.equal(balances.accounts.find((a) => a.name === 'Titres')!.balance, 5)
+  assert.equal(balances.accounts.find((a) => a.name === 'Espèces')!.balance, -200)
+
+  // A placement is neither a subscription nor a financing in the review, and it
+  // says what it buys.
+  const listed = rows<{ type: string; buys?: string; monthlyInvested?: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(listed[0]!.type, 'investment_plan')
+  assert.equal(listed[0]!.buys, 'Monde')
+
+  // And the transfer it wrote is no expense: the analysis ignores it.
+  const flows = await call(client, 'analyze_flows', {
+    from: '2026-01-01',
+    to: '2027-12-31',
+    groupBy: 'category',
+  })
+  assert.equal((flows.json() as { rows: unknown[] }).rows.length, 0)
+})
+
 test('investments: funding is a movement, what happens inside is an operation', async () => {
   // get_portfolio refreshes prices as it runs, and a test must not depend on
   // Yahoo being up or on what the market did today: the network is cut, which

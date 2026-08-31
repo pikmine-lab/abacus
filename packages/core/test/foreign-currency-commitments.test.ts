@@ -62,7 +62,7 @@ test('a USD subscription converts each confirmed occurrence at its day rate', as
   const [created] = await commitmentEvents(user, subscription.id)
   assert.equal(created?.currency, 'USD')
 
-  const movement = await confirmNextOccurrence(user, subscription.id, {}, history)
+  const movement = (await confirmNextOccurrence(user, subscription.id, {}, history)).movement
   assert.equal(movement.amount, '8.50')
   assert.equal(movement.currency, 'EUR')
   assert.equal(movement.originalAmount, '10.00')
@@ -86,7 +86,7 @@ test('the statement euros win at confirmation, and the new norm stays in USD', a
     history,
   )
 
-  const movement = await confirmNextOccurrence(
+  const { movement } = await confirmNextOccurrence(
     user,
     subscription.id,
     { amount: 12, updateReference: true, eurAmount: 10.42 },
@@ -171,7 +171,7 @@ test('a USD financing keeps its whole plan in USD and syncs both ways in it', as
   assert.equal(financing.currency, 'USD')
 
   // Confirming settles the USD line and writes the frozen-EUR movement.
-  const movement = await confirmNextOccurrence(user, financing.id, {}, history)
+  const movement = (await confirmNextOccurrence(user, financing.id, {}, history)).movement
   assert.equal(movement.amount, '42.50')
   assert.equal(movement.originalAmount, '50.00')
 

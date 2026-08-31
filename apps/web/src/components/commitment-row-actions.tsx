@@ -1,5 +1,6 @@
 'use client'
 
+import type { CommitmentKind } from '@abacus/core/domain'
 import { ArrowRightLeftIcon, BanIcon, BanknoteIcon, CalendarClockIcon, PencilIcon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
@@ -7,6 +8,7 @@ import { type CommitmentOptions, EditCommitmentForm, MoveAccountForm } from '@/c
 import { CurrencySelect } from '@/components/currency-select'
 import { FinancingScheduleForm, type ScheduleLine } from '@/components/financing-schedule-form'
 import { ActionForm, Field, SubmitButton } from '@/components/forms'
+import { EditInvestmentPlanForm, type PlacementOptions } from '@/components/investment-plan-forms'
 import { RowMenu } from '@/components/row-menu'
 import {
   AlertDialog,
@@ -43,13 +45,14 @@ export function CommitmentRowActions({
   today,
   options,
   defaults,
+  placement,
 }: {
   commitmentId: string
   label: string
   amount: number
   /** The currency it bills in, which the price-change panel can move. */
   currency: string
-  kind: 'subscription' | 'financing'
+  kind: CommitmentKind
   incoming: boolean
   /** The account it hits today, which the dated move starts from. */
   accountId: string
@@ -66,6 +69,16 @@ export function CommitmentRowActions({
     period: string
     engagedUntil: string
   }
+  /**
+   * Investment plan only: what its own correction panel needs. Its fields are
+   * not the others' (two accounts and an asset, no actor), so it gets its own
+   * form rather than options the shared one would have to ignore.
+   */
+  placement?: {
+    options: PlacementOptions
+    targetAccountId: string
+    assetId: string
+  }
 }) {
   const [pricing, setPricing] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -78,21 +91,22 @@ export function CommitmentRowActions({
     if (cancelState.ok) setConfirming(false)
   }, [cancelState.ok])
 
-  const stopVerb = kind === 'financing' ? 'Clore' : incoming ? 'Arrêter' : 'Résilier'
+  const placementKind = kind === 'investment_plan'
+  const stopVerb = kind === 'financing' ? 'Clore' : incoming || placementKind ? 'Arrêter' : 'Résilier'
 
   return (
     <>
       <RowMenu label={label}>
-        {options && defaults && (
+        {((options && defaults) || placement) && (
           <DropdownMenuItem onSelect={() => setEditing(true)}>
             <PencilIcon />
             Modifier
           </DropdownMenuItem>
         )}
-        {kind === 'subscription' && (
+        {(kind === 'subscription' || placementKind) && (
           <DropdownMenuItem onSelect={() => setPricing(true)}>
             <BanknoteIcon />
-            {incoming ? 'Changer le montant' : 'Changer le prix'}
+            {incoming || placementKind ? 'Changer le montant' : 'Changer le prix'}
           </DropdownMenuItem>
         )}
         {options && today && (
@@ -124,10 +138,12 @@ export function CommitmentRowActions({
           </DialogHeader>
           <ActionForm action={changePriceAction} onSuccess={() => setPricing(false)}>
             <input type="hidden" name="commitmentId" value={commitmentId} />
-            <Field label={incoming ? 'Nouveau montant' : 'Nouveau prix'} name="amount">
+            <Field label={incoming || placementKind ? 'Nouveau montant' : 'Nouveau prix'} name="amount">
               <div className="flex gap-2">
                 <AmountInput name="amount" defaultValue={amount.toFixed(2)} />
-                <CurrencySelect defaultValue={currency} />
+                {/* A placement is in euros: an operation is not multi-currency,
+                    so there is no other currency to offer. */}
+                {!placementKind && <CurrencySelect defaultValue={currency} />}
               </div>
             </Field>
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
@@ -164,19 +180,38 @@ export function CommitmentRowActions({
           <SheetHeader className="border-b border-border">
             <SheetTitle className="text-[15px]">{label}</SheetTitle>
             <SheetDescription className="text-[12px]">
-              Corriger ce que cet engagement dit de lui-même. Le montant et le compte ont le leur, daté.
+              {placementKind
+                ? 'Corriger ce que ce versement dit de lui-même. Le montant et le compte prélevé ont le leur, daté.'
+                : 'Corriger ce que cet engagement dit de lui-même. Le montant et le compte ont le leur, daté.'}
             </SheetDescription>
           </SheetHeader>
           <div className="p-4">
-            {options && defaults && (
-              <EditCommitmentForm
+            {placement && defaults ? (
+              <EditInvestmentPlanForm
                 commitmentId={commitmentId}
-                kind={kind}
-                incoming={incoming}
-                defaults={{ label, ...defaults }}
-                options={options}
+                defaults={{
+                  label,
+                  period: defaults.period,
+                  activityId: defaults.activityId,
+                  targetAccountId: placement.targetAccountId,
+                  assetId: placement.assetId,
+                }}
+                options={placement.options}
                 onDone={() => setEditing(false)}
               />
+            ) : (
+              options &&
+              defaults &&
+              kind !== 'investment_plan' && (
+                <EditCommitmentForm
+                  commitmentId={commitmentId}
+                  kind={kind}
+                  incoming={incoming}
+                  defaults={{ label, ...defaults }}
+                  options={options}
+                  onDone={() => setEditing(false)}
+                />
+              )
             )}
           </div>
         </SheetContent>

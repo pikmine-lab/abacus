@@ -41,9 +41,14 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         const advances = await advancesView(userId)
         const commitments = (await listCommitmentsWithProgress(userId)).filter((c) => !c.cancelledOn)
         // In euros at the latest rate: a USD line added as-is would count
-        // dollars as euros.
+        // dollars as euros. A scheduled placement leaves the account like a
+        // subscription does, but it is saving and not cost: added in here it
+        // would answer "what do I spend" with money that is still the user's.
         const monthlyOut = commitments
-          .filter((c) => c.direction === 'outgoing')
+          .filter((c) => c.direction === 'outgoing' && c.kind !== 'investment_plan')
+          .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
+        const monthlyInvested = commitments
+          .filter((c) => c.kind === 'investment_plan')
           .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
         // An investment account's balance is its cash, so wealth is only whole
         // once the holdings are counted: what is worth stating is what those
@@ -70,9 +75,22 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
             // The account of its own date, which is not always the one the
             // commitment hits today: a move may have happened in between.
             account: names.get(p.accountId),
+            // A placement's occurrence also buys, so it cannot be confirmed
+            // without the quantity: saying so here is what stops a confirm
+            // attempt that would only come back refused.
+            ...(p.placement
+              ? {
+                  invests: `into ${names.get(p.placement.targetAccountId)}`,
+                  needs: 'quantity: the units the broker says the order bought',
+                }
+              : {}),
           })),
           outstandingAdvances: advances,
           monthlyCommittedCost: Math.round(monthlyOut * 100) / 100,
+          // Counted apart, never inside the cost above: what a scheduled
+          // placement moves stays the user's money, in another form.
+          monthlyScheduledInvestment:
+            monthlyInvested > 0 ? Math.round(monthlyInvested * 100) / 100 : undefined,
         })
       }),
   )

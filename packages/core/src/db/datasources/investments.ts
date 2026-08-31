@@ -131,13 +131,15 @@ export interface NewOperation {
   currency?: string
   operatedOn: string
   note?: string | null
+  /** The transfer that funded it, when an investment plan wrote both. */
+  movementId?: string | null
 }
 
 export async function insertOperation(tx: Executor, row: NewOperation): Promise<InvestmentOperation> {
   const [operation] = await tx<InvestmentOperation[]>`
     insert into investment_operation ${tx(compact(row))}
     -- Every column but account_behavior, which only exists to carry a foreign key.
-    returning id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
+    returning id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note, movement_id
   `
   return operation!
 }
@@ -185,7 +187,7 @@ export async function listOperations(
   const sort = query.sort ?? { field: 'date' as const, direction: 'desc' as const }
   return await tx<InvestmentOperation[]>`
     select o.id, o.user_id, o.account_id, o.asset_id, o.type, o.quantity, o.amount,
-           o.currency, o.operated_on, o.note
+           o.currency, o.operated_on, o.note, o.movement_id
     from investment_operation o
     ${sort.field === 'asset' ? tx`left join asset a on a.id = o.asset_id` : tx``}
     where o.user_id = ${userId}
@@ -680,7 +682,7 @@ export async function getOperation(
   id: string,
 ): Promise<InvestmentOperation | undefined> {
   const [operation] = await tx<InvestmentOperation[]>`
-    select id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
+    select id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note, movement_id
     from investment_operation where user_id = ${userId} and id = ${id}
   `
   return operation
@@ -695,7 +697,7 @@ export async function updateOperationRow(
   const [operation] = await tx<InvestmentOperation[]>`
     update investment_operation set ${tx(patch)}, updated_at = now()
     where user_id = ${userId} and id = ${id}
-    returning id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note
+    returning id, user_id, account_id, asset_id, type, quantity, amount, currency, operated_on, note, movement_id
   `
   return operation
 }

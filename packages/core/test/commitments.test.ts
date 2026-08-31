@@ -53,7 +53,7 @@ test('confirming an occurrence creates the movement and advances the commitment'
   const user = await seedUser()
   const { subscription, account, actor } = await subscriptionFixture(user)
 
-  const movement = await confirmNextOccurrence(user, subscription.id)
+  const movement = (await confirmNextOccurrence(user, subscription.id)).movement
 
   assert.equal(movement.kind, 'expense')
   assert.equal(movement.amount, '13.49')
@@ -171,7 +171,7 @@ test('an incoming commitment (salary) confirms into an income', async () => {
     firstDueOn: '2026-05-28',
   })
 
-  const movement = await confirmNextOccurrence(user, salary.id)
+  const movement = (await confirmNextOccurrence(user, salary.id)).movement
   assert.equal(movement.kind, 'income')
   assert.equal(movement.sourceActorId, employer.id)
   assert.equal(movement.targetAccountId, account.id)
@@ -236,7 +236,7 @@ test('an uneven schedule is stored as given and drives the occurrences', async (
   )
 
   // Confirming the deposit leaves exactly what the plan still owes.
-  const movement = await confirmNextOccurrence(user, financing.id)
+  const movement = (await confirmNextOccurrence(user, financing.id)).movement
   assert.equal(movement.amount, '1500.00')
   assert.equal(movement.happenedOn, '2026-02-01')
   const [tracked] = (await listCommitmentsWithProgress(user)).filter((c) => c.id === financing.id)
@@ -303,7 +303,7 @@ test('deleting a confirmed installment puts it back on the plan', async () => {
     firstDueOn: '2026-04-10',
   })
 
-  const paid = await confirmNextOccurrence(user, financing.id)
+  const paid = (await confirmNextOccurrence(user, financing.id)).movement
   let tracked = (await listCommitmentsWithProgress(user)).find((c) => c.id === financing.id)!
   assert.equal(tracked.progress!.paidInstallments, 1)
   assert.equal(tracked.nextDueOn, '2026-05-10')
@@ -401,7 +401,7 @@ test('revising adds and drops installments, and renumbers what is left', async (
 test('revising a settled installment corrects the movement that paid it', async () => {
   const user = await seedUser()
   const { financing } = await financingFixture(user)
-  const paid = await confirmNextOccurrence(user, financing.id)
+  const paid = (await confirmNextOccurrence(user, financing.id)).movement
   const schedule = await financingSchedule(user, financing.id)
 
   // The deposit really was 1 400: the plan and the movement say so together.
@@ -447,7 +447,7 @@ test('dropping a settled installment deletes the movement that paid it', async (
 test('correcting the movement of an installment realigns the plan', async () => {
   const user = await seedUser()
   const { financing } = await financingFixture(user)
-  const paid = await confirmNextOccurrence(user, financing.id)
+  const paid = (await confirmNextOccurrence(user, financing.id)).movement
 
   // Typed 1 500 instead of 1 450: correcting the movement corrects the plan.
   await correctMovement(user, paid.id, { amount: 1450 })
@@ -484,7 +484,7 @@ test('a schedule revision refuses what would leave no plan at all', async () => 
 test('a settled installment and its movement keep the same date, edited from either side', async () => {
   const user = await seedUser()
   const { financing } = await financingFixture(user)
-  const paid = await confirmNextOccurrence(user, financing.id)
+  const paid = (await confirmNextOccurrence(user, financing.id)).movement
 
   // Debited two days late: the settled line says the payment, not the intent.
   await correctMovement(user, paid.id, { happenedOn: '2026-02-03' })
@@ -515,7 +515,7 @@ test('editing a commitment corrects what it says, not the movements it produced'
   const user = await seedUser()
   const { subscription, account } = await subscriptionFixture(user)
   const provider = await createActor(user, { name: 'Netflix SAS' })
-  const movement = await confirmNextOccurrence(user, subscription.id)
+  const movement = (await confirmNextOccurrence(user, subscription.id)).movement
 
   const edited = await editCommitment(user, subscription.id, {
     label: 'Netflix Standard',
@@ -534,7 +534,7 @@ test('editing a commitment corrects what it says, not the movements it produced'
   assert.equal(past!.sourceAccountId, account.id)
 
   // The next occurrence, though, follows the correction.
-  const confirmed = await confirmNextOccurrence(user, subscription.id)
+  const confirmed = (await confirmNextOccurrence(user, subscription.id)).movement
   assert.equal(confirmed.targetActorId, provider.id)
 })
 
@@ -579,12 +579,12 @@ test('an occurrence confirmed after a move lands on the account it really left',
 
   // The occurrence left behind is still the old account's: it was debited
   // before the move, whatever day it is finally confirmed.
-  const late = await confirmNextOccurrence(user, subscription.id)
+  const late = (await confirmNextOccurrence(user, subscription.id)).movement
   assert.equal(late.happenedOn, first)
   assert.equal(late.sourceAccountId, account.id)
 
   // The one falling on the move's own date is the new account's.
-  const then = await confirmNextOccurrence(user, subscription.id)
+  const then = (await confirmNextOccurrence(user, subscription.id)).movement
   assert.equal(then.happenedOn, second)
   assert.equal(then.sourceAccountId, moved.id)
 
@@ -628,8 +628,8 @@ test('a move announced ahead waits for its date, and says so meanwhile', async (
     ],
   )
 
-  assert.equal((await confirmNextOccurrence(user, subscription.id)).sourceAccountId, account.id)
-  assert.equal((await confirmNextOccurrence(user, subscription.id)).sourceAccountId, moved.id)
+  assert.equal((await confirmNextOccurrence(user, subscription.id)).movement.sourceAccountId, account.id)
+  assert.equal((await confirmNextOccurrence(user, subscription.id)).movement.sourceAccountId, moved.id)
 })
 
 test('a recurring income moves the account it is credited to', async () => {
@@ -649,7 +649,7 @@ test('a recurring income moves the account it is credited to', async () => {
   })
 
   await moveAccount(user, salary.id, moved.id, first)
-  const movement = await confirmNextOccurrence(user, salary.id)
+  const movement = (await confirmNextOccurrence(user, salary.id)).movement
   assert.equal(movement.kind, 'income')
   assert.equal(movement.targetAccountId, moved.id)
   assert.equal(movement.sourceActorId, employer.id)
@@ -663,9 +663,9 @@ test('a financing installment follows the account of its own due date', async ()
   // The plan is 2026-02-01, 2026-03-05, 2026-04-05: the move splits it.
   await moveAccount(user, financing.id, moved.id, '2026-03-05')
 
-  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, account.id)
-  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, moved.id)
-  assert.equal((await confirmNextOccurrence(user, financing.id)).sourceAccountId, moved.id)
+  assert.equal((await confirmNextOccurrence(user, financing.id)).movement.sourceAccountId, account.id)
+  assert.equal((await confirmNextOccurrence(user, financing.id)).movement.sourceAccountId, moved.id)
+  assert.equal((await confirmNextOccurrence(user, financing.id)).movement.sourceAccountId, moved.id)
 })
 
 test('moving to an account that is not the user’s is refused', async () => {
