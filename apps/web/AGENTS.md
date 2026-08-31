@@ -84,11 +84,19 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **L'état de la barre latérale est lu côté serveur** dans le cookie `sidebar_state`, pour
   que le premier rendu ait déjà la bonne largeur.
 - **Le mois compté se résout en trois endroits, dans cet ordre** : le paramètre d'URL, le
-  cookie de session, la préférence du profil (`lib/reading.ts`). Ce n'est pas un cadrage
-  d'écran comme la période ou le tri : la bascule écrit l'URL **et** le cookie, pour que le
-  choix suive d'un écran à l'autre sans cesser d'être partageable, rechargeable et
-  défaisable. Le paramètre est toujours écrit en clair, jamais retiré sur la valeur par
-  défaut, sinon l'écran repasserait au cookie. Seule la page Réglages écrit la préférence.
+  cookie, la préférence du profil (`lib/reading.ts`). Ce n'est pas un cadrage d'écran
+  comme la période ou le tri. La bascule n'écrit que l'URL ; `proxy.ts` en tire le cookie
+  qui fait suivre le choix d'un écran à l'autre, et l'efface à chaque chargement de
+  document, pour qu'aucun état invisible ne survive à un rechargement. Le paramètre est
+  toujours écrit en clair, jamais retiré sur la valeur par défaut, sinon l'écran
+  repasserait au cookie. Seule la page Réglages écrit la préférence, et l'écrire efface le
+  cookie.
+- **Ce qui s'exécute avant le rendu vit dans `src/proxy.ts`** (`middleware.ts` est le nom
+  d'avant). Next y masque ses propres en-têtes RSC, pour empêcher qu'une navigation
+  réponde autrement qu'un chargement de page : distinguer les deux, quand c'est
+  justement ce qu'on veut, passe par `Sec-Fetch-Dest`, en-tête du navigateur. Le proxy est
+  empaqueté à part du rendu, donc il n'importe rien de `lib/` : ce qu'il partage se
+  répète sur place, avec le renvoi vers la définition.
 - **Rien n'est dessiné avant mesure du conteneur.** Une largeur devinée pousse les marques
   hors cadre au lieu de les mettre à l'échelle ; la place est réservée par `minHeight` pour
   éviter le saut.

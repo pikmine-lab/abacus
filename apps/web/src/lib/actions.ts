@@ -978,22 +978,10 @@ export async function createActivityAction(_prev: FormState, formData: FormData)
 }
 
 /**
- * The reading this session counts in, switched from the tabs of a screen.
- * A session cookie and nothing more: it dies with the browser, and the next
- * session opens on the profile's value again. It never writes that value,
- * because a glance in the other reading is not a change of habit.
- */
-export async function chooseReadingAction(reading: string): Promise<void> {
-  const value = parseReading(reading)
-  if (!value) return
-  ;(await cookies()).set(READING_COOKIE, value, { path: '/', sameSite: 'lax' })
-}
-
-/**
- * Settles the reading every session opens in. This is the only gesture that
- * writes it. It carries the running session along: someone naming the way
- * they count is not asking to keep reading the other way until they close the
- * browser.
+ * Settles the reading every page load starts from. This is the only gesture
+ * that writes it, and it drops whatever a screen was switched to along the
+ * way: naming the way you count is not asking to keep reading the other way
+ * for the rest of the visit.
  */
 export async function setReadingPreferenceAction(reading: string): Promise<string | null> {
   const userId = await requireUserId()
@@ -1004,7 +992,7 @@ export async function setReadingPreferenceAction(reading: string): Promise<strin
   } catch (e) {
     return frError(e)
   }
-  ;(await cookies()).set(READING_COOKIE, value, { path: '/', sameSite: 'lax' })
+  ;(await cookies()).delete(READING_COOKIE)
   refreshAll()
   return null
 }
