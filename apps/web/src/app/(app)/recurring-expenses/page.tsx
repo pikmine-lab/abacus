@@ -187,6 +187,8 @@ export default async function RecurringExpensesPage({
                 commitmentId: p.commitment.id,
                 label: p.commitment.label,
                 dueOn: p.dueOn,
+                periodUnit: p.commitment.periodUnit,
+                ahead: p.ahead,
                 amount: p.amount,
                 currency: p.commitment.currency,
                 incoming: false,

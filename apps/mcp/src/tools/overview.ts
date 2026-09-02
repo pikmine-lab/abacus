@@ -19,7 +19,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences awaiting confirmation, outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences to confirm (past their date, or of the coming period and flagged ahead), outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -79,6 +79,14 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
             // The account of its own date, which is not always the one the
             // commitment hits today: a move may have happened in between.
             account: names.get(p.accountId),
+            // Listed so a debit or a salary that lands before its month can be
+            // recorded when it happens; said in words so it is not read as owed.
+            ...(p.ahead
+              ? {
+                  ahead:
+                    'not due yet, the coming period: confirm it only if the user says the money already moved, or names the day it will, and pass that date',
+                }
+              : {}),
             // A placement's occurrence also buys, so it cannot be confirmed
             // without the quantity: saying so here is what stops a confirm
             // attempt that would only come back refused.

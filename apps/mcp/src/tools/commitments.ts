@@ -512,7 +512,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'confirm_due_movements',
     {
       description:
-        "Processes commitment occurrences that reached their date (listed by get_overview): confirm turns the expected occurrence into a real movement and advances the commitment by one period; skip advances without creating a movement (free month, paused service, a placement suspended for a month). When reality differed, pass the real amount : recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. An investment plan is the one kind that cannot be confirmed on its own: it also writes the purchase, so it requires quantity, the units the broker says the order bought. Never compute that from a price: the order executed at an intraday price, and a quantity derived from a daily close would set a false average cost that drifts further with every occurrence. If the user has not given it, ask. Always prefer this tool over declare_movements for a subscription debit, and over record_investment_operations for a plan's purchase, otherwise the occurrence stays pending.",
+        "Processes the commitment occurrences get_overview lists: those past their date, and the coming period's (flagged ahead), which is how a debit or a salary that lands before its month is recorded when it happens. confirm turns the oldest pending occurrence of the commitment into a real movement and advances the commitment by one period, so occurrences settle in order: list the same commitment twice to settle two. Pass date when the money moved on another day than expected; dated in another month than the one it was due, the movement still counts in its due month, that attachment is automatic. skip advances without creating a movement (free month, paused service, a placement suspended for a month). When reality differed, pass the real amount : recording the truth always wins over the expectation, and that divergence is how silent price bumps get noticed. Then say which kind of divergence it was with amountIsTheNewNorm: a salary that moved for one month (short month, bonus) is a one-off, a raise or a price increase is permanent and must be recorded as such. If the user has not said which, ask before confirming. An investment plan is the one kind that cannot be confirmed on its own: it also writes the purchase, so it requires quantity, the units the broker says the order bought. Never compute that from a price: the order executed at an intraday price, and a quantity derived from a daily close would set a false average cost that drifts further with every occurrence. If the user has not given it, ask. Always prefer this tool over declare_movements for a subscription debit, and over record_investment_operations for a plan's purchase, otherwise the occurrence stays pending.",
       inputSchema: z.object({
         items: z
           .array(
@@ -530,7 +530,11 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
                 .describe(
                   'confirm + amount: true when that amount replaces the expected one from now on (a raise, a price increase). It updates the commitment and records a dated price change, so the history shows when it moved. Leave it out or false for a one-off month, which changes nothing for the next occurrences.',
                 ),
-              date: isoDate.optional().describe('confirm: the real date when it differs from the due date'),
+              date: isoDate
+                .optional()
+                .describe(
+                  'confirm: the real date when it differs from the due date, earlier included. The movement counts in the month the occurrence was due whatever this date is',
+                ),
               eurAmount: z
                 .number()
                 .positive()

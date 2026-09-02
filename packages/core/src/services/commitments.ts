@@ -28,7 +28,7 @@ import {
 } from '../db/datasources/installments.ts'
 import { getAsset } from '../db/datasources/investments.ts'
 import { DomainError } from '../domain/errors.ts'
-import { addPeriod, today } from '../domain/period.ts'
+import { addPeriod, endOfMonth, today } from '../domain/period.ts'
 import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type {
   Commitment,
@@ -762,6 +762,12 @@ export interface PendingOccurrence {
    * quantity bought.
    */
   placement: { targetAccountId: string; assetId: string } | null
+  /**
+   * Not at its date yet, as of the day asked for. Listed so it can be
+   * confirmed early, at the day the money really moved, not because it is
+   * owed. Never true of a financing installment, which waits for its date.
+   */
+  ahead: boolean
 }
 
 /** The placement side of an occurrence, for the one kind that has one. */
@@ -772,18 +778,43 @@ function placementOf(commitment: Commitment): PendingOccurrence['placement'] {
 }
 
 /**
- * Expected occurrences up to a date, oldest first.
+ * The last day an occurrence may fall on and still be listed on a given day:
+ * the end of the period after the current one. An occurrence of a monthly or
+ * yearly commitment is about a calendar month, the one its due date falls in
+ * and the one its movement is attached to, so its next period is the next
+ * month, whatever the day. A weekly one has no month: its next period is the
+ * next span of weeks.
+ */
+function listingHorizon(on: string, unit: PeriodUnit, count: number): string {
+  return unit === 'week' ? addPeriod(on, 'week', count) : endOfMonth(addPeriod(on, 'month', 1))
+}
+
+/**
+ * Occurrences to decide on as of a date, oldest first: the ones that reached
+ * their date and, for an open-ended commitment, those of the coming period.
  *
  * A subscription is open-ended, so its occurrences are expanded from
  * next_due_on. A financing has a written schedule, so its own rows are read:
- * that is the only way an uneven plan can be confirmed for what it is.
+ * that is the only way an uneven plan can be confirmed for what it is. Its
+ * lines stop at the date: an installment is dated by contract, and one paid
+ * early stays the line of its date.
+ *
+ * The coming period is listed because an occurrence belongs to a period, not
+ * to a day: a subscription is not debited on the same day every month, a
+ * salary less so. Paid before its period opens, the fact is known and has
+ * nowhere to go otherwise but a hand-declared movement, which leaves the
+ * occurrence pending and claims it a second time on its date. Listed ahead,
+ * it is confirmed at its real date and counts in its own month (see
+ * confirmNextOccurrence). One period ahead and no more. The list reads in the
+ * order it is settled: what confirmNextOccurrence settles is always the
+ * oldest, so a later occurrence waits for the ones before it.
  */
 export async function pendingOccurrences(userId: string, until?: string): Promise<PendingOccurrence[]> {
   const sql = db()
   const limit = until ?? today()
-  const due = await listCommitmentsDs(sql, userId, { activeOnly: true, dueOnOrBefore: limit })
+  const active = await listCommitmentsDs(sql, userId, { activeOnly: true })
   const pending: PendingOccurrence[] = []
-  for (const commitment of due) {
+  for (const commitment of active) {
     const timeline = await accountTimeline(sql, commitment.id)
     if (commitment.kind === 'financing') {
       for (const installment of await dueInstallments(sql, commitment.id, limit))
@@ -793,17 +824,20 @@ export async function pendingOccurrences(userId: string, until?: string): Promis
           amount: Number(installment.amount),
           accountId: accountAt(timeline, installment.dueOn),
           placement: null,
+          ahead: false,
         })
       continue
     }
+    const horizon = listingHorizon(limit, commitment.periodUnit, commitment.periodCount)
     let dueOn = commitment.nextDueOn
-    while (dueOn <= limit) {
+    while (dueOn <= horizon) {
       pending.push({
         commitment,
         dueOn,
         amount: Number(commitment.amount),
         accountId: accountAt(timeline, dueOn),
         placement: placementOf(commitment),
+        ahead: dueOn > limit,
       })
       dueOn = addPeriod(dueOn, commitment.periodUnit, commitment.periodCount)
     }

@@ -120,13 +120,12 @@ export async function getCommitmentForUpdate(
 export async function listCommitments(
   tx: Executor,
   userId: string,
-  opts: { activeOnly?: boolean; dueOnOrBefore?: string; on?: string } = {},
+  opts: { activeOnly?: boolean; on?: string } = {},
 ): Promise<Commitment[]> {
   const rows = await tx<ReadCommitment[]>`
     select ${READ(tx)} from commitment c ${accountOn(tx, opts.on ?? today())}
     where c.user_id = ${userId}
     ${opts.activeOnly ? tx`and c.cancelled_on is null` : tx``}
-    ${opts.dueOnOrBefore ? tx`and c.next_due_on <= ${opts.dueOnOrBefore}` : tx``}
     order by c.next_due_on
   `
   return rows.map(asCommitment)

@@ -221,7 +221,7 @@ export default async function InvestmentsPage({
   // here too, because that confirmation buys.
   const plans = commitments.filter((c) => c.kind === 'investment_plan')
   const monthlyInvested = plans.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
-  const duePlacements = pending.filter((p) => p.placement !== null)
+  const pendingPlacements = pending.filter((p) => p.placement !== null)
   const placementOptions: PlacementOptions = {
     accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
     investmentAccounts: investmentAccounts.map((a) => ({ id: a.id, name: a.name })),
@@ -331,17 +331,19 @@ export default async function InvestmentsPage({
             {/* Its own section, outside the fold below: an occurrence waiting
                 to be confirmed is work to do, and folding the plans away must
                 not take it out of sight. */}
-            {duePlacements.length > 0 && (
+            {pendingPlacements.length > 0 && (
               <Section
                 title="Échéances à confirmer"
                 description="le virement et l’achat s’écrivent ensemble, la quantité reçue en plus"
               >
                 <PendingOccurrences
                   back="/investments"
-                  items={duePlacements.map((p) => ({
+                  items={pendingPlacements.map((p) => ({
                     commitmentId: p.commitment.id,
                     label: p.commitment.label,
                     dueOn: p.dueOn,
+                    periodUnit: p.commitment.periodUnit,
+                    ahead: p.ahead,
                     amount: p.amount,
                     currency: p.commitment.currency,
                     incoming: false,

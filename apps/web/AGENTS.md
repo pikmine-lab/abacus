@@ -171,6 +171,16 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   apparaît : *est-ce le nouveau montant habituel ?*, parce que c'est la seule chose que l'app
   ne peut pas déduire, et que la réponse tranche entre un mois exceptionnel et un changement
   de prix historisé.
+- **Les échéances se confirment dans l'ordre, et celles de la période à venir en avance.**
+  Une échéance mensuelle ou annuelle se lit par son mois (« octobre 2026 · attendu le
+  05/10/26 »), une hebdomadaire par sa date seule. Seule la plus ancienne d'un engagement
+  porte le geste, parce que le service règle toujours la plus ancienne : une plus récente dit
+  ce qu'elle attend. Celles qui n'ont pas atteint leur date sont dans un repli « À venir »,
+  fermé : ce n'est pas du travail à faire mais une possibilité, pour le prélèvement ou le
+  salaire qui tombe avant son mois. La date s'y ouvre d'office, une confirmation en avance
+  étant presque toujours à une autre date que celle attendue ; le mouvement compte dans le
+  mois de l'échéance quelle que soit sa date. L'accueil et les tuiles ne comptent que ce qui
+  a atteint sa date.
 - **Un plan à échéances se déclare par son total**, et l'échéancier qui en découle
   s'**affiche en résumé** (« 3 échéances de 333,33 €, la dernière de 333,34 € ») plutôt que
   d'être demandé, parce que c'est le chiffre qu'on saisit de travers.

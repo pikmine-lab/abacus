@@ -54,6 +54,9 @@ export default async function RecurringIncomePage({
   const active = incoming.filter((c) => !c.cancelledOn)
   const stopped = incoming.filter((c) => c.cancelledOn)
   const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
+  // The coming period's occurrences are listed so an early salary can be
+  // recorded, not owed: the tile counts what is.
+  const dueIn = pendingIn.filter((p) => !p.ahead)
 
   const monthly = active.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
@@ -107,10 +110,8 @@ export default async function RecurringIncomePage({
           />
           <StatTile
             label="À confirmer"
-            value={String(pendingIn.length)}
-            hint={
-              pendingIn.length > 0 ? `attendu depuis le ${frDate(pendingIn[0]!.dueOn)}` : 'tout est à jour'
-            }
+            value={String(dueIn.length)}
+            hint={dueIn.length > 0 ? `attendu depuis le ${frDate(dueIn[0]!.dueOn)}` : 'tout est à jour'}
           />
         </StatRow>
 
@@ -125,6 +126,8 @@ export default async function RecurringIncomePage({
                 commitmentId: p.commitment.id,
                 label: p.commitment.label,
                 dueOn: p.dueOn,
+                periodUnit: p.commitment.periodUnit,
+                ahead: p.ahead,
                 amount: p.amount,
                 currency: p.commitment.currency,
                 incoming: true,
