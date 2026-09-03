@@ -24,6 +24,12 @@ export function addPeriod(date: string, unit: PeriodUnit, count: number): string
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+/** The last day of the month a date falls in. */
+export function endOfMonth(date: string): string {
+  const [y, m] = date.split('-').map(Number) as [number, number]
+  return `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth(y, m)).padStart(2, '0')}`
+}
+
 /** Today as a calendar date, in the server's timezone. */
 export function today(): string {
   const now = new Date()

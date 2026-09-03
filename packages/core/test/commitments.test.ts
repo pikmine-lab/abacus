@@ -61,10 +61,15 @@ test('confirming an occurrence creates the movement and advances the commitment'
   assert.equal(movement.targetActorId, actor.id)
   assert.equal(movement.commitmentId, subscription.id)
 
+  // June is owed; July is the coming month, listed ahead so an early debit
+  // has somewhere to go.
   const pending = await pendingOccurrences(user, '2026-06-30')
   assert.deepEqual(
-    pending.map((p) => p.dueOn),
-    ['2026-06-01'],
+    pending.map((p) => [p.dueOn, p.ahead]),
+    [
+      ['2026-06-01', false],
+      ['2026-07-01', true],
+    ],
   )
 })
 
@@ -75,15 +80,80 @@ test('expands several late occurrences and skips advance without a movement', as
   const pending = await pendingOccurrences(user, '2026-07-15')
   assert.deepEqual(
     pending.map((p) => p.dueOn),
-    ['2026-05-01', '2026-06-01', '2026-07-01'],
+    ['2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'],
   )
 
   await skipNextOccurrence(user, subscription.id)
   const after = await pendingOccurrences(user, '2026-07-15')
   assert.deepEqual(
     after.map((p) => p.dueOn),
-    ['2026-06-01', '2026-07-01'],
+    ['2026-06-01', '2026-07-01', '2026-08-01'],
   )
+})
+
+test('the coming month is listed ahead, and confirmed early it counts in its own month', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const employer = await createActor(user, { name: 'Employer' })
+  const salary = await createSubscription(user, {
+    label: 'Salary',
+    actorId: employer.id,
+    accountId: account.id,
+    direction: 'incoming',
+    amount: 2500,
+    periodUnit: 'month',
+    firstDueOn: '2026-10-05',
+  })
+
+  // Late September: October is the coming month, November is not yet.
+  assert.deepEqual(
+    (await pendingOccurrences(user, '2026-09-20')).map((p) => [p.dueOn, p.ahead]),
+    [['2026-10-05', true]],
+  )
+
+  // Received on the 28th: the movement is dated that day and is about October.
+  const movement = (await confirmNextOccurrence(user, salary.id, { happenedOn: '2026-09-28' })).movement
+  assert.equal(movement.happenedOn, '2026-09-28')
+  assert.equal(movement.accrualMonth, '2026-10-01')
+
+  // November is two periods away from September, so nothing is left to list
+  // there; it becomes the coming one once October opens.
+  assert.deepEqual(await pendingOccurrences(user, '2026-09-20'), [])
+  assert.deepEqual(
+    (await pendingOccurrences(user, '2026-10-01')).map((p) => [p.dueOn, p.ahead]),
+    [['2026-11-05', true]],
+  )
+})
+
+test('the coming period is the next month of a yearly rhythm and the next week of a weekly one', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const provider = await createActor(user, { name: 'Provider' })
+  const base = { actorId: provider.id, accountId: account.id }
+  await createSubscription(user, {
+    ...base,
+    label: 'Domain',
+    amount: 12,
+    periodUnit: 'year',
+    firstDueOn: '2027-03-10',
+  })
+  await createSubscription(user, {
+    ...base,
+    label: 'Cleaning',
+    amount: 40,
+    periodUnit: 'week',
+    firstDueOn: '2026-09-18',
+  })
+  const listed = async (label: string, on: string) =>
+    (await pendingOccurrences(user, on)).filter((p) => p.commitment.label === label).map((p) => p.dueOn)
+
+  // A yearly occurrence is about its month: it shows from the month before.
+  assert.deepEqual(await listed('Domain', '2027-01-31'), [])
+  assert.deepEqual(await listed('Domain', '2027-02-01'), ['2027-03-10'])
+  // A weekly one has no month: the coming week, not the four of a month.
+  assert.deepEqual(await listed('Cleaning', '2026-09-10'), [])
+  assert.deepEqual(await listed('Cleaning', '2026-09-11'), ['2026-09-18'])
+  assert.deepEqual(await listed('Cleaning', '2026-09-16'), ['2026-09-18'])
 })
 
 test('a price change updates the amount and leaves a dated event', async () => {
@@ -621,7 +691,7 @@ test('a move announced ahead waits for its date, and says so meanwhile', async (
   // has to be done on the day the move takes effect.
   const pending = await pendingOccurrences(user, nextMonth)
   assert.deepEqual(
-    pending.map((p) => [p.dueOn, p.accountId]),
+    pending.filter((p) => !p.ahead).map((p) => [p.dueOn, p.accountId]),
     [
       [now, account.id],
       [nextMonth, moved.id],

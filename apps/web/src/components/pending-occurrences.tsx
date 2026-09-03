@@ -1,8 +1,10 @@
 'use client'
 
+import type { PeriodUnit } from '@abacus/core/domain'
 import { CalendarIcon, CoinsIcon, SkipForwardIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { FoldSection } from '@/components/fold-section'
 import { DateField } from '@/components/forms'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
@@ -12,12 +14,20 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { confirmOccurrenceAction, skipOccurrenceAction } from '@/lib/actions'
-import { eur, frDate, money } from '@/lib/utils'
+import { eur, frDate, frMonthLong, money } from '@/lib/utils'
 
 export interface PendingItem {
   commitmentId: string
   label: string
   dueOn: string
+  /**
+   * The rhythm decides what the occurrence is named after: a monthly or yearly
+   * one is about its month, which is what it reads as; a weekly one has no
+   * month and keeps its date alone.
+   */
+  periodUnit: PeriodUnit
+  /** Not at its date yet: listed so an early debit or salary has somewhere to go. */
+  ahead: boolean
   /** In the commitment's currency, like the field that confirms it. */
   amount: number
   currency: string
@@ -49,28 +59,64 @@ export interface PendingItem {
  * quantity bought. The order executed at a price no daily close reproduces, so
  * nothing here can work it out. What the broker did not invest is the rarer
  * case, so it lives behind the row's menu rather than in the way.
+ *
+ * Occurrences settle in order: the service always confirms the oldest one of
+ * a commitment, so only that row carries the gesture and a later one says what
+ * it waits for. The ones still ahead of today are folded away: they are not
+ * work to do but a possibility, for the debit or the salary that lands before
+ * its month.
  */
 export function PendingOccurrences({
   items,
   back,
 }: {
+  /** Oldest first, as the service lists them. */
   items: PendingItem[]
   /** Where a failed action comes back to, with its message. */
   back: string
 }) {
+  const oldest = new Map<string, string>()
+  for (const item of items) if (!oldest.has(item.commitmentId)) oldest.set(item.commitmentId, item.dueOn)
+  const row = (item: PendingItem) => {
+    const first = oldest.get(item.commitmentId)!
+    return (
+      <PendingRow
+        key={`${item.commitmentId}-${item.dueOn}`}
+        item={item}
+        back={back}
+        after={first === item.dueOn ? null : first}
+      />
+    )
+  }
+  const due = items.filter((item) => !item.ahead)
+  const ahead = items.filter((item) => item.ahead)
   return (
-    <Rows>
-      {items.map((item) => (
-        <PendingRow key={`${item.commitmentId}-${item.dueOn}`} item={item} back={back} />
-      ))}
-    </Rows>
+    <>
+      {due.length > 0 && <Rows>{due.map(row)}</Rows>}
+      {ahead.length > 0 && (
+        <FoldSection title="À venir" description="se confirme en avance, à la date réelle">
+          <Rows>{ahead.map(row)}</Rows>
+        </FoldSection>
+      )}
+    </>
   )
 }
 
-function PendingRow({ item, back }: { item: PendingItem; back: string }) {
+function PendingRow({
+  item,
+  back,
+  after,
+}: {
+  item: PendingItem
+  back: string
+  /** The older occurrence of the same commitment this one waits for, if any. */
+  after: string | null
+}) {
   const expected = item.amount.toFixed(2)
   const [amount, setAmount] = useState(expected)
-  const [dateOpen, setDateOpen] = useState(false)
+  // Confirmed ahead of its date, an occurrence is almost never at that date:
+  // the field opens so the expected day is not written by default.
+  const [dateOpen, setDateOpen] = useState(item.ahead)
   const [partial, setPartial] = useState(false)
   const [quantity, setQuantity] = useState('')
   const placement = item.placement
@@ -87,105 +133,111 @@ function PendingRow({ item, back }: { item: PendingItem; back: string }) {
         <div className="min-w-0">
           <p className="text-[13px] font-medium">{item.label}</p>
           <p className="text-[11px] text-faint">
-            attendu le {frDate(item.dueOn)} ·{' '}
+            {item.periodUnit !== 'week' && `${frMonthLong(item.dueOn)} · `}attendu le {frDate(item.dueOn)} ·{' '}
             {placement
               ? `versement de ${inCurrency(item.amount)} de ${item.account} vers ${placement.targetAccount} · achète ${placement.asset}`
               : `${item.incoming ? 'entrée' : 'prélèvement'} de ${inCurrency(item.amount)} sur ${item.account}`}
           </p>
         </div>
 
-        <form action={confirmOccurrenceAction} className="ml-auto flex flex-wrap items-center gap-2">
-          <input type="hidden" name="commitmentId" value={item.commitmentId} />
-          <input type="hidden" name="back" value={back} />
-          <AmountInput
-            name="amount"
-            defaultValue={expected}
-            onValueChange={setAmount}
-            className="h-7 w-28 text-[12.5px]"
-            aria-label={`Montant réellement ${placement ? 'versé' : item.incoming ? 'reçu' : 'prélevé'}${foreign ? ` (${item.currency})` : ''}`}
-          />
-          {foreign && (
-            <AmountInput
-              name="eurAmount"
-              placeholder="€ au cours du jour"
-              className="h-7 w-36 text-[12.5px]"
-              aria-label={`Euros réellement ${item.incoming ? 'crédités' : 'débités'} (optionnel)`}
-            />
-          )}
-          {/* Required, and typed as the broker states it: fractions are the
-              norm on a fixed-sum order. */}
-          {placement && (
-            <Input
-              name="quantity"
-              inputMode="decimal"
-              placeholder="parts achetées"
-              autoComplete="off"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="h-7 w-32 text-[12.5px]"
-              aria-label="Quantité achetée, telle que le courtier l’affiche"
-            />
-          )}
-          {placement && partial && (
-            <AmountInput
-              name="investedAmount"
-              placeholder="€ investis"
-              className="h-7 w-32 text-[12.5px]"
-              aria-label="Montant réellement investi, si le courtier n’a pas tout investi"
-            />
-          )}
-          {dateOpen && (
-            <div className="w-40">
-              <DateField name="date" defaultValue={item.dueOn} />
-            </div>
-          )}
-          <Button size="sm" type="submit" className="h-7" disabled={placement !== undefined && !quantity}>
-            Confirmer
-          </Button>
+        {after && <p className="ml-auto text-[11.5px] text-faint">après l’échéance du {frDate(after)}</p>}
 
-          {/* The one thing the app cannot guess, asked only when it applies. */}
-          {differs && (
-            <Label className="flex w-full items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
-              <Checkbox name="newAmount" />
-              <span>
-                écart de{' '}
-                <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
-                  {`${gap > 0 ? '+' : '−'}${inCurrency(Math.abs(gap))}`}
-                </span>{' '}
-                : c’est le nouveau montant habituel
-              </span>
-            </Label>
-          )}
-        </form>
-
-        <RowMenu label={item.label}>
-          <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
-            <CalendarIcon />
-            {dateOpen
-              ? 'Garder la date attendue'
-              : placement
-                ? 'Versé à une autre date…'
-                : 'Reçu à une autre date…'}
-          </DropdownMenuItem>
-          {/* A broker that buys no fraction leaves the remainder in cash, which
-              is where it really is: the rarer case, so it is asked for. */}
-          {placement && (
-            <DropdownMenuItem onSelect={() => setPartial((v) => !v)}>
-              <CoinsIcon />
-              {partial ? 'Tout a été investi' : 'Une partie est restée en espèces…'}
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem asChild variant="destructive">
-            <form action={skipOccurrenceAction}>
+        {after === null && (
+          <>
+            <form action={confirmOccurrenceAction} className="ml-auto flex flex-wrap items-center gap-2">
               <input type="hidden" name="commitmentId" value={item.commitmentId} />
               <input type="hidden" name="back" value={back} />
-              <button type="submit" className="flex w-full items-center gap-2">
-                <SkipForwardIcon />
-                Passer cette échéance
-              </button>
+              <AmountInput
+                name="amount"
+                defaultValue={expected}
+                onValueChange={setAmount}
+                className="h-7 w-28 text-[12.5px]"
+                aria-label={`Montant réellement ${placement ? 'versé' : item.incoming ? 'reçu' : 'prélevé'}${foreign ? ` (${item.currency})` : ''}`}
+              />
+              {foreign && (
+                <AmountInput
+                  name="eurAmount"
+                  placeholder="€ au cours du jour"
+                  className="h-7 w-36 text-[12.5px]"
+                  aria-label={`Euros réellement ${item.incoming ? 'crédités' : 'débités'} (optionnel)`}
+                />
+              )}
+              {/* Required, and typed as the broker states it: fractions are the
+              norm on a fixed-sum order. */}
+              {placement && (
+                <Input
+                  name="quantity"
+                  inputMode="decimal"
+                  placeholder="parts achetées"
+                  autoComplete="off"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="h-7 w-32 text-[12.5px]"
+                  aria-label="Quantité achetée, telle que le courtier l’affiche"
+                />
+              )}
+              {placement && partial && (
+                <AmountInput
+                  name="investedAmount"
+                  placeholder="€ investis"
+                  className="h-7 w-32 text-[12.5px]"
+                  aria-label="Montant réellement investi, si le courtier n’a pas tout investi"
+                />
+              )}
+              {dateOpen && (
+                <div className="w-40">
+                  <DateField name="date" defaultValue={item.dueOn} />
+                </div>
+              )}
+              <Button size="sm" type="submit" className="h-7" disabled={placement !== undefined && !quantity}>
+                Confirmer
+              </Button>
+
+              {/* The one thing the app cannot guess, asked only when it applies. */}
+              {differs && (
+                <Label className="flex w-full items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
+                  <Checkbox name="newAmount" />
+                  <span>
+                    écart de{' '}
+                    <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
+                      {`${gap > 0 ? '+' : '−'}${inCurrency(Math.abs(gap))}`}
+                    </span>{' '}
+                    : c’est le nouveau montant habituel
+                  </span>
+                </Label>
+              )}
             </form>
-          </DropdownMenuItem>
-        </RowMenu>
+
+            <RowMenu label={item.label}>
+              <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
+                <CalendarIcon />
+                {dateOpen
+                  ? 'Garder la date attendue'
+                  : placement
+                    ? 'Versé à une autre date…'
+                    : 'Reçu à une autre date…'}
+              </DropdownMenuItem>
+              {/* A broker that buys no fraction leaves the remainder in cash, which
+              is where it really is: the rarer case, so it is asked for. */}
+              {placement && (
+                <DropdownMenuItem onSelect={() => setPartial((v) => !v)}>
+                  <CoinsIcon />
+                  {partial ? 'Tout a été investi' : 'Une partie est restée en espèces…'}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem asChild variant="destructive">
+                <form action={skipOccurrenceAction}>
+                  <input type="hidden" name="commitmentId" value={item.commitmentId} />
+                  <input type="hidden" name="back" value={back} />
+                  <button type="submit" className="flex w-full items-center gap-2">
+                    <SkipForwardIcon />
+                    Passer cette échéance
+                  </button>
+                </form>
+              </DropdownMenuItem>
+            </RowMenu>
+          </>
+        )}
       </div>
     </div>
   )

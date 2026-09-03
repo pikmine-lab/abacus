@@ -568,11 +568,11 @@ test('a USD subscription through the MCP surface, converted where euros are need
   // The committed cost is in euros at the latest rate; the row says its currency.
   const overview = (await call(client, 'get_overview')).json() as {
     monthlyCommittedCost: number
-    pendingOccurrences: { amount: number; currency?: string }[]
+    pendingOccurrences: { amount: number; currency?: string; ahead?: string }[]
   }
   assert.equal(overview.monthlyCommittedCost, 9)
   assert.deepEqual(
-    overview.pendingOccurrences.map((p) => [p.amount, p.currency]),
+    overview.pendingOccurrences.filter((p) => !p.ahead).map((p) => [p.amount, p.currency]),
     [[10, 'USD']],
   )
 

@@ -101,11 +101,14 @@ export default async function OverviewPage({
   const active = commitments.filter((c) => !c.cancelledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription' && c.direction === 'outgoing')
   const financings = active.filter((c) => c.kind === 'financing')
+  // Only what reached its date is to do: the coming period's occurrences are
+  // listed on their pages so an early debit can be recorded, not owed yet.
+  const due = pending.filter((p) => !p.ahead)
   // A placement's occurrence is confirmed where it buys, so it counts as its
   // own line rather than among the debits.
-  const pendingPlacements = pending.filter((p) => p.placement !== null)
-  const pendingOut = pending.filter((p) => p.commitment.direction === 'outgoing' && p.placement === null)
-  const pendingIn = pending.filter((p) => p.commitment.direction === 'incoming')
+  const pendingPlacements = due.filter((p) => p.placement !== null)
+  const pendingOut = due.filter((p) => p.commitment.direction === 'outgoing' && p.placement === null)
+  const pendingIn = due.filter((p) => p.commitment.direction === 'incoming')
 
   if (accounts.length === 0 || firstDay === null) {
     const steps: Step[] = [
@@ -277,7 +280,7 @@ export default async function OverviewPage({
           />
         </StatRow>
 
-        {(pending.length > 0 || staleChecks.length > 0 || claims > 0) && (
+        {(due.length > 0 || staleChecks.length > 0 || claims > 0) && (
           <Section title="À faire" description="ce qui attend une décision de ta part">
             <Rows>
               {/* One line per direction: an occurrence to confirm lives on the
