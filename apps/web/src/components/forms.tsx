@@ -100,6 +100,7 @@ export function FormSelect({
   required,
   noneLabel,
   defaultValue = '',
+  ariaLabel,
   onValueChange,
 }: {
   name: string
@@ -109,6 +110,8 @@ export function FormSelect({
   /** Visible item that clears the selection, for optional fields. */
   noneLabel?: string
   defaultValue?: string
+  /** For a select standing in a row rather than under a `Field` label. */
+  ariaLabel?: string
   /** For callers deriving something from the choice, such as a preview. */
   onValueChange?: (value: string) => void
 }) {
@@ -124,7 +127,7 @@ export function FormSelect({
         onValueChange?.(next)
       }}
     >
-      <SelectTrigger className="w-full">
+      <SelectTrigger className="w-full" aria-label={ariaLabel}>
         <SelectValue placeholder={placeholder ?? noneLabel} />
       </SelectTrigger>
       <SelectContent>

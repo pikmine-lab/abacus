@@ -12,6 +12,12 @@ interface Option {
   name: string
 }
 
+/** A client with what it does to an invoice, so the panel proposes its figures. */
+export interface ClientOption extends Option {
+  vatRate?: string
+  withholdingRate?: string
+}
+
 /** An existing invoice being corrected, flattened for the form fields. */
 export interface InvoiceDraft {
   id: string
@@ -82,6 +88,11 @@ function percent(share: Share, base: number): number {
  * figure that was actually printed. The net to receive is shown rather than
  * asked: base + VAT − withholding is what will land on the account, and a
  * field for it would let the two disagree.
+ *
+ * Naming the client fills those rates with what that client does, and an
+ * empty rate is submitted as a zero: the panel then shows exactly what will
+ * be recorded, where a blank field silently filled in by a default would show
+ * one figure and store another.
  */
 export function InvoiceForm({
   activities,
@@ -92,7 +103,7 @@ export function InvoiceForm({
 }: {
   /** Business activities the invoice can belong to; absent when correcting. */
   activities?: Option[]
-  actors: Option[]
+  actors: ClientOption[]
   /** What a new invoice opens on: the activity, and its own VAT rate. */
   defaults?: { activityId?: string; vatRate?: string }
   draft?: InvoiceDraft
@@ -145,6 +156,15 @@ export function InvoiceForm({
         placeholder="Nom du client"
         autoComplete="off"
         defaultValue={draft?.client ?? ''}
+        onValueChange={(name) => {
+          // A reaction to the input, not an effect: naming a known client
+          // brings its rates in, and a later edit of them wins until another
+          // client is named.
+          const known = actors.find((a) => a.name.toLowerCase() === name.trim().toLowerCase())
+          if (!known) return
+          setVat(initialShare(known.vatRate ?? defaults?.vatRate))
+          setWithholding(initialShare(known.withholdingRate))
+        }}
       />
       <datalist id="invoice-clients">
         {actors.map((a) => (
@@ -161,7 +181,14 @@ export function InvoiceForm({
           defaultValue={draft?.reference ?? ''}
         />
         <Field label="Base HT" name="baseAmount">
-          <AmountInput name="baseAmount" placeholder="1 200,00" defaultValue={base} onValueChange={setBase} />
+          {/* The stored value, not the live one: a success remounts the form,
+              and a live default would restore what was just submitted. */}
+          <AmountInput
+            name="baseAmount"
+            placeholder="1 200,00"
+            defaultValue={draft?.baseAmount ?? ''}
+            onValueChange={setBase}
+          />
         </Field>
       </div>
 
@@ -223,21 +250,26 @@ function RateAndAmount({
   share: Share
   onChange: (share: Share) => void
 }) {
+  const empty = share.value.trim() === ''
   const rate = percent(share, base)
   const amount = euros(share, base)
-  const empty = share.value.trim() === ''
+  // The mirrored field stays empty until it means something: a zero shown
+  // under an empty base reads as "no VAT" while nothing has been typed.
+  const mirrored = empty || !(Number.isFinite(base) && base > 0) ? '' : undefined
 
   return (
     <fieldset className="grid grid-cols-2 gap-3">
       <legend className="pb-1.5 text-xs text-muted-foreground">{legend}</legend>
-      <input type="hidden" name={rateName} value={!empty && Number.isFinite(rate) ? rate : ''} />
-      <input type="hidden" name={amountName} value={empty ? '' : amount} />
+      {/* An empty field means zero, not "unstated": what the panel shows is
+          what gets recorded. */}
+      <input type="hidden" name={rateName} value={!empty && Number.isFinite(rate) ? rate : 0} />
+      <input type="hidden" name={amountName} value={empty ? 0 : amount} />
       <Field label="Taux (%)">
         <Input
           inputMode="decimal"
           autoComplete="off"
           className="text-right font-mono tabular"
-          value={share.unit === 'rate' ? share.value : mirror(rate, 2)}
+          value={share.unit === 'rate' ? share.value : (mirrored ?? mirror(rate, 2))}
           onChange={(e) => onChange({ value: e.target.value, unit: 'rate' })}
         />
       </Field>
@@ -246,7 +278,7 @@ function RateAndAmount({
           inputMode="decimal"
           autoComplete="off"
           className="text-right font-mono tabular"
-          value={share.unit === 'amount' ? share.value : mirror(amount, 2)}
+          value={share.unit === 'amount' ? share.value : (mirrored ?? mirror(amount, 2))}
           onChange={(e) => onChange({ value: e.target.value, unit: 'amount' })}
         />
       </Field>

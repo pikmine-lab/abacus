@@ -97,7 +97,12 @@ export default async function ActivityPage({
     ...usable.filter((a) => a.activityId !== activity.id),
   ].map((a) => ({ id: a.id, name: a.name }))
 
-  const clients = actors.map((a) => ({ id: a.id, name: a.name }))
+  const clients = actors.map((a) => ({
+    id: a.id,
+    name: a.name,
+    vatRate: a.invoiceVatRate ?? undefined,
+    withholdingRate: a.invoiceWithholdingRate ?? undefined,
+  }))
   const back = `${PATH}?activity=${activity.id}`
 
   return (

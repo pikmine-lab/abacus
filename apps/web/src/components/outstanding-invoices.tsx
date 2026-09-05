@@ -145,6 +145,7 @@ function InvoiceRow({
           <FormSelect
             name="accountId"
             placeholder="Sur quel compte"
+            ariaLabel={`Compte crédité par ${invoice.client}`}
             options={accounts.map((a) => ({ value: a.id, label: a.name }))}
             defaultValue={accounts[0]?.id ?? ''}
           />
