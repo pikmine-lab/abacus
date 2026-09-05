@@ -941,8 +941,10 @@ export async function countReattachableAction(
   try {
     return await countReattachableMovements(userId, actorId, { from, previousActivityId })
   } catch (e) {
-    frError(e)
-    return { count: 0, since: null }
+    // An actor that vanished meanwhile has nothing to reattach, and the
+    // gesture behind this count says so itself if it is still attempted.
+    if (e instanceof DomainError) return { count: 0, since: null }
+    throw e
   }
 }
 

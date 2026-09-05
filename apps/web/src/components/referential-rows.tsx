@@ -395,7 +395,7 @@ function ReattachDialog({
               ? '…'
               : scope.count === 0
                 ? `Rien à rattacher : l’historique de ${actor.name} est déjà sous ${activityName}, ou classé dans une autre activité.`
-                : `${plural(scope.count, 'mouvement', 'mouvements')}${scope.since ? `, depuis le ${frDateLong(scope.since)},` : ''} passeront sous ${activityName}. Un mouvement classé dans une autre activité ne bouge pas.`}
+                : `${plural(scope.count, 'mouvement', 'mouvements')}${scope.since ? `, depuis le ${frDateLong(scope.since)},` : ''} ${scope.count > 1 ? 'passeront' : 'passera'} sous ${activityName}. Un mouvement classé dans une autre activité ne bouge pas.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <Field label="À partir du (optionnel)">
