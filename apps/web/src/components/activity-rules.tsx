@@ -33,6 +33,14 @@ import {
   removeThresholdAction,
   setInputAction,
 } from '@/lib/actions'
+import {
+  LEVY_EFFECT_LABEL,
+  LEVY_KIND_LABEL,
+  LEVY_MEASURE_LABEL,
+  LEVY_PERIOD_LABEL,
+  LEVY_PERIOD_REF_LABEL,
+  LEVY_STATUS_BADGE,
+} from '@/lib/levy-words'
 import { eur, frDate } from '@/lib/utils'
 
 /**
@@ -81,54 +89,6 @@ export interface ThresholdEntry {
   reviewOn: string | null
 }
 
-const KIND_LABELS: Record<string, string> = {
-  social: 'Cotisations sociales',
-  income_tax: 'Impôt sur le revenu',
-  vat: 'TVA',
-  other: 'Autre',
-}
-
-const MEASURE_LABELS: Record<string, string> = {
-  revenue: 'recettes HT',
-  revenue_incl_vat: 'recettes TTC',
-  expenses: 'dépenses déductibles',
-  profit: 'bénéfice',
-  vat_balance: 'TVA collectée − déductible',
-  withholdings: 'retenues à la source',
-  withholding_share: 'part des recettes retenues',
-  paid: 'règlements d’une autre règle',
-  amount: 'montant d’une autre règle',
-  input: 'paramètre saisi',
-  none: 'aucune base',
-}
-
-const PERIOD_REF_LABELS: Record<string, string> = {
-  current: 'la période',
-  ytd: 'l’exercice en cours',
-  'year-1': 'l’exercice n−1',
-  'year-2': 'l’exercice n−2',
-  'rolling-12': '12 mois glissants',
-}
-
-const PERIOD_LABELS: Record<string, string> = {
-  month: 'mensuelle',
-  quarter: 'trimestrielle',
-  half: 'semestrielle',
-  year: 'annuelle',
-}
-
-const EFFECT_LABELS: Record<string, string> = {
-  rate_factor: 'facteur sur le taux',
-  replace_amount: 'montant de remplacement',
-  coefficient: 'coefficient sur la base',
-  exempt: 'exonération',
-}
-
-const STATUS_BADGE: Record<string, { label: string; variant: 'secondary' | 'outline' }> = {
-  extended_by_default: { label: 'prorogée', variant: 'secondary' },
-  unconfirmed: { label: 'non confirmée', variant: 'outline' },
-}
-
 /** What the rule takes, in the shortest form that is still checkable. */
 function amountSummary(levy: LevyEntry): string {
   if (levy.amountForm === 'rate') return `${Number(levy.rate ?? 0).toLocaleString('fr-FR')} %`
@@ -172,7 +132,7 @@ function LevyRow({
     if (deleteState.ok) setDeleting(false)
   }, [deleteState.ok])
 
-  const badge = STATUS_BADGE[levy.status]
+  const badge = LEVY_STATUS_BADGE[levy.status]
   const stale = levy.reviewOn !== null && levy.reviewOn <= today
   const panel = (
     title: string,
@@ -218,7 +178,7 @@ function LevyRow({
             )}
           </span>
           <span className="truncate text-[11px] text-faint">
-            {KIND_LABELS[levy.kind]} · {PERIOD_LABELS[levy.period]} · {validity(levy)}
+            {LEVY_KIND_LABEL[levy.kind]} · {LEVY_PERIOD_LABEL[levy.period]} · {validity(levy)}
             {levy.verifiedOn && ` · vérifiée le ${frDate(levy.verifiedOn)}`}
             {levy.reviewOn && (
               <span className={stale ? 'text-destructive' : undefined}>
@@ -340,7 +300,7 @@ function ModifierList({ activityId, modifiers }: { activityId: string; modifiers
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[12.5px]">{modifier.label}</span>
               <span className="truncate text-[11px] text-faint">
-                {EFFECT_LABELS[modifier.effect]}
+                {LEVY_EFFECT_LABEL[modifier.effect]}
                 {modifier.value && ` ${Number(modifier.value).toLocaleString('fr-FR')}`} ·{' '}
                 {modifier.startsOn ? `dès le ${frDate(modifier.startsOn)}` : 'dès le début'} ·{' '}
                 {duration(modifier)}
@@ -564,7 +524,7 @@ const THRESHOLD_MEASURES = [
   { value: 'withholding_share', label: 'Part des recettes retenues (%)' },
 ]
 
-const PERIOD_REF_OPTIONS = Object.entries(PERIOD_REF_LABELS).map(([value, label]) => ({ value, label }))
+const PERIOD_REF_OPTIONS = Object.entries(LEVY_PERIOD_REF_LABEL).map(([value, label]) => ({ value, label }))
 
 const COMPARISONS = [
   { value: 'lte', label: 'tant que la mesure reste au plus à' },
@@ -663,7 +623,7 @@ function ThresholdRow({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[12.5px]">{threshold.label}</span>
           <span className="truncate text-[11px] text-faint">
-            {MEASURE_LABELS[threshold.measure]} sur {PERIOD_REF_LABELS[threshold.periodRef]} ·{' '}
+            {LEVY_MEASURE_LABEL[threshold.measure]} sur {LEVY_PERIOD_REF_LABEL[threshold.periodRef]} ·{' '}
             {threshold.consequence}
           </span>
         </div>
