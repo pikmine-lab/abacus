@@ -743,7 +743,11 @@ export async function activityStatement(
   for (const levy of levies) {
     const row = levy.row
     const periods = engine.governedPeriods(levy, fiscalYear)
-    if (periods.length === 0 && row.validFrom > year.to) continue
+    // A rule whose validity ended before this year is read all the same: the
+    // year it last governed may be settled inside this one. It has no row of
+    // its own here, only that dated entry.
+    const governedBefore = engine.governedPeriods(levy, fiscalYear - 1).length > 0
+    if (periods.length === 0 && !governedBefore) continue
     let accrued = 0
     let assumedElectiveBase = false
     let current: StatementLevy['currentPeriod'] = null
@@ -797,30 +801,31 @@ export async function activityStatement(
     // living through a period accrues that period pro rata (see AccrualMethod).
     const accrualMethod: AccrualMethod = current === null ? 'closed_periods' : 'prorated'
     const paid = engine.settlements(row.id, soFar).reduce((sum, s) => sum + s.amount, 0)
-    statementLevies.push({
-      id: row.id,
-      name: row.name,
-      kind: row.kind,
-      status: row.status,
-      sourceUrl: row.sourceUrl,
-      verifiedOn: row.verifiedOn,
-      reviewOn: row.reviewOn,
-      reviewDue: row.reviewOn !== null && row.reviewOn <= today,
-      period: row.period,
-      amountForm: row.amountForm,
-      deductible: row.deductible,
-      passThrough: row.passThrough,
-      settlementCategory: row.settlementCategoryId
-        ? { id: row.settlementCategoryId, name: categoryNames.get(row.settlementCategoryId) ?? '' }
-        : null,
-      currentPeriod: current,
-      accrued: round2(accrued),
-      accrualMethod,
-      paid: round2(paid),
-      reserve: round2(Math.max(0, accrued - paid)),
-      overpaid: round2(Math.max(0, paid - accrued)),
-      assumedElectiveBase,
-    })
+    if (periods.length > 0)
+      statementLevies.push({
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        status: row.status,
+        sourceUrl: row.sourceUrl,
+        verifiedOn: row.verifiedOn,
+        reviewOn: row.reviewOn,
+        reviewDue: row.reviewOn !== null && row.reviewOn <= today,
+        period: row.period,
+        amountForm: row.amountForm,
+        deductible: row.deductible,
+        passThrough: row.passThrough,
+        settlementCategory: row.settlementCategoryId
+          ? { id: row.settlementCategoryId, name: categoryNames.get(row.settlementCategoryId) ?? '' }
+          : null,
+        currentPeriod: current,
+        accrued: round2(accrued),
+        accrualMethod,
+        paid: round2(paid),
+        reserve: round2(Math.max(0, accrued - paid)),
+        overpaid: round2(Math.max(0, paid - accrued)),
+        assumedElectiveBase,
+      })
 
     // --- regularisations: an entry of the following year, signed -------------
     for (const settled of [fiscalYear - 1, fiscalYear]) {
