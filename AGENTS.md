@@ -21,9 +21,17 @@ palette, règles de graphes et principes d'écran y sont tranchés, pas ici.
 
 - **Tout déclaratif.** Aucune connexion bancaire, jamais. Les données personnelles sont
   saisies (UI ou MCP). Seule exception : les cours de bourse/crypto, données publiques.
-- **Le cas d'usage de Pierre n'entre jamais dans le code.** Banques, catégories, activités,
-  taux : ce sont des données. Si une PR contient « Fortuneo » ou « URSSAF » en dur, elle est
+- **Le cas d'usage de Pierre n'entre jamais dans le code.** Ses banques, ses clients, ses
+  comptes, ses montants sont des données. Si une PR contient « Fortuneo » en dur, elle est
   fausse par principe.
+- **Une donnée de référence publique n'est pas un cas d'usage.** Le régime fiscal et social
+  d'une juridiction est un fait public, daté et sourcé, que personne ne possède : il se livre
+  avec le dépôt, en données, au même titre qu'un instrument coté. La frontière n'est pas
+  « dans le dépôt ou pas », elle est « donnée ou branchement » : le code applique un modèle
+  sans jamais savoir de quel pays il parle. Un `if` sur un pays, un taux écrit dans une
+  fonction, une règle nommée dans un service : faux par principe. Un modèle porte ses sources
+  et ses dates de revérification, et ce qu'une activité en tire est une copie que
+  l'utilisateur possède et corrige.
 - **Fiabilité par pointage.** Une comptabilité entièrement déclarative dérive si rien ne la
   rapproche du réel : le pointage de solde est le garde-fou de première classe du modèle,
   pas une commodité. Ce qui l'affaiblit affaiblit tout le reste.
