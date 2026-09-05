@@ -16,6 +16,7 @@ import {
   insertLevy,
   insertModifier,
   insertThreshold,
+  leviesSharingSettlementCategory,
   listInputs as listInputsDs,
   listLevies as listLeviesDs,
   listModifiers,
@@ -76,7 +77,9 @@ import type {
  *   amount form and base measure need present and the others absent, and every
  *   rule it references (base, add-back, credits) belonging to the same
  *   activity: a rule reading another activity's settlements would mix two
- *   regimes.
+ *   regimes. A settlement category is held by one rule at a time: another live
+ *   rule of the activity already filing there over an overlapping validity is
+ *   refused, since each would count the other's payments as its own.
  * - `editLevy` corrects a rule that was mistyped. It rewrites the row in place
  *   and is the wrong gesture for a value that changed: last year's statement
  *   was computed with the old row and must stay readable.
@@ -386,8 +389,28 @@ async function normalize(
         `Rule "${other.name}" belongs to another activity: a rule only reads the rules of its own activity`,
       )
   }
-  if (input.settlementCategoryId && !(await getCategory(tx, userId, input.settlementCategoryId)))
-    throw new DomainError('category_not_found', `No category ${input.settlementCategoryId} for this user`)
+  if (input.settlementCategoryId) {
+    if (!(await getCategory(tx, userId, input.settlementCategoryId)))
+      throw new DomainError('category_not_found', `No category ${input.settlementCategoryId} for this user`)
+    // A settlement category belongs to one rule at a time. Two rules sharing
+    // it would each read the other's expenses as its own payments, so both
+    // reserves would fall on every payment and neither would ever be short.
+    // Overlapping validities are what makes them share: a rule closed before
+    // this one starts (what supersede writes) settled other periods.
+    const [taken] = await leviesSharingSettlementCategory(
+      tx,
+      input.activityId,
+      input.settlementCategoryId,
+      input.validFrom,
+      input.validTo ?? null,
+      selfId,
+    )
+    if (taken)
+      throw new DomainError(
+        'levy_settlement_category_taken',
+        `Rule "${taken.name}" already settles in this category from ${taken.validFrom} to ${taken.validTo ?? 'open'}: two rules sharing one category would each count the other's payments. Give this rule a category of its own.`,
+      )
+  }
 
   return {
     userId,

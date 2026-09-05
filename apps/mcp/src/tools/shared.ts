@@ -139,6 +139,8 @@ export const GUIDANCE: Record<string, string> = {
     'An expense of the activity already settled this rule in its category: it is part of the history and cannot be deleted. Close it instead (action close with validTo), or supersede it if the values changed.',
   levy_referenced:
     'Another rule reads this one as its base, add-back or credit: deleting it would leave that rule reading nothing. Correct or delete the reading rule first, or close this one.',
+  levy_settlement_category_taken:
+    "Another live rule of this activity already files its settlements in that category over the same period, and one category cannot answer for two rules: each would read the other's expenses as its own payments. Give this rule a category of its own (manage_categories creates one). If it is that rule under new values, this is a supersede, not a create: supersede closes the current row the day before the new validity, so the category is free.",
   supersede_before_start:
     "supersede starts a new row after the current one: validFrom must be later than the current rule's validFrom. To fix the current row's own values, use update.",
   base_levy_other_activity:

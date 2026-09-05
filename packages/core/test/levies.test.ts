@@ -261,6 +261,47 @@ test('a rule refuses what would not compute, and says which field to fix', async
   assert.equal(settled.settlementCategoryId, category.id)
 })
 
+test('a settlement category answers for one rule at a time, over the validities that overlap', async () => {
+  const user = await seedUser()
+  const activity = await businessActivity(user)
+  const other = await businessActivity(user, 'Autre')
+  const category = await createCategory(user, 'Cotisations')
+  const held = await createLevy(user, rateRule(activity, { settlementCategoryId: category.id }))
+
+  // Both live at once: each would read the other's expenses as its payments.
+  await assert.rejects(
+    createLevy(user, rateRule(activity, { name: 'Doublon', settlementCategoryId: category.id })),
+    code('levy_settlement_category_taken'),
+  )
+  await assert.rejects(
+    createLevy(
+      user,
+      rateRule(activity, { name: 'Plus tard', validFrom: '2027-01-01', settlementCategoryId: category.id }),
+    ),
+    code('levy_settlement_category_taken'),
+  )
+  // Another activity's rules never see these expenses.
+  await createLevy(user, rateRule(other, { name: 'Ailleurs', settlementCategoryId: category.id }))
+  // A rule may keep the category it already holds when it is corrected.
+  assert.equal(
+    (await editLevy(user, held.id, { rate: 22, settlementCategoryId: category.id })).settlementCategoryId,
+    category.id,
+  )
+
+  // Once the holder is closed, the periods after it are free to file there.
+  await closeLevy(user, held.id, '2026-12-31')
+  const successor = await createLevy(
+    user,
+    rateRule(activity, { name: 'Suite', validFrom: '2027-01-01', settlementCategoryId: category.id }),
+  )
+  assert.equal(successor.settlementCategoryId, category.id)
+  // And a rule that ends before another begins is what supersede writes.
+  const { created } = await supersedeLevy(user, successor.id, { validFrom: '2028-01-01', rate: 23 })
+  assert.equal(created.settlementCategoryId, category.id)
+  // Reopening the closed one would put it back on top of its successor.
+  await assert.rejects(editLevy(user, held.id, { validTo: null }), code('levy_settlement_category_taken'))
+})
+
 test('a correction rewrites the row, and dropping a form takes its parameters with it', async () => {
   const user = await seedUser()
   const activity = await businessActivity(user)
@@ -351,18 +392,20 @@ test('a rule settled by an expense in its category is history: it closes, it is 
   const account = await createAccount({ userId: user, name: 'Pro', behavior: 'payment' })
   const office = await createActor(user, { name: 'Tax office' })
 
-  // A settlement before the rule's validity does not count against it.
+  // A settlement before the rule's validity does not count against it. It has
+  // a category of its own: a live rule already holds the first one.
+  const other = await createCategory(user, 'Formation')
   await declareMovement(user, {
     happenedOn: '2025-12-20',
     amount: 100,
     sourceAccountId: account.id,
     targetActorId: office.id,
-    categoryId: category.id,
+    categoryId: other.id,
     activityId: activity,
   })
   const fresh = await createLevy(
     user,
-    rateRule(activity, { name: 'Jamais réglée', settlementCategoryId: category.id }),
+    rateRule(activity, { name: 'Jamais réglée', settlementCategoryId: other.id }),
   )
   await deleteLevy(user, fresh.id)
 

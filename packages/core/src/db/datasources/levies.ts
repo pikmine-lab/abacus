@@ -90,6 +90,29 @@ export async function countLevyReferences(tx: Executor, levyId: string): Promise
 }
 
 /**
+ * The rules of the activity already filing their settlements in a category
+ * over a validity that overlaps the given one, `exceptId` (the row being
+ * corrected) apart. Two of them would each read the other's payments.
+ */
+export async function leviesSharingSettlementCategory(
+  tx: Executor,
+  activityId: string,
+  categoryId: string,
+  validFrom: string,
+  validTo: string | null,
+  exceptId?: string,
+): Promise<Levy[]> {
+  return await tx<Levy[]>`
+    select * from levy
+    where activity_id = ${activityId} and settlement_category_id = ${categoryId}
+      and (${exceptId ?? null}::uuid is null or id <> ${exceptId ?? null})
+      and valid_from <= coalesce(${validTo}::date, 'infinity')
+      and coalesce(valid_to, 'infinity') >= ${validFrom}::date
+    order by valid_from
+  `
+}
+
+/**
  * The expenses of the activity filed in a category over a window: what settles
  * a rule, and what makes it part of the history once one exists.
  */

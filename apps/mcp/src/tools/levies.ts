@@ -377,7 +377,7 @@ export function registerLevyTools(server: McpServer, userId: string): void {
           .nullable()
           .optional()
           .describe(
-            'The expense category whose movements pay this rule, by name. Create it first with manage_categories if needed',
+            "The expense category whose movements pay this rule, by name. One category per rule: two rules sharing it would each count the other's payments, so create one with manage_categories if the obvious name is already taken by another live rule",
           ),
         deductible: z
           .boolean()

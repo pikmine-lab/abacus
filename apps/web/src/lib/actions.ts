@@ -235,6 +235,8 @@ const FR: Record<string, string> = {
   base_levy_not_found: 'La règle lue n’existe plus.',
   base_levy_self: 'Une règle ne se lit pas elle-même.',
   levy_referenced: 'Une autre règle lit celle-ci : corrige-la d’abord, ou clos celle-ci.',
+  levy_settlement_category_taken:
+    'Une autre règle de cette activité règle déjà dans cette catégorie sur la même période : chacune compterait les paiements de l’autre. Donne-lui sa propre catégorie.',
   levy_has_settlements:
     'Un règlement a déjà été déclaré dans sa catégorie : cette règle fait partie de l’histoire. Clos-la.',
   supersede_before_start: 'Le remplacement commence après le début de la règle actuelle.',
