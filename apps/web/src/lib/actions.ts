@@ -1369,7 +1369,7 @@ function skipPeriodsFrom(formData: FormData): unknown {
 
 function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
   const amountForm = str(formData, 'amountForm') as NewLevy['amountForm']
-  const regularization = str(formData, 'regularization') as NewLevy['regularization']
+  const regularization = (opt(formData, 'regularization') ?? 'none') as NewLevy['regularization']
   return {
     name: str(formData, 'name'),
     kind: str(formData, 'kind') as NewLevy['kind'],
@@ -1378,18 +1378,20 @@ function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
     sourceUrl: opt(formData, 'sourceUrl') ?? null,
     verifiedOn: opt(formData, 'verifiedOn') ?? null,
     reviewOn: opt(formData, 'reviewOn') ?? null,
-    status: str(formData, 'status') as NewLevy['status'],
+    // A block the form did not render sends nothing, and an empty string is
+    // not a value: the service then applies the column's own default.
+    status: opt(formData, 'status') as NewLevy['status'],
     baseMeasure: str(formData, 'baseMeasure') as NewLevy['baseMeasure'],
     baseLevyId: opt(formData, 'baseLevyId') ?? null,
     baseInputName: opt(formData, 'baseInputName') ?? null,
-    basePeriodRef: str(formData, 'basePeriodRef') as NewLevy['basePeriodRef'],
+    basePeriodRef: opt(formData, 'basePeriodRef') as NewLevy['basePeriodRef'],
     baseCoefficient: optNum(formData, 'baseCoefficient') ?? null,
     baseAbatement: abatementFrom(formData),
     baseAddBackLevyIds: list(formData, 'addBackLevyId').filter(Boolean),
     baseFloor: optNum(formData, 'baseFloor') ?? null,
     baseCap: optNum(formData, 'baseCap') ?? null,
     baseCredits: creditsFrom(formData),
-    baseScale: str(formData, 'baseScale') as NewLevy['baseScale'],
+    baseScale: opt(formData, 'baseScale') as NewLevy['baseScale'],
     amountForm,
     rate: amountForm === 'rate' ? num(formData, 'rate') : null,
     brackets:

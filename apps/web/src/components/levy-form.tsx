@@ -135,6 +135,21 @@ const CREDIT_SOURCES = [
 /** How many periods a fiscal year holds, for the ones a return absorbs. */
 const PERIODS_IN_YEAR: Record<string, number> = { month: 12, quarter: 4, half: 2, year: 0 }
 
+/**
+ * A titled group that is not a label. `Field` renders a `<Label>`, which lends
+ * its text to the first control inside it: right for one input, wrong for a
+ * tab list or a set of checkboxes, where the first one ended up announcing the
+ * whole group's title as its own name.
+ */
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col items-stretch gap-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  )
+}
+
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3 border-t border-border pt-3">
@@ -497,7 +512,7 @@ export function LevyForm({
             </div>
 
             {levies.length > 0 && (
-              <Field label="Réintégrer les règlements de">
+              <Group label="Réintégrer les règlements de">
                 <div className="flex flex-col gap-1.5 pt-1">
                   {levies.map((levy) => (
                     <Label
@@ -513,10 +528,10 @@ export function LevyForm({
                     </Label>
                   ))}
                 </div>
-              </Field>
+              </Group>
             )}
 
-            <Field label="Abattement">
+            <Group label="Abattement">
               <Tabs value={abatementMode} onValueChange={setAbatementMode}>
                 <TabsList className="w-full">
                   <TabsTrigger value="none">Aucun</TabsTrigger>
@@ -524,7 +539,7 @@ export function LevyForm({
                   <TabsTrigger value="brackets">Par palier</TabsTrigger>
                 </TabsList>
               </Tabs>
-            </Field>
+            </Group>
             <input type="hidden" name="abatementMode" value={abatementMode} />
             {abatementMode === 'rate' && (
               <div className="grid grid-cols-2 gap-3">
@@ -584,9 +599,9 @@ export function LevyForm({
               </Field>
             </div>
 
-            <Field label="Crédits sur la base">
+            <Group label="Crédits sur la base">
               <CreditTable levies={levies} initial={credits} />
-            </Field>
+            </Group>
           </>
         )}
       </Block>
@@ -718,7 +733,7 @@ export function LevyForm({
             onValueChange={setPeriod}
           />
         </Field>
-        <Field label="Échéance">
+        <Group label="Échéance">
           <Tabs value={dueType} onValueChange={setDueType}>
             <TabsList className="w-full">
               <TabsTrigger value="end_of_next_month">Fin du mois suivant</TabsTrigger>
@@ -726,7 +741,7 @@ export function LevyForm({
               <TabsTrigger value="fixed_dates">Dates fixes</TabsTrigger>
             </TabsList>
           </Tabs>
-        </Field>
+        </Group>
         <input type="hidden" name="dueType" value={dueType} />
         {dueType === 'after_period' && (
           <div className="grid grid-cols-3 gap-3">
@@ -798,7 +813,7 @@ export function LevyForm({
           </Field>
         </div>
         {PERIODS_IN_YEAR[period]! > 0 && (
-          <Field label="Périodes absorbées par une autre déclaration">
+          <Group label="Périodes absorbées par une autre déclaration">
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
               {Array.from({ length: PERIODS_IN_YEAR[period]! }, (_, i) => i + 1).map((index) => (
                 <Label
@@ -810,7 +825,7 @@ export function LevyForm({
                 </Label>
               ))}
             </div>
-          </Field>
+          </Group>
         )}
       </Block>
 
