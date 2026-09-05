@@ -774,7 +774,17 @@ export async function activityStatement(
       accrued += evaluated.amount
       // Spread over the months of the period already begun, so the monthly
       // reading of a quarterly rule is not one spike every three months.
-      const begun = months.filter((m) => m.from >= period.from && m.from <= period.to && m.from <= asOf)
+      // Months the activity was actually open: a yearly rule spread over the
+      // whole year would otherwise provision in months that came before the
+      // activity existed, and show a net in the red for each of them.
+      const begun = months.filter(
+        (m) =>
+          m.from >= period.from &&
+          m.from <= period.to &&
+          m.from <= asOf &&
+          (!activity.startedOn || m.to >= activity.startedOn) &&
+          (!activity.closedOn || m.from <= activity.closedOn),
+      )
       const perMonth = row.passThrough ? passThroughPerMonth : provisionPerMonth
       for (const month of begun) perMonth[month.index - 1]! += evaluated.amount / begun.length
 
