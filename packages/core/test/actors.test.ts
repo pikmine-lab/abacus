@@ -48,7 +48,7 @@ test('rejects a duplicate name or alias', async () => {
 
 test('merging reassigns references and keeps the absorbed name as alias', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   const keep = await createActor(user, { name: 'ACME', activityId: freelance.id })
   const dup = await createActor(user, { name: 'ACME Corp' })
   const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
@@ -68,7 +68,7 @@ test('merging reassigns references and keeps the absorbed name as alias', async 
 
 test('an actor is read with the names that also resolve to it', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   await createActor(user, { name: "McDonald's", aliases: ['Macdo', 'McDo'] })
   await createActor(user, { name: 'ACME', activityId: freelance.id })
 
@@ -85,8 +85,8 @@ test('an actor is read with the names that also resolve to it', async () => {
 
 test('attaching an activity counts the history left behind, and reattaching takes what was inheriting', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
-  const other = await createActivity(user, 'Formation')
+  const freelance = await createActivity(user, { name: 'Freelance' })
+  const other = await createActivity(user, { name: 'Formation' })
   const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
   const acme = await createActor(user, { name: 'ACME' })
   const declare = (happenedOn: string, activityId?: string) =>
@@ -124,9 +124,9 @@ test('attaching an activity counts the history left behind, and reattaching take
 
 test('the former activity comes along when it is named, and only then', async () => {
   const user = await seedUser()
-  const before = await createActivity(user, 'Freelance')
-  const after = await createActivity(user, 'Formation')
-  const explicit = await createActivity(user, 'Conseil')
+  const before = await createActivity(user, { name: 'Freelance' })
+  const after = await createActivity(user, { name: 'Formation' })
+  const explicit = await createActivity(user, { name: 'Conseil' })
   const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
   const acme = await createActor(user, { name: 'ACME', activityId: before.id })
   const inherited = await declareMovement(user, {
@@ -165,8 +165,8 @@ test('the former activity comes along when it is named, and only then', async ()
 test("reattaching stays within the user's own history", async () => {
   const user = await seedUser('user-1')
   const other = await seedUser('user-2')
-  const mine = await createActivity(user, 'Freelance')
-  const theirs = await createActivity(other, 'Freelance')
+  const mine = await createActivity(user, { name: 'Freelance' })
+  const theirs = await createActivity(other, { name: 'Freelance' })
   const myAccount = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
   const theirAccount = await createAccount({ userId: other, name: 'Main', behavior: 'payment' })
   const myActor = await createActor(user, { name: 'ACME' })

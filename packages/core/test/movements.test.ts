@@ -3,7 +3,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
 import { closeAccount, createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
-import { createActivity, createCategory } from '../src/services/catalog.ts'
+import { closeActivity, createActivity, createCategory } from '../src/services/catalog.ts'
 import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
@@ -76,7 +76,7 @@ test('computes account balances from movements', async () => {
 test('inherits the activity from the external actor at write time, overridable', async () => {
   const user = await seedUser()
   const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   const client = await createActor(user, { name: 'ACME', activityId: freelance.id })
 
   const inherited = await declareMovement(user, {
@@ -95,6 +95,94 @@ test('inherits the activity from the external actor at write time, overridable',
 
   assert.equal(inherited.activityId, freelance.id)
   assert.equal(overridden.activityId, null)
+})
+
+test('inherits the activity from the account when the actor carries none', async () => {
+  const user = await seedUser()
+  const activity = await createActivity(user, { name: 'Conseil', kind: 'business' })
+  const pro = await createAccount({ userId: user, name: 'Pro', behavior: 'payment', activityId: activity.id })
+  const personal = await createAccount({ userId: user, name: 'Perso', behavior: 'payment' })
+  const supplier = await createActor(user, { name: 'Fournisseur' })
+  const client = await createActor(user, { name: 'Client', activityId: activity.id })
+
+  // The account an expense left and the account an income reached each pass
+  // their activity on; the actor still wins when it carries one.
+  const expense = await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 40,
+    sourceAccountId: pro.id,
+    targetActorId: supplier.id,
+  })
+  const income = await declareMovement(user, {
+    happenedOn: '2026-03-02',
+    amount: 900,
+    sourceActorId: supplier.id,
+    targetAccountId: pro.id,
+  })
+  const fromPersonal = await declareMovement(user, {
+    happenedOn: '2026-03-03',
+    amount: 900,
+    sourceActorId: client.id,
+    targetAccountId: personal.id,
+  })
+  assert.equal(expense.activityId, activity.id)
+  assert.equal(income.activityId, activity.id)
+  assert.equal(fromPersonal.activityId, activity.id)
+
+  // Paying oneself is a transfer between the activity's account and a personal
+  // one: it belongs to neither side, so it inherits nothing.
+  const draw = await declareMovement(user, {
+    happenedOn: '2026-03-04',
+    amount: 500,
+    sourceAccountId: pro.id,
+    targetAccountId: personal.id,
+  })
+  assert.equal(draw.activityId, null)
+
+  // And an explicit null still means "none", against both inheritances.
+  const excluded = await declareMovement(user, {
+    happenedOn: '2026-03-05',
+    amount: 15,
+    sourceAccountId: pro.id,
+    targetActorId: supplier.id,
+    activityId: null,
+  })
+  assert.equal(excluded.activityId, null)
+})
+
+test('refuses a movement dated after the activity closed', async () => {
+  const user = await seedUser()
+  const activity = await createActivity(user, { name: 'Conseil', kind: 'business' })
+  const account = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  const client = await createActor(user, { name: 'Client', activityId: activity.id })
+  await closeActivity(user, activity.id, '2026-06-30')
+
+  await assert.rejects(
+    declareMovement(user, {
+      happenedOn: '2026-07-01',
+      amount: 900,
+      sourceActorId: client.id,
+      targetAccountId: account.id,
+    }),
+    (e: DomainError) => e.code === 'activity_closed',
+  )
+  // What happened while it was open still declares, and so does what belongs
+  // to no activity: the close is about the activity, not about the account.
+  const inTime = await declareMovement(user, {
+    happenedOn: '2026-06-30',
+    amount: 900,
+    sourceActorId: client.id,
+    targetAccountId: account.id,
+  })
+  assert.equal(inTime.activityId, activity.id)
+  const after = await declareMovement(user, {
+    happenedOn: '2026-07-01',
+    amount: 900,
+    sourceActorId: client.id,
+    targetAccountId: account.id,
+    activityId: null,
+  })
+  assert.equal(after.activityId, null)
 })
 
 test('rejects a categorized transfer and a movement on a closed account', async () => {

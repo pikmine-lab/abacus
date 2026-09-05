@@ -1,4 +1,5 @@
 import { auth } from '@abacus/core/auth'
+import { today } from '@abacus/core/domain/period'
 import { listActorsWithAliases } from '@abacus/core/services/actors'
 import {
   CATEGORY_SORTS,
@@ -6,6 +7,7 @@ import {
   DEFAULT_NAME_SORT,
   listActivities,
   listCategories,
+  listCategoryExceptions,
   NAME_SORTS,
   sortByName,
   sortCategories,
@@ -13,13 +15,14 @@ import {
 import { readingPreference } from '@abacus/core/services/preferences'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { ActivityRows, NewActivitySheet } from '@/components/activity-forms'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { ReadingPreference } from '@/components/reading-preference'
-import { ActivityRows, ActorRows, CategoryRows } from '@/components/referential-rows'
+import { ActorRows, CategoryRows } from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
 import { Input } from '@/components/ui/input'
-import { createActivityAction, createActorAction, createCategoryAction } from '@/lib/actions'
+import { createActorAction, createCategoryAction } from '@/lib/actions'
 import { sorter } from '@/lib/sort'
 
 export const dynamic = 'force-dynamic'
@@ -39,12 +42,14 @@ export default async function SettingsPage({
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, actors, reading] = await Promise.all([
+  const [categories, activities, exceptions, actors, reading] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
+    listCategoryExceptions(userId),
     listActorsWithAliases(userId),
     readingPreference(userId),
   ])
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }))
 
   return (
     <>
@@ -89,24 +94,26 @@ export default async function SettingsPage({
 
         <Section
           title="Activités"
-          description="la sphère économique : « Freelance ». Héritée de l’acteur, surchargeable par mouvement."
+          description="la sphère économique : héritée de l’acteur, puis du compte ; surchargeable par mouvement."
           action={
-            activities.length > 1 && (
-              <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
-            )
+            <div className="flex items-center gap-2">
+              {activities.length > 1 && (
+                <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
+              )}
+              <NewActivitySheet categories={categoryOptions} />
+            </div>
           }
         >
           {activities.length === 0 ? (
             <EmptyLine>Aucune activité. Tout est considéré comme perso.</EmptyLine>
           ) : (
-            <ActivityRows activities={sortByName(activities, activitySort.current)} />
+            <ActivityRows
+              activities={sortByName(activities, activitySort.current)}
+              categories={categoryOptions}
+              exceptions={exceptions}
+              today={today()}
+            />
           )}
-          <ActionForm action={createActivityAction} className="flex-row gap-2" successLabel="Activité créée">
-            <Input name="name" required placeholder="Nouvelle activité" className="h-8 w-48 text-[13px]" />
-            <SubmitButton variant="outline" size="sm">
-              Ajouter
-            </SubmitButton>
-          </ActionForm>
         </Section>
 
         <Section

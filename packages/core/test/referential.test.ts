@@ -90,7 +90,7 @@ test('closing the wrong account is not a dead end', async () => {
 
 test('an actor corrects its name and its activity, and the history stays put', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   const account = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
   const actor = await createActor(user, { name: 'ACME Crop' })
   await declareMovement(user, {
@@ -115,20 +115,20 @@ test('a category and an activity rename, and a taken name is refused', async () 
   const user = await seedUser()
   const groceries = await createCategory(user, 'Corses', 'Everyday')
   await createCategory(user, 'Rent')
-  const freelance = await createActivity(user, 'Frelance')
-  await createActivity(user, 'Rental')
+  const freelance = await createActivity(user, { name: 'Frelance' })
+  await createActivity(user, { name: 'Rental' })
 
   const fixed = await editCategory(user, groceries.id, { name: 'Courses', groupLabel: null })
   assert.equal(fixed.name, 'Courses')
   assert.equal(fixed.groupLabel, null)
-  assert.equal((await editActivity(user, freelance.id, 'Freelance')).name, 'Freelance')
+  assert.equal((await editActivity(user, freelance.id, { name: 'Freelance' })).name, 'Freelance')
 
   await assert.rejects(
     editCategory(user, groceries.id, { name: 'rent' }),
     (e: DomainError) => e.code === 'category_exists',
   )
   await assert.rejects(
-    editActivity(user, freelance.id, 'RENTAL'),
+    editActivity(user, freelance.id, { name: 'RENTAL' }),
     (e: DomainError) => e.code === 'activity_exists',
   )
   assert.deepEqual(
@@ -148,7 +148,7 @@ test('correcting something that is not yours fails as missing', async () => {
   const account = await createAccount({ userId: other, name: 'Theirs', behavior: 'payment' })
   const actor = await createActor(other, { name: 'Theirs' })
   const category = await createCategory(other, 'Theirs')
-  const activity = await createActivity(other, 'Theirs')
+  const activity = await createActivity(other, { name: 'Theirs' })
 
   await assert.rejects(
     editAccount(user, account.id, { name: 'Mine' }),
@@ -163,7 +163,7 @@ test('correcting something that is not yours fails as missing', async () => {
     (e: DomainError) => e.code === 'category_not_found',
   )
   await assert.rejects(
-    editActivity(user, activity.id, 'Mine'),
+    editActivity(user, activity.id, { name: 'Mine' }),
     (e: DomainError) => e.code === 'activity_not_found',
   )
 })

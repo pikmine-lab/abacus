@@ -100,6 +100,18 @@ export const GUIDANCE: Record<string, string> = {
   category_exists: 'A category already uses that name. Reuse it instead of creating a variant of it.',
   activity_exists:
     'An activity already uses that name. Reuse it: activities partition the finances, duplicates defeat that.',
+  activity_closed:
+    'This activity is closed at that date: a later movement belongs to the activity that followed it. Check the date, name the right activity (or activity: "none"), or reopen it with manage_activities if it was closed by mistake.',
+  activity_regime_fixed:
+    'This activity carries rules or invoices, so its kind and revenue basis are fixed: an activity never changes regime. Close it on its last day (manage_activities, action close) and create the next one with the new settings.',
+  activity_has_accounts:
+    'Accounts are attached to this activity, and only a business activity owns accounts. Detach them first (manage_accounts, activity: "none") if it really is personal.',
+  activity_not_business:
+    'Only a business activity owns accounts; a personal one is an analysis dimension. Make it a business with manage_activities (kind: business), or leave the account without an activity.',
+  vat_rate_needs_registration:
+    'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
+  activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',
+  bad_rate: 'A rate is a percentage between 0 and 100.',
   check_not_found:
     'No such balance check for this user. Get a current id from manage_balance_checks with action list.',
   check_already_settled:

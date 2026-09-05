@@ -23,7 +23,6 @@ import {
   type ActorFormState,
   addAliasAction,
   countReattachableAction,
-  editActivityAction,
   editActorAction,
   editCategoryAction,
   mergeActorsAction,
@@ -123,43 +122,6 @@ export function CategoryRows({
   )
 }
 
-function ActivityRow({ activity }: { activity: { id: string; name: string } }) {
-  const [editing, setEditing] = useState(false)
-  return (
-    <>
-      <EntryLine title={activity.name}>
-        <EditItem onSelect={() => setEditing(true)} />
-      </EntryLine>
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">{activity.name}</DialogTitle>
-          </DialogHeader>
-          <ActionForm
-            action={editActivityAction}
-            onSuccess={() => setEditing(false)}
-            successLabel="Activité corrigée"
-          >
-            <input type="hidden" name="activityId" value={activity.id} />
-            <TextField name="name" label="Nom" defaultValue={activity.name} />
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
-
-export function ActivityRows({ activities }: { activities: { id: string; name: string }[] }) {
-  return (
-    <Rows>
-      {activities.map((activity) => (
-        <ActivityRow key={activity.id} activity={activity} />
-      ))}
-    </Rows>
-  )
-}
-
 export interface ActorEntry {
   id: string
   name: string
@@ -167,6 +129,13 @@ export interface ActorEntry {
   note: string | null
   /** The other names that resolve to this actor. */
   aliases: string[]
+  /** What this client does to an invoice, as percentages; null when not stated. */
+  invoiceVatRate: string | null
+  invoiceWithholdingRate: string | null
+}
+
+function percent(rate: string): string {
+  return `${Number(rate).toLocaleString('fr-FR')} %`
 }
 
 /**
@@ -195,7 +164,13 @@ function ActorRow({
   const closeReattach = useCallback(() => setReattaching(null), [])
   const activityName = activities.find((a) => a.id === actor.activityId)?.name
   const detail =
-    [actor.aliases.length > 0 ? `aussi ${actor.aliases.join(', ')}` : null, activityName, actor.note]
+    [
+      actor.aliases.length > 0 ? `aussi ${actor.aliases.join(', ')}` : null,
+      activityName,
+      actor.invoiceVatRate !== null ? `TVA ${percent(actor.invoiceVatRate)}` : null,
+      actor.invoiceWithholdingRate !== null ? `retenue ${percent(actor.invoiceWithholdingRate)}` : null,
+      actor.note,
+    ]
       .filter(Boolean)
       .join(' · ') || undefined
 
@@ -252,6 +227,25 @@ function ActorRow({
               />
             </Field>
             <TextField name="note" label="Note (optionnelle)" defaultValue={actor.note ?? ''} />
+            {/* What this client does to an invoice: defaults a new invoice
+                copies, which is why they belong to the payer, not the activity. */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Facturation</span>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  name="invoiceVatRate"
+                  label="TVA par défaut (%)"
+                  inputMode="decimal"
+                  defaultValue={actor.invoiceVatRate ?? ''}
+                />
+                <TextField
+                  name="invoiceWithholdingRate"
+                  label="Retenue par défaut (%)"
+                  inputMode="decimal"
+                  defaultValue={actor.invoiceWithholdingRate ?? ''}
+                />
+              </div>
+            </div>
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
           </ActionForm>
           {leftBehind > 0 && (

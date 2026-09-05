@@ -19,10 +19,34 @@ import {
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import type { Actor } from '../domain/types.ts'
 
+/**
+ * What a client does to an invoice, as defaults the invoice copies: the VAT it
+ * bears and the withholding it keeps back for the tax office. Both depend on
+ * the payer, which is why they live on the actor rather than on the activity.
+ */
+export interface InvoiceDefaults {
+  /** Percent, or null for "not stated". */
+  invoiceVatRate?: number | null
+  invoiceWithholdingRate?: number | null
+}
+
+function checkRates(input: InvoiceDefaults): void {
+  for (const rate of [input.invoiceVatRate, input.invoiceWithholdingRate]) {
+    if (rate != null && !(rate >= 0 && rate <= 100))
+      throw new DomainError('bad_rate', `${rate} is not a percentage`)
+  }
+}
+
 export async function createActor(
   userId: string,
-  input: { name: string; aliases?: string[]; activityId?: string | null; note?: string | null },
+  input: {
+    name: string
+    aliases?: string[]
+    activityId?: string | null
+    note?: string | null
+  } & InvoiceDefaults,
 ): Promise<Actor> {
+  checkRates(input)
   const sql = db()
   try {
     return await sql.begin(async (tx) => {
@@ -31,6 +55,8 @@ export async function createActor(
         name: input.name,
         activityId: input.activityId ?? null,
         note: input.note ?? null,
+        invoiceVatRate: input.invoiceVatRate ?? null,
+        invoiceWithholdingRate: input.invoiceWithholdingRate ?? null,
       })
       for (const alias of input.aliases ?? []) {
         await insertActorAlias(tx, userId, actor.id, alias)
@@ -102,13 +128,13 @@ export async function mergeActors(userId: string, keepId: string, absorbedId: st
 }
 
 /** Fields a correction may touch; anything absent keeps its current value. */
-export interface ActorEdit {
+export interface ActorEdit extends InvoiceDefaults {
   name?: string
   activityId?: string | null
   note?: string | null
 }
 
-const EDITABLE = ['name', 'activityId', 'note'] as const
+const EDITABLE = ['name', 'activityId', 'note', 'invoiceVatRate', 'invoiceWithholdingRate'] as const
 
 /** What an actor correction hands back: the actor, and what it did not touch. */
 export type EditedActor = Actor & {
@@ -129,6 +155,7 @@ export type EditedActor = Actor & {
  * gesture with the number it concerns.
  */
 export async function editActor(userId: string, id: string, input: ActorEdit): Promise<EditedActor> {
+  checkRates(input)
   const sql = db()
   const patch: Record<string, unknown> = {}
   for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]

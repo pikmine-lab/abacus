@@ -1,6 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { getActivity } from '../db/datasources/catalog.ts'
 import {
   alignInstallmentOnMovement,
   installmentByMovement,
@@ -195,8 +196,18 @@ async function writeRefundIn(
 /**
  * The domain rules a movement must satisfy, whether it is being declared or
  * corrected: exactly one endpoint per side, at least one owned account, no
- * category on a transfer, no writing onto a closed account, a refund pointing
- * at a real advance. Returns the activity to store (inherited unless set).
+ * category on a transfer, no writing onto a closed account or under a closed
+ * activity, a refund pointing at a real advance. Returns the activity to store.
+ *
+ * The activity is settled at write time and never again. Explicit wins, and an
+ * explicit null means "none". Absent, it is inherited from the external actor
+ * first (a client carries its activity), then from the account the money
+ * touched: the one an expense left, the one an income reached. A transfer
+ * inherits nothing from its accounts, because the transfer between an
+ * activity's account and a personal one is precisely the owner paying
+ * themselves, and it belongs to neither side. History is never reclassified
+ * when an actor or an account changes activity later: that is an explicit
+ * correction, movement by movement.
  */
 async function checkMovement(
   tx: Executor,
@@ -251,9 +262,22 @@ async function checkMovement(
       throw new DomainError('not_an_advance', 'The linked movement is not marked as an advance')
   }
 
-  // Inherited from the actor at write time on purpose: history stays stable,
-  // reclassifying it later is an explicit action.
-  return input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
+  const [sourceAccount, targetAccount] = accounts
+  const touched = isTransfer ? null : (sourceAccount ?? targetAccount)
+  const activityId =
+    input.activityId !== undefined
+      ? input.activityId
+      : (externalActor?.activityId ?? touched?.activityId ?? null)
+  if (activityId) {
+    const activity = await getActivity(tx, userId, activityId)
+    if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
+    if (activity.closedOn && input.happenedOn > activity.closedOn)
+      throw new DomainError(
+        'activity_closed',
+        `Activity "${activity.name}" is closed since ${activity.closedOn}: a later movement belongs to the activity that followed it`,
+      )
+  }
+  return activityId
 }
 
 /**
@@ -349,8 +373,9 @@ const CORRECTABLE = [
  * links) are never touched here, and the merged result must satisfy the same
  * domain rules as a fresh declaration.
  *
- * The stored activity is not re-inherited from a changed actor: history stays
- * stable unless the activity is set explicitly (same rule as declaration).
+ * The stored activity is not re-inherited from a changed actor or account:
+ * history stays stable unless the activity is set explicitly (same rule as
+ * declaration).
  */
 export async function correctMovement(
   userId: string,
