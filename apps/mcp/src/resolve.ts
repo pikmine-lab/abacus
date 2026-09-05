@@ -5,6 +5,7 @@ import { createActor, resolveActor } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { listCommitments } from '@abacus/core/services/commitments'
 import { listAssets } from '@abacus/core/services/investments'
+import { type InvoiceView, listInvoices } from '@abacus/core/services/invoices'
 
 /**
  * Every tool takes names, never ids: the AI on the other side sees the user's
@@ -103,4 +104,30 @@ export async function requireAssetByName(userId: string, name: string): Promise<
       `No asset named "${name}". Held assets: ${assets.map((a) => a.name).join(', ') || 'none'}. Declare it with manage_assets before recording an operation on it.`,
     )
   return asset
+}
+
+/**
+ * An invoice is addressed by its id (from list_invoices) or by the reference
+ * printed on it, which is unique within an activity only: the same numbering
+ * in two activities needs the activity to tell them apart.
+ */
+export async function requireInvoice(
+  userId: string,
+  idOrReference: string,
+  activity?: string,
+): Promise<InvoiceView> {
+  const activityId = activity ? (await requireActivityByName(userId, activity)).id : undefined
+  const all = await listInvoices(userId, { activityId })
+  const wanted = idOrReference.trim().toLowerCase()
+  const matches = all.filter((i) => i.id === idOrReference || i.reference?.toLowerCase() === wanted)
+  if (matches.length === 1) return matches[0]!
+  if (matches.length > 1)
+    throw new DomainError(
+      'invoice_ambiguous',
+      `Several invoices carry the reference "${idOrReference}", in different activities: pass activity, or use the id: ${matches.map((i) => i.id).join(', ')}.`,
+    )
+  throw new DomainError(
+    'invoice_not_found',
+    `No invoice "${idOrReference}"${activity ? ` in ${activity}` : ''}. Get its id or its exact reference from list_invoices.`,
+  )
 }

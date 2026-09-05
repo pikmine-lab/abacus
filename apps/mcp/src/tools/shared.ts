@@ -123,6 +123,35 @@ export const GUIDANCE: Record<string, string> = {
     'This asset follows a price source, so its price comes from the market: a hand-typed one would be a second answer to the same question. Only an asset declared without a source takes set_price.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
+  activity_not_business:
+    'Only a business activity issues invoices: this one is personal. Check the activity name; its kind is set with manage_activities.',
+  activity_closed:
+    'This activity was already closed on that date. An invoice issued after the closure belongs to the activity that replaced it; one issued before still records here.',
+  invoice_needs_income:
+    'Only an income (client → account) pays an invoice: an expense or a transfer cannot be linked to one.',
+  invoice_other_client:
+    'An invoice is paid by the client it was issued to, and this income comes from someone else. Check the actor, or the invoice.',
+  invoice_other_activity:
+    "An income paying an invoice belongs to the invoice's activity: drop activity, it is taken from the invoice.",
+  invoice_cancelled:
+    'This invoice is cancelled, so nothing is owed on it and no income pays it. Cancelled by mistake: declare it again with declare_invoices.',
+  invoice_currency_mismatch:
+    "An income paying an invoice is declared in the invoice's currency: pass that currency (and eurAmount when the bank statement shows the euros).",
+  invoice_overpaid:
+    'This income exceeds what is left to receive on the invoice. A partial payment is fine; more than the remainder is another invoice or a typo. list_invoices says the remainder.',
+  invoice_settled:
+    'This invoice is already paid in full: nothing is left to receive. Another payment from this client is another invoice, or an income without one.',
+  invoice_has_payments:
+    'Incomes are already linked to this invoice, so it cannot be cancelled nor change client or currency. Unlink them first with fix_movement (invoice: "none"), or delete them if they never happened.',
+  invoice_below_payments:
+    'The corrected receivable would fall below what has already been received on this invoice. Check the amounts, or correct the linked incomes first.',
+  invoice_already_cancelled: 'This invoice is already cancelled.',
+  invoice_not_open: 'This invoice is paid or cancelled: there is nothing left to remind the client of.',
+  invoice_reference_taken:
+    'Another invoice of this activity already carries that reference, and two invoices of one activity never share one. Check list_invoices; the same reference in another activity is fine.',
+  due_before_issue: 'dueOn cannot be earlier than issuedOn.',
+  bad_rate: 'A rate is a percentage between 0 and 100.',
+  withholding_exceeds_total: 'The withholding cannot exceed what the invoice asks for (base + VAT).',
 }
 
 /** Optional text fields where the AI clears a value by passing "none". */

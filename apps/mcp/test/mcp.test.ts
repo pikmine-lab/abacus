@@ -1398,3 +1398,152 @@ test('investments: the history answers "what did it make", already totalled', as
   assert.equal(history.high.day, '2026-01-06')
   assert.equal(history.milestones.length, 8)
 })
+
+test('invoices are declared, followed and settled through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Studio' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client A' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client B' })
+  // The regime and the client defaults are written straight to the columns:
+  // the gestures that set them belong to another slice of the same work.
+  const sql = db()
+  await sql`update activity set kind = 'business', vat_registered = true, default_vat_rate = 20 where name = 'Studio'`
+  await sql`update actor set invoice_withholding_rate = 15 where name = 'Client A'`
+
+  // One line per invoice, each on its own: the unknown client fails with guidance.
+  const declared = (
+    await call(client, 'declare_invoices', {
+      invoices: [
+        {
+          activity: 'Studio',
+          client: 'Client A',
+          reference: 'F-1',
+          issuedOn: '2026-03-01',
+          dueOn: '2026-03-31',
+          baseAmount: 1000,
+        },
+        {
+          activity: 'Studio',
+          client: 'Client B',
+          reference: 'F-2',
+          issuedOn: '2026-03-05',
+          dueOn: '2999-01-01',
+          baseAmount: 500,
+          vatRate: 0,
+        },
+        { activity: 'Studio', client: 'Nobody', issuedOn: '2026-03-06', baseAmount: 10 },
+      ],
+    })
+  ).json() as {
+    declared: number
+    failed: number
+    results: { ok: boolean; total?: number; receivable?: number; state?: string; error?: string }[]
+  }
+  assert.equal(declared.declared, 2)
+  assert.equal(declared.failed, 1)
+  // 20 % VAT from the activity, 15 % withheld by the client: owed 1200, received 1050.
+  assert.equal(declared.results[0]!.total, 1200)
+  assert.equal(declared.results[0]!.receivable, 1050)
+  assert.equal(declared.results[0]!.state, 'overdue')
+  assert.equal(declared.results[1]!.total, 500)
+  assert.match(declared.results[2]!.error!, /createUnknownActors/)
+
+  // What is owed, already grouped by urgency.
+  const listed = (await call(client, 'list_invoices', { activity: 'Studio' })).json() as {
+    outstanding: {
+      pending: { count: number; remaining: number }
+      overdue: { count: number; remaining: number }
+    }
+    invoices: { reference: string; client: string; state: string; remaining: number }[]
+  }
+  assert.deepEqual(listed.outstanding, {
+    pending: { count: 1, remaining: 500 },
+    overdue: { count: 1, remaining: 1050 },
+  })
+  assert.deepEqual(
+    listed.invoices.map((i) => [i.reference, i.client, i.state]),
+    [
+      ['F-2', 'Client B', 'pending'],
+      ['F-1', 'Client A', 'overdue'],
+    ],
+  )
+
+  // A partial payment: the income is written, the invoice stays open for the rest.
+  const partial = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 500, date: '2026-04-02' })
+  ).json() as {
+    amount: number
+    account: string
+    invoice: { reference: string; paid: number; remaining: number; state: string }
+  }
+  assert.equal(partial.amount, 500)
+  assert.equal(partial.account, 'Pro')
+  assert.equal(partial.invoice.reference, 'F-1')
+  assert.equal(partial.invoice.paid, 500)
+  assert.equal(partial.invoice.remaining, 550)
+  assert.equal(partial.invoice.state, 'overdue')
+
+  const reminded = (
+    await call(client, 'fix_invoice', { invoice: 'F-1', action: 'remind', on: '2026-04-10' })
+  ).json() as {
+    remindedOn: string
+  }
+  assert.equal(reminded.remindedOn, '2026-04-10')
+
+  // Beyond the remainder is a typo or another invoice, never a payment.
+  const tooMuch = await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 600 })
+  assert.equal(tooMuch.isError, true)
+  assert.match(tooMuch.text, /left to receive/)
+
+  // The rest, by default: paid, and the incomes read back in the activity.
+  const rest = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', date: '2026-04-15' })
+  ).json() as {
+    amount: number
+    invoice: { state: string }
+  }
+  assert.equal(rest.amount, 550)
+  assert.equal(rest.invoice.state, 'paid')
+  const incomes = rows<{ kind: string; counterparty: string; amount: number }>(
+    await call(client, 'list_movements', { activity: 'Studio' }),
+    'movements',
+  )
+  assert.deepEqual(
+    incomes.map((m) => [m.kind, m.counterparty, m.amount]),
+    [
+      ['income', 'Client A', 550],
+      ['income', 'Client A', 500],
+    ],
+  )
+
+  // Paid money is a fact the invoice cannot shrink under.
+  const below = await call(client, 'fix_invoice', { invoice: 'F-1', action: 'correct', baseAmount: 100 })
+  assert.equal(below.isError, true)
+  assert.match(below.text, /already been received/)
+
+  // Cancelled: out of the outstanding list, still readable under its state.
+  const cancelled = (
+    await call(client, 'fix_invoice', { invoice: 'F-2', action: 'cancel', on: '2026-05-01' })
+  ).json() as {
+    state: string
+    cancelledOn: string
+  }
+  assert.equal(cancelled.state, 'cancelled')
+  assert.equal(cancelled.cancelledOn, '2026-05-01')
+  const after = (await call(client, 'list_invoices', { state: 'cancelled' })).json() as {
+    outstanding: { pending: { count: number }; overdue: { count: number } }
+    invoices: { reference: string }[]
+  }
+  assert.deepEqual(
+    after.invoices.map((i) => i.reference),
+    ['F-2'],
+  )
+  assert.equal(after.outstanding.pending.count, 0)
+
+  // An unknown invoice is guidance, not a stack trace.
+  const missing = await call(client, 'settle_invoice', { invoice: 'F-9', account: 'Pro' })
+  assert.equal(missing.isError, true)
+  assert.match(missing.text, /list_invoices/)
+})
