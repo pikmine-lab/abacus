@@ -64,16 +64,27 @@ export function TextField({
   name,
   label,
   defaultValue = '',
+  onValueChange,
   ...props
 }: Omit<React.ComponentProps<typeof Input>, 'name' | 'value' | 'defaultValue'> & {
   name: string
   label: string
   defaultValue?: string
+  /** For callers deriving something from what is typed, such as a proposal. */
+  onValueChange?: (value: string) => void
 }) {
   const [value, setValue] = useState(defaultValue)
   return (
     <Field label={label} name={name}>
-      <Input name={name} value={value} onChange={(e) => setValue(e.target.value)} {...props} />
+      <Input
+        name={name}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value)
+          onValueChange?.(e.target.value)
+        }}
+        {...props}
+      />
     </Field>
   )
 }

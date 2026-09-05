@@ -29,6 +29,12 @@ interface Advance {
   amount: number
   remaining: number
 }
+/** An invoice still awaiting payment, offered to an income from its client. */
+export interface OpenInvoiceOption {
+  id: string
+  client: string
+  label: string
+}
 
 const TYPES = [
   { value: 'expense', label: 'Dépense' },
@@ -68,6 +74,7 @@ export function MovementForm({
   categories,
   activities,
   advances,
+  invoices = [],
   today,
   draft,
 }: {
@@ -76,11 +83,17 @@ export function MovementForm({
   categories: Option[]
   activities: Option[]
   advances: Advance[]
+  /** Open invoices, so an income from a client can say which one it pays. */
+  invoices?: OpenInvoiceOption[]
   today: string
   /** Present when correcting an existing movement instead of declaring one. */
   draft?: MovementDraft
 }) {
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(draft?.type ?? 'expense')
+  // The counterparty, watched so an income from a client with open invoices
+  // is offered the one it pays.
+  const [actorName, setActorName] = useState(draft?.actorName ?? '')
+  const payable = invoices.filter((i) => i.client.toLowerCase() === actorName.trim().toLowerCase())
   const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
   const [monthOpen, setMonthOpen] = useState(draft?.accrualMonth !== undefined)
   // The month the movement is about is stated against the month of its date,
@@ -109,6 +122,7 @@ export function MovementForm({
         // A success remounts the fields (they clear), but this state lives
         // above the remount: left alone it would keep showing the euros field
         // while the cleared select says EUR.
+        setActorName('')
         setAmount('')
         setCurrency('EUR')
         setEurAmount('')
@@ -243,6 +257,7 @@ export function MovementForm({
             placeholder="Carrefour, ACME, URSSAF…"
             autoComplete="off"
             defaultValue={draft?.actorName ?? ''}
+            onValueChange={setActorName}
           />
           <datalist id="actors-list">
             {actors.map((a) => (
@@ -319,6 +334,18 @@ export function MovementForm({
             </div>
           )}
         </div>
+      )}
+
+      {/* Declaration only: a correction never touches the link an income has
+          with the invoice it paid, as it never touches the other origins. */}
+      {type === 'income' && !editing && payable.length > 0 && (
+        <Field label="Règle la facture (optionnel)">
+          <FormSelect
+            name="invoiceId"
+            noneLabel="non"
+            options={payable.map((invoice) => ({ value: invoice.id, label: invoice.label }))}
+          />
+        </Field>
       )}
 
       {type === 'income' && !editing && advances.length > 0 && (
