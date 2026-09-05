@@ -16,6 +16,7 @@ import type {
   ThresholdMeasure,
 } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
+import type { Answers } from '@abacus/core/domain/regime'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
 import { confirmLevyPayment } from '@abacus/core/services/activityStatement'
 import {
@@ -95,6 +96,13 @@ import {
   refundAdvance,
 } from '@abacus/core/services/movements'
 import { setReadingPreference } from '@abacus/core/services/preferences'
+import {
+  applyRegime,
+  previewRegime,
+  type QuestionnaireStep,
+  questionnaire,
+  type RegimePreview,
+} from '@abacus/core/services/regimes'
 import { revalidatePath } from 'next/cache'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -1032,6 +1040,7 @@ function activitySettings(formData: FormData) {
     defaultVatRate: vatRegistered ? (optNum(formData, 'defaultVatRate') ?? null) : null,
     deductibleExpenses: opt(formData, 'deductibleExpenses') as DeductibleExpenses | undefined,
     regimeLabel: opt(formData, 'regimeLabel') ?? null,
+    jurisdiction: opt(formData, 'jurisdiction') ?? null,
     currency: opt(formData, 'currency'),
   }
 }
@@ -1111,6 +1120,76 @@ export async function setActivityExceptionsAction(_prev: FormState, formData: Fo
       str(formData, 'activityId'),
       formData.getAll('exceptionCategoryIds').map(String),
     )
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * The guided creation of a business activity: the catalog walks the tree, the
+ * screen only puts the questions. Reading the catalog costs no query, but it
+ * still goes through an action: the models live in the server bundle, and the
+ * walk has to stay the one the MCP takes, not a second one written for a form.
+ */
+export async function regimeStepAction(
+  jurisdictionId: string,
+  answers: Answers,
+): Promise<{ step?: QuestionnaireStep; error?: string }> {
+  await requireUserId()
+  try {
+    return { step: questionnaire(jurisdictionId, answers) }
+  } catch (e) {
+    return { error: frError(e) }
+  }
+}
+
+/** What a model would write, before anything is written. */
+export async function regimePreviewAction(
+  modelId: string,
+  answers: Answers,
+): Promise<{ preview?: RegimePreview; error?: string }> {
+  await requireUserId()
+  try {
+    return { preview: previewRegime(modelId, answers) }
+  } catch (e) {
+    return { error: frError(e) }
+  }
+}
+
+/**
+ * The answers travel one field each, named after their question, so nothing
+ * has to be parsed back out of a blob and a stray field cannot pass for one.
+ */
+const ANSWER_PREFIX = 'answer.'
+
+function answersFrom(formData: FormData): Answers {
+  const answers: Answers = {}
+  for (const [key, value] of formData.entries())
+    if (key.startsWith(ANSWER_PREFIX)) answers[key.slice(ANSWER_PREFIX.length)] = String(value)
+  return answers
+}
+
+/**
+ * Creates the activity and the rules the model holds, in one transaction. From
+ * here they belong to the user: the catalog will never reach them again.
+ */
+export async function createActivityFromRegimeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'name' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await applyRegime(userId, {
+      name: str(formData, 'name'),
+      modelId: str(formData, 'modelId'),
+      answers: answersFrom(formData),
+      startedOn: opt(formData, 'startedOn') ?? null,
+      accountIds: formData.getAll('accountIds').map(String),
+    })
   } catch (e) {
     return { error: frError(e) }
   }

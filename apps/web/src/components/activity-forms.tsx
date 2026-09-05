@@ -4,7 +4,6 @@ import type { Activity, ActivityKind, DeductibleExpenses, RevenueBasis } from '@
 import { ArchiveIcon, ArchiveRestoreIcon, ListChecksIcon, PencilIcon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { CurrencySelect } from '@/components/currency-select'
-import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
@@ -34,7 +33,7 @@ import {
 } from '@/lib/actions'
 import { cn, frDate } from '@/lib/utils'
 
-interface Option {
+export interface Option {
   id: string
   name: string
 }
@@ -118,7 +117,7 @@ function ExceptionList({
  * exists before the activities that use it, and several may run on the same
  * one, which is the only thing the caption has to teach.
  */
-function AccountList({ accounts, checked = [] }: { accounts: Option[]; checked?: string[] }) {
+export function AccountList({ accounts, checked = [] }: { accounts: Option[]; checked?: string[] }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-muted-foreground">Comptes · un compte peut en servir plusieurs</span>
@@ -142,6 +141,7 @@ function AccountList({ accounts, checked = [] }: { accounts: Option[]; checked?:
  */
 export function ActivityForm({
   activity,
+  draft,
   categories,
   accounts,
   attached,
@@ -149,6 +149,8 @@ export function ActivityForm({
 }: {
   /** Present when correcting an existing activity instead of declaring one. */
   activity?: Activity
+  /** What the guided creation already knows, when it steps aside for this form. */
+  draft?: { name?: string; kind?: ActivityKind; jurisdiction?: string }
   categories: Option[]
   /** The user's open accounts: what the activity may declare it lives on. */
   accounts: Option[]
@@ -157,7 +159,7 @@ export function ActivityForm({
   onSuccess?: () => void
 }) {
   const editing = activity !== undefined
-  const [kind, setKind] = useState<ActivityKind>(activity?.kind ?? 'personal')
+  const [kind, setKind] = useState<ActivityKind>(activity?.kind ?? draft?.kind ?? 'personal')
   const [basis, setBasis] = useState<RevenueBasis>(activity?.revenueBasis ?? 'cash')
   const [deductible, setDeductible] = useState<DeductibleExpenses>(activity?.deductibleExpenses ?? 'none')
   const [vat, setVat] = useState(activity?.vatRegistered ?? false)
@@ -169,7 +171,7 @@ export function ActivityForm({
       onSuccess={() => {
         // A success remounts the fields; this state lives above the remount.
         if (!editing) {
-          setKind('personal')
+          setKind(draft?.kind ?? 'personal')
           setBasis('cash')
           setDeductible('none')
           setVat(false)
@@ -188,10 +190,21 @@ export function ActivityForm({
           { value: 'personal', label: KIND_LABEL.personal },
         ]}
       />
-      <TextField name="name" label="Nom" defaultValue={activity?.name ?? ''} placeholder="Freelance" />
+      <TextField
+        name="name"
+        label="Nom"
+        defaultValue={activity?.name ?? draft?.name ?? ''}
+        placeholder="Freelance"
+      />
 
       {kind === 'business' && (
         <>
+          <TextField
+            name="jurisdiction"
+            label="Juridiction"
+            defaultValue={activity?.jurisdiction ?? draft?.jurisdiction ?? ''}
+            placeholder="Où l’activité est exercée"
+          />
           <TextField
             name="regimeLabel"
             label="Régime"
@@ -264,19 +277,6 @@ export function ActivityForm({
   )
 }
 
-export function NewActivitySheet({ categories, accounts }: { categories: Option[]; accounts: Option[] }) {
-  return (
-    <EntrySheet
-      label="Activité"
-      title="Nouvelle activité"
-      variant="outline"
-      description="Une sphère économique : indépendante avec son régime, ou personnelle pour l’analyse seule."
-    >
-      <ActivityForm categories={categories} accounts={accounts} />
-    </EntrySheet>
-  )
-}
-
 /**
  * One activity, read before it is acted on: its kind as a badge, its regime
  * and its dates on the line under the name. The gestures live in the menu.
@@ -310,6 +310,7 @@ function ActivityRow({
   const closed = activity.closedOn !== null
   const business = activity.kind === 'business'
   const detail = [
+    activity.jurisdiction,
     activity.regimeLabel,
     activity.startedOn && `depuis le ${frDate(activity.startedOn)}`,
     activity.closedOn && `close le ${frDate(activity.closedOn)}`,

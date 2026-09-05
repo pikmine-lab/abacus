@@ -32,7 +32,12 @@ import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { UrlTabs } from '@/components/url-tabs'
-import { LEVY_MEASURE_LABEL, LEVY_PERIOD_REF_LABEL, LEVY_STATUS_BADGE } from '@/lib/levy-words'
+import {
+  LEVY_MEASURE_LABEL,
+  LEVY_PERIOD_REF_LABEL,
+  LEVY_STATUS_BADGE,
+  thresholdValue,
+} from '@/lib/levy-words'
 import { rangeRef } from '@/lib/period'
 import { eur, frDate, frMonth, frMonthLong, idParam } from '@/lib/utils'
 
@@ -586,12 +591,13 @@ export default async function ActivityPage({
                     <p className="text-[13px] font-medium">{threshold.label}</p>
                     <p className="text-[11px] text-faint">
                       {LEVY_MEASURE_LABEL[threshold.measure]} sur {LEVY_PERIOD_REF_LABEL[threshold.periodRef]}{' '}
-                      · {threshold.comparison === 'lte' ? 'au plus' : 'au moins'} {eur(threshold.value)}
+                      · {threshold.comparison === 'lte' ? 'au plus' : 'au moins'}{' '}
+                      {thresholdValue(threshold.measure, threshold.value)}
                     </p>
                     <p
                       className={`ml-auto font-mono text-[12.5px] tabular ${threshold.breached ? 'text-destructive' : ''}`}
                     >
-                      {eur(threshold.current)}
+                      {thresholdValue(threshold.measure, threshold.current)}
                       <span className="pl-1.5 text-[11px] text-faint">
                         {Math.round(threshold.progress * 100)} %
                       </span>

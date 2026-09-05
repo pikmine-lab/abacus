@@ -15,9 +15,11 @@ import {
   sortCategories,
 } from '@abacus/core/services/catalog'
 import { readingPreference } from '@abacus/core/services/preferences'
+import { listJurisdictions } from '@abacus/core/services/regimes'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { ActivityRows, NewActivitySheet } from '@/components/activity-forms'
+import { ActivityRows } from '@/components/activity-forms'
+import { NewActivitySheet } from '@/components/activity-wizard'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { ReadingPreference } from '@/components/reading-preference'
@@ -107,7 +109,12 @@ export default async function SettingsPage({
               {activities.length > 1 && (
                 <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
               )}
-              <NewActivitySheet categories={categoryOptions} accounts={accountOptions} />
+              <NewActivitySheet
+                jurisdictions={listJurisdictions()}
+                categories={categoryOptions}
+                accounts={accountOptions}
+                today={today()}
+              />
             </div>
           }
         >

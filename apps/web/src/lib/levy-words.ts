@@ -1,3 +1,5 @@
+import { eur } from '@/lib/utils'
+
 /**
  * The words the levy vocabulary takes on screen. A rule's own name, its
  * regime label and its threshold sentences come from what the user declared;
@@ -50,6 +52,15 @@ export const LEVY_EFFECT_LABEL: Record<string, string> = {
   replace_amount: 'montant de remplacement',
   coefficient: 'coefficient sur la base',
   exempt: 'exonération',
+}
+
+/**
+ * A threshold's value in its own unit: a share of receipts is a percentage,
+ * everything else is money. Read from the measure rather than stated beside
+ * it, so the two interfaces cannot disagree on what "70" means.
+ */
+export function thresholdValue(measure: string, value: number | string): string {
+  return measure === 'withholding_share' ? `${Number(value).toLocaleString('fr-FR')} %` : eur(Number(value))
 }
 
 /** Only what is not plainly confirmed gets a badge: a confirmed rule says nothing. */
