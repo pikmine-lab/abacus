@@ -532,9 +532,10 @@ class StatementEngine {
     levy: ParsedLevy,
     period: FiscalPeriod,
     seen: Set<string> = new Set(),
+    baseRefOverride?: PeriodRef,
   ): Promise<PeriodResult> {
     const row = levy.row
-    const baseRange = resolvePeriodRef(row.basePeriodRef, period, this.cal)
+    const baseRange = resolvePeriodRef(baseRefOverride ?? row.basePeriodRef, period, this.cal)
     const baseScale = projection(baseRange, this.on)
     const measure = await this.measure(
       row.baseMeasure,
@@ -625,10 +626,14 @@ class StatementEngine {
       }
       return total
     }
-    const definitive = await this.evaluate(levy, last)
+    // The periods ran on an older year or on a stated figure; the definitive
+    // amount is the same rule read on the closed year itself, which is what
+    // `ytd` names on its last period. That gives one period's worth at the
+    // definitive figures, so the year is that many periods.
+    const definitive = await this.evaluate(levy, last, new Set(), 'ytd')
     let provisional = 0
     for (const period of periods) provisional += (await this.evaluate(levy, period)).amount
-    return settlementDifference(definitive.result.net, provisional)
+    return settlementDifference(definitive.result.net * periods.length, provisional)
   }
 }
 

@@ -685,3 +685,65 @@ test('an activity that is only an analysis dimension has no statement', async ()
     /not an analysis|dimension/i,
   )
 })
+
+test('a provisional rule settles the year it ran ahead of, as a dated entry of the year after', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Practice', {
+    startedOn: '2026-01-01',
+    revenueBasis: 'cash',
+    deductibleExpenses: 'none',
+  })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const client = await createActor(user, { name: 'Client', activityId })
+  const fund = await createCategory(user, 'Contributions')
+  await insertLevy(user, activityId, {
+    name: 'Provisional contribution',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    // Each month runs on the year before, spread over its months; the closed
+    // year is what the settlement is finally computed on.
+    baseMeasure: 'profit',
+    basePeriodRef: 'year-1',
+    baseScale: 'per_month',
+    amountForm: 'rate',
+    rate: 20,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    regularization: 'provisional_then_settled',
+    settlementCategoryId: fund.id,
+  })
+  await db()`
+    update levy set regularization_params = ${db().json({ settleMonthOffset: 6 })}
+    where activity_id = ${activityId}
+  `
+  await declareMovement(user, {
+    happenedOn: '2026-06-15',
+    amount: 24000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+  await declareMovement(user, {
+    happenedOn: '2027-06-15',
+    amount: 36000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+
+  const statement = await activityStatement(user, activityId, 2027, '2028-03-01')
+  // 24000 earned in 2026, read per month, at 20 %: 400 a month through 2027.
+  assert.equal(levyNamed(statement, 'Provisional contribution').accrued, 4800)
+  // Two settlements are in sight: the one for 2026, which falls due inside
+  // 2027 and is what the year has to pay, and the one 2027 is building, which
+  // falls due the year after. 2026 ran on nothing (no year before it) and
+  // really made 24000, so it owes 400 a month; 2027 ran on those 24000 and
+  // really made 36000, so it owes the 200 a month it was short of.
+  assert.deepEqual(
+    statement.schedule
+      .filter((e) => e.entry === 'regularization')
+      .map((e) => [e.forFiscalYear, e.amount, e.declaration.from, e.status]),
+    [
+      [2026, 4800, '2027-06-01', 'overdue'],
+      [2027, 2400, '2028-06-01', 'upcoming'],
+    ],
+  )
+})
