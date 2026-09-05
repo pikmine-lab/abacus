@@ -121,6 +121,23 @@ export const GUIDANCE: Record<string, string> = {
     'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
   asset_is_quoted:
     'This asset follows a price source, so its price comes from the market: a hand-typed one would be a second answer to the same question. Only an asset declared without a source takes set_price.',
+  activity_not_business:
+    'Only a business activity carries rules, inputs and thresholds: this one is personal, an analysis dimension and nothing more. Check the activity name, or ask the user whether it should become a business activity.',
+  levy_has_settlements:
+    'An expense of the activity already settled this rule in its category: it is part of the history and cannot be deleted. Close it instead (action close with validTo), or supersede it if the values changed.',
+  levy_referenced:
+    'Another rule reads this one as its base, add-back or credit: deleting it would leave that rule reading nothing. Correct or delete the reading rule first, or close this one.',
+  supersede_before_start:
+    "supersede starts a new row after the current one: validFrom must be later than the current rule's validFrom. To fix the current row's own values, use update.",
+  base_levy_other_activity:
+    'A rule only reads the rules of its own activity. Check the name passed in baseLevy, baseAddBackLevies or baseCredits against list for this activity.',
+  base_levy_self: 'A rule cannot read its own settlements or amount. Name another rule of the activity.',
+  levy_form_needs_param:
+    'Each amount form has its parameter: rate needs rate, brackets needs brackets, elective_base needs elective, fixed needs fixedAmount or fixedInputName. Pass it along with amountForm.',
+  levy_form_param_unexpected:
+    "A parameter of another amount form was passed. Pass only the parameter of the chosen amountForm; when changing the form on update, the old form's parameter is dropped on its own.",
+  modifier_single_duration:
+    'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
 }
