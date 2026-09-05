@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import { db } from '@abacus/core/db'
+import { today } from '@abacus/core/domain/period'
 import { createAccount } from '@abacus/core/services/accounts'
 import { createActor } from '@abacus/core/services/actors'
 import { createActivity, createCategory } from '@abacus/core/services/catalog'
@@ -133,4 +134,114 @@ test('an unknown rule answers with the rules that exist', async () => {
   })
   assert.equal(reply.isError, true)
   assert.match(reply.text, /Contributions/)
+})
+
+/**
+ * A regime that has something to say today, written entirely through the
+ * tools an AI would use. The dates hang off today so the fixture stays inside
+ * the fiscal year the overview reads, whatever day the suite runs.
+ */
+async function regimeWithSomethingToSay(client: Client) {
+  const now = today()
+  const yearStart = `${now.slice(0, 4)}-01-01`
+  await call(client, 'manage_activities', {
+    action: 'create',
+    name: 'Freelance',
+    kind: 'business',
+    vatRegistered: true,
+    defaultVatRate: 20,
+    deductibleExpenses: 'all',
+  })
+  await call(client, 'manage_accounts', {
+    action: 'create',
+    name: 'Pro',
+    behavior: 'payment',
+    activity: 'Freelance',
+  })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME', activity: 'Freelance' })
+  await call(client, 'declare_movements', {
+    movements: [{ date: now, amount: 45000, type: 'income', account: 'Pro', actor: 'ACME' }],
+  })
+  await call(client, 'manage_thresholds', {
+    action: 'create',
+    activity: 'Freelance',
+    label: 'Flat-rate ceiling',
+    measure: 'revenue',
+    value: 40000,
+    consequence: 'Close this activity and open the one that follows it.',
+    sourceUrl: 'https://example.test/ceiling',
+    verifiedOn: yearStart,
+  })
+  await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Contributions',
+    kind: 'social',
+    validFrom: yearStart,
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 20,
+    period: 'quarter',
+    due: { type: 'end_of_next_month' },
+    sourceUrl: 'https://example.test/rule',
+    verifiedOn: yearStart,
+    reviewOn: yearStart,
+  })
+  return { now }
+}
+
+test('the overview carries what a regime has to say, and says it switches nothing', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await regimeWithSomethingToSay(client)
+
+  const alerts = (await call(client, 'get_overview')).json().activityAlerts as Record<string, unknown>[]
+  assert.equal(alerts.length, 2)
+  assert.equal(alerts[0]!.alert, 'threshold_crossed')
+  assert.equal(alerts[0]!.about, 'Flat-rate ceiling')
+  assert.equal(alerts[0]!.activity, 'Freelance')
+  assert.equal(alerts[0]!.current, 45000)
+  // The sentence comes back exactly as the user wrote it: what a crossing
+  // costs is a fact of a regime, and the tool never phrases one of its own.
+  assert.equal(alerts[0]!.consequence, 'Close this activity and open the one that follows it.')
+  assert.equal(alerts[1]!.alert, 'rule_review_due')
+  assert.equal(alerts[1]!.about, 'Contributions')
+})
+
+test('an expense of a registered activity says the VAT inside it, and nothing else may', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  const { now } = await regimeWithSomethingToSay(client)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      createUnknownActors: true,
+      movements: [
+        {
+          date: now,
+          amount: 120,
+          type: 'expense',
+          account: 'Pro',
+          actor: 'Supplier',
+          activity: 'Freelance',
+          vatAmount: 20,
+        },
+        // No activity, so no return will ever reclaim it: refused rather than
+        // written and forgotten.
+        { date: now, amount: 60, type: 'expense', account: 'Courant', actor: 'Baker', vatAmount: 10 },
+      ],
+    })
+  ).json() as { declared: number; failed: number; results: Record<string, unknown>[] }
+  assert.equal(declared.declared, 1)
+  assert.equal(declared.failed, 1)
+  assert.equal(declared.results[0]!.vatAmount, 20)
+  assert.match(String(declared.results[1]!.error), /VAT-registered business activity/)
+
+  // The statement reads it back: what the purchase bore comes off what the
+  // year collected.
+  const statement = (
+    await call(client, 'get_activity_statement', { activity: 'Freelance', year: Number(now.slice(0, 4)) })
+  ).json()
+  assert.equal((statement.year as Record<string, unknown>).vatDeductible, 20)
 })
