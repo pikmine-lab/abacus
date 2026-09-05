@@ -1751,7 +1751,7 @@ test('invoices are declared, followed and settled through the MCP surface', asyn
   await call(client, 'manage_actors', { action: 'create', name: 'Client A' })
   await call(client, 'manage_actors', { action: 'create', name: 'Client B' })
   // The regime and the client defaults are written straight to the columns:
-  // the gestures that set them belong to another slice of the same work.
+  // this test is about the invoice tools, not about the gestures that set them.
   const sql = db()
   await sql`update activity set kind = 'business', vat_registered = true, default_vat_rate = 20 where name = 'Studio'`
   await sql`update actor set invoice_withholding_rate = 15 where name = 'Client A'`

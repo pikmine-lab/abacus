@@ -24,8 +24,8 @@ after(teardownDb)
 
 /**
  * The activity's regime and the client's invoicing defaults are set straight
- * in the database: the gestures that write them belong to another slice, and
- * these tests only need the columns to hold values.
+ * in the database: these tests are about what an invoice does with those
+ * columns, not about the gestures that write them.
  */
 async function businessActivity(user: string, name: string, defaultVatRate: number | null = null) {
   const activity = await createActivity(user, { name })
