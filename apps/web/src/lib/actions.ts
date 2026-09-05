@@ -144,7 +144,8 @@ function checkFields(formData: FormData, rules: FieldRule[]): Record<string, str
 }
 
 const FR: Record<string, string> = {
-  account_closed: 'Ce compte est clos à cette date.',
+  account_closed:
+    'Ce compte est clos : une activité ne se met pas à vivre dessus, et rien ne s’y déclare après.',
   transfer_has_no_category: 'Un virement interne ne porte pas de catégorie.',
   not_an_advance: 'Le mouvement visé n’est pas une avance.',
   financing_settled: 'Ce financement est déjà soldé.',
@@ -176,9 +177,9 @@ const FR: Record<string, string> = {
   activity_closed: 'Cette activité est close à cette date.',
   activity_regime_fixed:
     'Cette activité porte des règles ou des factures : elle ne change pas de régime. Clos-la et crée la suivante.',
-  activity_has_accounts: 'Des comptes sont rattachés à cette activité : détache-les d’abord.',
+  activity_has_accounts: 'Cette activité vit sur des comptes : retire-les d’abord de sa fiche.',
   activity_not_business:
-    'Seule une activité indépendante porte des comptes, des factures, des règles et des seuils.',
+    'Seule une activité indépendante vit sur des comptes, et porte factures, règles et seuils.',
   vat_rate_needs_registration: 'Un taux de TVA suppose une activité assujettie.',
   activity_closes_before_start: 'La clôture précède le début de l’activité.',
   bad_rate: 'Un taux est un pourcentage entre 0 et 100.',
@@ -605,7 +606,6 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
       institution: opt(formData, 'institution') ?? null,
       openingBalance: optNum(formData, 'openingBalance'),
       openedOn: opt(formData, 'openedOn') ?? null,
-      activityId: opt(formData, 'activityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -630,7 +630,6 @@ export async function editAccountAction(_prev: FormState, formData: FormData): P
       behavior: str(formData, 'behavior') as AccountBehavior,
       openingBalance: optNum(formData, 'openingBalance') ?? 0,
       openedOn: opt(formData, 'openedOn'),
-      activityId: opt(formData, 'activityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -1149,8 +1148,12 @@ export async function editCategoryAction(_prev: FormState, formData: FormData): 
  */
 function activitySettings(formData: FormData) {
   const vatRegistered = formData.get('vatRegistered') !== null
+  const kind = str(formData, 'kind') as ActivityKind
   return {
-    kind: str(formData, 'kind') as ActivityKind,
+    kind,
+    // The panel only asks a business one what it lives on, and a checklist
+    // sent whole means an empty one detaches everything.
+    accountIds: kind === 'business' ? formData.getAll('accountIds').map(String) : undefined,
     startedOn: opt(formData, 'startedOn') ?? null,
     fiscalYearStartMonth: optNum(formData, 'fiscalYearStartMonth'),
     fiscalYearStartDay: optNum(formData, 'fiscalYearStartDay'),

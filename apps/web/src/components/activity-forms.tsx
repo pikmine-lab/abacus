@@ -114,6 +114,27 @@ function ExceptionList({
 }
 
 /**
+ * The accounts the activity lives on. A checklist and not a choice: an account
+ * exists before the activities that use it, and several may run on the same
+ * one, which is the only thing the caption has to teach.
+ */
+function AccountList({ accounts, checked = [] }: { accounts: Option[]; checked?: string[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">Comptes · un compte peut en servir plusieurs</span>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {accounts.map((a) => (
+          <Label key={a.id} className="flex items-center gap-2 text-[12px] font-normal">
+            <Checkbox name="accountIds" value={a.id} defaultChecked={checked.includes(a.id)} />
+            <span className="truncate">{a.name}</span>
+          </Label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Declaring and correcting share this panel. A personal activity is a name
  * and nothing else, so the regime block only opens on a business one; the
  * exceptions by category are asked at creation, when the policy is being
@@ -122,11 +143,17 @@ function ExceptionList({
 export function ActivityForm({
   activity,
   categories,
+  accounts,
+  attached,
   onSuccess,
 }: {
   /** Present when correcting an existing activity instead of declaring one. */
   activity?: Activity
   categories: Option[]
+  /** The user's open accounts: what the activity may declare it lives on. */
+  accounts: Option[]
+  /** Those it already lives on. */
+  attached?: string[]
   onSuccess?: () => void
 }) {
   const editing = activity !== undefined
@@ -179,6 +206,7 @@ export function ActivityForm({
               <CurrencySelect defaultValue={activity?.currency ?? 'EUR'} />
             </Field>
           </div>
+          {accounts.length > 0 && <AccountList accounts={accounts} checked={attached} />}
           <Choice
             label="Fait générateur"
             name="revenueBasis"
@@ -236,7 +264,7 @@ export function ActivityForm({
   )
 }
 
-export function NewActivitySheet({ categories }: { categories: Option[] }) {
+export function NewActivitySheet({ categories, accounts }: { categories: Option[]; accounts: Option[] }) {
   return (
     <EntrySheet
       label="Activité"
@@ -244,7 +272,7 @@ export function NewActivitySheet({ categories }: { categories: Option[] }) {
       variant="outline"
       description="Une sphère économique : indépendante avec son régime, ou personnelle pour l’analyse seule."
     >
-      <ActivityForm categories={categories} />
+      <ActivityForm categories={categories} accounts={accounts} />
     </EntrySheet>
   )
 }
@@ -256,11 +284,16 @@ export function NewActivitySheet({ categories }: { categories: Option[] }) {
 function ActivityRow({
   activity,
   categories,
+  accounts,
+  attached,
   exceptions,
   today,
 }: {
   activity: Activity
   categories: Option[]
+  /** The user's open accounts, and those this activity lives on. */
+  accounts: Option[]
+  attached: string[]
   /** The categories that go against its deductibility policy. */
   exceptions: string[]
   today: string
@@ -332,7 +365,13 @@ function ActivityRow({
             </SheetDescription>
           </SheetHeader>
           <div className="p-4">
-            <ActivityForm activity={activity} categories={categories} onSuccess={() => setEditing(false)} />
+            <ActivityForm
+              activity={activity}
+              categories={categories}
+              accounts={accounts}
+              attached={attached}
+              onSuccess={() => setEditing(false)}
+            />
           </div>
         </SheetContent>
       </Sheet>
@@ -417,11 +456,17 @@ function ActivityRow({
 export function ActivityRows({
   activities,
   categories,
+  accounts,
+  links,
   exceptions,
   today,
 }: {
   activities: Activity[]
   categories: Option[]
+  /** The user's open accounts, offered to every row. */
+  accounts: Option[]
+  /** Every account link of the user, keyed on the fly by activity. */
+  links: { activityId: string; accountId: string }[]
   /** Every exception of the user, keyed on the fly by activity. */
   exceptions: { activityId: string; categoryId: string }[]
   today: string
@@ -433,6 +478,8 @@ export function ActivityRows({
           key={activity.id}
           activity={activity}
           categories={categories}
+          accounts={accounts}
+          attached={links.filter((l) => l.activityId === activity.id).map((l) => l.accountId)}
           exceptions={exceptions.filter((e) => e.activityId === activity.id).map((e) => e.categoryId)}
           today={today}
         />

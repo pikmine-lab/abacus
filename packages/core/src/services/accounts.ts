@@ -1,4 +1,4 @@
-import { db, type Executor } from '../db/client.ts'
+import { db } from '../db/client.ts'
 import {
   countInvestmentOperations,
   getAccount,
@@ -8,7 +8,6 @@ import {
   setAccountClosedOn,
   updateAccountRow,
 } from '../db/datasources/accounts.ts'
-import { getActivity } from '../db/datasources/catalog.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
@@ -33,31 +32,9 @@ function checkOpening(openingBalance: number | undefined, openedOn: string | nul
     )
 }
 
-/**
- * An account belongs to a business activity or to nobody: its balance is then
- * the activity's treasury, and a transfer out of it toward an account with no
- * activity is the owner paying themselves. A personal activity owns nothing,
- * it is an analysis dimension, so attaching an account to one is refused.
- */
-async function checkActivity(
-  tx: Executor,
-  userId: string,
-  activityId: string | null | undefined,
-): Promise<void> {
-  if (!activityId) return
-  const activity = await getActivity(tx, userId, activityId)
-  if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
-  if (activity.kind !== 'business')
-    throw new DomainError(
-      'activity_not_business',
-      `Activity "${activity.name}" is personal: only a business activity owns accounts`,
-    )
-}
-
 export async function createAccount(input: NewAccount): Promise<Account> {
   checkOpening(input.openingBalance, input.openedOn)
   const sql = db()
-  await checkActivity(sql, input.userId, input.activityId)
   try {
     return await insertAccount(sql, input)
   } catch (e) {
@@ -118,11 +95,9 @@ export interface AccountEdit {
   /** What the account already held, and the day it held it: both correctable. */
   openingBalance?: number
   openedOn?: string | null
-  /** The business activity whose money this is; null detaches it. */
-  activityId?: string | null
 }
 
-const EDITABLE = ['name', 'institution', 'behavior', 'openingBalance', 'openedOn', 'activityId'] as const
+const EDITABLE = ['name', 'institution', 'behavior', 'openingBalance', 'openedOn'] as const
 
 /**
  * Corrects what an account says about itself, its behavior and its opening
@@ -152,7 +127,6 @@ export async function editAccount(userId: string, id: string, input: AccountEdit
         input.openingBalance ?? Number(account.openingBalance),
         input.openedOn !== undefined ? input.openedOn : account.openedOn,
       )
-      await checkActivity(tx, userId, input.activityId)
       const patch: Record<string, unknown> = {}
       for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
       if (Object.keys(patch).length === 0) return account

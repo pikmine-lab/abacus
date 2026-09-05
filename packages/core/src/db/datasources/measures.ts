@@ -39,6 +39,10 @@ export interface DateRange {
 export interface ActivityScope {
   userId: string
   activityId: string
+  /** The accounts the activity lives on: its treasury is their balance. */
+  accountIds: string[]
+  /** Those of them another activity also lives on. */
+  sharedAccountIds: string[]
   basis: RevenueBasis
   vatRegistered: boolean
   deductibleExpenses: DeductibleExpenses
@@ -51,12 +55,13 @@ export interface ActivityScope {
 }
 
 /**
- * Reads the activity's own switches and the categories its rules settle in.
- * A rule says explicitly whether paying it reduces the profit, so its
- * settlement category decides before the activity's policy does: a
- * pass-through (VAT collected for the state) and a non-deductible tax leave
- * the charges whatever the policy, and a deductible contribution enters them
- * even under a flat-rate regime that deducts nothing else.
+ * Reads the activity's own switches, the accounts it lives on and the
+ * categories its rules settle in. A rule says explicitly whether paying it
+ * reduces the profit, so its settlement category decides before the activity's
+ * policy does: a pass-through (VAT collected for the state) and a
+ * non-deductible tax leave the charges whatever the policy, and a deductible
+ * contribution enters them even under a flat-rate regime that deducts nothing
+ * else.
  */
 export async function activityScope(
   tx: Executor,
@@ -66,6 +71,12 @@ export async function activityScope(
   const exceptions = await tx<{ categoryId: string }[]>`
     select category_id from activity_category_exception where activity_id = ${activity.id}
   `
+  const accounts = await tx<{ accountId: string; shared: boolean }[]>`
+    select l.account_id,
+           (select count(*) from activity_account o where o.account_id = l.account_id) > 1 as shared
+    from activity_account l
+    where l.activity_id = ${activity.id}
+  `
   const settlements = await tx<{ categoryId: string; deductible: boolean; passThrough: boolean }[]>`
     select distinct settlement_category_id as category_id, deductible, pass_through
     from levy
@@ -74,6 +85,8 @@ export async function activityScope(
   return {
     userId,
     activityId: activity.id,
+    accountIds: accounts.map((a) => a.accountId),
+    sharedAccountIds: accounts.filter((a) => a.shared).map((a) => a.accountId),
     basis: activity.revenueBasis,
     vatRegistered: activity.vatRegistered,
     deductibleExpenses: activity.deductibleExpenses,
@@ -296,16 +309,34 @@ export async function levySettlements(
   }))
 }
 
+/** One account of the treasury, and the other activities living on it. */
+export interface TreasuryAccount {
+  id: string
+  name: string
+  balance: number
+  /** The other activities this account also carries, by name; empty when it is the activity's alone. */
+  sharedWith: string[]
+}
+
 /**
- * The money the activity holds on a day: the balance of its own accounts, read
- * exactly as any balance is (what they held before the ledger began, plus what
- * moved, plus what the cash of an investment account did). A ghost movement
- * counts here, as it counts in every balance: it did touch the account.
+ * The money the activity holds on a day, account by account: the balance of
+ * the accounts it lives on, read exactly as any balance is (what they held
+ * before the ledger began, plus what moved, plus what the cash of an
+ * investment account did). A ghost movement counts here, as it counts in every
+ * balance: it did touch the account.
+ *
+ * A shared account counts whole, and it says with whom. Nothing is
+ * apportioned: what the other activities owe is taken off further down, once,
+ * where the payable is computed.
  */
-export async function treasury(tx: Executor, scope: ActivityScope, on: string): Promise<number> {
-  const [row] = await tx<{ balance: string }[]>`
-    select coalesce(sum(
-      case when a.opened_on is null or a.opened_on <= ${on} then a.opening_balance else 0 end
+export async function treasuryAccounts(
+  tx: Executor,
+  scope: ActivityScope,
+  on: string,
+): Promise<TreasuryAccount[]> {
+  return await tx<TreasuryAccount[]>`
+    select a.id, a.name,
+      (case when a.opened_on is null or a.opened_on <= ${on} then a.opening_balance else 0 end
       + coalesce((
         select sum(case when m.target_account_id = a.id then m.amount else -m.amount end)
         from movement m
@@ -315,29 +346,39 @@ export async function treasury(tx: Executor, scope: ActivityScope, on: string): 
         select sum(case when o.type in ('sell', 'dividend') then o.amount else -o.amount end)
         from investment_operation o
         where o.account_id = a.id and o.operated_on <= ${on}
-      ), 0)
-    ), 0)::numeric(14,2) as balance
+      ), 0))::numeric(14,2)::float8 as balance,
+      coalesce((
+        select array_agg(other.name order by other.name)
+        from activity_account l
+        join activity other on other.id = l.activity_id
+        where l.account_id = a.id and l.activity_id <> ${scope.activityId}
+      ), '{}'::text[]) as shared_with
     from account a
-    where a.user_id = ${scope.userId} and a.activity_id = ${scope.activityId}
+    where a.user_id = ${scope.userId} and a.id::text = any(${scope.accountIds}::text[])
+    order by a.name
   `
-  return Number(row!.balance)
 }
 
 /**
- * What the owner took out of the activity: transfers from one of its accounts
- * to an account that is not the activity's. That is the only definition this
- * question ever gets, and it is why an activity owns its accounts.
+ * What the owner took out of the activity: transfers from one of the accounts
+ * it lives on to an account it does not live on. That is the only definition
+ * this question ever gets, and it is why an activity declares its accounts.
+ *
+ * Out of a shared account, only a movement naming the activity counts for it.
+ * A transfer inherits no activity from its accounts, so an untagged one says
+ * nothing about which of the activities on that account the money left, and
+ * counting it for each would show the same euro paid out twice.
  */
 export async function paidToSelf(tx: Executor, scope: ActivityScope, range: DateRange): Promise<number> {
   const [row] = await tx<{ total: string }[]>`
     select coalesce(sum(m.amount), 0)::numeric(14,2) as total
     from movement m
-    join account src on src.id = m.source_account_id
-    left join account dst on dst.id = m.target_account_id
     where m.user_id = ${scope.userId}
-      and src.activity_id = ${scope.activityId}
+      and m.source_account_id::text = any(${scope.accountIds}::text[])
       and m.target_account_id is not null
-      and (dst.activity_id is null or dst.activity_id <> ${scope.activityId})
+      and m.target_account_id::text <> all(${scope.accountIds}::text[])
+      and (m.source_account_id::text <> all(${scope.sharedAccountIds}::text[])
+           or m.activity_id = ${scope.activityId})
       and m.happened_on >= ${range.from} and m.happened_on <= ${range.to}
   `
   return Number(row!.total)

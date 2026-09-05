@@ -4,7 +4,7 @@ import { db } from '../src/db/client.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { activityAlerts } from '../src/services/activityAlerts.ts'
 import { createActor } from '../src/services/actors.ts'
-import { createActivity } from '../src/services/catalog.ts'
+import { createActivity, setActivityAccounts } from '../src/services/catalog.ts'
 import { createLevy } from '../src/services/levies.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -34,7 +34,7 @@ async function business(userId: string, name: string, closedOn?: string): Promis
 /** Revenue of the year, so a threshold on the receipts has something to measure. */
 async function earn(userId: string, activityId: string, amount: number): Promise<void> {
   const account = await createAccount({ userId, name: `Pro ${activityId.slice(0, 8)}`, behavior: 'payment' })
-  await db()`update account set activity_id = ${activityId} where id = ${account.id}`
+  await setActivityAccounts(userId, activityId, [account.id])
   const client = await createActor(userId, { name: `Client ${activityId.slice(0, 8)}`, activityId })
   await declareMovement(userId, {
     happenedOn: '2026-03-01',

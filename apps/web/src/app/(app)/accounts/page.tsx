@@ -10,7 +10,7 @@ import {
 } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { type BalanceCheckEntry, listChecks } from '@abacus/core/services/balanceChecks'
-import { listActivities, listCategories } from '@abacus/core/services/catalog'
+import { listCategories } from '@abacus/core/services/catalog'
 import { holdingsValue } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -79,18 +79,11 @@ export default async function AccountsPage({
   // above the figures holding a single menu that filters nothing.
   const sort = sorter('accounts', ACCOUNT_SORTS, DEFAULT_ACCOUNT_SORT, params)
 
-  const [accounts, actors, categories, activities] = await Promise.all([
+  const [accounts, actors, categories] = await Promise.all([
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
-    listActivities(userId),
   ])
-  // Only a business activity owns accounts, and a closed one owns no new one;
-  // the correction panel keeps an account's own activity in the list anyway.
-  const businessActivities = activities
-    .filter((a) => a.kind === 'business')
-    .map((a) => ({ id: a.id, name: a.name, closed: a.closedOn !== null }))
-  const openActivities = businessActivities.filter((a) => !a.closed)
   // A gap is settled against an actor, and filed like any other movement.
   const settleOptions = {
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
@@ -145,15 +138,6 @@ export default async function AccountsPage({
           />
         </Field>
         <TextField name="institution" label="Établissement (optionnel)" placeholder="Nom de la banque" />
-        {openActivities.length > 0 && (
-          <Field label="Activité">
-            <FormSelect
-              name="activityId"
-              noneLabel="(perso)"
-              options={openActivities.map((a) => ({ value: a.id, label: a.name }))}
-            />
-          </Field>
-        )}
         {/* The opening and the day it holds from travel together: one is
             meaningless without the other, and the service refuses them apart. */}
         <div className="grid grid-cols-2 gap-3">
@@ -263,8 +247,6 @@ export default async function AccountsPage({
                           behavior={account.behavior}
                           openingBalance={account.openingBalance}
                           openedOn={account.openedOn}
-                          activityId={account.activityId}
-                          activities={businessActivities}
                           computedBalance={Number(account.balance)}
                           checks={checkEntries(checks)}
                           settleOptions={settleOptions}
@@ -297,8 +279,6 @@ export default async function AccountsPage({
                         behavior={account.behavior}
                         openingBalance={account.openingBalance}
                         openedOn={account.openedOn}
-                        activityId={account.activityId}
-                        activities={businessActivities}
                         computedBalance={Number(account.balance)}
                         closed
                         checks={checkEntries(checks)}

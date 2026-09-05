@@ -6,7 +6,7 @@ import type { Levy } from '../src/domain/types.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { activityStatement, confirmLevyPayment } from '../src/services/activityStatement.ts'
 import { createActor } from '../src/services/actors.ts'
-import { createActivity, createCategory } from '../src/services/catalog.ts'
+import { createActivity, createCategory, setActivityAccounts } from '../src/services/catalog.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
@@ -49,7 +49,7 @@ async function businessActivity(userId: string, name: string, regime: ActivityRe
 
 async function activityAccount(userId: string, name: string, activityId: string): Promise<string> {
   const account = await createAccount({ userId, name, behavior: 'payment' })
-  await db()`update account set activity_id = ${activityId} where id = ${account.id}`
+  await setActivityAccounts(userId, activityId, [account.id])
   return account.id
 }
 
@@ -868,4 +868,166 @@ test('a quarterly instalment on a yearly measure takes its quarter, the rate sta
     [2000, 2000, 2000, 2000],
   )
   assert.equal(levyNamed(statement, 'Instalment').accrued, 8000)
+})
+
+// ---------------------------------------------------------------------------
+// One account, two activities
+// ---------------------------------------------------------------------------
+
+/**
+ * Two independent activities running on the same bank account, each with its
+ * own rule: the ordinary situation of anyone starting a second activity
+ * without opening a second account. Nothing here apportions that account, and
+ * every figure below is read against the whole of it.
+ */
+async function twoOnOneAccount(user: string) {
+  const conseil = await businessActivity(user, 'Conseil', { startedOn: '2026-01-01' })
+  const photo = await businessActivity(user, 'Photo', { startedOn: '2026-01-01' })
+  const shared = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  const personal = await createAccount({ userId: user, name: 'Perso', behavior: 'payment' })
+  await setActivityAccounts(user, conseil, [shared.id])
+  await setActivityAccounts(user, photo, [shared.id])
+
+  for (const [activityId, name, rate] of [
+    [conseil, 'Conseil contributions', 20],
+    [photo, 'Photo contributions', 10],
+  ] as const) {
+    const category = await createCategory(user, name)
+    await insertLevy(user, activityId, {
+      name,
+      kind: 'social',
+      validFrom: '2026-01-01',
+      baseMeasure: 'revenue',
+      amountForm: 'rate',
+      rate,
+      period: 'year',
+      due: { type: 'end_of_next_month' },
+      settlementCategoryId: category.id,
+    })
+  }
+
+  // A client of each: the actor carries the activity, which is what a shared
+  // account can no longer say.
+  for (const [activityId, client, amount] of [
+    [conseil, 'Client conseil', 10000],
+    [photo, 'Client photo', 5000],
+  ] as const) {
+    const actor = await createActor(user, { name: client, activityId })
+    await declareMovement(user, {
+      happenedOn: '2026-03-01',
+      amount,
+      sourceActorId: actor.id,
+      targetAccountId: shared.id,
+    })
+  }
+  return { conseil, photo, shared: shared.id, personal: personal.id }
+}
+
+test('two activities on one account read the same treasury, and neither promises what the other owes', async () => {
+  const user = await seedUser()
+  const { conseil, photo } = await twoOnOneAccount(user)
+  const read = (activityId: string) => activityStatement(user, activityId, 2026, '2027-01-15')
+
+  const [ofConseil, ofPhoto] = await Promise.all([read(conseil), read(photo)])
+  // The account is whole under each of them: 15000 in, nothing out.
+  assert.equal(ofConseil.payableToSelf.treasury, 15000)
+  assert.equal(ofPhoto.payableToSelf.treasury, 15000)
+  assert.deepEqual(
+    ofConseil.payableToSelf.accounts.map((a) => a.sharedWith),
+    [['Photo']],
+  )
+  assert.deepEqual(
+    ofPhoto.payableToSelf.accounts.map((a) => a.sharedWith),
+    [['Conseil']],
+  )
+
+  // Each keeps its own reserve and the neighbour's, named.
+  assert.equal(ofConseil.reserve, 2000)
+  assert.equal(ofPhoto.reserve, 500)
+  assert.deepEqual(ofConseil.payableToSelf.shared, [
+    { activityId: photo, activityName: 'Photo', reserve: 500 },
+  ])
+  assert.equal(ofConseil.payableToSelf.sharedReserve, 500)
+  assert.deepEqual(ofPhoto.payableToSelf.shared, [
+    { activityId: conseil, activityName: 'Conseil', reserve: 2000 },
+  ])
+  assert.equal(ofConseil.payableToSelf.amount, 12500)
+  assert.equal(ofPhoto.payableToSelf.amount, 12500)
+})
+
+test('what both activities may take out never digs into what the account owes', async () => {
+  const user = await seedUser()
+  const { conseil, photo, shared, personal } = await twoOnOneAccount(user)
+  const read = (activityId: string) => activityStatement(user, activityId, 2026, '2027-01-15')
+
+  // One of them takes everything it may take. Out of a shared account the
+  // transfer says which activity it is: nothing else could.
+  const payable = (await read(conseil)).payableToSelf.amount
+  await declareMovement(user, {
+    happenedOn: '2026-12-20',
+    amount: payable,
+    sourceAccountId: shared,
+    targetAccountId: personal,
+    activityId: conseil,
+  })
+
+  const [ofConseil, ofPhoto] = await Promise.all([read(conseil), read(photo)])
+  // What is left is exactly the two reserves, so the other activity may take
+  // nothing more: the two together never take out more than the account held.
+  assert.equal(ofConseil.payableToSelf.treasury, 2500)
+  assert.equal(ofPhoto.payableToSelf.treasury, 2500)
+  assert.equal(ofConseil.payableToSelf.amount, 0)
+  assert.equal(ofPhoto.payableToSelf.amount, 0)
+  // The transfer counts as paid out for the activity that named it, and for
+  // that one only.
+  assert.equal(ofConseil.totals.paidToSelf, payable)
+  assert.equal(ofPhoto.totals.paidToSelf, 0)
+})
+
+test('an untagged transfer out of a shared account is paid out by neither activity', async () => {
+  const user = await seedUser()
+  const { conseil, photo, shared, personal } = await twoOnOneAccount(user)
+  await declareMovement(user, {
+    happenedOn: '2026-12-20',
+    amount: 1000,
+    sourceAccountId: shared,
+    targetAccountId: personal,
+  })
+
+  const read = (activityId: string) => activityStatement(user, activityId, 2026, '2027-01-15')
+  const [ofConseil, ofPhoto] = await Promise.all([read(conseil), read(photo)])
+  assert.equal(ofConseil.totals.paidToSelf, 0)
+  assert.equal(ofPhoto.totals.paidToSelf, 0)
+  // It did leave the account all the same, and both read the balance it left.
+  assert.equal(ofConseil.payableToSelf.treasury, 14000)
+  assert.equal(ofPhoto.payableToSelf.treasury, 14000)
+})
+
+test('an account of one activity alone keeps saying who paid themselves', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Solo', { startedOn: '2026-01-01' })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const personal = await createAccount({ userId: user, name: 'Perso', behavior: 'payment' })
+  const client = await createActor(user, { name: 'Client', activityId })
+  await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 4000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-04-01',
+    amount: 1000,
+    sourceAccountId: account,
+    targetAccountId: personal.id,
+  })
+
+  const statement = await activityStatement(user, activityId, 2026, '2027-01-15')
+  assert.equal(statement.totals.paidToSelf, 1000)
+  assert.deepEqual(
+    statement.payableToSelf.accounts.map((a) => a.sharedWith),
+    [[]],
+  )
+  assert.deepEqual(statement.payableToSelf.shared, [])
+  assert.equal(statement.payableToSelf.amount, 3000)
 })

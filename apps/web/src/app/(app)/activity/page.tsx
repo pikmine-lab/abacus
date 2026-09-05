@@ -5,7 +5,7 @@ import { endOfMonth, today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { activityStatement } from '@abacus/core/services/activityStatement'
 import { listActors } from '@abacus/core/services/actors'
-import { listActivities } from '@abacus/core/services/catalog'
+import { listActivities, listActivityAccounts } from '@abacus/core/services/catalog'
 import { type InvoiceState, listInvoices, outstandingInvoices } from '@abacus/core/services/invoices'
 import { headers } from 'next/headers'
 import Link from 'next/link'
@@ -123,10 +123,11 @@ export default async function ActivityPage({
   const { error } = params
   const now = today()
 
-  const [activities, actors, accounts] = await Promise.all([
+  const [activities, actors, accounts, links] = await Promise.all([
     listActivities(userId),
     listActors(userId),
     listAccounts(userId),
+    listActivityAccounts(userId),
   ])
   const businesses = activities.filter((a) => a.kind === 'business')
   const wanted = idParam(params.activity)
@@ -201,12 +202,11 @@ export default async function ActivityPage({
 
   const actorName = new Map(actors.map((a) => [a.id, a.name]))
   const usable = accounts.filter((a) => !a.closedOn)
-  const ownAccounts = usable
-    .filter((a) => a.activityId === activity.id)
-    .map((a) => ({ id: a.id, name: a.name }))
-  const outsideAccounts = usable
-    .filter((a) => a.activityId !== activity.id)
-    .map((a) => ({ id: a.id, name: a.name }))
+  const lives = new Set(links.filter((l) => l.activityId === activity.id).map((l) => l.accountId))
+  const ownAccounts = usable.filter((a) => lives.has(a.id)).map((a) => ({ id: a.id, name: a.name }))
+  // Paying oneself lands on an account this activity does not live on, which
+  // an account shared with another activity still is.
+  const outsideAccounts = usable.filter((a) => !lives.has(a.id)).map((a) => ({ id: a.id, name: a.name }))
   // The activity's own accounts first: an invoice lands there, and an account
   // outside it is still reachable for the case where it did not.
   const settlementAccounts = [...ownAccounts, ...outsideAccounts]
@@ -340,7 +340,11 @@ export default async function ActivityPage({
             <StatTile
               label="Disponible à me verser"
               value={eur(payableToSelf.amount)}
-              hint="trésorerie − réserve − échéances du mois"
+              hint={
+                payableToSelf.shared.length > 0
+                  ? 'trésorerie − tout ce qui est dû sur ces comptes − échéances'
+                  : 'trésorerie − réserve − échéances du mois'
+              }
               href="#payable"
             />
           ) : (
@@ -420,7 +424,7 @@ export default async function ActivityPage({
               <Rows>
                 <MoneyRow
                   label="Trésorerie"
-                  hint="comptes de l’activité, aujourd’hui"
+                  hint={treasuryHint(payableToSelf.accounts)}
                   amount={payableToSelf.treasury}
                 />
                 <div className="py-2.5">
@@ -469,6 +473,16 @@ export default async function ActivityPage({
                     </div>
                   )}
                 </div>
+                {payableToSelf.shared.length > 0 && (
+                  // The other activities on those same accounts owe too, and
+                  // the same euro cannot be promised twice: the line names
+                  // them rather than letting the total look wrong.
+                  <MoneyRow
+                    label={`− Réserve de ${payableToSelf.shared.map((o) => o.activityName).join(', ')}`}
+                    hint="ce qui est dû sur les comptes partagés"
+                    amount={payableToSelf.sharedReserve}
+                  />
+                )}
                 <MoneyRow
                   label={`− Échéances d’ici le ${frDate(endOfMonth(now))}`}
                   hint="engagements de l’activité"
@@ -477,6 +491,7 @@ export default async function ActivityPage({
                 <MoneyRow label="Disponible" amount={payableToSelf.amount} strong />
               </Rows>
               <ActivityPayout
+                activityId={activity.id}
                 amount={payableToSelf.amount}
                 from={ownAccounts}
                 to={outsideAccounts}
@@ -673,6 +688,17 @@ function Money({ value, muted, className }: { value: number; muted?: boolean; cl
       {eur(value)}
     </TableCell>
   )
+}
+
+/**
+ * The accounts the treasury is made of, and the ones another activity lives on
+ * too: a balance read whole while a neighbour draws on it would be read wrong.
+ */
+function treasuryHint(accounts: { name: string; sharedWith: string[] }[]): string {
+  if (accounts.length === 0) return 'aucun compte déclaré sur cette activité'
+  return accounts
+    .map((a) => (a.sharedWith.length > 0 ? `${a.name} (partagé avec ${a.sharedWith.join(', ')})` : a.name))
+    .join(' · ')
 }
 
 function MoneyRow({

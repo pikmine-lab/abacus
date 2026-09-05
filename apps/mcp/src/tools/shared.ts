@@ -14,7 +14,8 @@ export function fail(message: string): ToolResult {
 
 /** Actionable guidance for domain errors raised below the MCP layer. */
 export const GUIDANCE: Record<string, string> = {
-  account_closed: 'This account is closed at that date. Check the movement date or the targeted account.',
+  account_closed:
+    'This account is closed at that date, so nothing is declared on it afterwards and no activity starts living on it. Check the movement date or the targeted account; reopen it with manage_accounts if it was closed by mistake.',
   transfer_has_no_category:
     'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
   transfer_has_no_accrual:
@@ -111,9 +112,9 @@ export const GUIDANCE: Record<string, string> = {
   activity_regime_fixed:
     'This activity carries rules or invoices, so its kind and revenue basis are fixed: an activity never changes regime. Close it on its last day (manage_activities, action close) and create the next one with the new settings.',
   activity_has_accounts:
-    'Accounts are attached to this activity, and only a business activity owns accounts. Detach them first (manage_accounts, activity: "none") if it really is personal.',
+    'This activity lives on accounts, which only a business activity does. If it really is an analysis dimension, let go of them in the same call (manage_activities, accounts: []) or before it.',
   activity_not_business:
-    'Only a business activity owns accounts, issues invoices, carries rules, inputs and thresholds, and has a statement; a personal one is an analysis dimension and nothing more. Check the activity name, make it a business with manage_activities (kind: business), or leave the account without an activity.',
+    'Only a business activity lives on accounts, issues invoices, carries rules, inputs and thresholds, and has a statement; a personal one is an analysis dimension and nothing more. Check the activity name, or make it a business with manage_activities (kind: business).',
   vat_rate_needs_registration:
     'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
   activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',

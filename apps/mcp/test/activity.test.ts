@@ -4,7 +4,7 @@ import { db } from '@abacus/core/db'
 import { today } from '@abacus/core/domain/period'
 import { createAccount } from '@abacus/core/services/accounts'
 import { createActor } from '@abacus/core/services/actors'
-import { createActivity, createCategory } from '@abacus/core/services/catalog'
+import { createActivity, createCategory, setActivityAccounts } from '@abacus/core/services/catalog'
 import { declareMovement } from '@abacus/core/services/movements'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { AuthInfo } from '@modelcontextprotocol/server'
@@ -51,7 +51,7 @@ async function activityWithOneRule(user: string) {
     where id = ${activity.id}
   `
   const account = await createAccount({ userId: user, name: 'Pro', behavior: 'payment' })
-  await db()`update account set activity_id = ${activity.id} where id = ${account.id}`
+  await setActivityAccounts(user, activity.id, [account.id])
   const client = await createActor(user, { name: 'ACME', activityId: activity.id })
   const social = await createCategory(user, 'Social contributions')
   const sql = db()

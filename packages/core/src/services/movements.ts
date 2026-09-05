@@ -1,7 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
-import { getActivity } from '../db/datasources/catalog.ts'
+import { getActivity, soleActivityOfAccount } from '../db/datasources/catalog.ts'
 import {
   alignInstallmentOnMovement,
   installmentByMovement,
@@ -218,11 +218,15 @@ async function writeRefundIn(
  * income pays first (that is the sphere the money was earned in, whatever the
  * client is filed under today), then from the external actor (a client carries
  * its activity), then from the account the money touched: the one an expense
- * left, the one an income reached. A transfer inherits nothing from its
- * accounts, because the transfer between an activity's account and a personal
- * one is precisely the owner paying themselves, and it belongs to neither
- * side. History is never reclassified when an actor or an account changes
- * activity later: that is an explicit correction, movement by movement.
+ * left, the one an income reached. That last step only decides when the
+ * account carries a single activity: an account two activities live on
+ * designates neither, so the movement is left without one and is corrected by
+ * hand, rather than credited to whichever of them happened to be first. A
+ * transfer inherits nothing from its accounts, because the transfer between an
+ * activity's account and a personal one is precisely the owner paying
+ * themselves, and it belongs to neither side. History is never reclassified
+ * when an actor changes activity or an account changes hands: that is an
+ * explicit correction, movement by movement.
  */
 async function checkMovement(
   tx: Executor,
@@ -283,10 +287,11 @@ async function checkMovement(
 
   const [sourceAccount, targetAccount] = accounts
   const touched = isTransfer ? null : (sourceAccount ?? targetAccount)
+  const fromTouched = touched ? await soleActivityOfAccount(tx, touched.id) : null
   const activityId =
     input.activityId !== undefined
       ? input.activityId
-      : (invoice?.activityId ?? externalActor?.activityId ?? touched?.activityId ?? null)
+      : (invoice?.activityId ?? externalActor?.activityId ?? fromTouched ?? null)
   let activity: Activity | null = null
   if (activityId) {
     activity = (await getActivity(tx, userId, activityId)) ?? null

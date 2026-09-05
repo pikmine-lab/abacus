@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import { db } from '../src/db/client.ts'
 import type { DomainError } from '../src/domain/errors.ts'
-import { createAccount, editAccount } from '../src/services/accounts.ts'
+import { closeAccount, createAccount } from '../src/services/accounts.ts'
 import { createActor, editActor, listActors } from '../src/services/actors.ts'
 import {
   closeActivity,
@@ -10,8 +10,10 @@ import {
   createCategory,
   editActivity,
   listActivities,
+  listActivityAccounts,
   listCategoryExceptions,
   reopenActivity,
+  setActivityAccounts,
   setActivityCategoryExceptions,
 } from '../src/services/catalog.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -157,35 +159,76 @@ test('the exceptions to a deductibility policy are stated as a whole', async () 
   )
 })
 
-test('an account belongs to a business activity, and only to one', async () => {
+/** What the activity lives on, as the association holds it. */
+async function accountsOf(userId: string, activityId: string): Promise<string[]> {
+  return (await listActivityAccounts(userId))
+    .filter((l) => l.activityId === activityId)
+    .map((l) => l.accountId)
+    .sort()
+}
+
+test('an activity declares the accounts it lives on, and two of them may share one', async () => {
   const user = await seedUser()
-  const business = await createActivity(user, { name: 'Conseil', kind: 'business' })
-  const personal = await createActivity(user, { name: 'Location' })
-
-  const account = await createAccount({
-    userId: user,
-    name: 'Pro',
-    behavior: 'payment',
-    activityId: business.id,
+  const shared = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  const conseil = await createActivity(user, {
+    name: 'Conseil',
+    kind: 'business',
+    accountIds: [shared.id],
   })
-  assert.equal(account.activityId, business.id)
+  // A second activity started on the account the first already runs on: the
+  // ordinary case, and nothing about the account itself changes.
+  const photo = await createActivity(user, { name: 'Photo', kind: 'business', accountIds: [shared.id] })
+  assert.deepEqual(await accountsOf(user, conseil.id), [shared.id])
+  assert.deepEqual(await accountsOf(user, photo.id), [shared.id])
 
+  // Stated as a whole: a list replaces the one before it, an empty one detaches.
+  const livret = await createAccount({ userId: user, name: 'Livret', behavior: 'savings' })
+  await setActivityAccounts(user, photo.id, [shared.id, livret.id])
+  assert.deepEqual(await accountsOf(user, photo.id), [shared.id, livret.id].sort())
+  await setActivityAccounts(user, photo.id, [])
+  assert.deepEqual(await accountsOf(user, photo.id), [])
+  // The other one is untouched by its neighbour letting go.
+  assert.deepEqual(await accountsOf(user, conseil.id), [shared.id])
+
+  // An activity living on accounts is not an analysis dimension...
   await assert.rejects(
-    createAccount({ userId: user, name: 'Autre', behavior: 'payment', activityId: personal.id }),
-    (e: DomainError) => e.code === 'activity_not_business',
-  )
-  await assert.rejects(
-    editAccount(user, account.id, { activityId: personal.id }),
-    (e: DomainError) => e.code === 'activity_not_business',
-  )
-  // An activity that owns accounts cannot become a personal sphere.
-  await assert.rejects(
-    editActivity(user, business.id, { kind: 'personal' }),
+    editActivity(user, conseil.id, { kind: 'personal' }),
     (e: DomainError) => e.code === 'activity_has_accounts',
   )
-  // Detaching it is what a correction says, and it frees the activity.
-  assert.equal((await editAccount(user, account.id, { activityId: null })).activityId, null)
-  assert.equal((await editActivity(user, business.id, { kind: 'personal' })).kind, 'personal')
+  // ... and one correction may both let go of them and say so.
+  assert.equal((await editActivity(user, conseil.id, { kind: 'personal', accountIds: [] })).kind, 'personal')
+  assert.deepEqual(await accountsOf(user, conseil.id), [])
+})
+
+test('refuses an account an activity cannot live on', async () => {
+  const user = await seedUser()
+  const personal = await createActivity(user, { name: 'Location' })
+  const account = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  await assert.rejects(
+    setActivityAccounts(user, personal.id, [account.id]),
+    (e: DomainError) => e.code === 'activity_not_business',
+  )
+  await assert.rejects(
+    createActivity(user, { name: 'Photo', accountIds: [account.id] }),
+    (e: DomainError) => e.code === 'activity_not_business',
+  )
+
+  const business = await createActivity(user, { name: 'Conseil', kind: 'business' })
+  const gone = await createAccount({ userId: user, name: 'Ancien', behavior: 'payment' })
+  await closeAccount(user, gone.id)
+  await assert.rejects(
+    setActivityAccounts(user, business.id, [gone.id]),
+    (e: DomainError) => e.code === 'account_closed',
+  )
+
+  const other = await seedUser('user-2')
+  const theirs = await createAccount({ userId: other, name: 'Le leur', behavior: 'payment' })
+  await assert.rejects(
+    setActivityAccounts(user, business.id, [account.id, theirs.id]),
+    (e: DomainError) => e.code === 'account_not_found',
+  )
+  // A refused list leaves nothing behind: the gesture is whole or it is not.
+  assert.deepEqual(await accountsOf(user, business.id), [])
 })
 
 test('a client carries what it does to an invoice', async () => {
@@ -227,7 +270,7 @@ test('scopes an activity to its user', async () => {
     (e: DomainError) => e.code === 'activity_not_found',
   )
   await assert.rejects(
-    createAccount({ userId: user, name: 'Pro', behavior: 'payment', activityId: theirs.id }),
+    setActivityAccounts(user, theirs.id, []),
     (e: DomainError) => e.code === 'activity_not_found',
   )
   assert.equal((await listActivities(user)).length, 0)

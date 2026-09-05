@@ -492,21 +492,21 @@ test('a business activity is configured, closed and read back through the MCP su
   }[]
   assert.deepEqual(listed[0]!.categoryExceptions, ['Repas'])
 
-  // An account belongs to the activity, and a personal one refuses to own it.
-  await call(client, 'manage_accounts', {
-    action: 'create',
-    name: 'Pro',
-    behavior: 'payment',
-    activity: 'Conseil',
+  // The activity says what it lives on, and a personal one lives on nothing.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Conseil',
+    accounts: ['Pro'],
   })
   await call(client, 'manage_activities', { action: 'create', name: 'Location' })
-  const wrongKind = await call(client, 'manage_accounts', {
-    action: 'update',
-    name: 'Pro',
-    activity: 'Location',
+  const wrongKind = await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Location',
+    accounts: ['Pro'],
   })
   assert.equal(wrongKind.isError, true)
-  assert.match(wrongKind.text, /Only a business activity owns accounts/)
+  assert.match(wrongKind.text, /Only a business activity/)
 
   // A client carries what it does to an invoice.
   const actor = (
@@ -533,6 +533,58 @@ test('a business activity is configured, closed and read back through the MCP su
     await call(client, 'manage_activities', { action: 'reopen', name: 'Conseil' })
   ).json() as { closedOn: null }
   assert.equal(reopened.closedOn, null)
+})
+
+test('two activities declare the same account, and each says so through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+
+  // Declared from the activity, at creation for one and by correction for the
+  // other: the same account serves both.
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      accounts: ['Courant', 'Livret'],
+    })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(created.accounts, ['Courant', 'Livret'])
+  await call(client, 'manage_activities', { action: 'create', name: 'Photo', kind: 'business' })
+  const updated = (
+    await call(client, 'manage_activities', { action: 'update', name: 'Photo', accounts: ['Courant'] })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(updated.accounts, ['Courant'])
+
+  // Every account answers with the activities living on it, so the sharing is
+  // never something the AI has to deduce.
+  const accounts = (await call(client, 'manage_accounts', { action: 'list' })).json() as {
+    accounts: { name: string; activities?: string[] }[]
+  }
+  assert.deepEqual(
+    accounts.accounts.map((a) => [a.name, a.activities]),
+    [
+      ['Courant', ['Conseil', 'Photo']],
+      ['Livret', ['Conseil']],
+    ],
+  )
+
+  // The list replaces: an empty one detaches, and the neighbour keeps its own.
+  await call(client, 'manage_activities', { action: 'set_accounts', name: 'Photo', accounts: [] })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    accounts?: string[]
+  }[]
+  assert.deepEqual(
+    listed.map((a) => [a.name, a.accounts]),
+    [
+      ['Conseil', ['Courant', 'Livret']],
+      ['Photo', []],
+    ],
+  )
 })
 
 test('a movement reads back with its account and its counterparty', async () => {

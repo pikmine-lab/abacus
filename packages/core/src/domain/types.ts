@@ -15,8 +15,6 @@ export interface Account {
   openingBalance: string
   openedOn: string | null
   closedOn: string | null
-  /** The activity whose money this is; null for a personal account. */
-  activityId: string | null
 }
 
 /**

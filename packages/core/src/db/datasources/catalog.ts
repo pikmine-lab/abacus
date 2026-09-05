@@ -42,9 +42,68 @@ export async function countRegimeUses(tx: Executor, activityId: string): Promise
 
 export async function countActivityAccounts(tx: Executor, activityId: string): Promise<number> {
   const [row] = await tx<{ count: string }[]>`
-    select count(*) as count from account where activity_id = ${activityId}
+    select count(*) as count from activity_account where activity_id = ${activityId}
   `
   return Number(row!.count)
+}
+
+/** One link of the association: this activity lives on that account. */
+export interface ActivityAccount {
+  activityId: string
+  accountId: string
+}
+
+/** Every link of every activity of the user, for the screens that show them. */
+export async function listActivityAccounts(tx: Executor, userId: string): Promise<ActivityAccount[]> {
+  return await tx<ActivityAccount[]>`
+    select l.activity_id, l.account_id
+    from activity_account l
+    join activity a on a.id = l.activity_id
+    where a.user_id = ${userId}
+  `
+}
+
+export async function replaceActivityAccounts(
+  tx: Executor,
+  activityId: string,
+  accountIds: string[],
+): Promise<void> {
+  await tx`delete from activity_account where activity_id = ${activityId}`
+  if (accountIds.length === 0) return
+  await tx`
+    insert into activity_account ${tx(accountIds.map((accountId) => ({ activityId, accountId })))}
+  `
+}
+
+/**
+ * The activity an account designates, which exists only when the account
+ * carries exactly one: an account two activities live on designates neither.
+ */
+export async function soleActivityOfAccount(tx: Executor, accountId: string): Promise<string | null> {
+  const rows = await tx<{ activityId: string }[]>`
+    select activity_id from activity_account where account_id = ${accountId} limit 2
+  `
+  return rows.length === 1 ? rows[0]!.activityId : null
+}
+
+/** The other business activities still running on any of these accounts. */
+export async function activitiesSharing(
+  tx: Executor,
+  userId: string,
+  activityId: string,
+  accountIds: string[],
+  on: string,
+): Promise<Activity[]> {
+  if (accountIds.length === 0) return []
+  return await tx<Activity[]>`
+    select distinct a.*
+    from activity a
+    join activity_account l on l.activity_id = a.id
+    where a.user_id = ${userId} and a.id <> ${activityId} and a.kind = 'business'
+      and (a.closed_on is null or a.closed_on >= ${on})
+      and l.account_id::text = any(${accountIds}::text[])
+    order by a.name
+  `
 }
 
 export interface CategoryException {

@@ -1,5 +1,5 @@
 import { db, type Executor } from '../db/client.ts'
-import { getActivity, getCategory } from '../db/datasources/catalog.ts'
+import { activitiesSharing, getActivity, getCategory } from '../db/datasources/catalog.ts'
 import {
   type ActivityScope,
   activityScope,
@@ -18,7 +18,8 @@ import {
   readRevenue,
   revenueByClient,
   type Settlement,
-  treasury as treasuryDs,
+  type TreasuryAccount,
+  treasuryAccounts,
   withholdingShare,
 } from '../db/datasources/measures.ts'
 import { DomainError } from '../domain/errors.ts'
@@ -47,6 +48,7 @@ import {
   evaluateLevy,
   type FiscalCalendar,
   type FiscalPeriod,
+  fiscalYearOf,
   fiscalYearRange,
   inputAt,
   type LevyResult,
@@ -92,8 +94,9 @@ import { declareMovement } from './movements.ts'
  * Three figures answer three different questions and must not be confused. A
  * provision is what a period owes; the reserve is what has accrued and not yet
  * been paid, so it is money to keep; what is payable to oneself is a stock
- * (the treasury less that reserve and the commitments of the month), while the
- * net is a flow.
+ * (the treasury the activity's accounts hold, less that reserve, less what any
+ * other activity living on those same accounts owes, less the commitments of
+ * the month), while the net is a flow.
  *
  * A payment against a rule is never a charge of its own: it settles the
  * provision. `deductible` says whether it also reduces the profit, and
@@ -223,14 +226,27 @@ export interface ScheduleEntry {
   paidAmount: number | null
 }
 
+/** What another activity living on the same accounts is keeping for what it owes. */
+export interface SharedReserve {
+  activityId: string
+  activityName: string
+  reserve: number
+}
+
 export interface PayableToSelf {
-  /** What the activity's accounts hold today. */
+  /** The accounts the activity lives on, each saying whom it is shared with. */
+  accounts: TreasuryAccount[]
+  /** What those accounts hold today, whole: nothing is apportioned. */
   treasury: number
   /** The sum of the reserves, VAT included: it is owed. */
   reserve: number
+  /** The reserves of the other activities living on those same accounts. */
+  shared: SharedReserve[]
+  /** Σ of `shared`, taken off too, so the same euro is never promised twice. */
+  sharedReserve: number
   /** Occurrences of the activity's commitments due between today and the end of the month. */
   commitments: number
-  /** `treasury − reserve − commitments`, which may be negative. */
+  /** `treasury − reserve − sharedReserve − commitments`, which may be negative. */
   amount: number
 }
 
@@ -673,6 +689,44 @@ export async function activityStatement(
   fiscalYear: number,
   today: string = todayOf(),
 ): Promise<ActivityStatement> {
+  return await buildStatement(userId, activityId, fiscalYear, today, true)
+}
+
+/**
+ * What the other activities living on the same accounts are keeping for what
+ * they owe. Their reserve is taken off this activity's payable, because the
+ * money is one pile: telling each activity it may take its own share of that
+ * pile would promise twice the euros that will pay the other one's levies.
+ * The prudent reading is the only one that never over-promises, and it
+ * apportions nothing: each activity simply sees everything the accounts still
+ * owe before anything may leave them.
+ *
+ * Each is read on the day this statement is read as of, on whichever of its
+ * own fiscal years holds that day: two activities never share a calendar, and
+ * a reserve is what was owed on a day. Each is read without this step of its
+ * own, which is what stops two activities sharing an account from waiting on
+ * each other forever.
+ */
+async function sharedReserves(userId: string, scope: ActivityScope, asOf: string): Promise<SharedReserve[]> {
+  const others = await activitiesSharing(db(), userId, scope.activityId, scope.sharedAccountIds, asOf)
+  const shared: SharedReserve[] = []
+  for (const other of others) {
+    const cal = { startMonth: other.fiscalYearStartMonth, startDay: other.fiscalYearStartDay }
+    const statement = await buildStatement(userId, other.id, fiscalYearOf(asOf, cal), asOf, false)
+    if (statement.reserve > 0)
+      shared.push({ activityId: other.id, activityName: other.name, reserve: statement.reserve })
+  }
+  return shared
+}
+
+async function buildStatement(
+  userId: string,
+  activityId: string,
+  fiscalYear: number,
+  today: string,
+  /** False while reading another activity's reserve, which is what stops the recursion. */
+  withShared: boolean,
+): Promise<ActivityStatement> {
   const sql = db()
   const activity = await getActivity(sql, userId, activityId)
   if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
@@ -729,13 +783,14 @@ export async function activityStatement(
   // --- the year's own figures -------------------------------------------------
   const measures = await ledger.measures(soFar)
   const otherBasis: RevenueBasis = activity.revenueBasis === 'cash' ? 'invoiced' : 'cash'
-  const [otherRevenue, paidToSelfYear, treasuryNow, clients, categories] = await Promise.all([
+  const [otherRevenue, paidToSelfYear, accounts, clients, categories] = await Promise.all([
     readRevenue(sql, scope, soFar, otherBasis),
     paidToSelfDs(sql, scope, soFar),
-    treasuryDs(sql, scope, today),
+    treasuryAccounts(sql, scope, today),
     revenueByClient(sql, scope, soFar),
     expensesByCategory(sql, scope, soFar),
   ])
+  const treasuryNow = accounts.reduce((sum, a) => sum + a.balance, 0)
 
   // --- rule by rule -----------------------------------------------------------
   const months = monthsOfYear(fiscalYear, cal)
@@ -905,6 +960,8 @@ export async function activityStatement(
 
   // --- what may be taken out --------------------------------------------------
   const reserve = statementLevies.reduce((sum, l) => sum + l.reserve, 0)
+  const shared = withShared ? await sharedReserves(userId, scope, asOf) : []
+  const sharedReserve = shared.reduce((sum, other) => sum + other.reserve, 0)
   const commitments = await activityCommitmentsDue(userId, activityId, today)
   const provisions = statementLevies.filter((l) => !l.passThrough).reduce((sum, l) => sum + l.accrued, 0)
   const provisionsPassThrough = statementLevies
@@ -974,10 +1031,13 @@ export async function activityStatement(
     schedule,
     reserve: round2(reserve),
     payableToSelf: {
+      accounts,
       treasury: round2(treasuryNow),
       reserve: round2(reserve),
+      shared,
+      sharedReserve: round2(sharedReserve),
       commitments: round2(commitments),
-      amount: round2(treasuryNow - reserve - commitments),
+      amount: round2(treasuryNow - reserve - sharedReserve - commitments),
     },
     revenueByClient: clients,
     expensesByCategory: categories,
@@ -1023,7 +1083,7 @@ export interface ConfirmLevyPaymentInput {
   /** What actually left, which is the assessment and not necessarily the estimate. */
   amount: number
   date: string
-  /** The account it left, which the rule's own activity owns. */
+  /** The account it left, one of those the rule's activity lives on. */
   accountId: string
   /** Who was paid: the tax office, the social fund. */
   actorId: string

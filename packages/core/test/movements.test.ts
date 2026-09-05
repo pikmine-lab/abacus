@@ -3,7 +3,12 @@ import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
 import { closeAccount, createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
-import { closeActivity, createActivity, createCategory } from '../src/services/catalog.ts'
+import {
+  closeActivity,
+  createActivity,
+  createCategory,
+  setActivityAccounts,
+} from '../src/services/catalog.ts'
 import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
@@ -100,7 +105,8 @@ test('inherits the activity from the external actor at write time, overridable',
 test('inherits the activity from the account when the actor carries none', async () => {
   const user = await seedUser()
   const activity = await createActivity(user, { name: 'Conseil', kind: 'business' })
-  const pro = await createAccount({ userId: user, name: 'Pro', behavior: 'payment', activityId: activity.id })
+  const pro = await createAccount({ userId: user, name: 'Pro', behavior: 'payment' })
+  await setActivityAccounts(user, activity.id, [pro.id])
   const personal = await createAccount({ userId: user, name: 'Perso', behavior: 'payment' })
   const supplier = await createActor(user, { name: 'Fournisseur' })
   const client = await createActor(user, { name: 'Client', activityId: activity.id })
@@ -148,6 +154,46 @@ test('inherits the activity from the account when the actor carries none', async
     activityId: null,
   })
   assert.equal(excluded.activityId, null)
+})
+
+test('a shared account designates no activity, and the movement waits to be told', async () => {
+  const user = await seedUser()
+  const conseil = await createActivity(user, { name: 'Conseil', kind: 'business' })
+  const photo = await createActivity(user, { name: 'Photo', kind: 'business' })
+  const shared = await createAccount({ userId: user, name: 'Courant', behavior: 'payment' })
+  await setActivityAccounts(user, conseil.id, [shared.id])
+  await setActivityAccounts(user, photo.id, [shared.id])
+  const supplier = await createActor(user, { name: 'Fournisseur' })
+
+  // Two activities live here, so the account says nothing: guessing one of
+  // them would file the money under whichever was declared first.
+  const undecided = await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 40,
+    sourceAccountId: shared.id,
+    targetActorId: supplier.id,
+  })
+  assert.equal(undecided.activityId, null)
+
+  // Naming it is the correction, and it is the only one.
+  const told = await declareMovement(user, {
+    happenedOn: '2026-03-02',
+    amount: 40,
+    sourceAccountId: shared.id,
+    targetActorId: supplier.id,
+    activityId: photo.id,
+  })
+  assert.equal(told.activityId, photo.id)
+
+  // The account goes back to designating one as soon as one is left on it.
+  await setActivityAccounts(user, photo.id, [])
+  const inherited = await declareMovement(user, {
+    happenedOn: '2026-03-03',
+    amount: 40,
+    sourceAccountId: shared.id,
+    targetActorId: supplier.id,
+  })
+  assert.equal(inherited.activityId, conseil.id)
 })
 
 test('refuses a movement dated after the activity closed', async () => {

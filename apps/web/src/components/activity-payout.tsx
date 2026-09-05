@@ -22,13 +22,20 @@ interface Option {
  *
  * Only accounts outside the activity are offered as a target: a transfer
  * between two of its own accounts moves nothing out of it.
+ *
+ * The transfer names the activity, because a transfer inherits none from its
+ * accounts: out of an account shared with another activity, an untagged one
+ * would say nothing about which activity the money left, and would show in
+ * neither statement.
  */
 export function ActivityPayout({
+  activityId,
   amount,
   from,
   to,
   today,
 }: {
+  activityId: string
   /** What is payable today; zero or less leaves the field empty. */
   amount: number
   /** The activity's own accounts, one of which the money leaves. */
@@ -44,8 +51,8 @@ export function ActivityPayout({
     return (
       <p className="text-[11.5px] text-faint">
         {from.length === 0
-          ? 'Aucun compte n’est rattaché à cette activité : rattache-en un dans Réglages pour te verser.'
-          : 'Tous tes comptes sont rattachés à cette activité : il n’y a pas de compte perso où te verser.'}
+          ? 'Cette activité ne vit sur aucun compte : dis-le dans sa fiche, dans Réglages, pour te verser.'
+          : 'Cette activité vit sur tous tes comptes : il n’y a pas de compte perso où te verser.'}
       </p>
     )
 
@@ -72,6 +79,7 @@ export function ActivityPayout({
           <div className="p-4">
             <ActionForm action={declareMovementAction} successLabel="Virement déclaré">
               <input type="hidden" name="type" value="transfer" />
+              <input type="hidden" name="activityId" value={activityId} />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Date" name="date">
                   <DateField name="date" defaultValue={today} />

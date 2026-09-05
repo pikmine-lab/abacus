@@ -9,8 +9,6 @@ export interface NewAccount {
   currency?: string
   openingBalance?: number
   openedOn?: string | null
-  /** The business activity whose money this is; absent or null, a personal account. */
-  activityId?: string | null
 }
 
 export async function insertAccount(tx: Executor, row: NewAccount): Promise<Account> {

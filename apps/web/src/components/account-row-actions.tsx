@@ -46,8 +46,6 @@ export function AccountRowActions({
   behavior,
   openingBalance,
   openedOn,
-  activityId,
-  activities,
   computedBalance,
   closed,
   checks,
@@ -60,9 +58,6 @@ export function AccountRowActions({
   /** What the account already held when it was taken over, and the day it did. */
   openingBalance: string
   openedOn: string | null
-  /** The business activity whose money this is, and the ones it could join. */
-  activityId: string | null
-  activities: { id: string; name: string; closed: boolean }[]
   computedBalance: number
   closed?: boolean
   /** What was already pointed on this account, repairable from the panel. */
@@ -77,9 +72,6 @@ export function AccountRowActions({
   const [reopening, setReopening] = useState(false)
   const [closeState, close, closePending] = useActionState(closeAccountAction, {})
   const [reopenState, reopen, reopenPending] = useActionState(reopenAccountAction, {})
-  // A closed activity takes no new account, but keeps the one it has: the
-  // account's own activity stays in the list so a correction does not drop it.
-  const activityOptions = activities.filter((a) => !a.closed || a.id === activityId)
 
   useEffect(() => {
     if (closeState.ok) setClosing(false)
@@ -157,16 +149,6 @@ export function AccountRowActions({
             <Field label="Type">
               <FormSelect name="behavior" defaultValue={behavior} options={BEHAVIORS} />
             </Field>
-            {activityOptions.length > 0 && (
-              <Field label="Activité">
-                <FormSelect
-                  name="activityId"
-                  noneLabel="(perso)"
-                  defaultValue={activityId ?? ''}
-                  options={activityOptions.map((a) => ({ value: a.id, label: a.name }))}
-                />
-              </Field>
-            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Solde d’ouverture (€)" name="openingBalance">
                 <AmountInput

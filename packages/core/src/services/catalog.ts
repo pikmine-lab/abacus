@@ -1,5 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
+import { getAccount } from '../db/datasources/accounts.ts'
 import {
+  type ActivityAccount,
   type CategoryException,
   countActivityAccounts,
   countRegimeUses,
@@ -8,8 +10,10 @@ import {
   insertActivity,
   insertCategory,
   listActivities as listActivitiesDs,
+  listActivityAccounts as listActivityAccountsDs,
   listCategories as listCategoriesDs,
   listCategoryExceptions as listCategoryExceptionsDs,
+  replaceActivityAccounts,
   replaceCategoryExceptions,
   updateActivityRow,
   updateCategoryRow,
@@ -41,6 +45,8 @@ export interface NewActivity {
   /** Free words for the screen; the code never reads them. */
   regimeLabel?: string | null
   currency?: string
+  /** The accounts the activity lives on, stated as a whole (see setActivityAccounts). */
+  accountIds?: string[]
 }
 
 /**
@@ -72,8 +78,14 @@ function checkSpan(startedOn: string | null, closedOn: string | null): void {
 
 export async function createActivity(userId: string, input: NewActivity): Promise<Activity> {
   checkVat(input.vatRegistered ?? false, input.defaultVatRate ?? null)
+  const { accountIds, ...fields } = input
+  const sql = db()
   try {
-    return await insertActivity(db(), { userId, ...input })
+    return await sql.begin(async (tx) => {
+      const activity = await insertActivity(tx, { userId, ...fields })
+      if (accountIds) await attachAccounts(tx, userId, activity, accountIds)
+      return activity
+    })
   } catch (e) {
     rethrowUnique(e, 'activity_exists', `An activity already uses the name "${input.name}"`)
   }
@@ -102,6 +114,8 @@ export interface ActivityEdit {
   deductibleExpenses?: DeductibleExpenses
   regimeLabel?: string | null
   currency?: string
+  /** The full list of accounts, replacing the current one; absent leaves it alone. */
+  accountIds?: string[]
 }
 
 const EDITABLE = [
@@ -129,13 +143,19 @@ const EDITABLE = [
  * date the rules read a receipt on): both stay correctable while nothing has
  * been built on them, and are refused as soon as a rule or an invoice exists
  * under the activity. The kind is also fixed while accounts are attached, since
- * only a business activity owns accounts and the treasury they make up.
+ * only a business activity lives on accounts and the treasury they make up.
  */
 export async function editActivity(userId: string, id: string, input: ActivityEdit): Promise<Activity> {
   const sql = db()
   try {
     return await sql.begin(async (tx) => {
       const activity = await requireActivity(tx, userId, id)
+      // Stated before the guard below reads what is attached, so that one
+      // correction may both detach the accounts and make the activity
+      // personal, and so that becoming a business and naming its accounts is
+      // a single gesture.
+      if (input.accountIds)
+        await attachAccounts(tx, userId, { ...activity, kind: input.kind ?? activity.kind }, input.accountIds)
       const kindChanges = input.kind !== undefined && input.kind !== activity.kind
       const basisChanges = input.revenueBasis !== undefined && input.revenueBasis !== activity.revenueBasis
       if ((kindChanges || basisChanges) && (await countRegimeUses(tx, id)) > 0)
@@ -146,7 +166,7 @@ export async function editActivity(userId: string, id: string, input: ActivityEd
       if (kindChanges && (await countActivityAccounts(tx, id)) > 0)
         throw new DomainError(
           'activity_has_accounts',
-          `Activity "${activity.name}" owns accounts, which only a business activity does: detach them first`,
+          `Activity "${activity.name}" lives on accounts, which only a business activity does: let go of them first`,
         )
       checkVat(
         input.vatRegistered ?? activity.vatRegistered,
@@ -211,11 +231,58 @@ export async function setActivityCategoryExceptions(
   })
 }
 
-export type { CategoryException }
+export type { ActivityAccount, CategoryException }
 
 /** Every exception of every activity of the user, for the screens that show them. */
 export async function listCategoryExceptions(userId: string): Promise<CategoryException[]> {
   return await listCategoryExceptionsDs(db(), userId)
+}
+
+/**
+ * What the activity lives on. An account exists before the activities that
+ * use it, and several of them may run on the same one: the link is declared
+ * here, from the activity, and never from the account.
+ *
+ * Refused: an account that is not this user's, a closed account (it holds no
+ * money the activity could still count on), and any account at all on a
+ * personal activity, which is an analysis dimension with no treasury.
+ */
+async function attachAccounts(
+  tx: Executor,
+  userId: string,
+  activity: Activity,
+  accountIds: string[],
+): Promise<void> {
+  const unique = [...new Set(accountIds)]
+  if (unique.length > 0 && activity.kind !== 'business')
+    throw new DomainError(
+      'activity_not_business',
+      `Activity "${activity.name}" is personal: only a business activity lives on accounts`,
+    )
+  for (const accountId of unique) {
+    const account = await getAccount(tx, userId, accountId)
+    if (!account) throw new DomainError('account_not_found', `No account ${accountId} for this user`)
+    if (account.closedOn)
+      throw new DomainError(
+        'account_closed',
+        `Account "${account.name}" is closed since ${account.closedOn}: an activity does not start living on it`,
+      )
+  }
+  await replaceActivityAccounts(tx, activity.id, unique)
+}
+
+/** Stated as a whole, so a correction says the full list rather than one link at a time. */
+export async function setActivityAccounts(userId: string, id: string, accountIds: string[]): Promise<void> {
+  const sql = db()
+  await sql.begin(async (tx) => {
+    const activity = await requireActivity(tx, userId, id)
+    await attachAccounts(tx, userId, activity, accountIds)
+  })
+}
+
+/** Every link of every activity of the user, for the screens that show them. */
+export async function listActivityAccounts(userId: string): Promise<ActivityAccount[]> {
+  return await listActivityAccountsDs(db(), userId)
 }
 
 export async function createCategory(

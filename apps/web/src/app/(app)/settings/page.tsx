@@ -1,11 +1,13 @@
 import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
+import { listAccounts } from '@abacus/core/services/accounts'
 import { listActorsWithAliases } from '@abacus/core/services/actors'
 import {
   CATEGORY_SORTS,
   DEFAULT_CATEGORY_SORT,
   DEFAULT_NAME_SORT,
   listActivities,
+  listActivityAccounts,
   listCategories,
   listCategoryExceptions,
   NAME_SORTS,
@@ -42,14 +44,19 @@ export default async function SettingsPage({
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, exceptions, actors, reading] = await Promise.all([
+  const [categories, activities, exceptions, links, accounts, actors, reading] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
     listCategoryExceptions(userId),
+    listActivityAccounts(userId),
+    listAccounts(userId),
     listActorsWithAliases(userId),
     readingPreference(userId),
   ])
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }))
+  // A closed account holds nothing an activity could still count on, so it is
+  // not offered; one already attached before its closure keeps its link.
+  const accountOptions = accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))
 
   return (
     <>
@@ -94,13 +101,13 @@ export default async function SettingsPage({
 
         <Section
           title="Activités"
-          description="la sphère économique : héritée de l’acteur, puis du compte ; surchargeable par mouvement."
+          description="la sphère économique : héritée de l’acteur, puis du compte quand il n’en sert qu’une ; surchargeable par mouvement."
           action={
             <div className="flex items-center gap-2">
               {activities.length > 1 && (
                 <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
               )}
-              <NewActivitySheet categories={categoryOptions} />
+              <NewActivitySheet categories={categoryOptions} accounts={accountOptions} />
             </div>
           }
         >
@@ -110,6 +117,8 @@ export default async function SettingsPage({
             <ActivityRows
               activities={sortByName(activities, activitySort.current)}
               categories={categoryOptions}
+              accounts={accountOptions}
+              links={links}
               exceptions={exceptions}
               today={today()}
             />

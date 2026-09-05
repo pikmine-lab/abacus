@@ -111,7 +111,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .nullable()
                 .optional()
                 .describe(
-                  'Sphere (e.g. Freelance). Omitted: inherited from the actor. null: force "none" (personal)',
+                  'Sphere (e.g. Freelance). Omitted: inherited from the actor, then from the account when a single activity lives on it, an account shared by two designating neither. null: force "none" (personal)',
                 ),
               month: z
                 .string()

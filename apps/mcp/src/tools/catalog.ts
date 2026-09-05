@@ -28,9 +28,11 @@ import {
   editActivity,
   editCategory,
   listActivities,
+  listActivityAccounts,
   listCategories,
   listCategoryExceptions,
   reopenActivity,
+  setActivityAccounts,
   setActivityCategoryExceptions,
   sortCategories,
 } from '@abacus/core/services/catalog'
@@ -56,7 +58,7 @@ function numberOrNull(value: string | null): number | null {
  * the regime fields describe a business, and would be noise on a sphere that
  * has none.
  */
-function describeActivity(act: Activity, exceptions: string[]) {
+function describeActivity(act: Activity, exceptions: string[], accounts: string[]) {
   const base = {
     name: act.name,
     kind: act.kind,
@@ -66,6 +68,7 @@ function describeActivity(act: Activity, exceptions: string[]) {
   if (act.kind === 'personal') return base
   return {
     ...base,
+    accounts,
     regimeLabel: act.regimeLabel ?? undefined,
     fiscalYearStart: `${String(act.fiscalYearStartMonth).padStart(2, '0')}-${String(act.fiscalYearStartDay).padStart(2, '0')}`,
     revenueBasis: act.revenueBasis,
@@ -91,11 +94,21 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
       .sort()
   }
 
+  /** The accounts one activity lives on, by the names the user gave them. */
+  async function accountNames(activityId: string): Promise<string[]> {
+    const [links, accounts] = await Promise.all([listActivityAccounts(userId), listAccounts(userId)])
+    const accountName = new Map(accounts.map((acc) => [acc.id, acc.name]))
+    return links
+      .filter((l) => l.activityId === activityId)
+      .map((l) => accountName.get(l.accountId)!)
+      .sort()
+  }
+
   server.registerTool(
     'manage_accounts',
     {
       description:
-        "Manages the user's accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution, the behavior, the opening or the activity), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). An account that already existed before this ledger is declared with the money it already held: openingBalance on openedOn, never as a movement from an invented actor, which would show as a huge income that never happened. That opening is not a flow: no analysis counts it, and every balance starts from it, so the first balance check reports no gap. An account may belong to a business activity (activity, by name): its balance is then that activity's treasury, a transfer from it to an account without an activity is the owner paying themselves, and its expenses and incomes inherit the activity when their actor carries none. Accounts mirror the user's real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history. Every listed account carries lastCheckedOn, the day its balance was last confronted with reality: sortBy: checked puts the stalest first, which is how \"what should I point\" is answered, and the answer repeats the order used.",
+        'Manages the user\'s accounts. Actions: list (with balances), create (behavior: payment = current account carrying daily spending, savings = savings book, investment = brokerage/crypto), update (correct the name, the institution, the behavior or the opening), close (the account keeps its history, it just stops accepting later movements), reopen (undo a close). An account that already existed before this ledger is declared with the money it already held: openingBalance on openedOn, never as a movement from an invented actor, which would show as a huge income that never happened. That opening is not a flow: no analysis counts it, and every balance starts from it, so the first balance check reports no gap. An account is never attached to an activity from here: an account exists before the activities that use it, and several of them may live on the same one, so it is the activity that declares what it lives on (manage_activities, accounts). Each listed account answers with the activities living on it, if any. Accounts mirror the user\'s real banking setup: never create one without an explicit request, and correct a wrong one rather than adding a second, since closing and recreating would mean redeclaring its whole history. Every listed account carries lastCheckedOn, the day its balance was last confronted with reality: sortBy: checked puts the stalest first, which is how "what should I point" is answered, and the answer repeats the order used.',
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'update', 'close', 'reopen']),
         name: z
@@ -119,12 +132,6 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           .describe(
             'create/update: the day the account opened, which is the day its opening balance counts from',
           ),
-        activity: z
-          .string()
-          .optional()
-          .describe(
-            'create/update: the business activity whose money this account is, by name (see manage_activities), or "none" to make it personal again. Only a business activity owns accounts.',
-          ),
         closedOn: isoDate.optional().describe('close: defaults to today'),
         sortBy: z
           .enum(['name', 'balance', 'checked'])
@@ -139,8 +146,20 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
       run(async () => {
         if (a.action === 'list') {
           const sort = resolveSort(ACCOUNT_SORTS, DEFAULT_ACCOUNT_SORT, a.sortBy, a.direction)
-          const [accounts, activities] = await Promise.all([listAccounts(userId), listActivities(userId)])
+          const [accounts, activities, links] = await Promise.all([
+            listAccounts(userId),
+            listActivities(userId),
+            listActivityAccounts(userId),
+          ])
           const activityName = new Map(activities.map((act) => [act.id, act.name]))
+          // An account carries as many activities as live on it, so the answer
+          // says all of them: naming one would hide the sharing, which is
+          // exactly what changes how its balance may be read.
+          const livingOn = (accountId: string) =>
+            links
+              .filter((l) => l.accountId === accountId)
+              .map((l) => activityName.get(l.activityId)!)
+              .sort()
           // The day each one was last pointed comes along: it is what "checked"
           // ranks on, and an order whose criterion the answer does not show
           // could not be checked by whoever reads it.
@@ -152,22 +171,23 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           )
           return ok({
             order: orderedBy(sort),
-            accounts: sortAccounts(checked, sort).map(({ account: acc, lastCheckedOn }) => ({
-              name: acc.name,
-              behavior: acc.behavior,
-              institution: acc.institution ?? undefined,
-              activity: acc.activityId ? activityName.get(acc.activityId) : undefined,
-              balance: Number(acc.balance),
-              openingBalance: Number(acc.openingBalance) || undefined,
-              openedOn: acc.openedOn ?? undefined,
-              closedOn: acc.closedOn ?? undefined,
-              lastCheckedOn: lastCheckedOn ?? 'never checked',
-            })),
+            accounts: sortAccounts(checked, sort).map(({ account: acc, lastCheckedOn }) => {
+              const living = livingOn(acc.id)
+              return {
+                name: acc.name,
+                behavior: acc.behavior,
+                institution: acc.institution ?? undefined,
+                activities: living.length > 0 ? living : undefined,
+                balance: Number(acc.balance),
+                openingBalance: Number(acc.openingBalance) || undefined,
+                openedOn: acc.openedOn ?? undefined,
+                closedOn: acc.closedOn ?? undefined,
+                lastCheckedOn: lastCheckedOn ?? 'never checked',
+              }
+            }),
           })
         }
         if (!a.name) return fail(`${a.action} requires name.`)
-        const activity = clearable(a.activity)
-        const activityId = activity ? (await requireActivityByName(userId, activity)).id : activity
         if (a.action === 'create') {
           if (!a.behavior) return fail('create requires behavior (payment, savings or investment).')
           const account = await createAccount({
@@ -177,7 +197,6 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             institution: a.institution ?? null,
             openingBalance: a.openingBalance,
             openedOn: a.openedOn ?? null,
-            activityId,
           })
           return ok({ accountId: account.id, name: account.name })
         }
@@ -189,14 +208,12 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             behavior: a.behavior,
             openingBalance: a.openingBalance,
             openedOn: a.openedOn,
-            activityId,
           })
           return ok({
             accountId: updated.id,
             name: updated.name,
             behavior: updated.behavior,
             institution: updated.institution ?? undefined,
-            activity: activity ?? undefined,
             openingBalance: Number(updated.openingBalance) || undefined,
             openedOn: updated.openedOn ?? undefined,
           })
@@ -378,9 +395,9 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_activities',
     {
       description:
-        "Manages activities: the user's economic spheres. Two kinds. A personal activity is an analysis dimension and nothing more (a rental, a hobby that brings in three receipts): it partitions the analyses. A business activity is an independent activity the user runs: it has a regime, a fiscal year, accounts of its own (manage_accounts, activity), invoices, and later the rules that compute what it owes. A movement without an activity is personal. An activity reaches a movement through its external actor first (a client attached to it passes it on, manage_actors), then through the account the money touched when the actor carries none; a transfer between accounts inherits nothing. An activity never changes regime. Its kind and its revenue basis stay correctable only until a rule or an invoice exists under it; from then on, a regime that ends (a flat-rate scheme left for real costs, a business closed in one country and another opened elsewhere) is this activity closed on its last day (action close) and a new activity created with the new settings, so that each year's statement reads the rules it was computed with. Never rewrite history under a new regime. Settings of a business activity, all of them the regime's facts to ask the user about, never to assume: revenueBasis, which date brings a receipt into the revenue and into the bases of the rules, cash (the day the money arrived) or invoiced (the day the invoice was issued); fiscalYearStartMonth and fiscalYearStartDay, the day the fiscal year opens (1 January for most regimes, 6 April in the UK), every \"year\" a rule speaks of being that year; vatRegistered and defaultVatRate (percent), whether the activity charges VAT and the rate proposed on a new invoice, a client's own default possibly differing; deductibleExpenses, all (every expense of the activity reduces its profit, as under a real-costs regime) or none (a flat-rate regime deducts nothing), with set_exceptions naming the categories that go against that policy (left out when all, deductible anyway when none); regimeLabel, free words the screen shows for the regime, written as the user names it, never a switch the code reads; currency, EUR by default. Actions: list, create, update (rename or correct settings), close (closedOn defaults to today; a movement dated later is refused under it), reopen (undo a close), set_exceptions (the full list of exception categories by name, an empty list clearing them). Create very few: an activity partitions the finances, it is not a tag system.",
+        "Manages activities: the user's economic spheres. Two kinds. A personal activity is an analysis dimension and nothing more (a rental, a hobby that brings in three receipts): it partitions the analyses. A business activity is an independent activity the user runs: it has a regime, a fiscal year, the accounts it lives on (accounts, here), invoices, and later the rules that compute what it owes. A movement without an activity is personal. An activity reaches a movement through its external actor first (a client attached to it passes it on, manage_actors), then through the account the money touched, but only when a single activity lives on that account: an account two activities share designates neither, and the movement stays without an activity until someone names it. A transfer between accounts inherits nothing. An activity never changes regime. Its kind and its revenue basis stay correctable only until a rule or an invoice exists under it; from then on, a regime that ends (a flat-rate scheme left for real costs, a business closed in one country and another opened elsewhere) is this activity closed on its last day (action close) and a new activity created with the new settings, so that each year's statement reads the rules it was computed with. Never rewrite history under a new regime. Settings of a business activity, all of them the regime's facts to ask the user about, never to assume: revenueBasis, which date brings a receipt into the revenue and into the bases of the rules, cash (the day the money arrived) or invoiced (the day the invoice was issued); fiscalYearStartMonth and fiscalYearStartDay, the day the fiscal year opens (1 January for most regimes, 6 April in the UK), every \"year\" a rule speaks of being that year; vatRegistered and defaultVatRate (percent), whether the activity charges VAT and the rate proposed on a new invoice, a client's own default possibly differing; deductibleExpenses, all (every expense of the activity reduces its profit, as under a real-costs regime) or none (a flat-rate regime deducts nothing), with set_exceptions naming the categories that go against that policy (left out when all, deductible anyway when none); regimeLabel, free words the screen shows for the regime, written as the user names it, never a switch the code reads; currency, EUR by default; accounts, what the activity lives on. An account is declared from here and never from the account, because an account exists before the activities that use it, and several may run on the same one: a user starting a second activity on the bank account they already have declares that account on both, rather than opening a second one. What sharing changes is worth telling the user: the treasury of each activity is the whole balance of those accounts, nothing is apportioned, and what each may pay itself takes off what every activity on those accounts owes, so the same money is never promised twice. Actions: list, create, update (rename or correct settings), close (closedOn defaults to today; a movement dated later is refused under it), reopen (undo a close), set_accounts (the full list of accounts by name, an empty list detaching them all), set_exceptions (the full list of exception categories by name, an empty list clearing them). Create very few: an activity partitions the finances, it is not a tag system.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'update', 'close', 'reopen', 'set_exceptions']),
+        action: z.enum(['list', 'create', 'update', 'close', 'reopen', 'set_accounts', 'set_exceptions']),
         name: z.string().optional().describe('create: the name; other actions: the activity, by name'),
         newName: z.string().optional().describe('update: the corrected name'),
         kind: z
@@ -428,6 +445,12 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           .length(3)
           .optional()
           .describe("create/update: ISO 4217 code of the activity's currency (default EUR)"),
+        accounts: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'create/update/set_accounts: the full list of accounts the activity lives on, by name; it replaces the current one, and [] detaches them all. An account may serve several activities: name it on each',
+          ),
         categories: z
           .array(z.string())
           .optional()
@@ -439,12 +462,15 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     async (a) =>
       run(async () => {
         if (a.action === 'list') {
-          const [activities, exceptions, categories] = await Promise.all([
+          const [activities, exceptions, categories, links, accounts] = await Promise.all([
             listActivities(userId),
             listCategoryExceptions(userId),
             listCategories(userId),
+            listActivityAccounts(userId),
+            listAccounts(userId),
           ])
           const categoryName = new Map(categories.map((c) => [c.id, c.name]))
+          const accountName = new Map(accounts.map((acc) => [acc.id, acc.name]))
           return ok(
             activities.map((act) =>
               describeActivity(
@@ -452,6 +478,10 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
                 exceptions
                   .filter((e) => e.activityId === act.id)
                   .map((e) => categoryName.get(e.categoryId)!)
+                  .sort(),
+                links
+                  .filter((l) => l.activityId === act.id)
+                  .map((l) => accountName.get(l.accountId)!)
                   .sort(),
               ),
             ),
@@ -470,16 +500,25 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           regimeLabel: clearable(a.regimeLabel),
           currency: a.currency?.toUpperCase(),
         }
+        // The accounts are addressed by name here and by id below, and an
+        // unknown one fails the whole call rather than half of it.
+        const accountIds = a.accounts
+          ? await Promise.all(a.accounts.map(async (n) => (await requireAccountByName(userId, n)).id))
+          : undefined
         if (a.action === 'create') {
-          const activity = await createActivity(userId, { name: a.name, ...settings })
-          return ok({ activityId: activity.id, ...describeActivity(activity, []) })
+          const activity = await createActivity(userId, { name: a.name, ...settings, accountIds })
+          return ok({ activityId: activity.id, ...describeActivity(activity, [], a.accounts ?? []) })
         }
         const target = await requireActivityByName(userId, a.name)
         if (a.action === 'update') {
-          const updated = await editActivity(userId, target.id, { name: a.newName, ...settings })
-          // The exceptions it already carries come back with it: an answer
-          // showing none would read as a correction having dropped them.
-          return ok({ activityId: updated.id, ...describeActivity(updated, await exceptionNames(target.id)) })
+          const updated = await editActivity(userId, target.id, { name: a.newName, ...settings, accountIds })
+          // The exceptions and the accounts it already carries come back with
+          // it: an answer showing none would read as a correction having
+          // dropped them.
+          return ok({
+            activityId: updated.id,
+            ...describeActivity(updated, await exceptionNames(target.id), await accountNames(target.id)),
+          })
         }
         if (a.action === 'close') {
           const closed = await closeActivity(userId, target.id, a.closedOn)
@@ -488,6 +527,12 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
         if (a.action === 'reopen') {
           const reopened = await reopenActivity(userId, target.id)
           return ok({ activityId: reopened.id, name: reopened.name, closedOn: null })
+        }
+        if (a.action === 'set_accounts') {
+          if (!accountIds)
+            return fail('set_accounts requires accounts: the full list, [] to detach them all.')
+          await setActivityAccounts(userId, target.id, accountIds)
+          return ok({ activityId: target.id, name: target.name, accounts: a.accounts })
         }
         if (!a.categories) return fail('set_exceptions requires categories: the full list, [] to clear it.')
         const ids = await Promise.all(
