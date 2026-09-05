@@ -6,6 +6,9 @@ export interface NewActor {
   name: string
   activityId?: string | null
   note?: string | null
+  /** Percent, what this client does to an invoice; absent means "not stated". */
+  invoiceVatRate?: number | null
+  invoiceWithholdingRate?: number | null
 }
 
 export async function insertActor(tx: Executor, row: NewActor): Promise<Actor> {

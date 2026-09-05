@@ -76,7 +76,7 @@ test('computes account balances from movements', async () => {
 test('inherits the activity from the external actor at write time, overridable', async () => {
   const user = await seedUser()
   const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   const client = await createActor(user, { name: 'ACME', activityId: freelance.id })
 
   const inherited = await declareMovement(user, {

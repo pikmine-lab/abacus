@@ -1,7 +1,16 @@
 'use server'
 
 import { auth } from '@abacus/core/auth'
-import type { AccountBehavior, AssetNature, InstrumentKind, Judgment, PeriodUnit } from '@abacus/core/domain'
+import type {
+  AccountBehavior,
+  ActivityKind,
+  AssetNature,
+  DeductibleExpenses,
+  InstrumentKind,
+  Judgment,
+  PeriodUnit,
+  RevenueBasis,
+} from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
 import { addAlias, createActor, editActor, mergeActors, resolveActor } from '@abacus/core/services/actors'
@@ -11,7 +20,15 @@ import {
   deleteBalanceCheck,
   recordBalanceCheck,
 } from '@abacus/core/services/balanceChecks'
-import { createActivity, createCategory, editActivity, editCategory } from '@abacus/core/services/catalog'
+import {
+  closeActivity,
+  createActivity,
+  createCategory,
+  editActivity,
+  editCategory,
+  reopenActivity,
+  setActivityCategoryExceptions,
+} from '@abacus/core/services/catalog'
 import {
   cancelCommitment,
   changeAmount,
@@ -119,6 +136,14 @@ const FR: Record<string, string> = {
   category_not_found: 'Cette catégorie n’existe plus.',
   activity_exists: 'Une activité porte déjà ce nom.',
   activity_not_found: 'Cette activité n’existe plus.',
+  activity_closed: 'Cette activité est close à cette date.',
+  activity_regime_fixed:
+    'Cette activité porte des règles ou des factures : elle ne change pas de régime. Clos-la et crée la suivante.',
+  activity_has_accounts: 'Des comptes sont rattachés à cette activité : détache-les d’abord.',
+  activity_not_business: 'Seule une activité indépendante porte des comptes.',
+  vat_rate_needs_registration: 'Un taux de TVA suppose une activité assujettie.',
+  activity_closes_before_start: 'La clôture précède le début de l’activité.',
+  bad_rate: 'Un taux est un pourcentage entre 0 et 100.',
   check_not_found: 'Ce pointage n’existe plus.',
   check_already_settled: 'Un ajustement solde déjà ce pointage.',
   financing_has_no_lock_in: 'Un financement s’arrête à sa dernière échéance : pas de date de fin.',
@@ -206,6 +231,17 @@ function opt(formData: FormData, key: string): string | undefined {
 /** An amount left empty is an absence, not a zero. */
 function optNum(formData: FormData, key: string): number | undefined {
   return opt(formData, key) === undefined ? undefined : num(formData, key)
+}
+
+/** Optional percentages: empty is "not stated", anything else stays within 0 and 100. */
+function checkRates(formData: FormData, names: string[]): Record<string, string> | null {
+  const errors: Record<string, string> = {}
+  for (const name of names) {
+    if (opt(formData, name) === undefined) continue
+    const value = num(formData, name)
+    if (!(value >= 0 && value <= 100)) errors[name] = 'Entre 0 et 100.'
+  }
+  return Object.keys(errors).length > 0 ? errors : null
 }
 
 /**
@@ -474,6 +510,7 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
       institution: opt(formData, 'institution') ?? null,
       openingBalance: optNum(formData, 'openingBalance'),
       openedOn: opt(formData, 'openedOn') ?? null,
+      activityId: opt(formData, 'activityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -498,6 +535,7 @@ export async function editAccountAction(_prev: FormState, formData: FormData): P
       behavior: str(formData, 'behavior') as AccountBehavior,
       openingBalance: optNum(formData, 'openingBalance') ?? 0,
       openedOn: opt(formData, 'openedOn'),
+      activityId: opt(formData, 'activityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -880,12 +918,103 @@ export async function editCategoryAction(_prev: FormState, formData: FormData): 
   return { ok: true }
 }
 
-export async function editActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+/**
+ * The regime of an activity, as the panel states it. A personal activity sends
+ * its kind alone and everything else falls back to the defaults, which are what
+ * "no regime" is; a business one sends every field, so what is not filled is
+ * cleared, not kept.
+ */
+function activitySettings(formData: FormData) {
+  const vatRegistered = formData.get('vatRegistered') !== null
+  return {
+    kind: str(formData, 'kind') as ActivityKind,
+    startedOn: opt(formData, 'startedOn') ?? null,
+    fiscalYearStartMonth: optNum(formData, 'fiscalYearStartMonth'),
+    fiscalYearStartDay: optNum(formData, 'fiscalYearStartDay'),
+    revenueBasis: opt(formData, 'revenueBasis') as RevenueBasis | undefined,
+    vatRegistered,
+    defaultVatRate: vatRegistered ? (optNum(formData, 'defaultVatRate') ?? null) : null,
+    deductibleExpenses: opt(formData, 'deductibleExpenses') as DeductibleExpenses | undefined,
+    regimeLabel: opt(formData, 'regimeLabel') ?? null,
+    currency: opt(formData, 'currency'),
+  }
+}
+
+function activityInvalid(formData: FormData): Record<string, string> | null {
+  const errors = { ...checkFields(formData, [{ name: 'name' }]), ...checkRates(formData, ['defaultVatRate']) }
+  const day = optNum(formData, 'fiscalYearStartDay')
+  if (day !== undefined && !(Number.isInteger(day) && day >= 1 && day <= 31))
+    errors.fiscalYearStartDay = 'Entre 1 et 31.'
+  return Object.keys(errors).length > 0 ? errors : null
+}
+
+export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = activityInvalid(formData)
   if (invalid) return { fields: invalid }
   try {
-    await editActivity(userId, str(formData, 'activityId'), str(formData, 'name'))
+    const activity = await createActivity(userId, {
+      name: str(formData, 'name'),
+      ...activitySettings(formData),
+    })
+    const exceptions = formData.getAll('exceptionCategoryIds').map(String)
+    if (exceptions.length > 0) await setActivityCategoryExceptions(userId, activity.id, exceptions)
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function editActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = activityInvalid(formData)
+  if (invalid) return { fields: invalid }
+  try {
+    await editActivity(userId, str(formData, 'activityId'), {
+      name: str(formData, 'name'),
+      ...activitySettings(formData),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function closeActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await closeActivity(userId, str(formData, 'activityId'), str(formData, 'closedOn'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function reopenActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await reopenActivity(userId, str(formData, 'activityId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** The whole list at once: what is unchecked is dropped, which is what a checklist says. */
+export async function setActivityExceptionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await setActivityCategoryExceptions(
+      userId,
+      str(formData, 'activityId'),
+      formData.getAll('exceptionCategoryIds').map(String),
+    )
   } catch (e) {
     return { error: frError(e) }
   }
@@ -900,13 +1029,18 @@ export async function editActivityAction(_prev: FormState, formData: FormData): 
  */
 export async function editActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
-  if (invalid) return { fields: invalid }
+  const invalid = {
+    ...checkFields(formData, [{ name: 'name' }]),
+    ...checkRates(formData, ['invoiceVatRate', 'invoiceWithholdingRate']),
+  }
+  if (Object.keys(invalid).length > 0) return { fields: invalid }
   try {
     await editActor(userId, str(formData, 'actorId'), {
       name: str(formData, 'name'),
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
+      invoiceVatRate: optNum(formData, 'invoiceVatRate') ?? null,
+      invoiceWithholdingRate: optNum(formData, 'invoiceWithholdingRate') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -957,19 +1091,6 @@ export async function createActorAction(_prev: FormState, formData: FormData): P
   if (invalid) return { fields: invalid }
   try {
     await createActor(userId, { name: str(formData, 'name') })
-  } catch (e) {
-    return { error: frError(e) }
-  }
-  refreshAll()
-  return { ok: true }
-}
-
-export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
-  if (invalid) return { fields: invalid }
-  try {
-    await createActivity(userId, str(formData, 'name'))
   } catch (e) {
     return { error: frError(e) }
   }

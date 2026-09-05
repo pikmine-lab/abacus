@@ -45,7 +45,7 @@ test('rejects a duplicate name or alias', async () => {
 
 test('merging reassigns references and keeps the absorbed name as alias', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   const keep = await createActor(user, { name: 'ACME', activityId: freelance.id })
   const dup = await createActor(user, { name: 'ACME Corp' })
   const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
@@ -65,7 +65,7 @@ test('merging reassigns references and keeps the absorbed name as alias', async 
 
 test('an actor is read with the names that also resolve to it', async () => {
   const user = await seedUser()
-  const freelance = await createActivity(user, 'Freelance')
+  const freelance = await createActivity(user, { name: 'Freelance' })
   await createActor(user, { name: "McDonald's", aliases: ['Macdo', 'McDo'] })
   await createActor(user, { name: 'ACME', activityId: freelance.id })
 
