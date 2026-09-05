@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import { db } from '../src/db/client.ts'
+import type { DomainError } from '../src/domain/errors.ts'
 import type { Levy } from '../src/domain/types.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { activityStatement, confirmLevyPayment } from '../src/services/activityStatement.ts'
@@ -681,9 +682,10 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
 test('an activity that is only an analysis dimension has no statement', async () => {
   const user = await seedUser()
   const activityId = await businessActivity(user, 'Household', { kind: 'personal' })
+  // The same refusal as everywhere else in the domain, under the same code.
   await assert.rejects(
     () => activityStatement(user, activityId, 2027, '2027-06-01'),
-    /not an analysis|dimension/i,
+    (e: DomainError) => e.code === 'activity_not_business',
   )
 })
 

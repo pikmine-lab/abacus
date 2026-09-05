@@ -107,7 +107,7 @@ export const GUIDANCE: Record<string, string> = {
   activity_has_accounts:
     'Accounts are attached to this activity, and only a business activity owns accounts. Detach them first (manage_accounts, activity: "none") if it really is personal.',
   activity_not_business:
-    'Only a business activity owns accounts, issues invoices and carries rules, inputs and thresholds; a personal one is an analysis dimension and nothing more. Check the activity name, make it a business with manage_activities (kind: business), or leave the account without an activity.',
+    'Only a business activity owns accounts, issues invoices, carries rules, inputs and thresholds, and has a statement; a personal one is an analysis dimension and nothing more. Check the activity name, make it a business with manage_activities (kind: business), or leave the account without an activity.',
   vat_rate_needs_registration:
     'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
   activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',
@@ -152,8 +152,6 @@ export const GUIDANCE: Record<string, string> = {
     "A parameter of another amount form was passed. Pass only the parameter of the chosen amountForm; when changing the form on update, the old form's parameter is dropped on its own.",
   modifier_single_duration:
     'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
-  not_a_business_activity:
-    'This activity is an analysis dimension, nothing more: it carries no regime, so it has no statement. Only an activity declared as a business has one.',
   levy_has_no_settlement_category:
     'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
   levy_misconfigured:

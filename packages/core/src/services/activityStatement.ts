@@ -675,7 +675,7 @@ export async function activityStatement(
   if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
   if (activity.kind !== 'business')
     throw new DomainError(
-      'not_a_business_activity',
+      'activity_not_business',
       `"${activity.name}" is an analysis dimension, not a business: it has no regime, and no statement.`,
     )
 
