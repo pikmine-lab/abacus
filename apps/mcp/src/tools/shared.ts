@@ -152,7 +152,6 @@ export const GUIDANCE: Record<string, string> = {
     'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
   not_a_business_activity:
     'This activity is an analysis dimension, nothing more: it carries no regime, so it has no statement. Only an activity declared as a business has one.',
-  levy_not_found: 'No such rule for this user. Get the current names from get_activity_statement.',
   levy_has_no_settlement_category:
     'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
   levy_misconfigured:
