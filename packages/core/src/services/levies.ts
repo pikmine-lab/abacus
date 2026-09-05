@@ -460,8 +460,18 @@ async function normalize(
   }
 }
 
+/**
+ * The same gesture inside a transaction someone else owns. Applying a regime
+ * model writes the activity, its rules, its modifiers, its thresholds and its
+ * stated figures together, or writes none of them: a half-configured regime
+ * would compute wrong figures without saying so.
+ */
+export async function createLevyIn(tx: Executor, userId: string, input: NewLevy): Promise<Levy> {
+  return await insertLevy(tx, await normalize(tx, userId, input))
+}
+
 export async function createLevy(userId: string, input: NewLevy): Promise<Levy> {
-  return await db().begin(async (tx) => await insertLevy(tx, await normalize(tx, userId, input)))
+  return await db().begin(async (tx) => await createLevyIn(tx, userId, input))
 }
 
 /** Corrects a mistyped rule in place. A value that changed is `supersedeLevy`. */
@@ -628,11 +638,18 @@ function checkModifier(input: NewModifier): Record<string, unknown> {
   }
 }
 
+export async function addModifierIn(
+  tx: Executor,
+  userId: string,
+  levyId: string,
+  input: NewModifier,
+): Promise<LevyModifier> {
+  await requireLevy(tx, userId, levyId)
+  return await insertModifier(tx, { ...checkModifier(input), levyId })
+}
+
 export async function addModifier(userId: string, levyId: string, input: NewModifier): Promise<LevyModifier> {
-  return await db().begin(async (tx) => {
-    await requireLevy(tx, userId, levyId)
-    return await insertModifier(tx, { ...checkModifier(input), levyId })
-  })
+  return await db().begin(async (tx) => await addModifierIn(tx, userId, levyId, input))
 }
 
 async function requireModifier(tx: Executor, userId: string, id: string): Promise<LevyModifier> {
@@ -680,21 +697,28 @@ export interface NewInput {
   note?: string | null
 }
 
-export async function setInput(userId: string, activityId: string, input: NewInput): Promise<ActivityInput> {
-  return await db().begin(async (tx) => {
-    await requireBusinessActivity(tx, userId, activityId)
-    const name = input.name.trim()
-    if (!name) throw new DomainError('input_value_invalid', 'name must be given')
-    if (!Number.isFinite(input.value)) throw new DomainError('input_value_invalid', 'value must be a number')
-    return await upsertInput(tx, {
-      userId,
-      activityId,
-      name,
-      validFrom: input.validFrom,
-      value: input.value,
-      note: input.note?.trim() || null,
-    })
+export async function setInputIn(
+  tx: Executor,
+  userId: string,
+  activityId: string,
+  input: NewInput,
+): Promise<ActivityInput> {
+  await requireBusinessActivity(tx, userId, activityId)
+  const name = input.name.trim()
+  if (!name) throw new DomainError('input_value_invalid', 'name must be given')
+  if (!Number.isFinite(input.value)) throw new DomainError('input_value_invalid', 'value must be a number')
+  return await upsertInput(tx, {
+    userId,
+    activityId,
+    name,
+    validFrom: input.validFrom,
+    value: input.value,
+    note: input.note?.trim() || null,
   })
+}
+
+export async function setInput(userId: string, activityId: string, input: NewInput): Promise<ActivityInput> {
+  return await db().begin(async (tx) => await setInputIn(tx, userId, activityId, input))
 }
 
 export async function listInputs(userId: string, activityId: string): Promise<ActivityInput[]> {
@@ -754,15 +778,22 @@ function checkThreshold(input: NewThreshold): Record<string, unknown> {
   }
 }
 
+export async function createThresholdIn(
+  tx: Executor,
+  userId: string,
+  activityId: string,
+  input: NewThreshold,
+): Promise<Threshold> {
+  await requireBusinessActivity(tx, userId, activityId)
+  return await insertThreshold(tx, { ...checkThreshold(input), userId, activityId })
+}
+
 export async function createThreshold(
   userId: string,
   activityId: string,
   input: NewThreshold,
 ): Promise<Threshold> {
-  return await db().begin(async (tx) => {
-    await requireBusinessActivity(tx, userId, activityId)
-    return await insertThreshold(tx, { ...checkThreshold(input), userId, activityId })
-  })
+  return await db().begin(async (tx) => await createThresholdIn(tx, userId, activityId, input))
 }
 
 export async function editThreshold(userId: string, id: string, patch: ThresholdEdit): Promise<Threshold> {

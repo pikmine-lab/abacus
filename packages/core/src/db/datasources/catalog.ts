@@ -14,6 +14,7 @@ export interface NewActivityRow {
   defaultVatRate?: number | null
   deductibleExpenses?: Activity['deductibleExpenses']
   regimeLabel?: string | null
+  jurisdiction?: string | null
   currency?: string
 }
 

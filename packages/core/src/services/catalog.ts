@@ -44,6 +44,8 @@ export interface NewActivity {
   deductibleExpenses?: DeductibleExpenses
   /** Free words for the screen; the code never reads them. */
   regimeLabel?: string | null
+  /** Where the activity is run, in words. Shown, never read by a calculation. */
+  jurisdiction?: string | null
   currency?: string
   /** The accounts the activity lives on, stated as a whole (see setActivityAccounts). */
   accountIds?: string[]
@@ -76,16 +78,22 @@ function checkSpan(startedOn: string | null, closedOn: string | null): void {
     )
 }
 
-export async function createActivity(userId: string, input: NewActivity): Promise<Activity> {
+/**
+ * The same gesture inside a transaction someone else owns: applying a regime
+ * model writes the activity and its rules together, or writes neither.
+ */
+export async function createActivityIn(tx: Executor, userId: string, input: NewActivity): Promise<Activity> {
   checkVat(input.vatRegistered ?? false, input.defaultVatRate ?? null)
   const { accountIds, ...fields } = input
+  const activity = await insertActivity(tx, { userId, ...fields })
+  if (accountIds) await attachAccounts(tx, userId, activity, accountIds)
+  return activity
+}
+
+export async function createActivity(userId: string, input: NewActivity): Promise<Activity> {
   const sql = db()
   try {
-    return await sql.begin(async (tx) => {
-      const activity = await insertActivity(tx, { userId, ...fields })
-      if (accountIds) await attachAccounts(tx, userId, activity, accountIds)
-      return activity
-    })
+    return await sql.begin(async (tx) => await createActivityIn(tx, userId, input))
   } catch (e) {
     rethrowUnique(e, 'activity_exists', `An activity already uses the name "${input.name}"`)
   }
@@ -113,6 +121,7 @@ export interface ActivityEdit {
   defaultVatRate?: number | null
   deductibleExpenses?: DeductibleExpenses
   regimeLabel?: string | null
+  jurisdiction?: string | null
   currency?: string
   /** The full list of accounts, replacing the current one; absent leaves it alone. */
   accountIds?: string[]
@@ -129,6 +138,7 @@ const EDITABLE = [
   'defaultVatRate',
   'deductibleExpenses',
   'regimeLabel',
+  'jurisdiction',
   'currency',
 ] as const
 

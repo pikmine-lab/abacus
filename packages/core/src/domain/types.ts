@@ -43,6 +43,8 @@ export interface Activity {
   deductibleExpenses: DeductibleExpenses
   /** Free words for the screen; the code never reads them. */
   regimeLabel: string | null
+  /** Where the activity is run, in words. Shown, never read by a calculation. */
+  jurisdiction: string | null
   currency: string
 }
 
