@@ -231,6 +231,13 @@ export interface SharedReserve {
   activityId: string
   activityName: string
   reserve: number
+  /**
+   * True when that activity's own statement will not compute, because one of
+   * its rules carries parameters the engine cannot read. Its reserve is then
+   * unknown, not zero, and the screen has to say so rather than hand out money
+   * that may already be owed.
+   */
+  unreadable: boolean
 }
 
 export interface PayableToSelf {
@@ -712,9 +719,24 @@ async function sharedReserves(userId: string, scope: ActivityScope, asOf: string
   const shared: SharedReserve[] = []
   for (const other of others) {
     const cal = { startMonth: other.fiscalYearStartMonth, startDay: other.fiscalYearStartDay }
-    const statement = await buildStatement(userId, other.id, fiscalYearOf(asOf, cal), asOf, false)
+    let statement: ActivityStatement
+    try {
+      statement = await buildStatement(userId, other.id, fiscalYearOf(asOf, cal), asOf, false)
+    } catch (e) {
+      // A neighbour misconfigured in a corner of its own settings must not take
+      // down this activity's statement: what it owes becomes unknown, which the
+      // screen says, instead of an exception on a page about something else.
+      if (!(e instanceof DomainError && e.code === 'levy_misconfigured')) throw e
+      shared.push({ activityId: other.id, activityName: other.name, reserve: 0, unreadable: true })
+      continue
+    }
     if (statement.reserve > 0)
-      shared.push({ activityId: other.id, activityName: other.name, reserve: statement.reserve })
+      shared.push({
+        activityId: other.id,
+        activityName: other.name,
+        reserve: statement.reserve,
+        unreadable: false,
+      })
   }
   return shared
 }

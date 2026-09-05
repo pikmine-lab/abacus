@@ -945,14 +945,35 @@ test('two activities on one account read the same treasury, and neither promises
   assert.equal(ofConseil.reserve, 2000)
   assert.equal(ofPhoto.reserve, 500)
   assert.deepEqual(ofConseil.payableToSelf.shared, [
-    { activityId: photo, activityName: 'Photo', reserve: 500 },
+    { activityId: photo, activityName: 'Photo', reserve: 500, unreadable: false },
   ])
   assert.equal(ofConseil.payableToSelf.sharedReserve, 500)
   assert.deepEqual(ofPhoto.payableToSelf.shared, [
-    { activityId: conseil, activityName: 'Conseil', reserve: 2000 },
+    { activityId: conseil, activityName: 'Conseil', reserve: 2000, unreadable: false },
   ])
   assert.equal(ofConseil.payableToSelf.amount, 12500)
   assert.equal(ofPhoto.payableToSelf.amount, 12500)
+})
+
+test('a neighbour the engine cannot read leaves its reserve unknown, not zero', async () => {
+  const user = await seedUser()
+  const { conseil, photo } = await twoOnOneAccount(user)
+  // A rule of the neighbour carrying parameters no service would have written:
+  // the point is that this activity's statement still answers.
+  await db()`
+    insert into levy (user_id, activity_id, name, kind, valid_from, base_measure, amount_form, brackets, period, due)
+    values (${user}, ${photo}, 'Illisible', 'social', '2026-01-01', 'revenue', 'brackets',
+            ${db().json({ mode: 'nope' })}, 'month', ${db().json({ type: 'end_of_next_month' })})
+  `
+
+  const ofConseil = await activityStatement(user, conseil, 2026, '2027-01-15')
+  assert.deepEqual(
+    ofConseil.payableToSelf.shared.map((o) => [o.activityName, o.reserve, o.unreadable]),
+    [['Photo', 0, true]],
+  )
+  // Nothing is deducted for it, and the screen says why rather than handing
+  // out money that may already be owed.
+  assert.equal(ofConseil.payableToSelf.sharedReserve, 0)
 })
 
 test('what both activities may take out never digs into what the account owes', async () => {

@@ -479,7 +479,14 @@ export default async function ActivityPage({
                   // them rather than letting the total look wrong.
                   <MoneyRow
                     label={`− Réserve de ${payableToSelf.shared.map((o) => o.activityName).join(', ')}`}
-                    hint="ce qui est dû sur les comptes partagés"
+                    hint={
+                      payableToSelf.shared.some((o) => o.unreadable)
+                        ? `ce qui est dû sur les comptes partagés, sauf ${payableToSelf.shared
+                            .filter((o) => o.unreadable)
+                            .map((o) => o.activityName)
+                            .join(', ')} dont une règle est illisible`
+                        : 'ce qui est dû sur les comptes partagés'
+                    }
                     amount={payableToSelf.sharedReserve}
                   />
                 )}
