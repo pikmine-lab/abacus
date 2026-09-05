@@ -89,6 +89,16 @@ export function ActivityWizard({
 
   const jurisdiction = jurisdictions.find((j) => j.id === jurisdictionId)
 
+  /** Everything the tree produced, dropped: the next jurisdiction asks its own. */
+  function resetTree(): void {
+    setTrail([])
+    setAsking(null)
+    setStep(null)
+    setPreview(null)
+    setModelId('')
+    setError(undefined)
+  }
+
   // The walk is the service's, called again on every answer: the answers are
   // the whole state, so going back is dropping one and asking again.
   useEffect(() => {
@@ -222,7 +232,14 @@ export function ActivityWizard({
                 name="jurisdiction"
                 defaultValue={jurisdictionId}
                 placeholder="Où tu exerces"
-                onValueChange={setJurisdictionId}
+                onValueChange={(id) => {
+                  // Answers belong to the jurisdiction that asked them. Keeping
+                  // them across a change would carry an answer about one
+                  // country's regime into another's tree, where it means
+                  // nothing and yet still narrows.
+                  if (id !== jurisdictionId) resetTree()
+                  setJurisdictionId(id)
+                }}
                 options={[
                   ...jurisdictions.map((j) => ({ value: j.id, label: j.name })),
                   { value: ELSEWHERE, label: 'Ailleurs, je configure moi-même' },
