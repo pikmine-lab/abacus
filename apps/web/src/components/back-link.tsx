@@ -16,6 +16,7 @@ const ORIGINS: Record<string, { label: string; href: string }> = {
   overview: { label: 'Vue d’ensemble', href: '/' },
   analysis: { label: 'Analyse', href: '/analysis' },
   movements: { label: 'Mouvements', href: '/movements' },
+  activity: { label: 'Activité', href: '/activity' },
   expenses: { label: 'Dépenses récurrentes', href: '/recurring-expenses' },
   income: { label: 'Revenus récurrents', href: '/recurring-income' },
   accounts: { label: 'Comptes', href: '/accounts' },
