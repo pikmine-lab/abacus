@@ -9,6 +9,7 @@ import { registerLevyTools } from './tools/levies.ts'
 import { registerMovementTools } from './tools/movements.ts'
 import { registerOverviewTools } from './tools/overview.ts'
 import { registerPreferenceTools } from './tools/preferences.ts'
+import { registerRegimeTools } from './tools/regimes.ts'
 
 /**
  * The files under tools/ ARE the interface. The AI using these tools never
@@ -18,7 +19,7 @@ import { registerPreferenceTools } from './tools/preferences.ts'
  */
 
 const INSTRUCTIONS = `abacus manages the user's personal finances, fully declaratively (no bank connection: the user tells you what happened, you record it).
-Model: every movement goes from a source to a target; between two owned accounts it is an internal transfer (neutral, never an expense), to an external actor an expense, from an actor an income. Actors (merchants, clients, organizations) are normalized through aliases: never create a duplicate without checking the suggestions first. Amounts are always positive, in euros. Balance checks (record_balance_check) are the safety net of declarative bookkeeping: suggest one when the latest is older than two weeks. Investment accounts split those two logics: money reaching or leaving them is a movement, what happens inside them (buy, sell, dividend, fee) is an operation (record_investment_operations), and a purchase is never an expense. A business activity (freelance, self-employed) issues invoices: invoiced is not received, an invoice (declare_invoices) says what a client owes and since when, and the income is written only when the money lands (settle_invoice). It also has a regime: dated, sourced rules of what it owes (manage_levies), stated figures (set_activity_inputs) and watched thresholds (manage_thresholds). No rate or regime is built in: read the official texts and write them as data, never from memory. Start with get_overview when you take over without context.`
+Model: every movement goes from a source to a target; between two owned accounts it is an internal transfer (neutral, never an expense), to an external actor an expense, from an actor an income. Actors (merchants, clients, organizations) are normalized through aliases: never create a duplicate without checking the suggestions first. Amounts are always positive, in euros. Balance checks (record_balance_check) are the safety net of declarative bookkeeping: suggest one when the latest is older than two weeks. Investment accounts split those two logics: money reaching or leaving them is a movement, what happens inside them (buy, sell, dividend, fee) is an operation (record_investment_operations), and a purchase is never an expense. A business activity (freelance, self-employed) issues invoices: invoiced is not received, an invoice (declare_invoices) says what a client owes and since when, and the income is written only when the money lands (settle_invoice). It also has a regime: dated, sourced rules of what it owes (manage_levies), stated figures (set_activity_inputs) and watched thresholds (manage_thresholds). No rate or regime is built in: browse_regimes walks a questionnaire to a model shipped with the app, dated and sourced, that manage_activities copies into an activity of its own; anywhere the catalog does not cover, read the official texts and write the rules as data, never from memory. Start with get_overview when you take over without context.`
 
 export function buildServer(userId: string): McpServer {
   const server = new McpServer({ name: 'abacus', version: '0.1.0' }, { instructions: INSTRUCTIONS })
@@ -32,5 +33,6 @@ export function buildServer(userId: string): McpServer {
   registerLevyTools(server, userId)
   registerPreferenceTools(server, userId)
   registerActivityTools(server, userId)
+  registerRegimeTools(server)
   return server
 }

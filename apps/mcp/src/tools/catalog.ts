@@ -36,6 +36,7 @@ import {
   setActivityCategoryExceptions,
   sortCategories,
 } from '@abacus/core/services/catalog'
+import { applyRegime } from '@abacus/core/services/regimes'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import {
@@ -69,6 +70,7 @@ function describeActivity(act: Activity, exceptions: string[], accounts: string[
   return {
     ...base,
     accounts,
+    jurisdiction: act.jurisdiction ?? undefined,
     regimeLabel: act.regimeLabel ?? undefined,
     fiscalYearStart: `${String(act.fiscalYearStartMonth).padStart(2, '0')}-${String(act.fiscalYearStartDay).padStart(2, '0')}`,
     revenueBasis: act.revenueBasis,
@@ -102,6 +104,58 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
       .filter((l) => l.activityId === activityId)
       .map((l) => accountName.get(l.accountId)!)
       .sort()
+  }
+
+  /**
+   * A regime model decides what it decides. Passing one of those settings
+   * beside it would state two answers to the same question, and the one that
+   * lost would be dropped without a word.
+   */
+  const DECIDED_BY_MODEL = [
+    'kind',
+    'fiscalYearStartMonth',
+    'fiscalYearStartDay',
+    'revenueBasis',
+    'vatRegistered',
+    'defaultVatRate',
+    'deductibleExpenses',
+    'regimeLabel',
+    'jurisdiction',
+    'currency',
+  ] as const
+
+  async function createFromRegime(
+    modelId: string,
+    name: string,
+    args: Record<string, unknown>,
+    accountIds: string[] | undefined,
+  ) {
+    const stated = DECIDED_BY_MODEL.filter((key) => args[key] !== undefined)
+    if (stated.length > 0)
+      return fail(
+        `The regime model decides ${stated.join(', ')}: drop them here. Once the activity exists, correct any of them with action update.`,
+      )
+    const applied = await applyRegime(userId, {
+      name,
+      modelId,
+      answers: (args.answers as Record<string, string> | undefined) ?? {},
+      startedOn: args.startedOn as string | undefined,
+      accountIds,
+    })
+    return ok({
+      activityId: applied.activity.id,
+      ...describeActivity(applied.activity, [], (args.accounts as string[] | undefined) ?? []),
+      rules: applied.levies.map((levy) => ({
+        name: levy.name,
+        status: levy.status,
+        source: levy.sourceUrl ?? undefined,
+        checkedOn: levy.verifiedOn ?? undefined,
+      })),
+      thresholds: applied.thresholds.map((threshold) => threshold.label),
+      statedFigures: applied.inputs.map((stated) => ({ name: stated.name, value: Number(stated.value) })),
+      copied:
+        "These rules are the activity's own from now on: the catalog will never change them, and manage_levies corrects or supersedes any of them. Tell the user which ones are not confirmed, and which stated figures they must replace with their real ones (set_activity_inputs).",
+    })
   }
 
   server.registerTool(
@@ -395,7 +449,7 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_activities',
     {
       description:
-        "Manages activities: the user's economic spheres. Two kinds. A personal activity is an analysis dimension and nothing more (a rental, a hobby that brings in three receipts): it partitions the analyses. A business activity is an independent activity the user runs: it has a regime, a fiscal year, the accounts it lives on (accounts, here), invoices, and later the rules that compute what it owes. A movement without an activity is personal. An activity reaches a movement through its external actor first (a client attached to it passes it on, manage_actors), then through the account the money touched, but only when a single activity lives on that account: an account two activities share designates neither, and the movement stays without an activity until someone names it. A transfer between accounts inherits nothing. An activity never changes regime. Its kind and its revenue basis stay correctable only until a rule or an invoice exists under it; from then on, a regime that ends (a flat-rate scheme left for real costs, a business closed in one country and another opened elsewhere) is this activity closed on its last day (action close) and a new activity created with the new settings, so that each year's statement reads the rules it was computed with. Never rewrite history under a new regime. Settings of a business activity, all of them the regime's facts to ask the user about, never to assume: revenueBasis, which date brings a receipt into the revenue and into the bases of the rules, cash (the day the money arrived) or invoiced (the day the invoice was issued); fiscalYearStartMonth and fiscalYearStartDay, the day the fiscal year opens (1 January for most regimes, 6 April in the UK), every \"year\" a rule speaks of being that year; vatRegistered and defaultVatRate (percent), whether the activity charges VAT and the rate proposed on a new invoice, a client's own default possibly differing; deductibleExpenses, all (every expense of the activity reduces its profit, as under a real-costs regime) or none (a flat-rate regime deducts nothing), with set_exceptions naming the categories that go against that policy (left out when all, deductible anyway when none); regimeLabel, free words the screen shows for the regime, written as the user names it, never a switch the code reads; currency, EUR by default; accounts, what the activity lives on. An account is declared from here and never from the account, because an account exists before the activities that use it, and several may run on the same one: a user starting a second activity on the bank account they already have declares that account on both, rather than opening a second one. What sharing changes is worth telling the user: the treasury of each activity is the whole balance of those accounts, nothing is apportioned, and what each may pay itself takes off what every activity on those accounts owes, so the same money is never promised twice. Actions: list, create, update (rename or correct settings), close (closedOn defaults to today; a movement dated later is refused under it), reopen (undo a close), set_accounts (the full list of accounts by name, an empty list detaching them all), set_exceptions (the full list of exception categories by name, an empty list clearing them). Create very few: an activity partitions the finances, it is not a tag system.",
+        "Manages activities: the user's economic spheres. Two kinds. A personal activity is an analysis dimension and nothing more (a rental, a hobby that brings in three receipts): it partitions the analyses. A business activity is an independent activity the user runs: it has a regime, a fiscal year, the accounts it lives on (accounts, here), invoices, and later the rules that compute what it owes. A movement without an activity is personal. An activity reaches a movement through its external actor first (a client attached to it passes it on, manage_actors), then through the account the money touched, but only when a single activity lives on that account: an account two activities share designates neither, and the movement stays without an activity until someone names it. A transfer between accounts inherits nothing. An activity never changes regime. Its kind and its revenue basis stay correctable only until a rule or an invoice exists under it; from then on, a regime that ends (a flat-rate scheme left for real costs, a business closed in one country and another opened elsewhere) is this activity closed on its last day (action close) and a new activity created with the new settings, so that each year's statement reads the rules it was computed with. Never rewrite history under a new regime. Settings of a business activity, all of them the regime's facts to ask the user about, never to assume: revenueBasis, which date brings a receipt into the revenue and into the bases of the rules, cash (the day the money arrived) or invoiced (the day the invoice was issued); fiscalYearStartMonth and fiscalYearStartDay, the day the fiscal year opens (1 January for most regimes, 6 April in the UK), every \"year\" a rule speaks of being that year; vatRegistered and defaultVatRate (percent), whether the activity charges VAT and the rate proposed on a new invoice, a client's own default possibly differing; deductibleExpenses, all (every expense of the activity reduces its profit, as under a real-costs regime) or none (a flat-rate regime deducts nothing), with set_exceptions naming the categories that go against that policy (left out when all, deductible anyway when none); regimeLabel, free words the screen shows for the regime, written as the user names it, never a switch the code reads; currency, EUR by default; accounts, what the activity lives on. An account is declared from here and never from the account, because an account exists before the activities that use it, and several may run on the same one: a user starting a second activity on the bank account they already have declares that account on both, rather than opening a second one. What sharing changes is worth telling the user: the treasury of each activity is the whole balance of those accounts, nothing is apportioned, and what each may pay itself takes off what every activity on those accounts owes, so the same money is never promised twice. The fastest way to create a business activity is not to fill those settings in one by one: browse_regimes walks a questionnaire to a regime model shipped with the app, and create with regime (the model id) and answers (what the user answered) writes the activity AND its rules, its thresholds and its stated figures in one go. The model then decides kind, revenueBasis, vatRegistered, defaultVatRate, deductibleExpenses, the fiscal year, the currency, regimeLabel and jurisdiction, so do not pass them alongside it; name and accounts and startedOn stay yours. What is written is a copy the user owns from that moment: correcting the catalog later never touches it, and every rule is theirs to correct or supersede with manage_levies. Report back the statuses the answer carries, since a rule marked unconfirmed or extended_by_default is one the user must check. jurisdiction, on its own, is where the activity is run, in words, shown and never read by a calculation. Actions: list, create, update (rename or correct settings), close (closedOn defaults to today; a movement dated later is refused under it), reopen (undo a close), set_accounts (the full list of accounts by name, an empty list detaching them all), set_exceptions (the full list of exception categories by name, an empty list clearing them). Create very few: an activity partitions the finances, it is not a tag system.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'update', 'close', 'reopen', 'set_accounts', 'set_exceptions']),
         name: z.string().optional().describe('create: the name; other actions: the activity, by name'),
@@ -440,6 +494,22 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           .string()
           .optional()
           .describe('create/update: the regime as the user names it, free text, or "none" to clear it'),
+        jurisdiction: z
+          .string()
+          .optional()
+          .describe(
+            'create/update: where the activity is run, in words, or "none" to clear it. Shown, never read by a calculation. Set by the regime model when one is applied',
+          ),
+        regime: z
+          .string()
+          .optional()
+          .describe(
+            'create: the id of a regime model from browse_regimes. It writes the activity and its rules together, or neither',
+          ),
+        answers: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe('create, with regime: the answers the user gave to the questionnaire of browse_regimes'),
         currency: z
           .string()
           .length(3)
@@ -498,6 +568,7 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           defaultVatRate: a.defaultVatRate,
           deductibleExpenses: a.deductibleExpenses,
           regimeLabel: clearable(a.regimeLabel),
+          jurisdiction: clearable(a.jurisdiction),
           currency: a.currency?.toUpperCase(),
         }
         // The accounts are addressed by name here and by id below, and an
@@ -506,6 +577,9 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           ? await Promise.all(a.accounts.map(async (n) => (await requireAccountByName(userId, n)).id))
           : undefined
         if (a.action === 'create') {
+          if (a.regime) return await createFromRegime(a.regime, a.name, a, accountIds)
+          if (a.answers)
+            return fail('answers only goes with regime: pass the model id from browse_regimes, or drop them.')
           const activity = await createActivity(userId, { name: a.name, ...settings, accountIds })
           return ok({ activityId: activity.id, ...describeActivity(activity, [], a.accounts ?? []) })
         }

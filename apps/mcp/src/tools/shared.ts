@@ -118,6 +118,16 @@ export const GUIDANCE: Record<string, string> = {
   vat_rate_needs_registration:
     'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
   activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',
+  jurisdiction_not_found:
+    'The catalog covers no such place. Call browse_regimes (action jurisdictions) for the ones it does; anywhere else, create the activity by hand and write its rules with manage_levies, citing the texts.',
+  regime_model_not_found:
+    'No regime model with that id. Call browse_regimes (action jurisdictions) for the ids, or walk the questionnaire (action questions), which answers with the models the answers still allow.',
+  regime_answer_unknown:
+    "That answer names no question of this jurisdiction, or no option of that question. Send back exactly the ids browse_regimes gives, and never an answer written in the user's own words.",
+  regime_answers_incomplete:
+    'The model reads an answer that has not been given. Keep walking browse_regimes (action questions) with the answers so far until it says done, and pass all of them: a rate or a threshold of this model is chosen by that answer.',
+  regime_model_excluded:
+    'The answers given rule this model out. Call browse_regimes (action questions) with them: it answers with the models they still allow.',
   bad_rate: 'A rate is a percentage between 0 and 100.',
   check_not_found:
     'No such balance check for this user. Get a current id from manage_balance_checks with action list.',
