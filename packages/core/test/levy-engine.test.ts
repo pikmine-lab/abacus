@@ -359,6 +359,47 @@ test('the RETA contribution is the chosen base, clamped to its row, at the globa
   assert.equal(round2(assumed.gross), 427.21)
 })
 
+test('a rule that settles later provisions the chosen base as declared, bounded by nothing', () => {
+  // The row the reference names is still known (the screen says which), but a
+  // rule whose year is settled afterwards pays the choice itself every period:
+  // bounding it here and billing the gap again at year end would count twice.
+  const low = electiveResolution(RETA, 2500, 1000, true)
+  assert.deepEqual([low.row.minBase, low.appliedBase], [1356.21, 1000])
+  assert.equal(
+    round2(
+      computeAmount({ form: 'elective_base', elective: RETA, chosenBase: 1000, settledLater: true }, 2500)
+        .gross,
+    ),
+    315,
+  )
+  // Above the row's maximum too: the provision is what leaves the account.
+  assert.equal(electiveResolution(RETA, 2500, 6000, true).appliedBase, 6000)
+  // Nothing chosen: the row's minimum stands in either way, since there is no
+  // figure to pay, and the result still says the base was assumed.
+  const assumed = electiveResolution(RETA, 2500, null, true)
+  assert.deepEqual([assumed.appliedBase, assumed.assumed], [1356.21, true])
+  // Without a regularisation the row is the only protection left, so it holds.
+  assert.equal(electiveResolution(RETA, 2500, 1000).appliedBase, 1356.21)
+})
+
+test('what a settling rule provisions plus what it regularises is the definitive amount, once', () => {
+  // Twelve months at a base chosen below the row the closed year names.
+  const provisioned =
+    12 *
+    computeAmount({ form: 'elective_base', elective: RETA, chosenBase: 1000, settledLater: true }, 2500).gross
+  const settled = 12 * deadzoneAdjustment(RETA, 2500, 1000).amount
+  const definitive = 12 * 1356.21 * 0.315
+  assert.equal(round2(provisioned + settled), round2(definitive))
+  // The old reading bounded the provision to the row as well, so the year came
+  // to the definitive amount plus that same gap a second time.
+  assert.equal(
+    round2(
+      12 * computeAmount({ form: 'elective_base', elective: RETA, chosenBase: 1000 }, 2500).gross + settled,
+    ),
+    round2(definitive + settled),
+  )
+})
+
 test('the RETA rows reproduce the published monthly contributions at their minimum and maximum bases', () => {
   assert.equal(
     round2(computeAmount({ form: 'elective_base', elective: RETA, chosenBase: 653.59 }, 600).gross),

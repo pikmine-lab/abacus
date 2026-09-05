@@ -592,14 +592,15 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
 
   const contribution = levyNamed(statement, 'Social contribution')
   // The base is the year so far, contributions added back, read per month
-  // open: it moves as the year fills in. By December it is 4262.50 a month,
-  // which names the row bounded 1732.03 to 5101.20, and the 1800 chosen sits
-  // inside it: 567 a month. January reads its own receipts as the pace of a
-  // whole year, names a higher row, and the choice is raised to its minimum
-  // (1928.10), which is 607.35: eleven months at 567 and that one.
-  assert.equal(contribution.accrued, 6844.35)
+  // open: it moves as the year fills in, and it names the row every month.
+  // The rule settles at year end, so what it provisions is what really leaves
+  // the account: the 1800 chosen, at 31.50 %, which is 567 every month. The
+  // row is not applied here, or January (which reads its own receipts as the
+  // pace of a whole year, and names a higher row) would already carry a bound
+  // the regularisation is about to bill again.
+  assert.equal(contribution.accrued, 6804)
   assert.equal(contribution.paid, 3600)
-  assert.equal(contribution.reserve, 3244.35)
+  assert.equal(contribution.reserve, 3204)
   assert.equal(contribution.accrualMethod, 'closed_periods')
   assert.equal(contribution.assumedElectiveBase, false)
   assert.equal(contribution.status, 'extended_by_default')
@@ -617,12 +618,12 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
 
   // VAT is owed, so it stays in the reserve, and it is no charge, so it leaves
   // the net alone.
-  assert.equal(statement.totals.provisions, 11986.15)
+  assert.equal(statement.totals.provisions, 11945.8)
   assert.equal(statement.totals.provisionsPassThrough, 11550)
-  assert.equal(statement.totals.net, 39413.85)
-  assert.equal(statement.reserve, 11536.15)
+  assert.equal(statement.totals.net, 39454.2)
+  assert.equal(statement.reserve, 11495.8)
   assert.equal(statement.payableToSelf.treasury, 41800)
-  assert.equal(statement.payableToSelf.amount, 30263.85)
+  assert.equal(statement.payableToSelf.amount, 30304.2)
 
   const vatDates = statement.schedule.filter((e) => e.levyName === 'VAT')
   assert.deepEqual(
@@ -648,7 +649,7 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
   assert.deepEqual(
     monthly.slice(0, 2).map((e) => [e.declaration.from, e.declaration.to, e.amount, e.status, e.paidOn]),
     [
-      ['2027-02-01', '2027-02-28', 607.35, 'paid', '2027-01-31'],
+      ['2027-02-01', '2027-02-28', 567, 'paid', '2027-01-31'],
       ['2027-03-01', '2027-03-31', 567, 'paid', '2027-02-28'],
     ],
   )
@@ -746,6 +747,76 @@ test('a provisional rule settles the year it ran ahead of, as a dated entry of t
       [2027, 2400, '2028-06-01', 'upcoming'],
     ],
   )
+})
+
+// ---------------------------------------------------------------------------
+// What the year provisions and what its closure settles, told apart
+// ---------------------------------------------------------------------------
+
+/** A chosen base within a two-row table, whose bounds only the year end reads. */
+const BOUNDS = {
+  inputName: 'chosen_base',
+  rate: 30,
+  rows: [
+    { upTo: 1000, minBase: 500, maxBase: 1000 },
+    { upTo: null, minBase: 1200, maxBase: 3000 },
+  ],
+}
+
+test('a settling rule provisions the base as declared, and the closed year bills the gap once', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Practice', {
+    startedOn: '2027-01-01',
+    revenueBasis: 'cash',
+    deductibleExpenses: 'none',
+  })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const client = await createActor(user, { name: 'Client', activityId })
+  const fund = await createCategory(user, 'Contributions')
+  await insertLevy(user, activityId, {
+    name: 'Chosen contribution',
+    kind: 'social',
+    validFrom: '2027-01-01',
+    baseMeasure: 'revenue',
+    // The whole fiscal year, so every month reads the same window and names
+    // the same row; the year to date would name a different one each month.
+    basePeriodRef: 'year',
+    baseScale: 'per_month',
+    amountForm: 'elective_base',
+    elective: BOUNDS,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    regularization: 'annual_deadzone',
+    settlementCategoryId: fund.id,
+  })
+  await insertInput(user, activityId, 'chosen_base', '2027-01-01', 800)
+  for (const on of ['2027-03-20', '2027-09-20'])
+    await declareMovement(user, {
+      happenedOn: on,
+      amount: 18000,
+      sourceActorId: client.id,
+      targetAccountId: account,
+    })
+
+  const statement = await activityStatement(user, activityId, 2027, '2028-03-01')
+  // 36000 read over the twelve months open is 3000 a month, which names the
+  // open row and its minimum of 1200. What is paid every month is the 800
+  // chosen, at 30 %: the same 240 twelve times, none of them bounded.
+  const monthly = statement.schedule.filter((e) => e.entry === 'period')
+  assert.equal(monthly.length, 12)
+  assert.deepEqual([...new Set(monthly.map((e) => e.amount))], [240])
+  assert.equal(levyNamed(statement, 'Chosen contribution').accrued, 2880)
+  // The closure confronts that choice with the definitive row, and owes the
+  // whole gap to its minimum: twelve months of 400 at 30 %.
+  const settlement = statement.schedule.find((e) => e.entry === 'regularization')
+  assert.deepEqual(
+    [settlement?.forFiscalYear, settlement?.amount, settlement?.declaration.from],
+    [2027, 1440, '2028-12-01'],
+  )
+  // Together they are what the year really cost, and nothing more: twelve
+  // months at the row's minimum. Bounding the provision as well would bill
+  // that same gap a second time.
+  assert.equal(2880 + 1440, (12 * 1200 * 30) / 100)
 })
 
 test('a quarterly instalment on a yearly measure takes its quarter, the rate staying the rate', async () => {

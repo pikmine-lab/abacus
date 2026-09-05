@@ -345,31 +345,45 @@ export type AmountInput =
       elective: Elective
       /** The base the user chose (a dated input), null when none was stated. */
       chosenBase: number | null
+      /** The rule settles its year later, so the choice stands unbounded (see `electiveResolution`). */
+      settledLater?: boolean
     }
   | { form: 'fixed'; amount: number }
   | { form: 'none' }
 
 export interface ElectiveResolution {
   row: Elective['rows'][number]
-  /** The chosen base once clamped to the row's bounds, or the row's minimum when none was chosen. */
+  /** The base the amount was computed on, or the row's minimum when none was chosen. */
   appliedBase: number
   /** The base was not stated, so the minimum stood in. */
   assumed: boolean
 }
 
 /**
- * A base chosen within the bounds of the row the reference falls in. The
- * reference is the resolved base (a monthly yield); the amount is the clamped
- * choice at the rate. With no stated choice the row's minimum stands in, which
- * is the least one may declare, and the result says so.
+ * A base chosen against the row the reference falls in, taxed at the rate.
+ * With no stated choice the row's minimum stands in, which is the least one
+ * may declare, and the result says so.
+ *
+ * Whether the choice is bounded by that row depends on what the rule does at
+ * year end, and the two readings must not be added up. A rule that settles its
+ * year later (`settledLater`) provisions what is really paid every month,
+ * which is the base as declared: the row the reference names moves period
+ * after period while the year fills in, and bounding by it would already carry
+ * the definitive bounds by the last period, so the settlement would then bill
+ * the same gap a second time. There, the bounds belong to the regularisation
+ * alone, which reads them once on the closed year. A rule that never settles
+ * has no second reading, so the row bounds the choice here, and that is its
+ * only protection against a figure the regime would not accept.
  */
 export function electiveResolution(
   elective: Elective,
   reference: number,
   chosenBase: number | null,
+  settledLater = false,
 ): ElectiveResolution {
   const row = rowFor(elective.rows, reference)
   if (chosenBase === null) return { row, appliedBase: row.minBase, assumed: true }
+  if (settledLater) return { row, appliedBase: chosenBase, assumed: false }
   return { row, appliedBase: Math.min(Math.max(chosenBase, row.minBase), row.maxBase), assumed: false }
 }
 
@@ -386,7 +400,12 @@ export function computeAmount(amount: AmountInput, base: number): AmountResoluti
     case 'brackets':
       return { gross: bracketsAmount(amount.brackets, base) }
     case 'elective_base': {
-      const elective = electiveResolution(amount.elective, base, amount.chosenBase)
+      const elective = electiveResolution(
+        amount.elective,
+        base,
+        amount.chosenBase,
+        amount.settledLater ?? false,
+      )
       return { gross: elective.appliedBase * (amount.elective.rate / 100), elective }
     }
     case 'fixed':
@@ -571,6 +590,9 @@ export function evaluateLevy(computation: LevyComputation): LevyResult {
  * year names a row; nothing is owed while the chosen base sits within its
  * bounds; below the minimum the difference to it is owed, above the maximum
  * the difference to it is refunded (negative).
+ *
+ * This is the whole of the gap, not a top-up: the month it settles provisioned
+ * the chosen base as declared, unbounded (see `electiveResolution`).
  */
 export function deadzoneAdjustment(
   elective: Elective,

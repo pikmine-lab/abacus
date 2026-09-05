@@ -514,6 +514,7 @@ class StatementEngine {
           form: 'elective_base',
           elective: levy.elective!,
           chosenBase: this.input(levy.elective!.inputName, period.to),
+          settledLater: row.regularization !== 'none',
         }
       case 'fixed':
         return {
@@ -610,6 +611,10 @@ class StatementEngine {
    * the row the definitive figures name, and owes nothing while it sits inside
    * it; a provisional rule owes the difference between the definitive amount
    * and what was provisioned.
+   *
+   * The periods of a rule that settles provisioned the chosen base exactly as
+   * it was declared, bounded by nothing (see `electiveResolution`), so the gap
+   * computed here is the whole of it and is owed once.
    */
   async regularization(levy: ParsedLevy, fiscalYear: number): Promise<number | null> {
     const row = levy.row
