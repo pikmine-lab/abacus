@@ -1,20 +1,35 @@
 'use client'
 
-import { CombineIcon, PencilIcon, TagIcon } from 'lucide-react'
-import { useState } from 'react'
-import { ActionForm, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import type { ReattachableCount } from '@abacus/core/services/actors'
+import { CombineIcon, Link2Icon, PencilIcon, TagIcon } from 'lucide-react'
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
+import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
+  type ActorFormState,
   addAliasAction,
+  countReattachableAction,
   editActivityAction,
   editActorAction,
   editCategoryAction,
   mergeActorsAction,
+  reattachActorHistoryAction,
 } from '@/lib/actions'
+import { frDateLong } from '@/lib/utils'
 
 /**
  * The vocabulary, as lists that can be repaired. A referential entry is
@@ -172,6 +187,12 @@ function ActorRow({
   const [editing, setEditing] = useState(false)
   const [aliasing, setAliasing] = useState(false)
   const [merging, setMerging] = useState(false)
+  // The activity the actor had when its correction opened: a changed one
+  // leaves movements behind, and the reattachment then names it as former.
+  const activityBefore = useRef<string | null>(null)
+  const [leftBehind, setLeftBehind] = useState(0)
+  const [reattaching, setReattaching] = useState<{ previousActivityId: string | null } | null>(null)
+  const closeReattach = useCallback(() => setReattaching(null), [])
   const activityName = activities.find((a) => a.id === actor.activityId)?.name
   const detail =
     [actor.aliases.length > 0 ? `aussi ${actor.aliases.join(', ')}` : null, activityName, actor.note]
@@ -181,11 +202,23 @@ function ActorRow({
   return (
     <>
       <EntryLine title={actor.name} detail={detail}>
-        <EditItem onSelect={() => setEditing(true)} />
+        <EditItem
+          onSelect={() => {
+            activityBefore.current = actor.activityId
+            setLeftBehind(0)
+            setEditing(true)
+          }}
+        />
         <DropdownMenuItem onSelect={() => setAliasing(true)}>
           <TagIcon />
           Ajouter un alias
         </DropdownMenuItem>
+        {activityName && (
+          <DropdownMenuItem onSelect={() => setReattaching({ previousActivityId: null })}>
+            <Link2Icon />
+            Rattacher l’historique à l’activité
+          </DropdownMenuItem>
+        )}
         {others.length > 0 && (
           <DropdownMenuItem variant="destructive" onSelect={() => setMerging(true)}>
             <CombineIcon />
@@ -201,7 +234,11 @@ function ActorRow({
           </DialogHeader>
           <ActionForm
             action={editActorAction}
-            onSuccess={() => setEditing(false)}
+            // Stays open when a changed activity left movements behind: the
+            // acknowledgement points at the gesture that takes them along.
+            onSuccess={(state: ActorFormState) =>
+              state.leftBehind ? setLeftBehind(state.leftBehind) : setEditing(false)
+            }
             successLabel="Acteur corrigé"
           >
             <input type="hidden" name="actorId" value={actor.id} />
@@ -217,8 +254,39 @@ function ActorRow({
             <TextField name="note" label="Note (optionnelle)" defaultValue={actor.note ?? ''} />
             <SubmitButton className="self-start">Enregistrer</SubmitButton>
           </ActionForm>
+          {leftBehind > 0 && (
+            <p className="text-[12px] text-faint">
+              {plural(
+                leftBehind,
+                'mouvement déjà déclaré ne suit pas',
+                'mouvements déjà déclarés ne suivent pas',
+              )}{' '}
+              :{' '}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground"
+                onClick={() => {
+                  setEditing(false)
+                  setReattaching({ previousActivityId: activityBefore.current })
+                }}
+              >
+                rattacher l’historique
+              </button>{' '}
+              les reprend, maintenant ou plus tard depuis le menu de la ligne.
+            </p>
+          )}
         </DialogContent>
       </Dialog>
+
+      {activityName && (
+        <ReattachDialog
+          actor={actor}
+          activityName={activityName}
+          previousActivityId={reattaching?.previousActivityId ?? null}
+          open={reattaching !== null}
+          onClose={closeReattach}
+        />
+      )}
 
       <Dialog open={aliasing} onOpenChange={setAliasing}>
         <DialogContent className="sm:max-w-sm">
@@ -267,6 +335,86 @@ function ActorRow({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n > 1 ? many : one}`
+}
+
+/**
+ * The explicit gesture that moves an actor's history onto its activity,
+ * confirmed with the number it concerns. The count is asked of the server with
+ * the very scope the gesture would run with, and follows the date as it moves.
+ */
+function ReattachDialog({
+  actor,
+  activityName,
+  previousActivityId,
+  open,
+  onClose,
+}: {
+  actor: ActorEntry
+  activityName: string
+  /** The activity the actor just left, when the gesture follows a correction. */
+  previousActivityId: string | null
+  open: boolean
+  /** Stable, so that closing on success fires once per success and not once per render. */
+  onClose: () => void
+}) {
+  const [from, setFrom] = useState<string | undefined>(undefined)
+  const [scope, setScope] = useState<ReattachableCount | null>(null)
+  const [state, reattach, pending] = useActionState(reattachActorHistoryAction, {})
+
+  useEffect(() => {
+    if (!open) return
+    let stale = false
+    setScope(null)
+    countReattachableAction(actor.id, from, previousActivityId).then((counted) => {
+      if (!stale) setScope(counted)
+    })
+    return () => {
+      stale = true
+    }
+  }, [open, actor.id, from, previousActivityId])
+
+  // Close on success only: a refused reattachment has a reason to show.
+  useEffect(() => {
+    if (state.ok) onClose()
+  }, [state, onClose])
+
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Rattacher l’historique de {actor.name} à {activityName} ?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {scope === null
+              ? '…'
+              : scope.count === 0
+                ? `Rien à rattacher : l’historique de ${actor.name} est déjà sous ${activityName}, ou classé dans une autre activité.`
+                : `${plural(scope.count, 'mouvement', 'mouvements')}${scope.since ? `, depuis le ${frDateLong(scope.since)},` : ''} passeront sous ${activityName}. Un mouvement classé dans une autre activité ne bouge pas.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Field label="À partir du (optionnel)">
+          <DateField name="from" onValueChange={setFrom} />
+        </Field>
+        {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Annuler</AlertDialogCancel>
+          <form action={reattach}>
+            <input type="hidden" name="actorId" value={actor.id} />
+            <input type="hidden" name="from" value={from ?? ''} />
+            <input type="hidden" name="previousActivityId" value={previousActivityId ?? ''} />
+            <Button type="submit" disabled={pending || !scope?.count}>
+              {pending ? '…' : 'Rattacher'}
+            </Button>
+          </form>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

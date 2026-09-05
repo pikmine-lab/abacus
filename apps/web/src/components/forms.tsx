@@ -337,8 +337,11 @@ export function ActionForm({
   className?: string
   /** Acknowledgement kept in place, so entering several in a row stays fluid. */
   successLabel?: string
-  /** Called once per success, for a panel that should close itself. */
-  onSuccess?: () => void
+  /**
+   * Called once per success with what the action reported, for a panel that
+   * should close itself, or act on a figure the action answered with.
+   */
+  onSuccess?: (state: FormState) => void
   children: React.ReactNode
 }) {
   const [state, formAction] = useActionState(
@@ -356,9 +359,9 @@ export function ActionForm({
   useEffect(() => {
     if (state.ok && state.n > fired.current) {
       fired.current = state.n
-      onSuccess?.()
+      onSuccess?.(state)
     }
-  }, [state.n, state.ok, onSuccess])
+  }, [state, onSuccess])
   return (
     // noValidate: validation is ours, so the browser never puts a bubble on a
     // field the user was not editing.

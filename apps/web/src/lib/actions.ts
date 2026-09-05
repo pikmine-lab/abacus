@@ -4,7 +4,16 @@ import { auth } from '@abacus/core/auth'
 import type { AccountBehavior, AssetNature, InstrumentKind, Judgment, PeriodUnit } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
-import { addAlias, createActor, editActor, mergeActors, resolveActor } from '@abacus/core/services/actors'
+import {
+  addAlias,
+  countReattachableMovements,
+  createActor,
+  editActor,
+  mergeActors,
+  type ReattachableCount,
+  reattachActorHistory,
+  resolveActor,
+} from '@abacus/core/services/actors'
 import {
   correctBalanceCheck,
   createAdjustment,
@@ -115,6 +124,7 @@ const FR: Record<string, string> = {
     'Ce compte porte des opérations d’investissement : son type ne change plus. Le reste se corrige.',
   opening_needs_its_day: 'Indique le jour d’ouverture : c’est à partir de là que ce solde compte.',
   actor_not_found: 'Cet acteur n’existe plus.',
+  actor_has_no_activity: 'Attache d’abord une activité à cet acteur.',
   category_exists: 'Une catégorie porte déjà ce nom.',
   category_not_found: 'Cette catégorie n’existe plus.',
   activity_exists: 'Une activité porte déjà ce nom.',
@@ -898,15 +908,54 @@ export async function editActivityAction(_prev: FormState, formData: FormData): 
  * has to stop resolving. A name that really was in use gets added as an alias
  * instead, deliberately.
  */
-export async function editActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
+export interface ActorFormState extends FormState {
+  /** Past movements a changed activity did not touch, for the form to point at the gesture that does. */
+  leftBehind?: number
+}
+
+export async function editActorAction(_prev: ActorFormState, formData: FormData): Promise<ActorFormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
+  let leftBehind: number
   try {
-    await editActor(userId, str(formData, 'actorId'), {
+    ;({ leftBehind } = await editActor(userId, str(formData, 'actorId'), {
       name: str(formData, 'name'),
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
+    }))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true, leftBehind }
+}
+
+/** What the reattach confirmation announces, refreshed as its scope changes. */
+export async function countReattachableAction(
+  actorId: string,
+  from: string | undefined,
+  previousActivityId: string | null,
+): Promise<ReattachableCount> {
+  const userId = await requireUserId()
+  try {
+    return await countReattachableMovements(userId, actorId, { from, previousActivityId })
+  } catch (e) {
+    frError(e)
+    return { count: 0, since: null }
+  }
+}
+
+/**
+ * The explicit gesture that reclassifies an actor's history onto its
+ * activity; the service says what it takes and what it leaves.
+ */
+export async function reattachActorHistoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await reattachActorHistory(userId, str(formData, 'actorId'), {
+      from: opt(formData, 'from'),
+      previousActivityId: opt(formData, 'previousActivityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
