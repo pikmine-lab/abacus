@@ -42,6 +42,7 @@ const SOCIAL_SOURCE = {
 /** CSS D613-4, in force since 2026-01-01 (decree 2025-943 of 8 September 2025). */
 const SOCIAL_LEVY = {
   name: 'Cotisations sociales',
+  settlementCategory: 'Cotisations sociales',
   kind: 'social',
   validFrom: '2026-01-01',
   source: SOCIAL_SOURCE,
@@ -79,6 +80,7 @@ const SOCIAL_LEVY = {
 /** Code du travail L6331-48. */
 const TRAINING_LEVY = {
   name: 'Contribution à la formation professionnelle',
+  settlementCategory: 'Formation professionnelle',
   kind: 'other',
   validFrom: '2026-01-01',
   source: {
@@ -103,6 +105,7 @@ const TRAINING_LEVY = {
 /** CGI 1647 D and service-public F23547: an amount only the notice states. */
 const CFE_LEVY = {
   name: 'Cotisation foncière des entreprises',
+  settlementCategory: 'Impôts locaux',
   kind: 'other',
   validFrom: '2026-01-01',
   source: {
@@ -123,6 +126,7 @@ const CFE_LEVY = {
 const VAT_LEVY = {
   when: { vat: ['charged'] },
   name: 'TVA',
+  settlementCategory: 'TVA',
   kind: 'vat',
   validFrom: '2026-01-01',
   source: {
@@ -324,6 +328,7 @@ export const FR = {
         SOCIAL_LEVY,
         {
           name: "Versement libératoire de l'impôt sur le revenu",
+          settlementCategory: 'Impôt sur le revenu',
           kind: 'income_tax',
           validFrom: '2026-01-01',
           source: {
@@ -363,6 +368,7 @@ export const FR = {
         SOCIAL_LEVY,
         {
           name: 'Acompte de prélèvement à la source',
+          settlementCategory: 'Impôt sur le revenu',
           kind: 'income_tax',
           validFrom: '2026-01-01',
           source: {

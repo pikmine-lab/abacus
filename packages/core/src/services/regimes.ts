@@ -1,4 +1,5 @@
 import { db } from '../db/client.ts'
+import { insertCategory, listCategories as listCategoriesDs } from '../db/datasources/catalog.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import {
   type Answers,
@@ -99,6 +100,13 @@ export type RegimeLevy = Omit<NewLevy, 'activityId'>
 export interface PreviewLevy {
   levy: RegimeLevy
   modifiers: NewModifier[]
+  /**
+   * The category this rule's payments are filed under, by name: the category
+   * may not exist yet, and applying the model is what creates or reuses it.
+   * Without it the engine would never learn that a levy was paid, and its
+   * reserve would stay up forever.
+   */
+  settlementCategory?: string
 }
 
 /**
@@ -307,6 +315,7 @@ export function previewRegime(modelId: string, answers: Answers = {}): RegimePre
     activity,
     levies: kept(model.levies).map((template) => ({
       levy: buildLevy(template, answers),
+      settlementCategory: template.settlementCategory,
       modifiers: kept(template.modifiers ?? []).map((modifier) => buildModifier(modifier, answers)),
     })),
     thresholds: kept(model.thresholds).map((template) => ({
@@ -407,9 +416,26 @@ export async function applyRegime(userId: string, input: ApplyRegime): Promise<A
         ...preview.activity,
         accountIds: input.accountIds,
       })
+      // The categories the model files its payments under, created once each
+      // and reused when the user already keeps one by that name: a rule
+      // without one would never see itself paid.
+      const byName = new Map((await listCategoriesDs(tx, userId)).map((c) => [c.name.toLowerCase(), c.id]))
+      const categoryId = async (name: string | undefined): Promise<string | undefined> => {
+        if (!name) return undefined
+        const known = byName.get(name.toLowerCase())
+        if (known) return known
+        const created = await insertCategory(tx, userId, name, null)
+        byName.set(name.toLowerCase(), created.id)
+        return created.id
+      }
+
       const levies: Levy[] = []
       for (const entry of preview.levies) {
-        const levy = await createLevyIn(tx, userId, { ...entry.levy, activityId: activity.id })
+        const levy = await createLevyIn(tx, userId, {
+          ...entry.levy,
+          activityId: activity.id,
+          settlementCategoryId: await categoryId(entry.settlementCategory),
+        })
         for (const modifier of entry.modifiers) await addModifierIn(tx, userId, levy.id, modifier)
         levies.push(levy)
       }

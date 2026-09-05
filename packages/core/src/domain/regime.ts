@@ -151,6 +151,15 @@ const levyTemplateSchema = z.object({
   regularizationParams: regularizationParamsSchema.optional(),
   deductible: z.boolean().optional(),
   passThrough: z.boolean().optional(),
+  /**
+   * French: the category the user's payments of this rule are filed under.
+   * Applying the model reuses the category of that name when the user already
+   * has one and creates it otherwise, then links it: without it nothing would
+   * ever tell the engine that a levy was paid, and its reserve would never
+   * fall. Two rules of one model never name the same category, because a
+   * shared one would let each count the other's payments.
+   */
+  settlementCategory: z.string().min(1).optional(),
   /** French: shown beside the rule, and the place a limit of the model is said. */
   note: z.string().optional(),
   modifiers: z.array(modifierTemplateSchema).optional(),

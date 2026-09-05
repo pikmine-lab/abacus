@@ -33,6 +33,7 @@ const RETA_TRAMOS = [
 /** National, identical in the common territory and in the foral ones. */
 const RETA_LEVY = {
   name: 'Cotisation RETA',
+  settlementCategory: 'Cotisations sociales',
   kind: 'social',
   validFrom: '2026-01-01',
   source: {
@@ -132,6 +133,7 @@ const BIZKAIA_IRPF_SOURCE = {
 
 const BIZKAIA_VAT_LEVY = {
   name: 'IVA (modelo 303 foral)',
+  settlementCategory: 'TVA',
   kind: 'vat',
   validFrom: '2026-01-01',
   source: {
@@ -248,6 +250,7 @@ export const ES = {
         RETA_LEVY,
         {
           name: 'Paiement fractionné IRPF (modelo 130)',
+          settlementCategory: 'Impôt sur le revenu',
           kind: 'income_tax',
           validFrom: '2026-01-01',
           source: {
@@ -289,6 +292,7 @@ export const ES = {
         },
         {
           name: 'IVA (modelo 303)',
+          settlementCategory: 'TVA',
           kind: 'vat',
           validFrom: '2026-01-01',
           source: {
@@ -347,6 +351,7 @@ export const ES = {
         RETA_LEVY,
         {
           name: 'Paiement fractionné IRPF (modelo 130 foral)',
+          settlementCategory: 'Impôt sur le revenu',
           kind: 'income_tax',
           validFrom: '2026-01-01',
           source: BIZKAIA_IRPF_SOURCE,
@@ -389,6 +394,7 @@ export const ES = {
         RETA_LEVY,
         {
           name: 'Paiement fractionné IRPF (modelo 130 foral)',
+          settlementCategory: 'Impôt sur le revenu',
           kind: 'income_tax',
           validFrom: '2026-01-01',
           source: BIZKAIA_IRPF_SOURCE,

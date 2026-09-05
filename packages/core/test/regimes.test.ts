@@ -67,6 +67,12 @@ test('every model of the catalog loads, resolves and writes rules the domain acc
       // same validation a hand-typed one does.
       const applied = await applyRegime(user, { name: model.id, modelId: model.id, answers })
       assert.equal(applied.levies.length, preview.levies.length)
+      // Every rule knows the category its payments will be filed under, and no
+      // two of one model share it: without that, a reserve would never fall,
+      // and two rules on one category would each count the other's payments.
+      const settled = applied.levies.map((l) => l.settlementCategoryId)
+      assert.ok(settled.every(Boolean), `${model.id}: a rule was written with no settlement category`)
+      assert.equal(new Set(settled).size, settled.length, `${model.id}: two rules share a category`)
       assert.equal(applied.thresholds.length, preview.thresholds.length)
       assert.equal(applied.inputs.length, preview.inputs.length)
     }
