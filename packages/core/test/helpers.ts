@@ -13,7 +13,8 @@ export async function setupDb(): Promise<void> {
 
 export async function truncateAll(): Promise<void> {
   await db()`
-    truncate financing_installment, movement, balance_check, commitment_event, commitment, actor_alias, actor,
+    truncate levy_modifier, levy, activity_input, threshold, invoice, activity_category_exception,
+             financing_installment, movement, balance_check, commitment_event, commitment, actor_alias, actor,
              category, activity, account, investment_operation, asset, instrument, user_preference,
              auth_apikey, auth_session, auth_account, auth_verification, auth_user
     cascade

@@ -15,12 +15,37 @@ export interface Account {
   openingBalance: string
   openedOn: string | null
   closedOn: string | null
+  /** The activity whose money this is; null for a personal account. */
+  activityId: string | null
 }
+
+/**
+ * `business` has a regime, invoices and a statement; `personal` is an
+ * analysis dimension and nothing more. An activity never changes kind or
+ * regime: it closes, and a new regime is a new activity.
+ */
+export type ActivityKind = 'business' | 'personal'
+/** Which date brings a receipt into the revenue: the payment or the invoice. */
+export type RevenueBasis = 'cash' | 'invoiced'
+/** Whether the activity's expenses reduce its profit, exceptions aside. */
+export type DeductibleExpenses = 'all' | 'none'
 
 export interface Activity {
   id: string
   userId: string
   name: string
+  kind: ActivityKind
+  startedOn: string | null
+  closedOn: string | null
+  fiscalYearStartMonth: number
+  fiscalYearStartDay: number
+  revenueBasis: RevenueBasis
+  vatRegistered: boolean
+  defaultVatRate: string | null
+  deductibleExpenses: DeductibleExpenses
+  /** Free words for the screen; the code never reads them. */
+  regimeLabel: string | null
+  currency: string
 }
 
 export interface Category {
@@ -36,6 +61,10 @@ export interface Actor {
   name: string
   activityId: string | null
   note: string | null
+  /** What this client does to an invoice, copied on a new one: the VAT it
+   * bears, the withholding it keeps back for the tax office. */
+  invoiceVatRate: string | null
+  invoiceWithholdingRate: string | null
 }
 
 export type MovementKind = 'transfer' | 'expense' | 'income'
@@ -94,6 +123,10 @@ export interface Movement {
    * which is where it is read, corrected and deleted.
    */
   ghost: boolean
+  /** The invoice this income pays, when it pays one; several incomes may pay one. */
+  invoiceId: string | null
+  /** The VAT inside the amount, when the activity is registered and it was stated. */
+  vatAmount: string | null
 }
 
 export type CommitmentKind = 'subscription' | 'financing' | 'investment_plan'
@@ -254,4 +287,152 @@ export interface Position {
   value: string | null
   /** `value - costBasis`: unrealized, dividends and account fees excluded. */
   gain: string | null
+}
+
+/**
+ * What was asked of a client and when. Amounts are as written on the invoice;
+ * `totalAmount` is what the client owes, `receivableAmount` what reaches the
+ * account (base + VAT − withholding). The state is never stored: paid, overdue
+ * and cancelled are read from the linked incomes, `dueOn` and `cancelledOn`.
+ */
+export interface Invoice {
+  id: string
+  userId: string
+  activityId: string
+  actorId: string
+  reference: string | null
+  issuedOn: string
+  dueOn: string | null
+  currency: string
+  baseAmount: string
+  vatRate: string
+  vatAmount: string
+  withholdingRate: string
+  withholdingAmount: string
+  totalAmount: string
+  receivableAmount: string
+  note: string | null
+  remindedOn: string | null
+  cancelledOn: string | null
+}
+
+/** One thing the activity owes, described entirely in data (see domain/levy.ts). */
+export type LevyKind = 'social' | 'income_tax' | 'vat' | 'other'
+export type LevyStatus = 'confirmed' | 'extended_by_default' | 'unconfirmed'
+export type LevyMeasure =
+  | 'revenue'
+  | 'revenue_incl_vat'
+  | 'expenses'
+  | 'profit'
+  | 'vat_balance'
+  | 'withholdings'
+  | 'paid'
+  | 'amount'
+  | 'input'
+  | 'none'
+export type PeriodRef = 'current' | 'ytd' | 'year-1' | 'year-2' | 'rolling-12'
+export type BaseScale = 'none' | 'per_month' | 'annualized'
+export type AmountForm = 'rate' | 'brackets' | 'elective_base' | 'fixed' | 'none'
+export type LevyPeriod = 'month' | 'quarter' | 'half' | 'year'
+export type Regularization = 'none' | 'annual_deadzone' | 'provisional_then_settled'
+
+export interface Levy {
+  id: string
+  userId: string
+  activityId: string
+  name: string
+  kind: LevyKind
+  validFrom: string
+  validTo: string | null
+  sourceUrl: string | null
+  verifiedOn: string | null
+  reviewOn: string | null
+  status: LevyStatus
+  baseMeasure: LevyMeasure
+  baseLevyId: string | null
+  baseInputName: string | null
+  basePeriodRef: PeriodRef
+  baseCoefficient: string | null
+  /** Validated shape: `Abatement` in domain/levy.ts. */
+  baseAbatement: unknown | null
+  baseAddBackLevyIds: string[] | null
+  baseFloor: string | null
+  baseCap: string | null
+  /** Validated shape: `Credit[]` in domain/levy.ts. */
+  baseCredits: unknown | null
+  baseScale: BaseScale
+  amountForm: AmountForm
+  rate: string | null
+  /** Validated shape: `Brackets` in domain/levy.ts. */
+  brackets: unknown | null
+  /** Validated shape: `Elective` in domain/levy.ts. */
+  elective: unknown | null
+  fixedAmount: string | null
+  fixedInputName: string | null
+  fixedCredit: string | null
+  creditInputName: string | null
+  period: LevyPeriod
+  /** Validated shape: `Due` in domain/levy.ts. */
+  due: unknown
+  declarationLagMonths: number | null
+  firstDueAfterDays: number | null
+  /** Validated shape: `SkipPeriods` in domain/levy.ts. */
+  skipPeriods: unknown | null
+  regularization: Regularization
+  /** Validated shape: `RegularizationParams` in domain/levy.ts. */
+  regularizationParams: unknown | null
+  settlementCategoryId: string | null
+  deductible: boolean
+  passThrough: boolean
+  note: string | null
+}
+
+export type ModifierEffect = 'rate_factor' | 'replace_amount' | 'coefficient' | 'exempt'
+
+/** What changes a levy for a time; eligibility is the user's assertion. */
+export interface LevyModifier {
+  id: string
+  levyId: string
+  label: string
+  effect: ModifierEffect
+  value: string | null
+  startsOn: string | null
+  durationMonths: number | null
+  durationPeriods: number | null
+  endsOn: string | null
+  condition: string | null
+  sourceUrl: string | null
+  verifiedOn: string | null
+  status: LevyStatus
+}
+
+/** A dated figure the engine cannot compute and the user states. */
+export interface ActivityInput {
+  id: string
+  userId: string
+  activityId: string
+  name: string
+  validFrom: string
+  value: string
+  note: string | null
+}
+
+export type ThresholdMeasure =
+  | Exclude<LevyMeasure, 'paid' | 'amount' | 'input' | 'none'>
+  | 'withholding_share'
+
+/** A measure the regime hinges on, and what changes past the value. It alerts, never switches. */
+export interface Threshold {
+  id: string
+  userId: string
+  activityId: string
+  label: string
+  measure: ThresholdMeasure
+  periodRef: PeriodRef
+  comparison: 'lte' | 'gte'
+  value: string
+  consequence: string
+  sourceUrl: string | null
+  verifiedOn: string | null
+  reviewOn: string | null
 }
