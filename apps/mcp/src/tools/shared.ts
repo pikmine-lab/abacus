@@ -21,6 +21,12 @@ export const GUIDANCE: Record<string, string> = {
     'An internal transfer enters no period total, so it is about no month: drop month. Only an expense or an income can be attached to another month.',
   transfer_is_never_ghost:
     'An internal transfer already counts in no analysis: drop ghost. Only an expense or an income can be left out of one.',
+  transfer_has_no_vat:
+    'An internal transfer carries no VAT, as it carries no category: drop vatAmount. Money moving between two owned accounts buys nothing.',
+  vat_outside_amount:
+    'The VAT is inside the amount, not on top of it, so vatAmount cannot exceed it. Pass the amount actually paid, VAT included, and the VAT part of it.',
+  vat_needs_registered_activity:
+    'Only a movement of a VAT-registered business activity states the VAT inside it: anywhere else no return would ever reclaim it. Name that activity, or drop vatAmount.',
   bad_month:
     'A month is written YYYY-MM (2026-08). Pass the month the movement is about, not a description of it.',
   not_an_advance:

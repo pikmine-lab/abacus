@@ -197,6 +197,10 @@ const FR: Record<string, string> = {
   advance_settled: 'Cette avance est déjà remboursée en entier.',
   transfer_stays_eur: 'Un virement entre tes comptes se déclare en euros.',
   transfer_has_no_accrual: 'Un virement interne n’entre dans aucun total de période : pas de rattachement.',
+  transfer_has_no_vat: 'Un virement interne ne porte pas de TVA.',
+  vat_outside_amount: 'La TVA est comprise dans le montant : elle ne peut pas le dépasser.',
+  vat_needs_registered_activity:
+    'Seule une dépense d’une activité indépendante assujettie porte une TVA déductible.',
   bad_month: 'Ce mois est invalide.',
   needless_eur_amount: 'Le montant est déjà en euros : la contre-valeur ne s’applique pas.',
   no_exchange_rate:
@@ -407,6 +411,9 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       ghost: formData.get('ghost') !== null,
       refundsMovementId: opt(formData, 'refundsMovementId'),
       invoiceId: opt(formData, 'invoiceId'),
+      // Rendered only on an expense of an activity that reclaims VAT, so an
+      // absent field is the truth everywhere else.
+      vatAmount: optNum(formData, 'vatAmount'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : undefined,
@@ -484,6 +491,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
         ? await actorIdFromName(userId, expectedRefundFrom)
         : null,
       expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : null,
+      // Same as the claim: an emptied (or unrendered) field clears the VAT
+      // rather than keeping a figure the panel no longer shows.
+      vatAmount: optNum(formData, 'vatAmount') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }

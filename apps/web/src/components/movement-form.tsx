@@ -23,6 +23,16 @@ interface Option {
   id: string
   name: string
 }
+/**
+ * An activity, with what its regime does to an expense filed under it: only a
+ * business activity registered for VAT reclaims any, so only one of them lets
+ * an expense say how much of it was VAT.
+ */
+export interface ActivityOption extends Option {
+  vatRegistered?: boolean
+  /** The rate its purchases usually bear, as a percentage, when it has one. */
+  defaultVatRate?: number
+}
 interface Advance {
   id: string
   happenedOn: string
@@ -64,6 +74,8 @@ export interface MovementDraft {
   /** Advance carried by this expense: who owes, and the share expected back. */
   refundFromActorName?: string
   expectedRefundAmount?: number
+  /** The VAT stated inside the amount, when the activity reclaims it. */
+  vatAmount?: string
   /** Origin the form must not silently break (échéance, ajustement). */
   origin?: string
 }
@@ -81,7 +93,7 @@ export function MovementForm({
   accounts: Option[]
   actors: Option[]
   categories: Option[]
-  activities: Option[]
+  activities: ActivityOption[]
   advances: Advance[]
   /** Open invoices, so an income from a client can say which one it pays. */
   invoices?: OpenInvoiceOption[]
@@ -94,6 +106,10 @@ export function MovementForm({
   // is offered the one it pays.
   const [actorName, setActorName] = useState(draft?.actorName ?? '')
   const payable = invoices.filter((i) => i.client.toLowerCase() === actorName.trim().toLowerCase())
+  // The activity is watched because its regime decides whether an expense
+  // says how much of it was VAT: only one registered for VAT reclaims any.
+  const [activityId, setActivityId] = useState(draft?.activityId ?? '')
+  const vatActivity = activities.find((a) => a.id === activityId && a.vatRegistered)
   const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
   const [monthOpen, setMonthOpen] = useState(draft?.accrualMonth !== undefined)
   // The month the movement is about is stated against the month of its date,
@@ -123,6 +139,7 @@ export function MovementForm({
         // above the remount: left alone it would keep showing the euros field
         // while the cleared select says EUR.
         setActorName('')
+        setActivityId('')
         setAmount('')
         setCurrency('EUR')
         setEurAmount('')
@@ -280,9 +297,25 @@ export function MovementForm({
                 noneLabel={editing ? '(aucune)' : 'héritée de l’acteur'}
                 options={activities.map((a) => ({ value: a.id, label: a.name }))}
                 defaultValue={draft?.activityId ?? ''}
+                onValueChange={setActivityId}
               />
             </Field>
           </div>
+
+          {/* Only on an expense of an activity that reclaims VAT: what a
+              purchase bore comes off what was collected, and nowhere else does
+              anything ever read it. An activity left to the actor shows no
+              field, because nothing here knows yet which one it will be. */}
+          {type === 'expense' && vatActivity && (
+            <VatField
+              amount={Number(foreign ? eurAmount : amount)}
+              // A correction shows what was declared and proposes nothing: the
+              // panel rebuilds the movement whole, so a proposal here would
+              // write a VAT the receipt never stated.
+              rate={editing ? undefined : vatActivity.defaultVatRate}
+              defaultValue={draft?.vatAmount}
+            />
+          )}
         </>
       )}
 
@@ -363,6 +396,42 @@ export function MovementForm({
 
       <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Déclarer'}</SubmitButton>
     </ActionForm>
+  )
+}
+
+/**
+ * The VAT inside an expense of a registered activity: an amount, because that
+ * is the figure a receipt prints and the figure a return deducts, proposed
+ * from the rate the activity's purchases usually bear.
+ *
+ * The proposal follows the amount as long as nothing has been typed here; the
+ * first keystroke makes the field the truth, and emptying it says this
+ * purchase bore none. A receipt that departs from the usual rate is the
+ * ordinary case, not the exception, so what is typed is never rewritten.
+ */
+function VatField({ amount, rate, defaultValue }: { amount: number; rate?: number; defaultValue?: string }) {
+  const [typed, setTyped] = useState<string | null>(defaultValue ?? null)
+  // The rate applies to the amount before VAT, and the amount here includes it.
+  const proposed =
+    rate !== undefined && rate > 0 && Number.isFinite(amount) && amount > 0
+      ? Math.round(((amount * rate) / (100 + rate)) * 100) / 100
+      : null
+  const cleaned = typed === null ? null : typed.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.')
+  const value = cleaned === null ? proposed : cleaned === '' ? null : Number(cleaned)
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="dont TVA (€)" name="vatAmount">
+        <input type="hidden" name="vatAmount" value={value !== null && Number.isFinite(value) ? value : ''} />
+        <Input
+          inputMode="decimal"
+          autoComplete="off"
+          className="text-right font-mono tabular"
+          value={typed ?? (proposed === null ? '' : proposed.toFixed(2).replace('.', ','))}
+          onChange={(e) => setTyped(e.target.value)}
+        />
+      </Field>
+    </div>
   )
 }
 

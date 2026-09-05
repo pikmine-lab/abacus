@@ -25,7 +25,7 @@ import {
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { SortChoice, SortFields } from '../domain/sort.ts'
-import type { Account, Actor, Invoice, Movement } from '../domain/types.ts'
+import type { Account, Activity, Actor, Invoice, Movement } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { eurRateOn, toEur } from './fx.ts'
 
@@ -85,6 +85,12 @@ export interface DeclareMovementInput {
    * the incomes linked to one invoice never add up to more than it asks for.
    */
   invoiceId?: string
+  /**
+   * The VAT inside `amount`, on a movement of a VAT-registered business
+   * activity: what it reclaims on an expense, what it collected on an income
+   * that pays no invoice. Part of the amount, never on top of it.
+   */
+  vatAmount?: number
 }
 
 /**
@@ -281,8 +287,9 @@ async function checkMovement(
     input.activityId !== undefined
       ? input.activityId
       : (invoice?.activityId ?? externalActor?.activityId ?? touched?.activityId ?? null)
+  let activity: Activity | null = null
   if (activityId) {
-    const activity = await getActivity(tx, userId, activityId)
+    activity = (await getActivity(tx, userId, activityId)) ?? null
     if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
     if (activity.closedOn && input.happenedOn > activity.closedOn)
       throw new DomainError(
@@ -290,7 +297,31 @@ async function checkMovement(
         `Activity "${activity.name}" is closed since ${activity.closedOn}: a later movement belongs to the activity that followed it`,
       )
   }
+  checkVat(input, activity)
   return activityId
+}
+
+/**
+ * The VAT inside a movement is a figure only where a regime reclaims it: on an
+ * expense or an income of a VAT-registered business activity. Anywhere else
+ * nothing would ever read it (the measures leave it out when the activity
+ * reclaims none) while it would still look like a declared fact, so it is
+ * refused rather than stored and forgotten.
+ */
+function checkVat(input: DeclareMovementInput, activity: Activity | null): void {
+  if (input.vatAmount === undefined) return
+  if (input.sourceAccountId && input.targetAccountId)
+    throw new DomainError('transfer_has_no_vat', 'An internal transfer carries no VAT')
+  if (input.vatAmount < 0 || input.vatAmount > input.amount)
+    throw new DomainError(
+      'vat_outside_amount',
+      `The VAT (${input.vatAmount}) is inside the amount (${input.amount}), so it cannot exceed it`,
+    )
+  if (activity?.kind !== 'business' || !activity.vatRegistered)
+    throw new DomainError(
+      'vat_needs_registered_activity',
+      'Only a movement of a VAT-registered business activity states the VAT inside it',
+    )
 }
 
 /**
@@ -407,6 +438,8 @@ export interface CorrectMovementInput {
   ghost?: boolean
   /** The invoice this income pays: an id links it, null unlinks it. Absent, the stored link is kept. */
   invoiceId?: string | null
+  /** The VAT inside the amount: a figure states it, null clears it. Absent, the stored one is kept. */
+  vatAmount?: number | null
 }
 
 const CORRECTABLE = [
@@ -415,6 +448,7 @@ const CORRECTABLE = [
   'accrualMonth',
   'ghost',
   'invoiceId',
+  'vatAmount',
   'sourceAccountId',
   'sourceActorId',
   'targetAccountId',
@@ -491,6 +525,12 @@ export async function correctMovementIn(
     refundsMovementId: current.refundsMovementId ?? undefined,
     invoiceId:
       input.invoiceId !== undefined ? (input.invoiceId ?? undefined) : (current.invoiceId ?? undefined),
+    vatAmount:
+      input.vatAmount !== undefined
+        ? (input.vatAmount ?? undefined)
+        : current.vatAmount !== null
+          ? Number(current.vatAmount)
+          : undefined,
   }
   // A movement corrected into a transfer moves euros: an original left over
   // from the expense it was would dress an internal move as a foreign payment.
@@ -507,6 +547,8 @@ export async function correctMovementIn(
   // explicitly is refused by checkMovement. Always a boolean, never absent:
   // the column has no null to fall back to.
   merged.ghost = becomesTransfer && input.ghost === undefined ? false : (input.ghost ?? current.ghost)
+  // And for the VAT inside it, which a transfer never carries.
+  if (becomesTransfer && input.vatAmount === undefined) merged.vatAmount = undefined
   const resolved = moneyTouched
     ? await inAccountCurrency(tx, merged, history)
     : {

@@ -124,7 +124,14 @@ export default async function MovementsPage({
     accounts: openAccounts.map((a) => ({ id: a.id, name: a.name })),
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
-    activities: activities.map((a) => ({ id: a.id, name: a.name })),
+    // Only a business activity registered for VAT reclaims any, and only
+    // there does an expense say how much of it was VAT.
+    activities: activities.map((a) => ({
+      id: a.id,
+      name: a.name,
+      vatRegistered: a.kind === 'business' && a.vatRegistered,
+      defaultVatRate: a.defaultVatRate === null ? undefined : Number(a.defaultVatRate),
+    })),
   }
 
   return (
@@ -329,6 +336,10 @@ export default async function MovementsPage({
                           expectedRefundAmount: m.expectedRefundAmount
                             ? Number(m.expectedRefundAmount)
                             : undefined,
+                          vatAmount:
+                            m.vatAmount === null
+                              ? undefined
+                              : Number(m.vatAmount).toFixed(2).replace('.', ','),
                           origin,
                         }}
                       />

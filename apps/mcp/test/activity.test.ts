@@ -207,3 +207,41 @@ test('the overview carries what a regime has to say, and says it switches nothin
   assert.equal(alerts[1]!.alert, 'rule_review_due')
   assert.equal(alerts[1]!.about, 'Contributions')
 })
+
+test('an expense of a registered activity says the VAT inside it, and nothing else may', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  const { now } = await regimeWithSomethingToSay(client)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      createUnknownActors: true,
+      movements: [
+        {
+          date: now,
+          amount: 120,
+          type: 'expense',
+          account: 'Pro',
+          actor: 'Supplier',
+          activity: 'Freelance',
+          vatAmount: 20,
+        },
+        // No activity, so no return will ever reclaim it: refused rather than
+        // written and forgotten.
+        { date: now, amount: 60, type: 'expense', account: 'Courant', actor: 'Baker', vatAmount: 10 },
+      ],
+    })
+  ).json() as { declared: number; failed: number; results: Record<string, unknown>[] }
+  assert.equal(declared.declared, 1)
+  assert.equal(declared.failed, 1)
+  assert.equal(declared.results[0]!.vatAmount, 20)
+  assert.match(String(declared.results[1]!.error), /VAT-registered business activity/)
+
+  // The statement reads it back: what the purchase bore comes off what the
+  // year collected.
+  const statement = (
+    await call(client, 'get_activity_statement', { activity: 'Freelance', year: Number(now.slice(0, 4)) })
+  ).json()
+  assert.equal((statement.year as Record<string, unknown>).vatDeductible, 20)
+})
