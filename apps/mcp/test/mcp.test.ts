@@ -456,6 +456,84 @@ test('the whole referential corrects itself through the MCP surface', async () =
   assert.match(taken.text, /already uses that name/)
 })
 
+test('a business activity is configured, closed and read back through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_categories', { action: 'create', name: 'Repas' })
+
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      revenueBasis: 'invoiced',
+      vatRegistered: true,
+      defaultVatRate: 21,
+      deductibleExpenses: 'all',
+      regimeLabel: 'Régime de contrôle',
+      fiscalYearStartMonth: 4,
+      fiscalYearStartDay: 6,
+    })
+  ).json() as { revenueBasis: string; fiscalYearStart: string; defaultVatRate: number }
+  assert.equal(created.revenueBasis, 'invoiced')
+  assert.equal(created.fiscalYearStart, '04-06')
+  assert.equal(created.defaultVatRate, 21)
+
+  await call(client, 'manage_activities', {
+    action: 'set_exceptions',
+    name: 'Conseil',
+    categories: ['Repas'],
+  })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    categoryExceptions?: string[]
+  }[]
+  assert.deepEqual(listed[0]!.categoryExceptions, ['Repas'])
+
+  // An account belongs to the activity, and a personal one refuses to own it.
+  await call(client, 'manage_accounts', {
+    action: 'create',
+    name: 'Pro',
+    behavior: 'payment',
+    activity: 'Conseil',
+  })
+  await call(client, 'manage_activities', { action: 'create', name: 'Location' })
+  const wrongKind = await call(client, 'manage_accounts', {
+    action: 'update',
+    name: 'Pro',
+    activity: 'Location',
+  })
+  assert.equal(wrongKind.isError, true)
+  assert.match(wrongKind.text, /Only a business activity owns accounts/)
+
+  // A client carries what it does to an invoice.
+  const actor = (
+    await call(client, 'manage_actors', {
+      action: 'create',
+      name: 'Client A',
+      activity: 'Conseil',
+      invoiceVatRate: 21,
+      invoiceWithholdingRate: 15,
+    })
+  ).json() as { actorId: string }
+  assert.ok(actor.actorId)
+  assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
+    { name: 'Client A', activity: 'Conseil', invoiceVatRate: 21, invoiceWithholdingRate: 15 },
+  ])
+
+  // Closed, the activity refuses a later movement and says where it belongs.
+  await call(client, 'manage_activities', { action: 'close', name: 'Conseil', closedOn: '2026-06-30' })
+  const late = await call(client, 'declare_movements', {
+    movements: [{ date: '2026-07-01', amount: 900, type: 'income', account: 'Pro', actor: 'Client A' }],
+  })
+  assert.match((late.json() as { results: { error?: string }[] }).results[0]!.error!, /closed at that date/)
+  const reopened = (
+    await call(client, 'manage_activities', { action: 'reopen', name: 'Conseil' })
+  ).json() as { closedOn: null }
+  assert.equal(reopened.closedOn, null)
+})
+
 test('a movement reads back with its account and its counterparty', async () => {
   const user = await seedUser()
   const client = await clientFor(user)
