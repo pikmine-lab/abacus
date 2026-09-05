@@ -373,8 +373,9 @@ const CORRECTABLE = [
  * links) are never touched here, and the merged result must satisfy the same
  * domain rules as a fresh declaration.
  *
- * The stored activity is not re-inherited from a changed actor: history stays
- * stable unless the activity is set explicitly (same rule as declaration).
+ * The stored activity is not re-inherited from a changed actor or account:
+ * history stays stable unless the activity is set explicitly (same rule as
+ * declaration).
  */
 export async function correctMovement(
   userId: string,

@@ -71,6 +71,19 @@ function describeActivity(act: Activity, exceptions: string[]) {
 }
 
 export function registerCatalogTools(server: McpServer, userId: string): void {
+  /** The exception categories of one activity, by the names the user gave them. */
+  async function exceptionNames(activityId: string): Promise<string[]> {
+    const [exceptions, categories] = await Promise.all([
+      listCategoryExceptions(userId),
+      listCategories(userId),
+    ])
+    const categoryName = new Map(categories.map((c) => [c.id, c.name]))
+    return exceptions
+      .filter((e) => e.activityId === activityId)
+      .map((e) => categoryName.get(e.categoryId)!)
+      .sort()
+  }
+
   server.registerTool(
     'manage_accounts',
     {
@@ -434,7 +447,9 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
         const target = await requireActivityByName(userId, a.name)
         if (a.action === 'update') {
           const updated = await editActivity(userId, target.id, { name: a.newName, ...settings })
-          return ok({ activityId: updated.id, ...describeActivity(updated, []) })
+          // The exceptions it already carries come back with it: an answer
+          // showing none would read as a correction having dropped them.
+          return ok({ activityId: updated.id, ...describeActivity(updated, await exceptionNames(target.id)) })
         }
         if (a.action === 'close') {
           const closed = await closeActivity(userId, target.id, a.closedOn)
