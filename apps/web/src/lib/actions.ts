@@ -8,8 +8,12 @@ import type {
   DeductibleExpenses,
   InstrumentKind,
   Judgment,
+  LevyStatus,
+  ModifierEffect,
+  PeriodRef,
   PeriodUnit,
   RevenueBasis,
+  ThresholdMeasure,
 } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
@@ -60,6 +64,21 @@ import {
   setManualPrice,
   stopFollowing,
 } from '@abacus/core/services/investments'
+import {
+  addModifier,
+  closeLevy,
+  createLevy,
+  createThreshold,
+  deleteLevy,
+  editLevy,
+  editThreshold,
+  type NewLevy,
+  removeInput,
+  removeModifier,
+  removeThreshold,
+  setInput,
+  supersedeLevy,
+} from '@abacus/core/services/levies'
 import {
   closeAdvance,
   correctMovement,
@@ -150,7 +169,7 @@ const FR: Record<string, string> = {
   activity_regime_fixed:
     'Cette activité porte des règles ou des factures : elle ne change pas de régime. Clos-la et crée la suivante.',
   activity_has_accounts: 'Des comptes sont rattachés à cette activité : détache-les d’abord.',
-  activity_not_business: 'Seule une activité indépendante porte des comptes.',
+  activity_not_business: 'Seule une activité indépendante porte des comptes, des règles et des seuils.',
   vat_rate_needs_registration: 'Un taux de TVA suppose une activité assujettie.',
   activity_closes_before_start: 'La clôture précède le début de l’activité.',
   bad_rate: 'Un taux est un pourcentage entre 0 et 100.',
@@ -194,6 +213,31 @@ const FR: Record<string, string> = {
   asset_has_plans: 'Un versement programmé achète cet actif : arrête le versement d’abord, ou garde l’actif.',
   asset_exists: 'Ce nom est pris, ou tu détiens déjà cet instrument sous un autre nom.',
   asset_not_found: 'Cet actif n’existe plus.',
+  levy_not_found: 'Cette règle n’existe plus.',
+  levy_validity: 'La fin de validité tombe avant le début.',
+  levy_form_needs_param: 'Cette forme de montant a besoin de son paramètre.',
+  levy_form_param_unexpected: 'Un paramètre d’une autre forme de montant a été envoyé.',
+  levy_params_invalid: 'Un paramètre structuré est invalide.',
+  levy_value_invalid: 'Une valeur saisie est hors de ses bornes.',
+  levy_base_needs_levy: 'Cette mesure lit une autre règle : indique laquelle.',
+  levy_base_needs_input: 'Cette mesure lit un paramètre saisi : indique son nom.',
+  levy_base_levy_unexpected: 'Cette mesure ne lit aucune autre règle.',
+  levy_base_input_unexpected: 'Cette mesure ne lit aucun paramètre saisi.',
+  base_levy_other_activity: 'Une règle ne lit que les règles de son activité.',
+  base_levy_not_found: 'La règle lue n’existe plus.',
+  base_levy_self: 'Une règle ne se lit pas elle-même.',
+  levy_referenced: 'Une autre règle lit celle-ci : corrige-la d’abord, ou clos celle-ci.',
+  levy_has_settlements:
+    'Un règlement a déjà été déclaré dans sa catégorie : cette règle fait partie de l’histoire. Clos-la.',
+  supersede_before_start: 'Le remplacement commence après le début de la règle actuelle.',
+  modifier_not_found: 'Ce modificateur n’existe plus.',
+  modifier_needs_value: 'Cet effet a besoin d’une valeur.',
+  modifier_value_invalid: 'La valeur du modificateur est hors de ses bornes.',
+  modifier_single_duration: 'Un modificateur porte une seule durée : mois, périodes ou date de fin.',
+  input_not_found: 'Ce paramètre n’existe plus.',
+  input_value_invalid: 'Ce paramètre a besoin d’un nom et d’une valeur.',
+  threshold_not_found: 'Ce seuil n’existe plus.',
+  threshold_value_invalid: 'Un seuil a besoin d’un libellé, d’une valeur et de ce qui change au-delà.',
 }
 
 /**
@@ -1389,5 +1433,410 @@ export async function stopFollowingAction(_prev: FormState, formData: FormData):
     return { error: frError(e) }
   }
   refreshAll()
+  return { ok: true }
+}
+
+/**
+ * The rules of an activity, its stated figures and its watched thresholds.
+ * Everything below only reshapes a form into what the service takes: what a
+ * rule guarantees and refuses is decided there, and both interfaces read it
+ * at the same place.
+ */
+
+/** A repeated field, as a row-per-index list (the tables edited line by line). */
+function list(formData: FormData, key: string): string[] {
+  return formData.getAll(key).map((v) => String(v).trim())
+}
+
+/** A cell of a table: empty means "no bound", never zero. */
+function cell(raw: string): number | null {
+  if (raw === '') return null
+  return Number(raw.replace(/[\s  ]/g, '').replace(',', '.'))
+}
+
+function rows<T>(
+  formData: FormData,
+  keys: string[],
+  build: (values: (number | null)[], index: number) => T,
+): T[] {
+  const columns = keys.map((key) => list(formData, key))
+  const height = Math.max(...columns.map((c) => c.length))
+  return Array.from({ length: height }, (_, index) =>
+    build(
+      columns.map((column) => cell(column[index] ?? '')),
+      index,
+    ),
+  )
+}
+
+function abatementFrom(formData: FormData): unknown {
+  const mode = str(formData, 'abatementMode')
+  if (mode === 'rate')
+    return { rate: num(formData, 'abatementRate'), minAmount: optNum(formData, 'abatementMinAmount') }
+  if (mode === 'brackets')
+    return {
+      brackets: rows(formData, ['abatementUpTo', 'abatementBracketRate'], ([upTo, rate]) => ({
+        upTo,
+        rate: rate ?? 0,
+      })),
+      on: { measure: str(formData, 'abatementMeasure'), periodRef: str(formData, 'abatementPeriodRef') },
+    }
+  return null
+}
+
+function creditsFrom(formData: FormData): unknown {
+  const sources = list(formData, 'creditSource')
+  const levies = list(formData, 'creditLevyId')
+  const shares = list(formData, 'creditShare')
+  const refs = list(formData, 'creditPeriodRef')
+  const credits = sources
+    .map((source, index) => ({
+      source,
+      levyId: levies[index] || undefined,
+      share: cell(shares[index] ?? '') ?? undefined,
+      periodRef: refs[index] || undefined,
+    }))
+    .filter((credit) => credit.source !== '')
+  return credits.length > 0 ? credits : null
+}
+
+function dueFrom(formData: FormData): unknown {
+  const type = str(formData, 'dueType')
+  if (type === 'fixed_dates')
+    return {
+      type,
+      dates: rows(
+        formData,
+        ['dueDateMonth', 'dueDateDay', 'dueDateYearOffset'],
+        ([month, day, yearOffset]) => ({ month: month ?? 0, day: day ?? 0, yearOffset: yearOffset ?? 0 }),
+      ),
+    }
+  if (type === 'after_period')
+    return {
+      type,
+      monthOffset: optNum(formData, 'dueMonthOffset'),
+      fromDay: optNum(formData, 'dueFromDay'),
+      toDay: num(formData, 'dueToDay'),
+    }
+  return { type: 'end_of_next_month' }
+}
+
+/** Periods folded into another return, named by the index of the rule's period. */
+function skipPeriodsFrom(formData: FormData): unknown {
+  const indexes = list(formData, 'skipPeriod')
+    .map(Number)
+    .filter((n) => Number.isInteger(n))
+  if (indexes.length === 0) return null
+  const period = str(formData, 'period')
+  if (period === 'year') return null
+  return { [period]: indexes }
+}
+
+function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
+  const amountForm = str(formData, 'amountForm') as NewLevy['amountForm']
+  const regularization = (opt(formData, 'regularization') ?? 'none') as NewLevy['regularization']
+  return {
+    name: str(formData, 'name'),
+    kind: str(formData, 'kind') as NewLevy['kind'],
+    validFrom: str(formData, 'validFrom'),
+    validTo: opt(formData, 'validTo') ?? null,
+    sourceUrl: opt(formData, 'sourceUrl') ?? null,
+    verifiedOn: opt(formData, 'verifiedOn') ?? null,
+    reviewOn: opt(formData, 'reviewOn') ?? null,
+    // A block the form did not render sends nothing, and an empty string is
+    // not a value: the service then applies the column's own default.
+    status: opt(formData, 'status') as NewLevy['status'],
+    baseMeasure: str(formData, 'baseMeasure') as NewLevy['baseMeasure'],
+    baseLevyId: opt(formData, 'baseLevyId') ?? null,
+    baseInputName: opt(formData, 'baseInputName') ?? null,
+    basePeriodRef: opt(formData, 'basePeriodRef') as NewLevy['basePeriodRef'],
+    baseCoefficient: optNum(formData, 'baseCoefficient') ?? null,
+    baseAbatement: abatementFrom(formData),
+    baseAddBackLevyIds: list(formData, 'addBackLevyId').filter(Boolean),
+    baseFloor: optNum(formData, 'baseFloor') ?? null,
+    baseCap: optNum(formData, 'baseCap') ?? null,
+    baseCredits: creditsFrom(formData),
+    baseScale: opt(formData, 'baseScale') as NewLevy['baseScale'],
+    amountForm,
+    rate: amountForm === 'rate' ? num(formData, 'rate') : null,
+    brackets:
+      amountForm === 'brackets'
+        ? {
+            mode: str(formData, 'bracketsMode'),
+            rows: rows(formData, ['bracketUpTo', 'bracketRate', 'bracketAmount'], ([upTo, rate, amount]) => ({
+              upTo,
+              rate: rate ?? undefined,
+              amount: amount ?? undefined,
+            })),
+          }
+        : null,
+    elective:
+      amountForm === 'elective_base'
+        ? {
+            rows: rows(
+              formData,
+              ['electiveUpTo', 'electiveMinBase', 'electiveMaxBase'],
+              ([upTo, minBase, maxBase]) => ({ upTo, minBase: minBase ?? 0, maxBase: maxBase ?? 0 }),
+            ),
+            inputName: str(formData, 'electiveInputName'),
+            rate: num(formData, 'electiveRate'),
+          }
+        : null,
+    fixedAmount: amountForm === 'fixed' ? (optNum(formData, 'fixedAmount') ?? null) : null,
+    fixedInputName: amountForm === 'fixed' ? (opt(formData, 'fixedInputName') ?? null) : null,
+    fixedCredit: optNum(formData, 'fixedCredit') ?? null,
+    creditInputName: opt(formData, 'creditInputName') ?? null,
+    period: str(formData, 'period') as NewLevy['period'],
+    due: dueFrom(formData),
+    declarationLagMonths: optNum(formData, 'declarationLagMonths') ?? null,
+    firstDueAfterDays: optNum(formData, 'firstDueAfterDays') ?? null,
+    skipPeriods: skipPeriodsFrom(formData),
+    regularization,
+    regularizationParams:
+      regularization === 'none'
+        ? null
+        : {
+            settleMonthOffset: optNum(formData, 'settleMonthOffset'),
+            refundMonthOffset: optNum(formData, 'refundMonthOffset'),
+          },
+    settlementCategoryId: opt(formData, 'settlementCategoryId') ?? null,
+    deductible: formData.get('deductible') !== null,
+    passThrough: formData.get('passThrough') !== null,
+    note: opt(formData, 'note') ?? null,
+  }
+}
+
+/** What a rule cannot do without, whichever form it takes. */
+function levyRules(formData: FormData): FieldRule[] {
+  const rules: FieldRule[] = [
+    { name: 'name' },
+    { name: 'kind' },
+    { name: 'validFrom', kind: 'date' },
+    { name: 'baseMeasure' },
+    { name: 'amountForm' },
+    { name: 'period' },
+    { name: 'dueType' },
+  ]
+  const form = str(formData, 'amountForm')
+  if (form === 'rate') rules.push({ name: 'rate' })
+  if (form === 'elective_base') rules.push({ name: 'electiveInputName' }, { name: 'electiveRate' })
+  if (str(formData, 'baseMeasure') === 'input') rules.push({ name: 'baseInputName' })
+  if (str(formData, 'dueType') === 'after_period') rules.push({ name: 'dueToDay' })
+  return rules
+}
+
+/** The page of the activity whose rules just changed. */
+function refreshActivity(activityId: string) {
+  revalidatePath(`/settings/activities/${activityId}`)
+  refreshAll()
+}
+
+export async function createLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await createLevy(userId, { ...levyFrom(formData), activityId })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+/** Corrects a rule that was mistyped. A value that changed is a supersede. */
+export async function editLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await editLevy(userId, str(formData, 'levyId'), levyFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+/**
+ * The rule changes from a date: the current row closes the day before and the
+ * new one starts. The form carries every field, prefilled with what the rule
+ * says today, so what did not change is simply carried over.
+ */
+export async function supersedeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    const { validFrom, ...changes } = levyFrom(formData)
+    await supersedeLevy(userId, str(formData, 'levyId'), { ...changes, validFrom })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function closeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'validTo', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await closeLevy(userId, str(formData, 'levyId'), str(formData, 'validTo'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function deleteLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await deleteLevy(userId, str(formData, 'levyId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function addModifierAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'effect' }])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  const duration = str(formData, 'durationKind')
+  try {
+    await addModifier(userId, str(formData, 'levyId'), {
+      label: str(formData, 'label'),
+      effect: str(formData, 'effect') as ModifierEffect,
+      value: optNum(formData, 'value'),
+      startsOn: opt(formData, 'startsOn'),
+      durationMonths: duration === 'months' ? optNum(formData, 'durationValue') : undefined,
+      durationPeriods: duration === 'periods' ? optNum(formData, 'durationValue') : undefined,
+      endsOn: duration === 'endsOn' ? opt(formData, 'endsOn') : undefined,
+      condition: opt(formData, 'condition'),
+      sourceUrl: opt(formData, 'modifierSourceUrl'),
+      verifiedOn: opt(formData, 'modifierVerifiedOn'),
+      status: str(formData, 'modifierStatus') as LevyStatus,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeModifierAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeModifier(userId, str(formData, 'modifierId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function setInputAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [
+    { name: 'name' },
+    { name: 'validFrom', kind: 'date' },
+    { name: 'value' },
+  ])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await setInput(userId, activityId, {
+      name: str(formData, 'name'),
+      validFrom: str(formData, 'validFrom'),
+      value: num(formData, 'value'),
+      note: opt(formData, 'note'),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeInputAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeInput(userId, str(formData, 'inputId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+function thresholdFrom(formData: FormData) {
+  return {
+    label: str(formData, 'label'),
+    measure: str(formData, 'measure') as ThresholdMeasure,
+    periodRef: str(formData, 'periodRef') as PeriodRef,
+    comparison: str(formData, 'comparison') === 'gte' ? ('gte' as const) : ('lte' as const),
+    value: num(formData, 'value'),
+    consequence: str(formData, 'consequence'),
+    sourceUrl: opt(formData, 'sourceUrl') ?? null,
+    verifiedOn: opt(formData, 'verifiedOn') ?? null,
+    reviewOn: opt(formData, 'reviewOn') ?? null,
+  }
+}
+
+const THRESHOLD_RULES: FieldRule[] = [
+  { name: 'label' },
+  { name: 'measure' },
+  { name: 'value' },
+  { name: 'consequence' },
+]
+
+export async function createThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, THRESHOLD_RULES)
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await createThreshold(userId, activityId, thresholdFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function editThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, THRESHOLD_RULES)
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await editThreshold(userId, str(formData, 'thresholdId'), thresholdFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeThreshold(userId, str(formData, 'thresholdId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
   return { ok: true }
 }

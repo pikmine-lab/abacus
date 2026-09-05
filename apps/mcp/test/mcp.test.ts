@@ -1543,3 +1543,202 @@ test('attaching an activity to an actor names its history left behind, and reatt
   assert.equal(refused.isError, true)
   assert.match(refused.text, /no activity/)
 })
+
+test('a regime is configured as dated, sourced rules through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  // The catalog tool of this branch still creates personal activities; the
+  // business kind is another issue's gesture, so the fixture types it in SQL.
+  await db()`update activity set kind = 'business', started_on = '2026-01-01' where user_id = ${user}`
+  await call(client, 'manage_categories', { action: 'create', name: 'Cotisations' })
+
+  // A rule is worth its source: no check date, no rule.
+  const unsourced = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Cotisations',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 21.2,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(unsourced.isError, true)
+  assert.match(unsourced.text, /verifiedOn/)
+
+  const created = (
+    await call(client, 'manage_levies', {
+      action: 'create',
+      activity: 'Freelance',
+      name: 'Cotisations',
+      kind: 'social',
+      validFrom: '2026-01-01',
+      sourceUrl: 'https://example.test/social',
+      verifiedOn: '2026-01-10',
+      reviewOn: '2027-01-01',
+      baseMeasure: 'revenue',
+      amountForm: 'rate',
+      rate: 21.2,
+      period: 'month',
+      due: { type: 'end_of_next_month' },
+      settlementCategory: 'Cotisations',
+    })
+  ).json() as { created: { levyId: string; amount: { rate: number }; settlement: { category: string } } }
+  assert.equal(created.created.amount.rate, 21.2)
+  assert.equal(created.created.settlement.category, 'Cotisations')
+
+  await call(client, 'manage_levies', {
+    action: 'add_modifier',
+    activity: 'Freelance',
+    levy: 'Cotisations',
+    modifierLabel: 'Taux réduit de début',
+    effect: 'rate_factor',
+    value: 0.75,
+    durationMonths: 12,
+    condition: 'first year of activity',
+  })
+
+  // Rules read each other by name.
+  const annual = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Impôt annuel',
+    kind: 'income_tax',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/tax',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'profit',
+    basePeriodRef: 'ytd',
+    baseCredits: [{ source: 'paid', levy: 'Cotisations' }, { source: 'withholdings' }],
+    amountForm: 'brackets',
+    brackets: {
+      mode: 'progressive',
+      rows: [
+        { upTo: 10000, rate: 10 },
+        { upTo: null, rate: 30 },
+      ],
+    },
+    period: 'year',
+    due: { type: 'fixed_dates', dates: [{ month: 6, day: 30, yearOffset: 1 }] },
+  })
+  assert.equal(annual.isError, undefined, annual.text)
+  const wrongForm = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Mal formée',
+    kind: 'other',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/x',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'none',
+    amountForm: 'fixed',
+    period: 'year',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(wrongForm.isError, true)
+  assert.match(wrongForm.text, /fixedAmount or fixedInputName/)
+
+  // The rate changes on a date: a supersede, and the old row keeps its rate.
+  const superseded = (
+    await call(client, 'manage_levies', {
+      action: 'supersede',
+      activity: 'Freelance',
+      levy: 'Cotisations',
+      validFrom: '2027-01-01',
+      rate: 22,
+      sourceUrl: 'https://example.test/social-2027',
+      verifiedOn: '2027-01-05',
+    })
+  ).json() as {
+    closed: { validTo: string }
+    created: { validFrom: string; amount: { rate: number }; modifiers: { label: string }[] }
+  }
+  assert.equal(superseded.closed.validTo, '2026-12-31')
+  assert.equal(superseded.created.validFrom, '2027-01-01')
+  assert.equal(superseded.created.amount.rate, 22)
+  assert.deepEqual(
+    superseded.created.modifiers.map((m) => m.label),
+    ['Taux réduit de début'],
+  )
+
+  const listed = (await call(client, 'manage_levies', { action: 'list', activity: 'Freelance' })).json() as {
+    levies: { name: string; validFrom: string; base: { credits?: { source: string; levy?: string }[] } }[]
+  }
+  assert.deepEqual(
+    listed.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2026-01-01'],
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+  assert.equal(listed.levies[2]!.base.credits![0]!.levy, 'Cotisations')
+  const inForce = (
+    await call(client, 'manage_levies', { action: 'list', activity: 'Freelance', at: '2027-06-01' })
+  ).json() as { levies: { name: string; validFrom: string }[] }
+  assert.deepEqual(
+    inForce.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+
+  // A rule another one reads stays, with guidance.
+  const kept = await call(client, 'manage_levies', {
+    action: 'delete',
+    activity: 'Freelance',
+    levy: created.created.levyId,
+  })
+  assert.equal(kept.isError, true)
+  assert.match(kept.text, /Another rule reads this one/)
+
+  // Dated figures, and the thresholds the regime hinges on.
+  await call(client, 'set_activity_inputs', {
+    action: 'set',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+    value: 950,
+  })
+  const inputs = (
+    await call(client, 'set_activity_inputs', { action: 'list', activity: 'Freelance' })
+  ).json() as {
+    inputs: { name: string; value: number }[]
+  }
+  assert.deepEqual(inputs.inputs, [{ name: 'contribution_base', validFrom: '2026-01-01', value: 950 }])
+  await call(client, 'set_activity_inputs', {
+    action: 'remove',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+  })
+
+  const threshold = (
+    await call(client, 'manage_thresholds', {
+      action: 'create',
+      activity: 'Freelance',
+      label: 'Franchise',
+      measure: 'revenue',
+      value: 37500,
+      consequence: 'VAT becomes due from the first day of overshoot',
+      sourceUrl: 'https://example.test/vat',
+      verifiedOn: '2026-01-10',
+    })
+  ).json() as { periodRef: string; comparison: string }
+  assert.equal(threshold.periodRef, 'ytd')
+  assert.equal(threshold.comparison, 'lte')
+  const updated = (
+    await call(client, 'manage_thresholds', {
+      action: 'update',
+      activity: 'Freelance',
+      threshold: 'Franchise',
+      periodRef: 'year-1',
+    })
+  ).json() as { periodRef: string; value: number }
+  assert.equal(updated.periodRef, 'year-1')
+  assert.equal(updated.value, 37500)
+})
