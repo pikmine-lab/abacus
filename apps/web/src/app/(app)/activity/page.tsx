@@ -3,7 +3,7 @@ import type { RevenueBasis } from '@abacus/core/domain'
 import { fiscalYearOf, periodsOf } from '@abacus/core/domain/levy-engine'
 import { endOfMonth, today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
-import { activityStatement } from '@abacus/core/services/activityStatement'
+import { activityLevies, activityStatement } from '@abacus/core/services/activityStatement'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listActivityAccounts } from '@abacus/core/services/catalog'
 import { type InvoiceState, listInvoices, outstandingInvoices } from '@abacus/core/services/invoices'
@@ -18,6 +18,7 @@ import { FiscalYearPicker } from '@/components/fiscal-year-picker'
 import { FoldSection } from '@/components/fold-section'
 import { InvoiceForm } from '@/components/invoice-form'
 import { type DueEntry, LevySchedule } from '@/components/levy-schedule'
+import { type Step, StepPath } from '@/components/onboarding'
 import { OutstandingInvoices } from '@/components/outstanding-invoices'
 import {
   EmptyLine,
@@ -185,11 +186,66 @@ export default async function ActivityPage({
   const asked = Number(params.year)
   const year = Number.isInteger(asked) ? Math.min(Math.max(asked, first), last) : last
 
-  const [statement, open, invoices] = await Promise.all([
+  const [statement, open, invoices, rules] = await Promise.all([
     activityStatement(userId, activity.id, year, now),
     outstandingInvoices(userId, activity.id, now),
     listInvoices(userId, { activityId: activity.id, on: now }),
+    activityLevies(userId, activity.id),
   ])
+
+  // A rule is what makes the statement a statement: without one there are no
+  // provisions, no reserve and no schedule, so the screen shows the way to
+  // give the activity some rather than a page of zeros.
+  if (rules.length === 0) {
+    const steps: Step[] = [
+      {
+        title: 'Ses règles',
+        why: 'Ce qu’elle doit, avec sa source et son calendrier : c’est ce qui remplit les provisions, la réserve et l’échéancier.',
+        href: `/settings/activities/${activity.id}?from=activity`,
+        cta: 'Réglages de l’activité',
+        done: false,
+      },
+      ...(links.some((l) => l.activityId === activity.id)
+        ? []
+        : [
+            {
+              title: 'Ses comptes',
+              why: 'Les comptes sur lesquels elle vit font sa trésorerie, donc ce qu’elle peut te verser.',
+              href: '/settings?from=activity',
+              cta: 'Réglages',
+              done: false,
+            },
+          ]),
+    ]
+    return (
+      <>
+        <PageHeader
+          title="Activité"
+          description={[activity.name, activity.jurisdiction, activity.regimeLabel]
+            .filter(Boolean)
+            .join(' · ')}
+        />
+        {businesses.length > 1 && (
+          <FilterBar>
+            <UrlTabs
+              param="activity"
+              fallback={businesses[0]!.id}
+              ariaLabel="Activité"
+              options={businesses.map((a) => ({ value: a.id, label: a.name }))}
+            />
+          </FilterBar>
+        )}
+        <PageBody>
+          <div className="flex max-w-xl flex-col gap-3">
+            <p className="text-[13px] text-muted-foreground">
+              {steps.length === 1 ? 'Un pas' : 'Deux pas'} et le relevé se remplit.
+            </p>
+            <StepPath steps={steps} />
+          </div>
+        </PageBody>
+      </>
+    )
+  }
   const { totals, payableToSelf } = statement
   const basis = BASIS[statement.basis]
   const otherBasis = BASIS[totals.revenueOtherBasis.basis]
