@@ -7,6 +7,7 @@ import {
   expensesByCategory,
   levySettlements,
   listActivityInputs,
+  listLevies,
   listLeviesOverlapping,
   listLevyModifiers,
   listThresholds,
@@ -963,6 +964,16 @@ async function activityCommitmentsDue(userId: string, activityId: string, today:
         o.commitment.activityId === activityId && o.commitment.direction === 'outgoing' && o.dueOn <= horizon,
     )
     .reduce((sum, o) => sum + o.amount, 0)
+}
+
+/**
+ * The rules of an activity, for a caller that has to name one (settling a due
+ * date, showing what a regime is made of). Every row is returned, closed
+ * validities included: a rate that changed left the row that computed the
+ * years before it.
+ */
+export async function activityLevies(userId: string, activityId: string): Promise<Levy[]> {
+  return await listLevies(db(), userId, activityId)
 }
 
 // ---------------------------------------------------------------------------
