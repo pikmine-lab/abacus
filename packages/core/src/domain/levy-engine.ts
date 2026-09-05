@@ -119,8 +119,13 @@ export function rollingTwelveMonths(to: string): DateRange {
 
 /**
  * The window a measure is read over, for a rule whose own period is given:
- * the period itself, the fiscal year so far, one of the two years before it,
- * or the twelve months ending with it.
+ * the period itself, the fiscal year so far, the whole fiscal year, one of the
+ * two years before it, or the twelve months ending with it.
+ *
+ * `ytd` and `year` open on the same day and differ by where they stop: `ytd`
+ * grows period after period, so the row a table names moves through the year,
+ * while `year` is one and the same window for every period the year holds,
+ * which is what a monthly rule assessed on a yearly figure reads.
  */
 export function resolvePeriodRef(ref: PeriodRef, period: FiscalPeriod, cal: FiscalCalendar): DateRange {
   switch (ref) {
@@ -128,6 +133,8 @@ export function resolvePeriodRef(ref: PeriodRef, period: FiscalPeriod, cal: Fisc
       return { from: period.from, to: period.to }
     case 'ytd':
       return { from: fiscalYearStart(period.fiscalYear, cal), to: period.to }
+    case 'year':
+      return fiscalYearRange(period.fiscalYear, cal)
     case 'year-1':
       return fiscalYearRange(period.fiscalYear - 1, cal)
     case 'year-2':
@@ -252,6 +259,8 @@ export interface BaseInput {
   scale?: BaseScale
   /** Months the activity was open over the reference window; required by a scale. */
   monthsOpen?: number
+  /** How many of the rule's own periods a fiscal year holds; required by `per_period`. */
+  periodsPerYear?: number
 }
 
 export interface BaseResolution {
@@ -289,7 +298,8 @@ export function abatementOf(
  * contributions themselves, less a generic deduction). Then the abatement, on
  * that value; then the coefficient modifiers, which the regimes studied apply
  * to the yield once abated; then the floor and cap; then the scale, which turns
- * a yearly reading into a monthly one or a partial year into a whole one.
+ * a yearly reading into a monthly one, into the rule's own share of the year,
+ * or a partial year into a whole one.
  *
  * An abatement or a coefficient never turns a positive base negative, and a
  * negative measure stays as it is: a loss is a fact the rule may floor.
@@ -309,7 +319,12 @@ export function resolveBase(input: BaseInput): BaseResolution {
   if (input.floor !== null && input.floor !== undefined) value = Math.max(value, input.floor)
   if (input.cap !== null && input.cap !== undefined) value = Math.min(value, input.cap)
   const scale = input.scale ?? 'none'
-  if (scale !== 'none') {
+  // `per_period` divides by a count the calendar fixes, not by what the
+  // activity lived: a quarterly instalment on a yearly measure takes a
+  // quarter of it whether or not the activity was open all year, because
+  // that is the share the text asks for.
+  if (scale === 'per_period') value /= input.periodsPerYear ?? 1
+  else if (scale !== 'none') {
     const months = input.monthsOpen ?? 0
     if (months <= 0) value = 0
     else if (scale === 'per_month') value /= months

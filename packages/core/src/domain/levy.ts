@@ -10,7 +10,7 @@ import * as z from 'zod'
  * types: these documents are parameters, never money the database sums.
  */
 
-const periodRef = z.enum(['current', 'ytd', 'year-1', 'year-2', 'rolling-12'])
+const periodRef = z.enum(['current', 'ytd', 'year', 'year-1', 'year-2', 'rolling-12'])
 const measure = z.enum(['revenue', 'revenue_incl_vat', 'expenses', 'profit', 'vat_balance', 'withholdings'])
 
 /** A percentage between 0 and 100. */

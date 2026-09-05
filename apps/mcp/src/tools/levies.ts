@@ -49,9 +49,9 @@ const STATUS = z
   )
 
 const PERIOD_REF = z
-  .enum(['current', 'ytd', 'year-1', 'year-2', 'rolling-12'])
+  .enum(['current', 'ytd', 'year', 'year-1', 'year-2', 'rolling-12'])
   .describe(
-    'current: the period itself. ytd: the fiscal year so far. year-1 / year-2: the previous fiscal year, or the one before. rolling-12: the last twelve months',
+    'current: the period itself. ytd: the fiscal year up to the period read, so it grows period after period. year: the whole fiscal year of the period, the same window for every period of it, which is what a monthly rule assessed on a yearly figure reads. year-1 / year-2: the previous fiscal year, or the one before. rolling-12: the last twelve months',
   )
 
 /** Credits name rules by name here; the service wants their ids. */
@@ -299,10 +299,10 @@ export function registerLevyTools(server: McpServer, userId: string): void {
             "What is credited against the base, each a share of withholdings or of another rule's settlements or amount",
           ),
         baseScale: z
-          .enum(['none', 'per_month', 'annualized'])
+          .enum(['none', 'per_month', 'per_period', 'annualized'])
           .optional()
           .describe(
-            'none: the measure as read. per_month: a yearly measure divided by the months the activity was open, for a monthly rule. annualized: a partial year scaled up to a full one',
+            "none: the measure as read. per_month: a yearly measure divided by the months the activity was open, for a monthly rule. per_period: a yearly measure divided by the number of the rule's own periods in a year (a quarterly instalment takes a quarter of it), so the rate stays the rate the text fixes. annualized: a partial year scaled up to a full one",
           ),
         amountForm: z.enum(['rate', 'brackets', 'elective_base', 'fixed', 'none']).optional(),
         rate: z

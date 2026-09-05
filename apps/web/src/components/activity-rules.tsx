@@ -104,7 +104,8 @@ const MEASURE_LABELS: Record<string, string> = {
 
 const PERIOD_REF_LABELS: Record<string, string> = {
   current: 'la période',
-  ytd: 'l’exercice en cours',
+  ytd: 'l’exercice à ce jour',
+  year: 'l’exercice entier',
   'year-1': 'l’exercice n−1',
   'year-2': 'l’exercice n−2',
   'rolling-12': '12 mois glissants',

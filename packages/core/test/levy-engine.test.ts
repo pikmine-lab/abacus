@@ -146,13 +146,29 @@ test('the period containing a date, and the one after it, follow the fiscal cale
   assert.deepEqual([rolled.fiscalYear, rolled.index], [2028, 1])
 })
 
-test('period references resolve to the period, the year to date, the years before, or twelve months', () => {
+test('period references resolve to the period, the year, the years before, or twelve months', () => {
   const q2 = periodsOf(2027, CIVIL, 'quarter')[1]!
   assert.deepEqual(resolvePeriodRef('current', q2, CIVIL), { from: '2027-04-01', to: '2027-06-30' })
   assert.deepEqual(resolvePeriodRef('ytd', q2, CIVIL), { from: '2027-01-01', to: '2027-06-30' })
+  assert.deepEqual(resolvePeriodRef('year', q2, CIVIL), { from: '2027-01-01', to: '2027-12-31' })
   assert.deepEqual(resolvePeriodRef('year-1', q2, CIVIL), { from: '2026-01-01', to: '2026-12-31' })
   assert.deepEqual(resolvePeriodRef('year-2', q2, CIVIL), { from: '2025-01-01', to: '2025-12-31' })
   assert.deepEqual(resolvePeriodRef('rolling-12', q2, CIVIL), { from: '2026-07-01', to: '2027-06-30' })
+})
+
+test('the whole year is one window for every period of it, where the year to date grows', () => {
+  const months = periodsOf(2027, CIVIL, 'month')
+  const years = months.map((m) => resolvePeriodRef('year', m, CIVIL))
+  assert.equal(new Set(years.map((y) => `${y.from}|${y.to}`)).size, 1)
+  // A monthly rule assessed on a yearly figure reads the same window all year;
+  // the year to date would name a different one every month.
+  assert.deepEqual(years[0], { from: '2027-01-01', to: '2027-12-31' })
+  assert.deepEqual(resolvePeriodRef('ytd', months[0]!, CIVIL), { from: '2027-01-01', to: '2027-01-31' })
+  // A fiscal year that is not the civil one keeps its own bounds.
+  assert.deepEqual(resolvePeriodRef('year', periodsOf(2026, UK, 'month')[3]!, UK), {
+    from: '2026-04-06',
+    to: '2027-04-05',
+  })
 })
 
 test('months open count the fiscal months the activity was registered in', () => {
@@ -279,6 +295,20 @@ test('the RETA base re-integrates the contributions, takes the generic deduction
 
 test('annualizing scales a partial year up to twelve months', () => {
   assert.equal(round2(resolveBase({ measure: 25000, scale: 'annualized', monthsOpen: 5 }).base), 60000)
+})
+
+test("per period takes the rule's share of a longer measure, whatever the activity lived", () => {
+  // A quarterly instalment assessed on a yearly measure takes the quarter, so
+  // the rate stays the rate the text fixes instead of carrying a division.
+  assert.equal(resolveBase({ measure: 40000, scale: 'per_period', periodsPerYear: 4 }).base, 10000)
+  assert.equal(resolveBase({ measure: 40000, scale: 'per_period', periodsPerYear: 12 }).base, 40000 / 12)
+  // A yearly rule reads the whole of it, and the count is the calendar's, not
+  // the months the activity was open: it never falls to zero.
+  assert.equal(resolveBase({ measure: 40000, scale: 'per_period', periodsPerYear: 1 }).base, 40000)
+  assert.equal(
+    resolveBase({ measure: 40000, scale: 'per_period', periodsPerYear: 4, monthsOpen: 0 }).base,
+    10000,
+  )
 })
 
 test('floor and cap bound the base after the abatement', () => {

@@ -101,7 +101,8 @@ const MEASURES = [
 
 const PERIOD_REFS = [
   { value: 'current', label: 'la période' },
-  { value: 'ytd', label: 'l’exercice en cours' },
+  { value: 'ytd', label: 'l’exercice à ce jour' },
+  { value: 'year', label: 'l’exercice entier' },
   { value: 'year-1', label: 'l’exercice n−1' },
   { value: 'year-2', label: 'l’exercice n−2' },
   { value: 'rolling-12', label: '12 mois glissants' },
@@ -110,6 +111,7 @@ const PERIOD_REFS = [
 const SCALES = [
   { value: 'none', label: 'telle quelle' },
   { value: 'per_month', label: 'ramenée au mois' },
+  { value: 'per_period', label: 'ramenée à la période' },
   { value: 'annualized', label: 'annualisée' },
 ]
 

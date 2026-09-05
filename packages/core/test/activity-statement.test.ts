@@ -61,12 +61,12 @@ interface LevyRow {
   validFrom: string
   validTo?: string
   baseMeasure: 'revenue' | 'profit' | 'vat_balance' | 'none' | 'input' | 'withholdings'
-  basePeriodRef?: 'current' | 'ytd' | 'year-1' | 'year-2' | 'rolling-12'
+  basePeriodRef?: 'current' | 'ytd' | 'year' | 'year-1' | 'year-2' | 'rolling-12'
   baseCoefficient?: number
   baseAbatement?: Json
   baseAddBackLevyIds?: string[]
   baseCredits?: Json
-  baseScale?: 'none' | 'per_month' | 'annualized'
+  baseScale?: 'none' | 'per_month' | 'per_period' | 'annualized'
   amountForm: 'rate' | 'brackets' | 'elective_base' | 'fixed' | 'none'
   rate?: number
   brackets?: Json
@@ -746,4 +746,44 @@ test('a provisional rule settles the year it ran ahead of, as a dated entry of t
       [2027, 2400, '2028-06-01', 'upcoming'],
     ],
   )
+})
+
+test('a quarterly instalment on a yearly measure takes its quarter, the rate staying the rate', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Studio', {
+    startedOn: '2026-01-01',
+    revenueBasis: 'cash',
+    deductibleExpenses: 'none',
+  })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const client = await createActor(user, { name: 'Client', activityId })
+  const collector = await createCategory(user, 'Instalments')
+  await insertLevy(user, activityId, {
+    name: 'Instalment',
+    kind: 'income_tax',
+    validFrom: '2027-01-01',
+    baseMeasure: 'revenue',
+    basePeriodRef: 'year-1',
+    baseScale: 'per_period',
+    amountForm: 'rate',
+    rate: 20,
+    period: 'quarter',
+    due: { type: 'after_period', monthOffset: 1, fromDay: 1, toDay: 25 },
+    settlementCategoryId: collector.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-05-20',
+    amount: 40000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+
+  const statement = await activityStatement(user, activityId, 2027, '2028-03-01')
+  // 40000 the year before, a quarter of it each quarter, at the 20 % the text
+  // fixes: no rule of three folded into the rate.
+  assert.deepEqual(
+    statement.schedule.filter((e) => e.entry === 'period').map((e) => e.amount),
+    [2000, 2000, 2000, 2000],
+  )
+  assert.equal(levyNamed(statement, 'Instalment').accrued, 8000)
 })
