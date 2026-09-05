@@ -150,6 +150,15 @@ export const GUIDANCE: Record<string, string> = {
     "A parameter of another amount form was passed. Pass only the parameter of the chosen amountForm; when changing the form on update, the old form's parameter is dropped on its own.",
   modifier_single_duration:
     'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
+  not_a_business_activity:
+    'This activity is an analysis dimension, nothing more: it carries no regime, so it has no statement. Only an activity declared as a business has one.',
+  levy_not_found: 'No such rule for this user. Get the current names from get_activity_statement.',
+  levy_has_no_settlement_category:
+    'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
+  levy_misconfigured:
+    'This rule carries parameters the engine cannot read (a bracket table, a due window, a credit list). Fix the rule before asking for the statement.',
+  levy_cycle:
+    'Two rules read each other in a circle (one assessed on the amount of the other, and back). Break the loop: one of them must be assessed on a measure.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
   invoice_needs_income:
