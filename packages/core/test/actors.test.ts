@@ -4,9 +4,12 @@ import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import {
   addAlias,
+  countReattachableMovements,
   createActor,
+  editActor,
   listActorsWithAliases,
   mergeActors,
+  reattachActorHistory,
   resolveActor,
 } from '../src/services/actors.ts'
 import { createActivity } from '../src/services/catalog.ts'
@@ -78,4 +81,119 @@ test('an actor is read with the names that also resolve to it', async () => {
     ],
   )
   assert.equal(listed[0]!.activityId, freelance.id)
+})
+
+test('attaching an activity counts the history left behind, and reattaching takes what was inheriting', async () => {
+  const user = await seedUser()
+  const freelance = await createActivity(user, 'Freelance')
+  const other = await createActivity(user, 'Formation')
+  const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
+  const acme = await createActor(user, { name: 'ACME' })
+  const declare = (happenedOn: string, activityId?: string) =>
+    declareMovement(user, {
+      happenedOn,
+      amount: 100,
+      sourceActorId: acme.id,
+      targetAccountId: account.id,
+      activityId,
+    })
+  const early = await declare('2026-01-10')
+  const late = await declare('2026-03-05')
+  // Set on purpose: an explicit classification, never taken along.
+  const explicit = await declare('2026-02-01', other.id)
+
+  const edited = await editActor(user, acme.id, { activityId: freelance.id })
+  assert.equal(edited.leftBehind, 2)
+  assert.deepEqual(await countReattachableMovements(user, acme.id), { count: 2, since: '2026-01-10' })
+  assert.deepEqual(await countReattachableMovements(user, acme.id, { from: '2026-02-01' }), {
+    count: 1,
+    since: '2026-03-05',
+  })
+
+  assert.equal(await reattachActorHistory(user, acme.id, { from: '2026-02-01' }), 1)
+  const byId = new Map((await listMovements(user)).map((m) => [m.id, m.activityId]))
+  assert.equal(byId.get(late.id), freelance.id)
+  assert.equal(byId.get(early.id), null)
+  assert.equal(byId.get(explicit.id), other.id)
+
+  // Editing without changing the activity leaves nothing new behind.
+  assert.equal((await editActor(user, acme.id, { note: 'client' })).leftBehind, 0)
+  assert.equal(await reattachActorHistory(user, acme.id), 1)
+  assert.equal((await countReattachableMovements(user, acme.id)).count, 0)
+})
+
+test('the former activity comes along when it is named, and only then', async () => {
+  const user = await seedUser()
+  const before = await createActivity(user, 'Freelance')
+  const after = await createActivity(user, 'Formation')
+  const explicit = await createActivity(user, 'Conseil')
+  const account = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
+  const acme = await createActor(user, { name: 'ACME', activityId: before.id })
+  const inherited = await declareMovement(user, {
+    happenedOn: '2026-01-10',
+    amount: 100,
+    sourceActorId: acme.id,
+    targetAccountId: account.id,
+  })
+  const overridden = await declareMovement(user, {
+    happenedOn: '2026-01-11',
+    amount: 100,
+    sourceActorId: acme.id,
+    targetAccountId: account.id,
+    activityId: explicit.id,
+  })
+
+  assert.equal((await editActor(user, acme.id, { activityId: after.id })).leftBehind, 1)
+  // Without the former activity, a movement carrying one is an explicit choice.
+  assert.equal(await reattachActorHistory(user, acme.id), 0)
+  // Naming the current activity as the former one names nothing.
+  assert.equal(await reattachActorHistory(user, acme.id, { previousActivityId: after.id }), 0)
+
+  assert.equal(await reattachActorHistory(user, acme.id, { previousActivityId: before.id }), 1)
+  const byId = new Map((await listMovements(user)).map((m) => [m.id, m.activityId]))
+  assert.equal(byId.get(inherited.id), after.id)
+  assert.equal(byId.get(overridden.id), explicit.id)
+
+  // Detaching the actor leaves nothing to propose: there is no activity to reattach to.
+  assert.equal((await editActor(user, acme.id, { activityId: null })).leftBehind, 0)
+  await assert.rejects(
+    reattachActorHistory(user, acme.id),
+    (e: DomainError) => e.code === 'actor_has_no_activity',
+  )
+})
+
+test("reattaching stays within the user's own history", async () => {
+  const user = await seedUser('user-1')
+  const other = await seedUser('user-2')
+  const mine = await createActivity(user, 'Freelance')
+  const theirs = await createActivity(other, 'Freelance')
+  const myAccount = await createAccount({ userId: user, name: 'Main', behavior: 'payment' })
+  const theirAccount = await createAccount({ userId: other, name: 'Main', behavior: 'payment' })
+  const myActor = await createActor(user, { name: 'ACME' })
+  const theirActor = await createActor(other, { name: 'ACME' })
+  await declareMovement(user, {
+    happenedOn: '2026-01-10',
+    amount: 100,
+    sourceActorId: myActor.id,
+    targetAccountId: myAccount.id,
+  })
+  await declareMovement(other, {
+    happenedOn: '2026-01-10',
+    amount: 100,
+    sourceActorId: theirActor.id,
+    targetAccountId: theirAccount.id,
+  })
+  await editActor(user, myActor.id, { activityId: mine.id })
+  await editActor(other, theirActor.id, { activityId: theirs.id })
+
+  await assert.rejects(
+    reattachActorHistory(user, theirActor.id),
+    (e: DomainError) => e.code === 'actor_not_found',
+  )
+  await assert.rejects(
+    countReattachableMovements(user, theirActor.id),
+    (e: DomainError) => e.code === 'actor_not_found',
+  )
+  assert.equal(await reattachActorHistory(user, myActor.id), 1)
+  assert.equal((await listMovements(other))[0]!.activityId, null)
 })
