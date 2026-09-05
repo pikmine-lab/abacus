@@ -432,8 +432,9 @@ test('the whole referential corrects itself through the MCP surface', async () =
       newName: 'ACME Corp',
       activity: 'Freelance',
     })
-  ).json() as { name: string }
+  ).json() as { name: string; movementsLeftBehind: number }
   assert.equal(actor.name, 'ACME Corp')
+  assert.equal(actor.movementsLeftBehind, 0)
   assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
     { name: 'ACME Corp', activity: 'Freelance' },
   ])
@@ -1397,4 +1398,70 @@ test('investments: the history answers "what did it make", already totalled', as
   // high since the 6th" is what a reader can do something with.
   assert.equal(history.high.day, '2026-01-06')
   assert.equal(history.milestones.length, 8)
+})
+
+test('attaching an activity to an actor names its history left behind, and reattaches it on request', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Formation' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME' })
+  await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-01-10', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-03-05', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      {
+        date: '2026-02-01',
+        amount: 900,
+        type: 'income',
+        account: 'Courant',
+        actor: 'ACME',
+        activity: 'Formation',
+      },
+    ],
+  })
+
+  // The update does not reclassify: it says how many it left, and what to call.
+  const updated = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Freelance' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(updated.movementsLeftBehind, 2)
+  assert.match(updated.note, /reattach_history/)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 0)
+
+  const fromMarch = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME', from: '2026-03-01' })
+  ).json() as { movementsReattached: number }
+  assert.equal(fromMarch.movementsReattached, 1)
+  const rest = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  ).json() as {
+    movementsReattached: number
+  }
+  assert.equal(rest.movementsReattached, 1)
+  // The movement filed under Formation on purpose stays there.
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 2)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Formation' }), 'movements').length, 1)
+
+  // Moving the actor to another activity: the former one travels by name.
+  const moved = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Formation' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(moved.movementsLeftBehind, 2)
+  assert.match(moved.note, /previousActivity "Freelance"/)
+  const named = (
+    await call(client, 'manage_actors', {
+      action: 'reattach_history',
+      actor: 'ACME',
+      previousActivity: 'Freelance',
+    })
+  ).json() as { movementsReattached: number }
+  assert.equal(named.movementsReattached, 2)
+
+  // Without an activity, there is nothing to reattach to.
+  await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'none' })
+  const refused = await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /no activity/)
 })

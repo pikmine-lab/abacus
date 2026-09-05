@@ -57,6 +57,8 @@ export const GUIDANCE: Record<string, string> = {
     'This name or alias already resolves to an existing actor: reuse it instead of creating a duplicate.',
   alias_taken: 'This alias already resolves to an actor: pick another one or merge the actors.',
   merge_self: 'An actor cannot be merged into itself.',
+  actor_has_no_activity:
+    'This actor has no activity, so there is nothing to reattach its history to: attach one with update first.',
   not_a_subscription: 'Only subscriptions carry a judgment (essential / reducible / to_cancel).',
   same_account:
     'A placement moves money between two different accounts of the user: the one it leaves and the investment account it feeds. Those two are the same here.',

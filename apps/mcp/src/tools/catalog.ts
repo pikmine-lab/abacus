@@ -9,7 +9,14 @@ import {
   reopenAccount,
   sortAccounts,
 } from '@abacus/core/services/accounts'
-import { addAlias, createActor, editActor, listActors, mergeActors } from '@abacus/core/services/actors'
+import {
+  addAlias,
+  createActor,
+  editActor,
+  listActors,
+  mergeActors,
+  reattachActorHistory,
+} from '@abacus/core/services/actors'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   CATEGORY_SORTS,
@@ -143,9 +150,9 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_actors',
     {
       description:
-        'Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list, create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to Freelance, passes that sphere to its movements), update (correct the canonical name, the activity or the note), add_alias ("Macdo" must resolve to McDonald\'s), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias). A corrected name replaces the former one, which stops resolving: that is what fixes a typo. A name that really was in use is kept with add_alias instead. The movements already written keep the activity they were written with. The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.',
+        'Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list, create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to Freelance, passes that sphere to its movements), update (correct the canonical name, the activity or the note), add_alias ("Macdo" must resolve to McDonald\'s), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias), reattach_history (move the actor\'s past movements onto its current activity). A corrected name replaces the former one, which stops resolving: that is what fixes a typo. A name that really was in use is kept with add_alias instead. The movements already written keep the activity they were written with: attaching an activity to an actor never reclassifies its history as a side effect, because a movement may carry an activity the user set on purpose. update answers movementsLeftBehind, the past movements that still carry what the actor passed on before (no activity, or its former one): tell the user, and on their say-so call reattach_history, which takes exactly those (optionally from a date) and never a movement set to another activity. The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.',
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'update', 'add_alias', 'merge']),
+        action: z.enum(['list', 'create', 'update', 'add_alias', 'merge', 'reattach_history']),
         name: z.string().optional().describe('create: canonical name'),
         newName: z.string().optional().describe('update: the corrected canonical name'),
         aliases: z.array(z.string()).optional().describe('create: initial aliases'),
@@ -154,7 +161,14 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
           .optional()
           .describe('create/update: activity passed on to this actor\'s movements, or "none" to detach it'),
         note: z.string().optional().describe('create/update: free note, or "none" to clear it'),
-        actor: z.string().optional().describe('update/add_alias: target actor'),
+        actor: z.string().optional().describe('update/add_alias/reattach_history: target actor'),
+        from: isoDate.optional().describe('reattach_history: only the movements from this day on'),
+        previousActivity: z
+          .string()
+          .optional()
+          .describe(
+            'reattach_history: the activity the actor was attached to before the change, as update knew it. The movements still carrying it were inheriting it and come along; without it, only the movements carrying no activity are taken.',
+          ),
         alias: z.string().optional().describe('add_alias: the new alias'),
         keep: z.string().optional().describe('merge: the actor to keep'),
         absorb: z
@@ -195,7 +209,26 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
             activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
             note: clearable(a.note),
           })
-          return ok({ actorId: updated.id, name: updated.name })
+          return ok({
+            actorId: updated.id,
+            name: updated.name,
+            movementsLeftBehind: updated.leftBehind,
+            note:
+              updated.leftBehind > 0
+                ? await leftBehindNote(userId, updated.name, updated.leftBehind, target.activityId)
+                : undefined,
+          })
+        }
+        if (a.action === 'reattach_history') {
+          if (!a.actor) return fail('reattach_history requires actor.')
+          const target = (await requireActorByName(userId, a.actor)).actor
+          const moved = await reattachActorHistory(userId, target.id, {
+            from: a.from,
+            previousActivityId: a.previousActivity
+              ? (await requireActivityByName(userId, a.previousActivity)).id
+              : undefined,
+          })
+          return ok({ actor: target.name, movementsReattached: moved })
         }
         if (a.action === 'add_alias') {
           if (!a.actor || !a.alias) return fail('add_alias requires actor and alias.')
@@ -290,4 +323,22 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
         return ok({ activityId: updated.id, name: updated.name })
       }),
   )
+}
+
+/**
+ * What an activity change left where it was, and the call that takes it
+ * along. The former activity is named here because only this moment knows it.
+ */
+async function leftBehindNote(
+  userId: string,
+  actor: string,
+  count: number,
+  previousActivityId: string | null,
+): Promise<string> {
+  const previous = previousActivityId
+    ? (await listActivities(userId)).find((act) => act.id === previousActivityId)?.name
+    : undefined
+  const carried = previous ? `still carry "${previous}"` : 'carry no activity'
+  const args = previous ? `actor "${actor}" and previousActivity "${previous}"` : `actor "${actor}"`
+  return `${count} past movement(s) of "${actor}" ${carried}: this update did not reclassify them. If they belong to the new activity, call reattach_history with ${args} (from narrows it to a date); movements set to another activity on purpose are left alone.`
 }
