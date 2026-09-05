@@ -4,6 +4,7 @@ import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
+import { outstandingInvoices } from '@abacus/core/services/invoices'
 import {
   DEFAULT_MOVEMENT_SORT,
   listMovements,
@@ -54,12 +55,13 @@ export default async function MovementsPage({
   // The vocabulary first: a filter naming something this user does not own
   // (a stale link, a deleted category) is dropped rather than silently
   // returning an empty list the controls cannot explain.
-  const [accounts, actors, categories, activities, advances] = await Promise.all([
+  const [accounts, actors, categories, activities, advances, openInvoices] = await Promise.all([
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
     outstandingAdvances(userId),
+    outstandingInvoices(userId),
   ])
   const known = (id: string | undefined, among: { id: string }[]) =>
     id && among.some((entry) => entry.id === id) ? id : undefined
@@ -122,7 +124,14 @@ export default async function MovementsPage({
     accounts: openAccounts.map((a) => ({ id: a.id, name: a.name })),
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
-    activities: activities.map((a) => ({ id: a.id, name: a.name })),
+    // Only a business activity registered for VAT reclaims any, and only
+    // there does an expense say how much of it was VAT.
+    activities: activities.map((a) => ({
+      id: a.id,
+      name: a.name,
+      vatRegistered: a.kind === 'business' && a.vatRegistered,
+      defaultVatRate: a.defaultVatRate === null ? undefined : Number(a.defaultVatRate),
+    })),
   }
 
   return (
@@ -140,6 +149,11 @@ export default async function MovementsPage({
               happenedOn: frDate(a.happenedOn),
               amount: a.expected,
               remaining: a.remaining,
+            }))}
+            invoices={openInvoices.map((i) => ({
+              id: i.id,
+              client: actorName.get(i.actorId) ?? '',
+              label: `${i.reference ?? frDate(i.issuedOn)} · reste ${eur(Number(i.remainingAmount), 2)}`,
             }))}
             today={today()}
           />
@@ -322,6 +336,10 @@ export default async function MovementsPage({
                           expectedRefundAmount: m.expectedRefundAmount
                             ? Number(m.expectedRefundAmount)
                             : undefined,
+                          vatAmount:
+                            m.vatAmount === null
+                              ? undefined
+                              : Number(m.vatAmount).toFixed(2).replace('.', ','),
                           origin,
                         }}
                       />

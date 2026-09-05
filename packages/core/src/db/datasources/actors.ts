@@ -6,6 +6,9 @@ export interface NewActor {
   name: string
   activityId?: string | null
   note?: string | null
+  /** Percent, what this client does to an invoice; absent means "not stated". */
+  invoiceVatRate?: number | null
+  invoiceWithholdingRate?: number | null
 }
 
 export async function insertActor(tx: Executor, row: NewActor): Promise<Actor> {
@@ -115,4 +118,61 @@ export async function updateActorRow(
     returning *
   `
   return actor
+}
+
+/** Which of an actor's movements a reattachment looks at. */
+export interface ReattachScope {
+  /** Only the movements from this day on. */
+  from?: string
+  /**
+   * The activity the actor was attached to before: the movements still
+   * carrying it were inheriting it and come along with those carrying none.
+   */
+  previousActivityId?: string | null
+}
+
+/**
+ * The external movements of an actor (expenses to it, incomes from it) that
+ * still carry what it passed on to them: no activity, or the former one when
+ * it is named. Anything else was set on purpose and is left alone.
+ */
+function inheritingFrom(tx: Executor, actorId: string, scope: ReattachScope) {
+  return tx`
+    (m.source_actor_id = ${actorId} or m.target_actor_id = ${actorId})
+    and ${
+      scope.previousActivityId
+        ? tx`(m.activity_id is null or m.activity_id = ${scope.previousActivityId})`
+        : tx`m.activity_id is null`
+    }
+    ${scope.from ? tx`and m.happened_on >= ${scope.from}` : tx``}
+  `
+}
+
+export async function countInheritingMovements(
+  tx: Executor,
+  userId: string,
+  actorId: string,
+  scope: ReattachScope,
+): Promise<{ count: number; since: string | null }> {
+  const [row] = await tx<{ count: number; since: string | null }[]>`
+    select count(*)::int as count, min(m.happened_on) as since
+    from movement m
+    where m.user_id = ${userId} and ${inheritingFrom(tx, actorId, scope)}
+  `
+  return row!
+}
+
+/** Returns how many movements were moved onto the activity. */
+export async function reattachInheritingMovements(
+  tx: Executor,
+  userId: string,
+  actorId: string,
+  activityId: string,
+  scope: ReattachScope,
+): Promise<number> {
+  const result = await tx`
+    update movement m set activity_id = ${activityId}, updated_at = now()
+    where m.user_id = ${userId} and ${inheritingFrom(tx, actorId, scope)}
+  `
+  return result.count
 }

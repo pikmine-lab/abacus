@@ -1,17 +1,49 @@
 'use server'
 
 import { auth } from '@abacus/core/auth'
-import type { AccountBehavior, AssetNature, InstrumentKind, Judgment, PeriodUnit } from '@abacus/core/domain'
+import type {
+  AccountBehavior,
+  ActivityKind,
+  AssetNature,
+  DeductibleExpenses,
+  InstrumentKind,
+  Judgment,
+  LevyStatus,
+  ModifierEffect,
+  PeriodRef,
+  PeriodUnit,
+  RevenueBasis,
+  ThresholdMeasure,
+} from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
+import type { Answers } from '@abacus/core/domain/regime'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
-import { addAlias, createActor, editActor, mergeActors, resolveActor } from '@abacus/core/services/actors'
+import { confirmLevyPayment } from '@abacus/core/services/activityStatement'
+import {
+  addAlias,
+  countReattachableMovements,
+  createActor,
+  editActor,
+  mergeActors,
+  type ReattachableCount,
+  reattachActorHistory,
+  resolveActor,
+} from '@abacus/core/services/actors'
 import {
   correctBalanceCheck,
   createAdjustment,
   deleteBalanceCheck,
   recordBalanceCheck,
 } from '@abacus/core/services/balanceChecks'
-import { createActivity, createCategory, editActivity, editCategory } from '@abacus/core/services/catalog'
+import {
+  closeActivity,
+  createActivity,
+  createCategory,
+  editActivity,
+  editCategory,
+  reopenActivity,
+  setActivityCategoryExceptions,
+} from '@abacus/core/services/catalog'
 import {
   cancelCommitment,
   changeAmount,
@@ -35,6 +67,28 @@ import {
   stopFollowing,
 } from '@abacus/core/services/investments'
 import {
+  cancelInvoice,
+  correctInvoice,
+  declareInvoice,
+  remindInvoice,
+  settleInvoice,
+} from '@abacus/core/services/invoices'
+import {
+  addModifier,
+  closeLevy,
+  createLevy,
+  createThreshold,
+  deleteLevy,
+  editLevy,
+  editThreshold,
+  type NewLevy,
+  removeInput,
+  removeModifier,
+  removeThreshold,
+  setInput,
+  supersedeLevy,
+} from '@abacus/core/services/levies'
+import {
   closeAdvance,
   correctMovement,
   declareMovement,
@@ -42,9 +96,17 @@ import {
   refundAdvance,
 } from '@abacus/core/services/movements'
 import { setReadingPreference } from '@abacus/core/services/preferences'
+import {
+  applyRegime,
+  previewRegime,
+  type QuestionnaireStep,
+  questionnaire,
+  type RegimePreview,
+} from '@abacus/core/services/regimes'
 import { revalidatePath } from 'next/cache'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { FR } from '@/lib/fr-errors'
 import { parseReading, READING_COOKIE } from '@/lib/reading'
 
 export interface FormState {
@@ -88,77 +150,6 @@ function checkFields(formData: FormData, rules: FieldRule[]): Record<string, str
     if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) errors[name] = 'Date invalide.'
   }
   return Object.keys(errors).length > 0 ? errors : null
-}
-
-const FR: Record<string, string> = {
-  account_closed: 'Ce compte est clos à cette date.',
-  transfer_has_no_category: 'Un virement interne ne porte pas de catégorie.',
-  not_an_advance: 'Le mouvement visé n’est pas une avance.',
-  financing_settled: 'Ce financement est déjà soldé.',
-  not_a_financing: 'Seul un financement porte un échéancier écrit.',
-  schedule_empty: 'Un financement garde au moins une échéance : clos-le plutôt que de vider son plan.',
-  installment_not_found: 'Une échéance de ce plan n’existe plus : rouvre le panneau pour repartir à jour.',
-  installment_repeated: 'La même échéance apparaît deux fois dans le plan.',
-  commitment_not_found: 'Cet engagement n’existe plus.',
-  cancelled: 'Cet engagement est résilié.',
-  already_cancelled: 'Cet engagement est déjà résilié.',
-  no_gap: 'Ce pointage n’a aucun écart à solder.',
-  actor_exists: 'Ce nom désigne déjà un acteur existant.',
-  bad_source: 'Il manque le compte ou l’acteur source.',
-  bad_target: 'Il manque le compte ou l’acteur destination.',
-  no_owned_account: 'Un mouvement doit toucher au moins un de tes comptes.',
-  movement_not_found: 'Ce mouvement n’existe plus.',
-  refunded_movement: 'Un remboursement est lié à ce mouvement : supprime d’abord le remboursement.',
-  account_exists: 'Un compte porte déjà ce nom.',
-  account_not_found: 'Ce compte n’existe plus.',
-  account_has_operations:
-    'Ce compte porte des opérations d’investissement : son type ne change plus. Le reste se corrige.',
-  opening_needs_its_day: 'Indique le jour d’ouverture : c’est à partir de là que ce solde compte.',
-  actor_not_found: 'Cet acteur n’existe plus.',
-  category_exists: 'Une catégorie porte déjà ce nom.',
-  category_not_found: 'Cette catégorie n’existe plus.',
-  activity_exists: 'Une activité porte déjà ce nom.',
-  activity_not_found: 'Cette activité n’existe plus.',
-  check_not_found: 'Ce pointage n’existe plus.',
-  check_already_settled: 'Un ajustement solde déjà ce pointage.',
-  financing_has_no_lock_in: 'Un financement s’arrête à sa dernière échéance : pas de date de fin.',
-  alias_taken: 'Ce nom désigne déjà un acteur : fusionne-les plutôt que d’ajouter cet alias.',
-  merge_self: 'Un acteur ne se fusionne pas avec lui-même.',
-  advance_needs_amount: 'Indique la part attendue en remboursement.',
-  advance_needs_actor: 'Indique qui doit rembourser cette part.',
-  advance_amount_invalid: 'La part attendue doit être supérieure à zéro.',
-  advance_amount_too_large: 'La part attendue ne peut pas dépasser le montant de la dépense.',
-  advance_is_expense: 'Seule une dépense peut être avancée pour quelqu’un.',
-  advance_has_refund:
-    'Un remboursement est déjà lié à cette avance : supprime-le avant de retirer la créance.',
-  advance_below_refunds: 'La part attendue est déjà dépassée par ce qui a été remboursé.',
-  advance_settled: 'Cette avance est déjà remboursée en entier.',
-  transfer_stays_eur: 'Un virement entre tes comptes se déclare en euros.',
-  transfer_has_no_accrual: 'Un virement interne n’entre dans aucun total de période : pas de rattachement.',
-  bad_month: 'Ce mois est invalide.',
-  needless_eur_amount: 'Le montant est déjà en euros : la contre-valeur ne s’applique pas.',
-  no_exchange_rate:
-    'Aucun cours connu pour cette devise à cette date. Vérifie le code, ou saisis les euros débités.',
-  bad_currency: 'Une devise est un code ISO à trois lettres, autre que EUR.',
-  financing_keeps_currency:
-    'L’échéancier d’un financement est écrit dans sa devise : clos-le et déclare le nouveau plan.',
-  not_an_investment_account:
-    'Seul un compte d’investissement porte des opérations. Alimenter ce compte est un virement.',
-  operation_not_found: 'Cette opération n’existe plus.',
-  asset_is_quoted: 'Cet actif prend son cours à sa source : un cours saisi ferait double emploi.',
-  asset_has_operations:
-    'Cet actif porte des opérations : elles font l’histoire du compte. Supprime-les d’abord, ou garde-le.',
-  oversold: 'Tu vends plus que ce compte détient. Vérifie la quantité, et le compte.',
-  needs_quantity:
-    'Indique la quantité achetée, telle que le courtier l’affiche : le cours d’exécution seul peut la dire.',
-  needs_asset: 'Indique l’actif concerné.',
-  same_account: 'Un versement va d’un compte vers un autre : ces deux-là sont le même.',
-  placement_has_no_actor:
-    'Un versement programmé ne paie personne : ni acteur, ni catégorie, ni date de fin d’engagement.',
-  not_a_placement: 'Seul un versement programmé alimente un compte d’investissement et achète un actif.',
-  asset_has_plans: 'Un versement programmé achète cet actif : arrête le versement d’abord, ou garde l’actif.',
-  asset_exists: 'Ce nom est pris, ou tu détiens déjà cet instrument sous un autre nom.',
-  asset_not_found: 'Cet actif n’existe plus.',
 }
 
 /**
@@ -208,6 +199,17 @@ function optNum(formData: FormData, key: string): number | undefined {
   return opt(formData, key) === undefined ? undefined : num(formData, key)
 }
 
+/** Optional percentages: empty is "not stated", anything else stays within 0 and 100. */
+function checkRates(formData: FormData, names: string[]): Record<string, string> | null {
+  const errors: Record<string, string> = {}
+  for (const name of names) {
+    if (opt(formData, name) === undefined) continue
+    const value = num(formData, name)
+    if (!(value >= 0 && value <= 100)) errors[name] = 'Entre 0 et 100.'
+  }
+  return Object.keys(errors).length > 0 ? errors : null
+}
+
 /**
  * UI actor entry: the field autocompletes on existing names and aliases, so a
  * non-matching name typed here is a deliberate new actor, not a typo to guard
@@ -233,6 +235,7 @@ function refreshAll() {
     '/recurring-income',
     '/accounts',
     '/investments',
+    '/activity',
     '/settings',
   ])
     revalidatePath(path)
@@ -245,7 +248,7 @@ function refreshAll() {
  */
 function errorRedirect(formData: FormData, message: string): never {
   const back = str(formData, 'back') || '/recurring-expenses'
-  redirect(`${back}?error=${encodeURIComponent(message)}`)
+  redirect(`${back}${back.includes('?') ? '&' : '?'}error=${encodeURIComponent(message)}`)
 }
 
 /** The fields a movement needs, which depend on the kind being declared. */
@@ -291,6 +294,10 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       accrualMonth: opt(formData, 'accrualMonth'),
       ghost: formData.get('ghost') !== null,
       refundsMovementId: opt(formData, 'refundsMovementId'),
+      invoiceId: opt(formData, 'invoiceId'),
+      // Rendered only on an expense of an activity that reclaims VAT, so an
+      // absent field is the truth everywhere else.
+      vatAmount: optNum(formData, 'vatAmount'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : undefined,
@@ -368,6 +375,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
         ? await actorIdFromName(userId, expectedRefundFrom)
         : null,
       expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : null,
+      // Same as the claim: an emptied (or unrendered) field clears the VAT
+      // rather than keeping a figure the panel no longer shows.
+      vatAmount: optNum(formData, 'vatAmount') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -847,6 +857,134 @@ export async function closeAdvanceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
+/** What an invoice needs to exist; the rates and their amounts are optional, the service fills them. */
+const INVOICE_RULES: FieldRule[] = [
+  { name: 'client' },
+  { name: 'issuedOn', kind: 'date' },
+  { name: 'baseAmount', kind: 'amount' },
+]
+
+/**
+ * The figures as the panel sends them: a rate and its amount both, whichever
+ * was typed, because an amount given is the truth and the rate only proposes.
+ */
+function invoiceFigures(formData: FormData) {
+  return {
+    reference: opt(formData, 'reference'),
+    issuedOn: str(formData, 'issuedOn'),
+    dueOn: opt(formData, 'dueOn'),
+    baseAmount: num(formData, 'baseAmount'),
+    vatRate: optNum(formData, 'vatRate'),
+    vatAmount: optNum(formData, 'vatAmount'),
+    withholdingRate: optNum(formData, 'withholdingRate'),
+    withholdingAmount: optNum(formData, 'withholdingAmount'),
+    note: opt(formData, 'note'),
+  }
+}
+
+export async function declareInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'activityId' }, ...INVOICE_RULES])
+  if (invalid) return { fields: invalid }
+  try {
+    await declareInvoice(userId, {
+      activityId: str(formData, 'activityId'),
+      actorId: await actorIdFromName(userId, str(formData, 'client')),
+      ...invoiceFigures(formData),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** Same panel as the declaration, so the invoice is rebuilt whole: an emptied field clears. */
+export async function correctInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, INVOICE_RULES)
+  if (invalid) return { fields: invalid }
+  try {
+    const figures = invoiceFigures(formData)
+    await correctInvoice(userId, str(formData, 'invoiceId'), {
+      ...figures,
+      actorId: await actorIdFromName(userId, str(formData, 'client')),
+      reference: figures.reference ?? null,
+      dueOn: figures.dueOn ?? null,
+      note: figures.note ?? null,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * "The client paid": writes the income that pays the invoice, onto the chosen
+ * account. The amount is editable on the way, because a payment arrives
+ * partial as often as whole.
+ */
+export async function settleInvoiceAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await settleInvoice(userId, str(formData, 'invoiceId'), {
+      amount: optNum(formData, 'amount'),
+      date: opt(formData, 'date'),
+      accountId: str(formData, 'accountId'),
+    })
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+export async function remindInvoiceAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await remindInvoice(userId, str(formData, 'invoiceId'))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+/**
+ * "Payé": records what really left against one due date of a rule, which is
+ * what makes its reserve fall. The amount is editable like a commitment's,
+ * because an assessment differing from the estimate is the normal case and the
+ * gap is worth seeing rather than smoothing over.
+ */
+export async function confirmLevyPaymentAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  const actor = str(formData, 'actor')
+  if (actor === '') errorRedirect(formData, 'Indique qui a été payé.')
+  try {
+    await confirmLevyPayment(userId, {
+      levyId: str(formData, 'levyId'),
+      periodStart: str(formData, 'periodStart'),
+      amount: num(formData, 'amount'),
+      date: str(formData, 'date'),
+      accountId: str(formData, 'accountId'),
+      actorId: await actorIdFromName(userId, actor),
+    })
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+export async function cancelInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await cancelInvoice(userId, str(formData, 'invoiceId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
 export async function createCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'name' }])
@@ -880,12 +1018,178 @@ export async function editCategoryAction(_prev: FormState, formData: FormData): 
   return { ok: true }
 }
 
+/**
+ * The regime of an activity, as the panel states it. A personal activity sends
+ * its kind alone and everything else falls back to the defaults, which are what
+ * "no regime" is; a business one sends every field, so what is not filled is
+ * cleared, not kept.
+ */
+function activitySettings(formData: FormData) {
+  const vatRegistered = formData.get('vatRegistered') !== null
+  const kind = str(formData, 'kind') as ActivityKind
+  return {
+    kind,
+    // The panel only asks a business one what it lives on, and a checklist
+    // sent whole means an empty one detaches everything.
+    accountIds: kind === 'business' ? formData.getAll('accountIds').map(String) : undefined,
+    startedOn: opt(formData, 'startedOn') ?? null,
+    fiscalYearStartMonth: optNum(formData, 'fiscalYearStartMonth'),
+    fiscalYearStartDay: optNum(formData, 'fiscalYearStartDay'),
+    revenueBasis: opt(formData, 'revenueBasis') as RevenueBasis | undefined,
+    vatRegistered,
+    defaultVatRate: vatRegistered ? (optNum(formData, 'defaultVatRate') ?? null) : null,
+    deductibleExpenses: opt(formData, 'deductibleExpenses') as DeductibleExpenses | undefined,
+    regimeLabel: opt(formData, 'regimeLabel') ?? null,
+    jurisdiction: opt(formData, 'jurisdiction') ?? null,
+    currency: opt(formData, 'currency'),
+  }
+}
+
+function activityInvalid(formData: FormData): Record<string, string> | null {
+  const errors = { ...checkFields(formData, [{ name: 'name' }]), ...checkRates(formData, ['defaultVatRate']) }
+  const day = optNum(formData, 'fiscalYearStartDay')
+  if (day !== undefined && !(Number.isInteger(day) && day >= 1 && day <= 31))
+    errors.fiscalYearStartDay = 'Entre 1 et 31.'
+  return Object.keys(errors).length > 0 ? errors : null
+}
+
+export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = activityInvalid(formData)
+  if (invalid) return { fields: invalid }
+  try {
+    const activity = await createActivity(userId, {
+      name: str(formData, 'name'),
+      ...activitySettings(formData),
+    })
+    const exceptions = formData.getAll('exceptionCategoryIds').map(String)
+    if (exceptions.length > 0) await setActivityCategoryExceptions(userId, activity.id, exceptions)
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
 export async function editActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = activityInvalid(formData)
+  if (invalid) return { fields: invalid }
+  try {
+    await editActivity(userId, str(formData, 'activityId'), {
+      name: str(formData, 'name'),
+      ...activitySettings(formData),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function closeActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await closeActivity(userId, str(formData, 'activityId'), str(formData, 'closedOn'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function reopenActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await reopenActivity(userId, str(formData, 'activityId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** The whole list at once: what is unchecked is dropped, which is what a checklist says. */
+export async function setActivityExceptionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await setActivityCategoryExceptions(
+      userId,
+      str(formData, 'activityId'),
+      formData.getAll('exceptionCategoryIds').map(String),
+    )
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * The guided creation of a business activity: the catalog walks the tree, the
+ * screen only puts the questions. Reading the catalog costs no query, but it
+ * still goes through an action: the models live in the server bundle, and the
+ * walk has to stay the one the MCP takes, not a second one written for a form.
+ */
+export async function regimeStepAction(
+  jurisdictionId: string,
+  answers: Answers,
+): Promise<{ step?: QuestionnaireStep; error?: string }> {
+  await requireUserId()
+  try {
+    return { step: questionnaire(jurisdictionId, answers) }
+  } catch (e) {
+    return { error: frError(e) }
+  }
+}
+
+/** What a model would write, before anything is written. */
+export async function regimePreviewAction(
+  modelId: string,
+  answers: Answers,
+): Promise<{ preview?: RegimePreview; error?: string }> {
+  await requireUserId()
+  try {
+    return { preview: previewRegime(modelId, answers) }
+  } catch (e) {
+    return { error: frError(e) }
+  }
+}
+
+/**
+ * The answers travel one field each, named after their question, so nothing
+ * has to be parsed back out of a blob and a stray field cannot pass for one.
+ */
+const ANSWER_PREFIX = 'answer.'
+
+function answersFrom(formData: FormData): Answers {
+  const answers: Answers = {}
+  for (const [key, value] of formData.entries())
+    if (key.startsWith(ANSWER_PREFIX)) answers[key.slice(ANSWER_PREFIX.length)] = String(value)
+  return answers
+}
+
+/**
+ * Creates the activity and the rules the model holds, in one transaction. From
+ * here they belong to the user: the catalog will never reach them again.
+ */
+export async function createActivityFromRegimeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
-    await editActivity(userId, str(formData, 'activityId'), str(formData, 'name'))
+    await applyRegime(userId, {
+      name: str(formData, 'name'),
+      modelId: str(formData, 'modelId'),
+      answers: answersFrom(formData),
+      startedOn: opt(formData, 'startedOn') ?? null,
+      accountIds: formData.getAll('accountIds').map(String),
+    })
   } catch (e) {
     return { error: frError(e) }
   }
@@ -898,15 +1202,61 @@ export async function editActivityAction(_prev: FormState, formData: FormData): 
  * has to stop resolving. A name that really was in use gets added as an alias
  * instead, deliberately.
  */
-export async function editActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
+export interface ActorFormState extends FormState {
+  /** Past movements a changed activity did not touch, for the form to point at the gesture that does. */
+  leftBehind?: number
+}
+
+export async function editActorAction(_prev: ActorFormState, formData: FormData): Promise<ActorFormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
-  if (invalid) return { fields: invalid }
+  const invalid = {
+    ...checkFields(formData, [{ name: 'name' }]),
+    ...checkRates(formData, ['invoiceVatRate', 'invoiceWithholdingRate']),
+  }
+  if (Object.keys(invalid).length > 0) return { fields: invalid }
+  let leftBehind: number
   try {
-    await editActor(userId, str(formData, 'actorId'), {
+    ;({ leftBehind } = await editActor(userId, str(formData, 'actorId'), {
       name: str(formData, 'name'),
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
+      invoiceVatRate: optNum(formData, 'invoiceVatRate') ?? null,
+      invoiceWithholdingRate: optNum(formData, 'invoiceWithholdingRate') ?? null,
+    }))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true, leftBehind }
+}
+
+/** What the reattach confirmation announces, refreshed as its scope changes. */
+export async function countReattachableAction(
+  actorId: string,
+  from: string | undefined,
+  previousActivityId: string | null,
+): Promise<ReattachableCount> {
+  const userId = await requireUserId()
+  try {
+    return await countReattachableMovements(userId, actorId, { from, previousActivityId })
+  } catch (e) {
+    // An actor that vanished meanwhile has nothing to reattach, and the
+    // gesture behind this count says so itself if it is still attempted.
+    if (e instanceof DomainError) return { count: 0, since: null }
+    throw e
+  }
+}
+
+/**
+ * The explicit gesture that reclassifies an actor's history onto its
+ * activity; the service says what it takes and what it leaves.
+ */
+export async function reattachActorHistoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await reattachActorHistory(userId, str(formData, 'actorId'), {
+      from: opt(formData, 'from'),
+      previousActivityId: opt(formData, 'previousActivityId') ?? null,
     })
   } catch (e) {
     return { error: frError(e) }
@@ -957,19 +1307,6 @@ export async function createActorAction(_prev: FormState, formData: FormData): P
   if (invalid) return { fields: invalid }
   try {
     await createActor(userId, { name: str(formData, 'name') })
-  } catch (e) {
-    return { error: frError(e) }
-  }
-  refreshAll()
-  return { ok: true }
-}
-
-export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
-  if (invalid) return { fields: invalid }
-  try {
-    await createActivity(userId, str(formData, 'name'))
   } catch (e) {
     return { error: frError(e) }
   }
@@ -1217,5 +1554,410 @@ export async function stopFollowingAction(_prev: FormState, formData: FormData):
     return { error: frError(e) }
   }
   refreshAll()
+  return { ok: true }
+}
+
+/**
+ * The rules of an activity, its stated figures and its watched thresholds.
+ * Everything below only reshapes a form into what the service takes: what a
+ * rule guarantees and refuses is decided there, and both interfaces read it
+ * at the same place.
+ */
+
+/** A repeated field, as a row-per-index list (the tables edited line by line). */
+function list(formData: FormData, key: string): string[] {
+  return formData.getAll(key).map((v) => String(v).trim())
+}
+
+/** A cell of a table: empty means "no bound", never zero. */
+function cell(raw: string): number | null {
+  if (raw === '') return null
+  return Number(raw.replace(/[\s  ]/g, '').replace(',', '.'))
+}
+
+function rows<T>(
+  formData: FormData,
+  keys: string[],
+  build: (values: (number | null)[], index: number) => T,
+): T[] {
+  const columns = keys.map((key) => list(formData, key))
+  const height = Math.max(...columns.map((c) => c.length))
+  return Array.from({ length: height }, (_, index) =>
+    build(
+      columns.map((column) => cell(column[index] ?? '')),
+      index,
+    ),
+  )
+}
+
+function abatementFrom(formData: FormData): unknown {
+  const mode = str(formData, 'abatementMode')
+  if (mode === 'rate')
+    return { rate: num(formData, 'abatementRate'), minAmount: optNum(formData, 'abatementMinAmount') }
+  if (mode === 'brackets')
+    return {
+      brackets: rows(formData, ['abatementUpTo', 'abatementBracketRate'], ([upTo, rate]) => ({
+        upTo,
+        rate: rate ?? 0,
+      })),
+      on: { measure: str(formData, 'abatementMeasure'), periodRef: str(formData, 'abatementPeriodRef') },
+    }
+  return null
+}
+
+function creditsFrom(formData: FormData): unknown {
+  const sources = list(formData, 'creditSource')
+  const levies = list(formData, 'creditLevyId')
+  const shares = list(formData, 'creditShare')
+  const refs = list(formData, 'creditPeriodRef')
+  const credits = sources
+    .map((source, index) => ({
+      source,
+      levyId: levies[index] || undefined,
+      share: cell(shares[index] ?? '') ?? undefined,
+      periodRef: refs[index] || undefined,
+    }))
+    .filter((credit) => credit.source !== '')
+  return credits.length > 0 ? credits : null
+}
+
+function dueFrom(formData: FormData): unknown {
+  const type = str(formData, 'dueType')
+  if (type === 'fixed_dates')
+    return {
+      type,
+      dates: rows(
+        formData,
+        ['dueDateMonth', 'dueDateDay', 'dueDateYearOffset'],
+        ([month, day, yearOffset]) => ({ month: month ?? 0, day: day ?? 0, yearOffset: yearOffset ?? 0 }),
+      ),
+    }
+  if (type === 'after_period')
+    return {
+      type,
+      monthOffset: optNum(formData, 'dueMonthOffset'),
+      fromDay: optNum(formData, 'dueFromDay'),
+      toDay: num(formData, 'dueToDay'),
+    }
+  return { type: 'end_of_next_month' }
+}
+
+/** Periods folded into another return, named by the index of the rule's period. */
+function skipPeriodsFrom(formData: FormData): unknown {
+  const indexes = list(formData, 'skipPeriod')
+    .map(Number)
+    .filter((n) => Number.isInteger(n))
+  if (indexes.length === 0) return null
+  const period = str(formData, 'period')
+  if (period === 'year') return null
+  return { [period]: indexes }
+}
+
+function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
+  const amountForm = str(formData, 'amountForm') as NewLevy['amountForm']
+  const regularization = (opt(formData, 'regularization') ?? 'none') as NewLevy['regularization']
+  return {
+    name: str(formData, 'name'),
+    kind: str(formData, 'kind') as NewLevy['kind'],
+    validFrom: str(formData, 'validFrom'),
+    validTo: opt(formData, 'validTo') ?? null,
+    sourceUrl: opt(formData, 'sourceUrl') ?? null,
+    verifiedOn: opt(formData, 'verifiedOn') ?? null,
+    reviewOn: opt(formData, 'reviewOn') ?? null,
+    // A block the form did not render sends nothing, and an empty string is
+    // not a value: the service then applies the column's own default.
+    status: opt(formData, 'status') as NewLevy['status'],
+    baseMeasure: str(formData, 'baseMeasure') as NewLevy['baseMeasure'],
+    baseLevyId: opt(formData, 'baseLevyId') ?? null,
+    baseInputName: opt(formData, 'baseInputName') ?? null,
+    basePeriodRef: opt(formData, 'basePeriodRef') as NewLevy['basePeriodRef'],
+    baseCoefficient: optNum(formData, 'baseCoefficient') ?? null,
+    baseAbatement: abatementFrom(formData),
+    baseAddBackLevyIds: list(formData, 'addBackLevyId').filter(Boolean),
+    baseFloor: optNum(formData, 'baseFloor') ?? null,
+    baseCap: optNum(formData, 'baseCap') ?? null,
+    baseCredits: creditsFrom(formData),
+    baseScale: opt(formData, 'baseScale') as NewLevy['baseScale'],
+    amountForm,
+    rate: amountForm === 'rate' ? num(formData, 'rate') : null,
+    brackets:
+      amountForm === 'brackets'
+        ? {
+            mode: str(formData, 'bracketsMode'),
+            rows: rows(formData, ['bracketUpTo', 'bracketRate', 'bracketAmount'], ([upTo, rate, amount]) => ({
+              upTo,
+              rate: rate ?? undefined,
+              amount: amount ?? undefined,
+            })),
+          }
+        : null,
+    elective:
+      amountForm === 'elective_base'
+        ? {
+            rows: rows(
+              formData,
+              ['electiveUpTo', 'electiveMinBase', 'electiveMaxBase'],
+              ([upTo, minBase, maxBase]) => ({ upTo, minBase: minBase ?? 0, maxBase: maxBase ?? 0 }),
+            ),
+            inputName: str(formData, 'electiveInputName'),
+            rate: num(formData, 'electiveRate'),
+          }
+        : null,
+    fixedAmount: amountForm === 'fixed' ? (optNum(formData, 'fixedAmount') ?? null) : null,
+    fixedInputName: amountForm === 'fixed' ? (opt(formData, 'fixedInputName') ?? null) : null,
+    fixedCredit: optNum(formData, 'fixedCredit') ?? null,
+    creditInputName: opt(formData, 'creditInputName') ?? null,
+    period: str(formData, 'period') as NewLevy['period'],
+    due: dueFrom(formData),
+    declarationLagMonths: optNum(formData, 'declarationLagMonths') ?? null,
+    firstDueAfterDays: optNum(formData, 'firstDueAfterDays') ?? null,
+    skipPeriods: skipPeriodsFrom(formData),
+    regularization,
+    regularizationParams:
+      regularization === 'none'
+        ? null
+        : {
+            settleMonthOffset: optNum(formData, 'settleMonthOffset'),
+            refundMonthOffset: optNum(formData, 'refundMonthOffset'),
+          },
+    settlementCategoryId: opt(formData, 'settlementCategoryId') ?? null,
+    deductible: formData.get('deductible') !== null,
+    passThrough: formData.get('passThrough') !== null,
+    note: opt(formData, 'note') ?? null,
+  }
+}
+
+/** What a rule cannot do without, whichever form it takes. */
+function levyRules(formData: FormData): FieldRule[] {
+  const rules: FieldRule[] = [
+    { name: 'name' },
+    { name: 'kind' },
+    { name: 'validFrom', kind: 'date' },
+    { name: 'baseMeasure' },
+    { name: 'amountForm' },
+    { name: 'period' },
+    { name: 'dueType' },
+  ]
+  const form = str(formData, 'amountForm')
+  if (form === 'rate') rules.push({ name: 'rate' })
+  if (form === 'elective_base') rules.push({ name: 'electiveInputName' }, { name: 'electiveRate' })
+  if (str(formData, 'baseMeasure') === 'input') rules.push({ name: 'baseInputName' })
+  if (str(formData, 'dueType') === 'after_period') rules.push({ name: 'dueToDay' })
+  return rules
+}
+
+/** The page of the activity whose rules just changed. */
+function refreshActivity(activityId: string) {
+  revalidatePath(`/settings/activities/${activityId}`)
+  refreshAll()
+}
+
+export async function createLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await createLevy(userId, { ...levyFrom(formData), activityId })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+/** Corrects a rule that was mistyped. A value that changed is a supersede. */
+export async function editLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await editLevy(userId, str(formData, 'levyId'), levyFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+/**
+ * The rule changes from a date: the current row closes the day before and the
+ * new one starts. The form carries every field, prefilled with what the rule
+ * says today, so what did not change is simply carried over.
+ */
+export async function supersedeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, levyRules(formData))
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    const { validFrom, ...changes } = levyFrom(formData)
+    await supersedeLevy(userId, str(formData, 'levyId'), { ...changes, validFrom })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function closeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'validTo', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await closeLevy(userId, str(formData, 'levyId'), str(formData, 'validTo'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function deleteLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await deleteLevy(userId, str(formData, 'levyId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function addModifierAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'effect' }])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  const duration = str(formData, 'durationKind')
+  try {
+    await addModifier(userId, str(formData, 'levyId'), {
+      label: str(formData, 'label'),
+      effect: str(formData, 'effect') as ModifierEffect,
+      value: optNum(formData, 'value'),
+      startsOn: opt(formData, 'startsOn'),
+      durationMonths: duration === 'months' ? optNum(formData, 'durationValue') : undefined,
+      durationPeriods: duration === 'periods' ? optNum(formData, 'durationValue') : undefined,
+      endsOn: duration === 'endsOn' ? opt(formData, 'endsOn') : undefined,
+      condition: opt(formData, 'condition'),
+      sourceUrl: opt(formData, 'modifierSourceUrl'),
+      verifiedOn: opt(formData, 'modifierVerifiedOn'),
+      status: str(formData, 'modifierStatus') as LevyStatus,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeModifierAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeModifier(userId, str(formData, 'modifierId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function setInputAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [
+    { name: 'name' },
+    { name: 'validFrom', kind: 'date' },
+    { name: 'value' },
+  ])
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await setInput(userId, activityId, {
+      name: str(formData, 'name'),
+      validFrom: str(formData, 'validFrom'),
+      value: num(formData, 'value'),
+      note: opt(formData, 'note'),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeInputAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeInput(userId, str(formData, 'inputId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+function thresholdFrom(formData: FormData) {
+  return {
+    label: str(formData, 'label'),
+    measure: str(formData, 'measure') as ThresholdMeasure,
+    periodRef: str(formData, 'periodRef') as PeriodRef,
+    comparison: str(formData, 'comparison') === 'gte' ? ('gte' as const) : ('lte' as const),
+    value: num(formData, 'value'),
+    consequence: str(formData, 'consequence'),
+    sourceUrl: opt(formData, 'sourceUrl') ?? null,
+    verifiedOn: opt(formData, 'verifiedOn') ?? null,
+    reviewOn: opt(formData, 'reviewOn') ?? null,
+  }
+}
+
+const THRESHOLD_RULES: FieldRule[] = [
+  { name: 'label' },
+  { name: 'measure' },
+  { name: 'value' },
+  { name: 'consequence' },
+]
+
+export async function createThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, THRESHOLD_RULES)
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await createThreshold(userId, activityId, thresholdFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function editThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, THRESHOLD_RULES)
+  if (invalid) return { fields: invalid }
+  const activityId = str(formData, 'activityId')
+  try {
+    await editThreshold(userId, str(formData, 'thresholdId'), thresholdFrom(formData))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
+  return { ok: true }
+}
+
+export async function removeThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const activityId = str(formData, 'activityId')
+  try {
+    await removeThreshold(userId, str(formData, 'thresholdId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshActivity(activityId)
   return { ok: true }
 }

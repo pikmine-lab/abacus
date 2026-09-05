@@ -25,6 +25,10 @@ export interface NewMovement {
   accrualMonth?: string | null
   /** Out of every analysis, while still counted in balances. */
   ghost?: boolean
+  /** The invoice this income pays, when it pays one. */
+  invoiceId?: string | null
+  /** The VAT inside the amount, when the activity reclaims it and it was stated. */
+  vatAmount?: number | null
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {

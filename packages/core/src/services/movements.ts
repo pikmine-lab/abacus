@@ -1,11 +1,13 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { getActivity, soleActivityOfAccount } from '../db/datasources/catalog.ts'
 import {
   alignInstallmentOnMovement,
   installmentByMovement,
   resyncFinancing,
 } from '../db/datasources/installments.ts'
+import { getInvoice, paidSoFar } from '../db/datasources/invoices.ts'
 import {
   deleteMovementRow,
   getMovement,
@@ -23,7 +25,7 @@ import {
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { SortChoice, SortFields } from '../domain/sort.ts'
-import type { Account, Actor, Movement } from '../domain/types.ts'
+import type { Account, Activity, Actor, Invoice, Movement } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { eurRateOn, toEur } from './fx.ts'
 
@@ -77,6 +79,18 @@ export interface DeclareMovementInput {
    * account that is not tracked.
    */
   ghost?: boolean
+  /**
+   * The invoice this income pays, in full or in part. Only an income of the
+   * invoice's client, in the invoice's activity and currency, can pay it, and
+   * the incomes linked to one invoice never add up to more than it asks for.
+   */
+  invoiceId?: string
+  /**
+   * The VAT inside `amount`, on a movement of a VAT-registered business
+   * activity: what it reclaims on an expense, what it collected on an income
+   * that pays no invoice. Part of the amount, never on top of it.
+   */
+  vatAmount?: number
 }
 
 /**
@@ -195,13 +209,31 @@ async function writeRefundIn(
 /**
  * The domain rules a movement must satisfy, whether it is being declared or
  * corrected: exactly one endpoint per side, at least one owned account, no
- * category on a transfer, no writing onto a closed account, a refund pointing
- * at a real advance. Returns the activity to store (inherited unless set).
+ * category on a transfer, no writing onto a closed account or under a closed
+ * activity, a refund pointing at a real advance, an invoice paid by its own
+ * client and never beyond what it asks. Returns the activity to store.
+ *
+ * The activity is settled at write time and never again. Explicit wins, and an
+ * explicit null means "none". Absent, it is inherited from the invoice the
+ * income pays first (that is the sphere the money was earned in, whatever the
+ * client is filed under today), then from the external actor (a client carries
+ * its activity), then from the account the money touched: the one an expense
+ * left, the one an income reached. That last step only decides when the
+ * account carries a single activity: an account two activities live on
+ * designates neither, so the movement is left without one and is corrected by
+ * hand, rather than credited to whichever of them happened to be first. A
+ * transfer inherits nothing from its accounts, because the transfer between an
+ * activity's account and a personal one is precisely the owner paying
+ * themselves, and it belongs to neither side. History is never reclassified
+ * when an actor changes activity or an account changes hands: that is an
+ * explicit correction, movement by movement.
  */
 async function checkMovement(
   tx: Executor,
   userId: string,
   input: DeclareMovementInput,
+  /** On a correction: the movement being corrected, left out of the sums it is measured against. */
+  except?: string,
 ): Promise<string | null> {
   if ((input.sourceAccountId ? 1 : 0) + (input.sourceActorId ? 1 : 0) !== 1)
     throw new DomainError('bad_source', 'A movement needs exactly one source: an account or an actor')
@@ -251,9 +283,94 @@ async function checkMovement(
       throw new DomainError('not_an_advance', 'The linked movement is not marked as an advance')
   }
 
-  // Inherited from the actor at write time on purpose: history stays stable,
-  // reclassifying it later is an explicit action.
-  return input.activityId !== undefined ? input.activityId : (externalActor?.activityId ?? null)
+  const invoice = input.invoiceId ? await checkInvoiceLink(tx, userId, input, except) : null
+
+  const [sourceAccount, targetAccount] = accounts
+  const touched = isTransfer ? null : (sourceAccount ?? targetAccount)
+  const fromTouched = touched ? await soleActivityOfAccount(tx, touched.id) : null
+  const activityId =
+    input.activityId !== undefined
+      ? input.activityId
+      : (invoice?.activityId ?? externalActor?.activityId ?? fromTouched ?? null)
+  let activity: Activity | null = null
+  if (activityId) {
+    activity = (await getActivity(tx, userId, activityId)) ?? null
+    if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
+    if (activity.closedOn && input.happenedOn > activity.closedOn)
+      throw new DomainError(
+        'activity_closed',
+        `Activity "${activity.name}" is closed since ${activity.closedOn}: a later movement belongs to the activity that followed it`,
+      )
+  }
+  checkVat(input, activity)
+  return activityId
+}
+
+/**
+ * The VAT inside a movement is a figure only where a regime reclaims it: on an
+ * expense or an income of a VAT-registered business activity. Anywhere else
+ * nothing would ever read it (the measures leave it out when the activity
+ * reclaims none) while it would still look like a declared fact, so it is
+ * refused rather than stored and forgotten.
+ */
+function checkVat(input: DeclareMovementInput, activity: Activity | null): void {
+  if (input.vatAmount === undefined) return
+  if (input.sourceAccountId && input.targetAccountId)
+    throw new DomainError('transfer_has_no_vat', 'An internal transfer carries no VAT')
+  if (input.vatAmount < 0 || input.vatAmount > input.amount)
+    throw new DomainError(
+      'vat_outside_amount',
+      `The VAT (${input.vatAmount}) is inside the amount (${input.amount}), so it cannot exceed it`,
+    )
+  if (activity?.kind !== 'business' || !activity.vatRegistered)
+    throw new DomainError(
+      'vat_needs_registered_activity',
+      'Only a movement of a VAT-registered business activity states the VAT inside it',
+    )
+}
+
+/**
+ * An income pays an invoice only when everything about it agrees with the
+ * invoice: it comes from the invoice's client, into an account, in the
+ * invoice's currency and activity, on an invoice not cancelled, and what the
+ * linked incomes add up to never exceeds what the invoice asks for. Partial
+ * payments are the ordinary case; an overpayment is a typo or another
+ * invoice, never something to record here.
+ */
+async function checkInvoiceLink(
+  tx: Executor,
+  userId: string,
+  input: DeclareMovementInput & { originalAmount?: number; originalCurrency?: string },
+  except?: string,
+): Promise<Invoice> {
+  const invoice = await getInvoice(tx, userId, input.invoiceId!)
+  if (!invoice) throw new DomainError('invoice_not_found', `No invoice ${input.invoiceId} for this user`)
+  if (!(input.sourceActorId && input.targetAccountId))
+    throw new DomainError('invoice_needs_income', 'Only an income can pay an invoice')
+  if (input.sourceActorId !== invoice.actorId)
+    throw new DomainError('invoice_other_client', 'An invoice is paid by the client it was issued to')
+  if (input.activityId !== undefined && input.activityId !== invoice.activityId)
+    throw new DomainError(
+      'invoice_other_activity',
+      'An income paying an invoice belongs to the invoice’s activity',
+    )
+  if (invoice.cancelledOn)
+    throw new DomainError('invoice_cancelled', `This invoice was cancelled on ${invoice.cancelledOn}`)
+  const paidIn = input.originalCurrency ?? 'EUR'
+  if (paidIn !== invoice.currency)
+    throw new DomainError(
+      'invoice_currency_mismatch',
+      `This invoice is in ${invoice.currency}: an income paying it is declared in ${invoice.currency}`,
+    )
+  const paid = Number(await paidSoFar(tx, invoice.id, except))
+  const received = input.originalAmount ?? input.amount
+  const remaining = Number(invoice.receivableAmount) - paid
+  if (received > remaining + 0.005)
+    throw new DomainError(
+      'invoice_overpaid',
+      `This income (${received}) exceeds what is left to receive on the invoice (${remaining.toFixed(2)})`,
+    )
+  return invoice
 }
 
 /**
@@ -324,6 +441,10 @@ export interface CorrectMovementInput {
   accrualMonth?: string | null
   /** Out of every analysis, or back in. Absent, the stored value is kept. */
   ghost?: boolean
+  /** The invoice this income pays: an id links it, null unlinks it. Absent, the stored link is kept. */
+  invoiceId?: string | null
+  /** The VAT inside the amount: a figure states it, null clears it. Absent, the stored one is kept. */
+  vatAmount?: number | null
 }
 
 const CORRECTABLE = [
@@ -331,6 +452,8 @@ const CORRECTABLE = [
   'amount',
   'accrualMonth',
   'ghost',
+  'invoiceId',
+  'vatAmount',
   'sourceAccountId',
   'sourceActorId',
   'targetAccountId',
@@ -349,8 +472,9 @@ const CORRECTABLE = [
  * links) are never touched here, and the merged result must satisfy the same
  * domain rules as a fresh declaration.
  *
- * The stored activity is not re-inherited from a changed actor: history stays
- * stable unless the activity is set explicitly (same rule as declaration).
+ * The stored activity is not re-inherited from a changed actor or account:
+ * history stays stable unless the activity is set explicitly (same rule as
+ * declaration).
  */
 export async function correctMovement(
   userId: string,
@@ -404,6 +528,14 @@ export async function correctMovementIn(
           ? Number(current.expectedRefundAmount)
           : undefined,
     refundsMovementId: current.refundsMovementId ?? undefined,
+    invoiceId:
+      input.invoiceId !== undefined ? (input.invoiceId ?? undefined) : (current.invoiceId ?? undefined),
+    vatAmount:
+      input.vatAmount !== undefined
+        ? (input.vatAmount ?? undefined)
+        : current.vatAmount !== null
+          ? Number(current.vatAmount)
+          : undefined,
   }
   // A movement corrected into a transfer moves euros: an original left over
   // from the expense it was would dress an internal move as a foreign payment.
@@ -420,6 +552,8 @@ export async function correctMovementIn(
   // explicitly is refused by checkMovement. Always a boolean, never absent:
   // the column has no null to fall back to.
   merged.ghost = becomesTransfer && input.ghost === undefined ? false : (input.ghost ?? current.ghost)
+  // And for the VAT inside it, which a transfer never carries.
+  if (becomesTransfer && input.vatAmount === undefined) merged.vatAmount = undefined
   const resolved = moneyTouched
     ? await inAccountCurrency(tx, merged, history)
     : {
@@ -428,7 +562,7 @@ export async function correctMovementIn(
           !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
         originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
       }
-  const activityId = await checkMovement(tx, userId, resolved)
+  const activityId = await checkMovement(tx, userId, resolved, id)
 
   // What has already come back is a fact: the claim it belongs to cannot be
   // dropped under it, nor shrunk below it.

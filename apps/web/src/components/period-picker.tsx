@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isNavigable, type Period, PRESET_LABEL, type Preset } from '@/lib/period'
 
+// The presets one can pick. A bare range carried by a link is not one of them:
+// it shows as its own label, and clicking any preset leaves it.
 const PRESETS: Preset[] = ['month', 'year', '90d', '12m', 'all']
 
 /**

@@ -1,4 +1,10 @@
 import { listAccounts } from '@abacus/core/services/accounts'
+import {
+  type ActivityAlert,
+  activityAlerts,
+  isRuleAlert,
+  isThresholdAlert,
+} from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   listCommitmentsWithProgress,
@@ -14,12 +20,33 @@ import * as z from 'zod'
 import { advancesView } from './movements.ts'
 import { isoDate, ok, run } from './shared.ts'
 
+/** What an alert is worth: where a measure stands against its threshold, or how old a rule's source is. */
+function alertFacts(alert: ActivityAlert) {
+  if (isRuleAlert(alert))
+    return {
+      status: alert.status,
+      reviewOn: alert.reviewOn ?? undefined,
+      verifiedOn: alert.verifiedOn ?? undefined,
+    }
+  // A statement that will not compute: the reason names the rule to correct.
+  if (!isThresholdAlert(alert)) return { reason: alert.reason }
+  return {
+    measure: alert.measure,
+    over: alert.periodRef,
+    // Written the way the threshold reads: the measure has to stay under the
+    // value, or over it.
+    rule: `${alert.measure} ${alert.comparison === 'lte' ? '<=' : '>='} ${alert.value}`,
+    current: alert.current,
+    consequence: alert.consequence,
+  }
+}
+
 export function registerOverviewTools(server: McpServer, userId: string): void {
   server.registerTool(
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences to confirm (past their date, or of the coming period and flagged ahead), outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences to confirm (past their date, or of the coming period and flagged ahead), outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. activityAlerts is what the regime of a business activity needs said today, and it is only ever a warning: this app never switches a regime on its own, because leaving a VAT exemption is adding the VAT rule (manage_levies) and changing regime is closing the activity and opening the next one (manage_activities). threshold_crossed: the measure went past the value the regime hinges on, and consequence says what that costs, in the user\'s own words: report it as written, never paraphrase it into a rule of your own. threshold_near: it is close enough to say so while there is still room to act. rule_review_due: the rule was computed against a text that was due to be checked again on reviewOn, and a yearly schedule ages every 1 January. rule_unconfirmed: no text ever fixed that value. Whenever you state a figure that a rule of one of the last two kinds produced (a provision, a reserve, what can be paid to oneself), say in the same breath that its source is unconfirmed or overdue, and name the rule: a figure is never quieter than its source. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows), and not for the figures of an activity (get_activity_statement).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -55,6 +82,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         // once the holdings are counted: what is worth stating is what those
         // add on top, at the last known price.
         const holdings = await holdingsValue(userId)
+        const alerts = await activityAlerts(userId)
         return ok({
           // Balances have one reading; this one governs the flows, and it
           // rides along here because it is what every later total is in.
@@ -103,6 +131,18 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           // placement moves stays the user's money, in another form.
           monthlyScheduledInvestment:
             monthlyInvested > 0 ? Math.round(monthlyInvested * 100) / 100 : undefined,
+          // Absent when a regime has nothing to say, which is the ordinary
+          // case: an empty list would read as a section to comment on.
+          activityAlerts:
+            alerts.length === 0
+              ? undefined
+              : alerts.map((a) => ({
+                  alert: a.kind,
+                  activity: a.activityName,
+                  about: a.subject,
+                  source: a.sourceUrl ?? undefined,
+                  ...alertFacts(a),
+                })),
         })
       }),
   )

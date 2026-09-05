@@ -14,13 +14,20 @@ export function fail(message: string): ToolResult {
 
 /** Actionable guidance for domain errors raised below the MCP layer. */
 export const GUIDANCE: Record<string, string> = {
-  account_closed: 'This account is closed at that date. Check the movement date or the targeted account.',
+  account_closed:
+    'This account is closed at that date, so nothing is declared on it afterwards and no activity starts living on it. Check the movement date or the targeted account; reopen it with manage_accounts if it was closed by mistake.',
   transfer_has_no_category:
     'An internal transfer never carries a category: drop it, categories only apply to expenses and incomes.',
   transfer_has_no_accrual:
     'An internal transfer enters no period total, so it is about no month: drop month. Only an expense or an income can be attached to another month.',
   transfer_is_never_ghost:
     'An internal transfer already counts in no analysis: drop ghost. Only an expense or an income can be left out of one.',
+  transfer_has_no_vat:
+    'An internal transfer carries no VAT, as it carries no category: drop vatAmount. Money moving between two owned accounts buys nothing.',
+  vat_outside_amount:
+    'The VAT is inside the amount, not on top of it, so vatAmount cannot exceed it. Pass the amount actually paid, VAT included, and the VAT part of it.',
+  vat_needs_registered_activity:
+    'Only a movement of a VAT-registered business activity states the VAT inside it: anywhere else no return would ever reclaim it. Name that activity, or drop vatAmount.',
   bad_month:
     'A month is written YYYY-MM (2026-08). Pass the month the movement is about, not a description of it.',
   not_an_advance:
@@ -57,6 +64,8 @@ export const GUIDANCE: Record<string, string> = {
     'This name or alias already resolves to an existing actor: reuse it instead of creating a duplicate.',
   alias_taken: 'This alias already resolves to an actor: pick another one or merge the actors.',
   merge_self: 'An actor cannot be merged into itself.',
+  actor_has_no_activity:
+    'This actor has no activity, so there is nothing to reattach its history to: attach one with update first.',
   not_a_subscription: 'Only subscriptions carry a judgment (essential / reducible / to_cancel).',
   same_account:
     'A placement moves money between two different accounts of the user: the one it leaves and the investment account it feeds. Those two are the same here.',
@@ -98,6 +107,28 @@ export const GUIDANCE: Record<string, string> = {
   category_exists: 'A category already uses that name. Reuse it instead of creating a variant of it.',
   activity_exists:
     'An activity already uses that name. Reuse it: activities partition the finances, duplicates defeat that.',
+  activity_closed:
+    'This activity is closed at that date: a movement or an invoice dated after the closure belongs to the activity that followed it, one dated before still records here. Check the date, name the right activity (or activity: "none"), or reopen it with manage_activities if it was closed by mistake.',
+  activity_regime_fixed:
+    'This activity carries rules or invoices, so its kind and revenue basis are fixed: an activity never changes regime. Close it on its last day (manage_activities, action close) and create the next one with the new settings.',
+  activity_has_accounts:
+    'This activity lives on accounts, which only a business activity does. If it really is an analysis dimension, let go of them in the same call (manage_activities, accounts: []) or before it.',
+  activity_not_business:
+    'Only a business activity lives on accounts, issues invoices, carries rules, inputs and thresholds, and has a statement; a personal one is an analysis dimension and nothing more. Check the activity name, or make it a business with manage_activities (kind: business).',
+  vat_rate_needs_registration:
+    'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
+  activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',
+  jurisdiction_not_found:
+    'The catalog covers no such place. Call browse_regimes (action jurisdictions) for the ones it does; anywhere else, create the activity by hand and write its rules with manage_levies, citing the texts.',
+  regime_model_not_found:
+    'No regime model with that id. Call browse_regimes (action jurisdictions) for the ids, or walk the questionnaire (action questions), which answers with the models the answers still allow.',
+  regime_answer_unknown:
+    "That answer names no question of this jurisdiction, or no option of that question. Send back exactly the ids browse_regimes gives, and never an answer written in the user's own words.",
+  regime_answers_incomplete:
+    'The model reads an answer that has not been given. Keep walking browse_regimes (action questions) with the answers so far until it says done, and pass all of them: a rate or a threshold of this model is chosen by that answer.',
+  regime_model_excluded:
+    'The answers given rule this model out. Call browse_regimes (action questions) with them: it answers with the models they still allow.',
+  bad_rate: 'A rate is a percentage between 0 and 100.',
   check_not_found:
     'No such balance check for this user. Get a current id from manage_balance_checks with action list.',
   check_already_settled:
@@ -121,8 +152,55 @@ export const GUIDANCE: Record<string, string> = {
     'That name is taken, or that instrument is already held under another name. Reuse it: one instrument held twice would split the position in half.',
   asset_is_quoted:
     'This asset follows a price source, so its price comes from the market: a hand-typed one would be a second answer to the same question. Only an asset declared without a source takes set_price.',
+  levy_has_settlements:
+    'An expense of the activity already settled this rule in its category: it is part of the history and cannot be deleted. Close it instead (action close with validTo), or supersede it if the values changed.',
+  levy_referenced:
+    'Another rule reads this one as its base, add-back or credit: deleting it would leave that rule reading nothing. Correct or delete the reading rule first, or close this one.',
+  levy_settlement_category_taken:
+    "Another live rule of this activity already files its settlements in that category over the same period, and one category cannot answer for two rules: each would read the other's expenses as its own payments. Give this rule a category of its own (manage_categories creates one). If it is that rule under new values, this is a supersede, not a create: supersede closes the current row the day before the new validity, so the category is free.",
+  supersede_before_start:
+    "supersede starts a new row after the current one: validFrom must be later than the current rule's validFrom. To fix the current row's own values, use update.",
+  base_levy_other_activity:
+    'A rule only reads the rules of its own activity. Check the name passed in baseLevy, baseAddBackLevies or baseCredits against list for this activity.',
+  base_levy_self: 'A rule cannot read its own settlements or amount. Name another rule of the activity.',
+  levy_form_needs_param:
+    'Each amount form has its parameter: rate needs rate, brackets needs brackets, elective_base needs elective, fixed needs fixedAmount or fixedInputName. Pass it along with amountForm.',
+  levy_form_param_unexpected:
+    "A parameter of another amount form was passed. Pass only the parameter of the chosen amountForm; when changing the form on update, the old form's parameter is dropped on its own.",
+  modifier_single_duration:
+    'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
+  levy_has_no_settlement_category:
+    'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
+  levy_misconfigured:
+    'This rule carries parameters the engine cannot read (a bracket table, a due window, a credit list). Fix the rule before asking for the statement.',
+  levy_cycle:
+    'Two rules read each other in a circle (one assessed on the amount of the other, and back). Break the loop: one of them must be assessed on a measure.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
+  invoice_needs_income:
+    'Only an income (client → account) pays an invoice: an expense or a transfer cannot be linked to one.',
+  invoice_other_client:
+    'An invoice is paid by the client it was issued to, and this income comes from someone else. Check the actor, or the invoice.',
+  invoice_other_activity:
+    "An income paying an invoice belongs to the invoice's activity: drop activity, it is taken from the invoice.",
+  invoice_cancelled:
+    'This invoice is cancelled, so nothing is owed on it and no income pays it. Cancelled by mistake: declare it again with declare_invoices.',
+  invoice_currency_mismatch:
+    "An income paying an invoice is declared in the invoice's currency: pass that currency (and eurAmount when the bank statement shows the euros).",
+  invoice_overpaid:
+    'This income exceeds what is left to receive on the invoice. A partial payment is fine; more than the remainder is another invoice or a typo. list_invoices says the remainder.',
+  invoice_settled:
+    'This invoice is already paid in full: nothing is left to receive. Another payment from this client is another invoice, or an income without one.',
+  invoice_has_payments:
+    'Incomes are already linked to this invoice, so it cannot be cancelled nor change client or currency. Unlink them first with fix_movement (invoice: "none"), or delete them if they never happened.',
+  invoice_below_payments:
+    'The corrected receivable would fall below what has already been received on this invoice. Check the amounts, or correct the linked incomes first.',
+  invoice_already_cancelled: 'This invoice is already cancelled.',
+  invoice_not_open: 'This invoice is paid or cancelled: there is nothing left to remind the client of.',
+  invoice_reference_taken:
+    'Another invoice of this activity already carries that reference, and two invoices of one activity never share one. Check list_invoices; the same reference in another activity is fine.',
+  due_before_issue: 'dueOn cannot be earlier than issuedOn.',
+  withholding_exceeds_total: 'The withholding cannot exceed what the invoice asks for (base + VAT).',
 }
 
 /** Optional text fields where the AI clears a value by passing "none". */

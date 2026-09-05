@@ -1,25 +1,32 @@
 import { auth } from '@abacus/core/auth'
+import { today } from '@abacus/core/domain/period'
+import { listAccounts } from '@abacus/core/services/accounts'
 import { listActorsWithAliases } from '@abacus/core/services/actors'
 import {
   CATEGORY_SORTS,
   DEFAULT_CATEGORY_SORT,
   DEFAULT_NAME_SORT,
   listActivities,
+  listActivityAccounts,
   listCategories,
+  listCategoryExceptions,
   NAME_SORTS,
   sortByName,
   sortCategories,
 } from '@abacus/core/services/catalog'
 import { readingPreference } from '@abacus/core/services/preferences'
+import { listJurisdictions } from '@abacus/core/services/regimes'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { ActivityRows } from '@/components/activity-forms'
+import { NewActivitySheet } from '@/components/activity-wizard'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { ReadingPreference } from '@/components/reading-preference'
-import { ActivityRows, ActorRows, CategoryRows } from '@/components/referential-rows'
+import { ActorRows, CategoryRows } from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
 import { Input } from '@/components/ui/input'
-import { createActivityAction, createActorAction, createCategoryAction } from '@/lib/actions'
+import { createActorAction, createCategoryAction } from '@/lib/actions'
 import { sorter } from '@/lib/sort'
 
 export const dynamic = 'force-dynamic'
@@ -39,12 +46,19 @@ export default async function SettingsPage({
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, actors, reading] = await Promise.all([
+  const [categories, activities, exceptions, links, accounts, actors, reading] = await Promise.all([
     listCategories(userId),
     listActivities(userId),
+    listCategoryExceptions(userId),
+    listActivityAccounts(userId),
+    listAccounts(userId),
     listActorsWithAliases(userId),
     readingPreference(userId),
   ])
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }))
+  // A closed account holds nothing an activity could still count on, so it is
+  // not offered; one already attached before its closure keeps its link.
+  const accountOptions = accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))
 
   return (
     <>
@@ -89,24 +103,33 @@ export default async function SettingsPage({
 
         <Section
           title="Activités"
-          description="la sphère économique : « Freelance ». Héritée de l’acteur, surchargeable par mouvement."
+          description="la sphère économique : héritée de l’acteur, puis du compte quand il n’en sert qu’une ; surchargeable par mouvement."
           action={
-            activities.length > 1 && (
-              <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
-            )
+            <div className="flex items-center gap-2">
+              {activities.length > 1 && (
+                <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
+              )}
+              <NewActivitySheet
+                jurisdictions={listJurisdictions()}
+                categories={categoryOptions}
+                accounts={accountOptions}
+                today={today()}
+              />
+            </div>
           }
         >
           {activities.length === 0 ? (
             <EmptyLine>Aucune activité. Tout est considéré comme perso.</EmptyLine>
           ) : (
-            <ActivityRows activities={sortByName(activities, activitySort.current)} />
+            <ActivityRows
+              activities={sortByName(activities, activitySort.current)}
+              categories={categoryOptions}
+              accounts={accountOptions}
+              links={links}
+              exceptions={exceptions}
+              today={today()}
+            />
           )}
-          <ActionForm action={createActivityAction} className="flex-row gap-2" successLabel="Activité créée">
-            <Input name="name" required placeholder="Nouvelle activité" className="h-8 w-48 text-[13px]" />
-            <SubmitButton variant="outline" size="sm">
-              Ajouter
-            </SubmitButton>
-          </ActionForm>
         </Section>
 
         <Section

@@ -25,7 +25,7 @@ question posée, jamais à plat :
 
 | Groupe | Entrées |
 |---|---|
-| Suivi | Vue d'ensemble · Mouvements · Analyse |
+| Suivi | Vue d'ensemble · Mouvements · Analyse · Activité |
 | Engagements | Dépenses récurrentes · Revenus récurrents |
 | Patrimoine | Comptes · Placements |
 | (pied) | Réglages · compte utilisateur |

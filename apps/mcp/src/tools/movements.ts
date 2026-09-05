@@ -21,6 +21,7 @@ import {
   requireActivityByName,
   requireActorByName,
   requireCategoryByName,
+  requireInvoice,
 } from '../resolve.ts'
 import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
@@ -60,7 +61,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'declare_movements',
     {
       description:
-        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. A movement that reached the account and says nothing about the flows (an insurance payout, a gift, a regularisation) is declared with ghost: true, which keeps it in the balances and out of every analysis. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). Each line succeeds or fails independently: read the result line by line.',
+        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. A movement that reached the account and says nothing about the flows (an insurance payout, a gift, a regularisation) is declared with ghost: true, which keeps it in the balances and out of every analysis. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). A client paying an invoice is settle_invoice; an income declared here pays one only when invoice names it. An expense of a VAT-registered business activity says the VAT inside it with vatAmount: that is what the activity reclaims, and without it the VAT return only counts the VAT collected. Each line succeeds or fails independently: read the result line by line.',
       inputSchema: z.object({
         movements: z
           .array(
@@ -110,7 +111,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .nullable()
                 .optional()
                 .describe(
-                  'Sphere (e.g. Freelance). Omitted: inherited from the actor. null: force "none" (personal)',
+                  'Sphere (e.g. Freelance). Omitted: inherited from the actor, then from the account when a single activity lives on it, an account shared by two designating neither. null: force "none" (personal)',
                 ),
               month: z
                 .string()
@@ -150,6 +151,19 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .optional()
                 .describe(
                   'Income refunding an advance: id of the advanced movement, from list_outstanding_advances',
+                ),
+              invoice: z
+                .string()
+                .optional()
+                .describe(
+                  "Income paying an invoice: its id or reference, from list_invoices. The actor must be the invoice's client, the amount at most what is left to receive; the activity is the invoice's. Prefer settle_invoice, which fills all of that in",
+                ),
+              vatAmount: z
+                .number()
+                .min(0)
+                .optional()
+                .describe(
+                  'The VAT inside amount, in euros, on an expense of a VAT-registered business activity: what the activity reclaims on that purchase. Part of the amount, never on top of it, so at most the amount itself. Pass it whenever the receipt states a VAT and the expense belongs to such an activity, computing it from the rate if only the rate is printed; leave it out everywhere else, where it is refused',
                 ),
             }),
           )
@@ -226,6 +240,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             expectedRefundAmount: m.expectedRefundAmount,
             refundedNow: m.alreadyRefunded,
             refundsMovementId: m.refundsMovementId,
+            invoiceId: m.invoice ? (await requireInvoice(userId, m.invoice)).id : undefined,
+            vatAmount: m.vatAmount,
           })
           results.push({
             index,
@@ -234,6 +250,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             kind: movement.kind,
             ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
             ...(movement.ghost ? { ghost: true } : {}),
+            ...(movement.vatAmount !== null ? { vatAmount: Number(movement.vatAmount) } : {}),
             // Echo the conversion so the user can hear what was written.
             ...(movement.originalCurrency
               ? {
@@ -331,6 +348,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 ? accountName.get(m.targetAccountId!)
                 : actorName.get((m.sourceActorId ?? m.targetActorId)!),
             category: m.categoryId ? categoryName.get(m.categoryId) : undefined,
+            // Absent unless a VAT was stated inside the amount.
+            ...(m.vatAmount !== null ? { vatAmount: Number(m.vatAmount) } : {}),
             note: m.note ?? undefined,
           })),
         })
@@ -367,7 +386,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it. The invoice an income pays is repairable the same way: invoice links it (id or reference from list_invoices), "none" unlinks it, absent keeps it. So is the VAT inside an expense of a VAT-registered business activity: vatAmount states it, null clears it, absent keeps it.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
@@ -439,6 +458,20 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .describe(
             'correct: how much of the expense is owed back, in euros. Required when expectedRefundFrom names an actor the movement did not already owe to',
           ),
+        invoice: z
+          .string()
+          .optional()
+          .describe(
+            'correct, income only: the invoice this income pays (id or reference from list_invoices), or "none" to unlink it. Absent: the stored link is kept',
+          ),
+        vatAmount: z
+          .number()
+          .min(0)
+          .nullable()
+          .optional()
+          .describe(
+            'correct: the VAT inside the amount, on a movement of a VAT-registered business activity, or null to clear it. Absent: the stored one is kept',
+          ),
       }),
     },
     async (f) =>
@@ -470,6 +503,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const category = clearable(f.category)
         const activity = clearable(f.activity)
         const debtor = clearable(f.expectedRefundFrom)
+        const invoice = clearable(f.invoice)
         const movement = await correctMovement(userId, f.movement, {
           happenedOn: f.date,
           amount: f.amount,
@@ -485,6 +519,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           // Dropping the debtor drops the amount with it: half a claim is not a
           // state the model has.
           expectedRefundAmount: debtor === null ? null : f.expectedRefundAmount,
+          invoiceId: invoice ? (await requireInvoice(userId, invoice)).id : invoice,
+          vatAmount: f.vatAmount,
         })
         return ok({
           movementId: movement.id,
@@ -493,6 +529,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           ...(movement.ghost ? { ghost: true } : {}),
           amount: Number(movement.amount),
           kind: movement.kind,
+          ...(movement.vatAmount !== null ? { vatAmount: Number(movement.vatAmount) } : {}),
           ...(movement.originalCurrency
             ? { paid: `${Number(movement.originalAmount)} ${movement.originalCurrency}` }
             : {}),

@@ -432,8 +432,9 @@ test('the whole referential corrects itself through the MCP surface', async () =
       newName: 'ACME Corp',
       activity: 'Freelance',
     })
-  ).json() as { name: string }
+  ).json() as { name: string; movementsLeftBehind: number }
   assert.equal(actor.name, 'ACME Corp')
+  assert.equal(actor.movementsLeftBehind, 0)
   assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
     { name: 'ACME Corp', activity: 'Freelance' },
   ])
@@ -454,6 +455,136 @@ test('the whole referential corrects itself through the MCP surface', async () =
   })
   assert.equal(taken.isError, true)
   assert.match(taken.text, /already uses that name/)
+})
+
+test('a business activity is configured, closed and read back through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_categories', { action: 'create', name: 'Repas' })
+
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      revenueBasis: 'invoiced',
+      vatRegistered: true,
+      defaultVatRate: 21,
+      deductibleExpenses: 'all',
+      regimeLabel: 'Régime de contrôle',
+      fiscalYearStartMonth: 4,
+      fiscalYearStartDay: 6,
+    })
+  ).json() as { revenueBasis: string; fiscalYearStart: string; defaultVatRate: number }
+  assert.equal(created.revenueBasis, 'invoiced')
+  assert.equal(created.fiscalYearStart, '04-06')
+  assert.equal(created.defaultVatRate, 21)
+
+  await call(client, 'manage_activities', {
+    action: 'set_exceptions',
+    name: 'Conseil',
+    categories: ['Repas'],
+  })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    categoryExceptions?: string[]
+  }[]
+  assert.deepEqual(listed[0]!.categoryExceptions, ['Repas'])
+
+  // The activity says what it lives on, and a personal one lives on nothing.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Conseil',
+    accounts: ['Pro'],
+  })
+  await call(client, 'manage_activities', { action: 'create', name: 'Location' })
+  const wrongKind = await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Location',
+    accounts: ['Pro'],
+  })
+  assert.equal(wrongKind.isError, true)
+  assert.match(wrongKind.text, /Only a business activity/)
+
+  // A client carries what it does to an invoice.
+  const actor = (
+    await call(client, 'manage_actors', {
+      action: 'create',
+      name: 'Client A',
+      activity: 'Conseil',
+      invoiceVatRate: 21,
+      invoiceWithholdingRate: 15,
+    })
+  ).json() as { actorId: string }
+  assert.ok(actor.actorId)
+  assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
+    { name: 'Client A', activity: 'Conseil', invoiceVatRate: 21, invoiceWithholdingRate: 15 },
+  ])
+
+  // Closed, the activity refuses a later movement and says where it belongs.
+  await call(client, 'manage_activities', { action: 'close', name: 'Conseil', closedOn: '2026-06-30' })
+  const late = await call(client, 'declare_movements', {
+    movements: [{ date: '2026-07-01', amount: 900, type: 'income', account: 'Pro', actor: 'Client A' }],
+  })
+  assert.match((late.json() as { results: { error?: string }[] }).results[0]!.error!, /closed at that date/)
+  const reopened = (
+    await call(client, 'manage_activities', { action: 'reopen', name: 'Conseil' })
+  ).json() as { closedOn: null }
+  assert.equal(reopened.closedOn, null)
+})
+
+test('two activities declare the same account, and each says so through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+
+  // Declared from the activity, at creation for one and by correction for the
+  // other: the same account serves both.
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      accounts: ['Courant', 'Livret'],
+    })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(created.accounts, ['Courant', 'Livret'])
+  await call(client, 'manage_activities', { action: 'create', name: 'Photo', kind: 'business' })
+  const updated = (
+    await call(client, 'manage_activities', { action: 'update', name: 'Photo', accounts: ['Courant'] })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(updated.accounts, ['Courant'])
+
+  // Every account answers with the activities living on it, so the sharing is
+  // never something the AI has to deduce.
+  const accounts = (await call(client, 'manage_accounts', { action: 'list' })).json() as {
+    accounts: { name: string; activities?: string[] }[]
+  }
+  assert.deepEqual(
+    accounts.accounts.map((a) => [a.name, a.activities]),
+    [
+      ['Courant', ['Conseil', 'Photo']],
+      ['Livret', ['Conseil']],
+    ],
+  )
+
+  // The list replaces: an empty one detaches, and the neighbour keeps its own.
+  await call(client, 'manage_activities', { action: 'set_accounts', name: 'Photo', accounts: [] })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    accounts?: string[]
+  }[]
+  assert.deepEqual(
+    listed.map((a) => [a.name, a.accounts]),
+    [
+      ['Conseil', ['Courant', 'Livret']],
+      ['Photo', []],
+    ],
+  )
 })
 
 test('a movement reads back with its account and its counterparty', async () => {
@@ -1397,4 +1528,418 @@ test('investments: the history answers "what did it make", already totalled', as
   // high since the 6th" is what a reader can do something with.
   assert.equal(history.high.day, '2026-01-06')
   assert.equal(history.milestones.length, 8)
+})
+
+test('attaching an activity to an actor names its history left behind, and reattaches it on request', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Formation' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME' })
+  await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-01-10', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-03-05', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      {
+        date: '2026-02-01',
+        amount: 900,
+        type: 'income',
+        account: 'Courant',
+        actor: 'ACME',
+        activity: 'Formation',
+      },
+    ],
+  })
+
+  // The update does not reclassify: it says how many it left, and what to call.
+  const updated = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Freelance' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(updated.movementsLeftBehind, 2)
+  assert.match(updated.note, /reattach_history/)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 0)
+
+  const fromMarch = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME', from: '2026-03-01' })
+  ).json() as { movementsReattached: number }
+  assert.equal(fromMarch.movementsReattached, 1)
+  const rest = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  ).json() as {
+    movementsReattached: number
+  }
+  assert.equal(rest.movementsReattached, 1)
+  // The movement filed under Formation on purpose stays there.
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 2)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Formation' }), 'movements').length, 1)
+
+  // Moving the actor to another activity: the former one travels by name.
+  const moved = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Formation' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(moved.movementsLeftBehind, 2)
+  assert.match(moved.note, /previousActivity "Freelance"/)
+  const named = (
+    await call(client, 'manage_actors', {
+      action: 'reattach_history',
+      actor: 'ACME',
+      previousActivity: 'Freelance',
+    })
+  ).json() as { movementsReattached: number }
+  assert.equal(named.movementsReattached, 2)
+
+  // Without an activity, there is nothing to reattach to.
+  await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'none' })
+  const refused = await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /no activity/)
+})
+
+test('a regime is configured as dated, sourced rules through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  // The catalog tool of this branch still creates personal activities; the
+  // business kind is another issue's gesture, so the fixture types it in SQL.
+  await db()`update activity set kind = 'business', started_on = '2026-01-01' where user_id = ${user}`
+  await call(client, 'manage_categories', { action: 'create', name: 'Cotisations' })
+
+  // A rule is worth its source: no check date, no rule.
+  const unsourced = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Cotisations',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 21.2,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(unsourced.isError, true)
+  assert.match(unsourced.text, /verifiedOn/)
+
+  const created = (
+    await call(client, 'manage_levies', {
+      action: 'create',
+      activity: 'Freelance',
+      name: 'Cotisations',
+      kind: 'social',
+      validFrom: '2026-01-01',
+      sourceUrl: 'https://example.test/social',
+      verifiedOn: '2026-01-10',
+      reviewOn: '2027-01-01',
+      baseMeasure: 'revenue',
+      amountForm: 'rate',
+      rate: 21.2,
+      period: 'month',
+      due: { type: 'end_of_next_month' },
+      settlementCategory: 'Cotisations',
+    })
+  ).json() as { created: { levyId: string; amount: { rate: number }; settlement: { category: string } } }
+  assert.equal(created.created.amount.rate, 21.2)
+  assert.equal(created.created.settlement.category, 'Cotisations')
+
+  await call(client, 'manage_levies', {
+    action: 'add_modifier',
+    activity: 'Freelance',
+    levy: 'Cotisations',
+    modifierLabel: 'Taux réduit de début',
+    effect: 'rate_factor',
+    value: 0.75,
+    durationMonths: 12,
+    condition: 'first year of activity',
+  })
+
+  // Rules read each other by name.
+  const annual = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Impôt annuel',
+    kind: 'income_tax',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/tax',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'profit',
+    basePeriodRef: 'ytd',
+    baseCredits: [{ source: 'paid', levy: 'Cotisations' }, { source: 'withholdings' }],
+    amountForm: 'brackets',
+    brackets: {
+      mode: 'progressive',
+      rows: [
+        { upTo: 10000, rate: 10 },
+        { upTo: null, rate: 30 },
+      ],
+    },
+    period: 'year',
+    due: { type: 'fixed_dates', dates: [{ month: 6, day: 30, yearOffset: 1 }] },
+  })
+  assert.equal(annual.isError, undefined, annual.text)
+  const wrongForm = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Mal formée',
+    kind: 'other',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/x',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'none',
+    amountForm: 'fixed',
+    period: 'year',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(wrongForm.isError, true)
+  assert.match(wrongForm.text, /fixedAmount or fixedInputName/)
+
+  // The rate changes on a date: a supersede, and the old row keeps its rate.
+  const superseded = (
+    await call(client, 'manage_levies', {
+      action: 'supersede',
+      activity: 'Freelance',
+      levy: 'Cotisations',
+      validFrom: '2027-01-01',
+      rate: 22,
+      sourceUrl: 'https://example.test/social-2027',
+      verifiedOn: '2027-01-05',
+    })
+  ).json() as {
+    closed: { validTo: string }
+    created: { validFrom: string; amount: { rate: number }; modifiers: { label: string }[] }
+  }
+  assert.equal(superseded.closed.validTo, '2026-12-31')
+  assert.equal(superseded.created.validFrom, '2027-01-01')
+  assert.equal(superseded.created.amount.rate, 22)
+  assert.deepEqual(
+    superseded.created.modifiers.map((m) => m.label),
+    ['Taux réduit de début'],
+  )
+
+  const listed = (await call(client, 'manage_levies', { action: 'list', activity: 'Freelance' })).json() as {
+    levies: { name: string; validFrom: string; base: { credits?: { source: string; levy?: string }[] } }[]
+  }
+  assert.deepEqual(
+    listed.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2026-01-01'],
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+  assert.equal(listed.levies[2]!.base.credits![0]!.levy, 'Cotisations')
+  const inForce = (
+    await call(client, 'manage_levies', { action: 'list', activity: 'Freelance', at: '2027-06-01' })
+  ).json() as { levies: { name: string; validFrom: string }[] }
+  assert.deepEqual(
+    inForce.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+
+  // A rule another one reads stays, with guidance.
+  const kept = await call(client, 'manage_levies', {
+    action: 'delete',
+    activity: 'Freelance',
+    levy: created.created.levyId,
+  })
+  assert.equal(kept.isError, true)
+  assert.match(kept.text, /Another rule reads this one/)
+
+  // Dated figures, and the thresholds the regime hinges on.
+  await call(client, 'set_activity_inputs', {
+    action: 'set',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+    value: 950,
+  })
+  const inputs = (
+    await call(client, 'set_activity_inputs', { action: 'list', activity: 'Freelance' })
+  ).json() as {
+    inputs: { name: string; value: number }[]
+  }
+  assert.deepEqual(inputs.inputs, [{ name: 'contribution_base', validFrom: '2026-01-01', value: 950 }])
+  await call(client, 'set_activity_inputs', {
+    action: 'remove',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+  })
+
+  const threshold = (
+    await call(client, 'manage_thresholds', {
+      action: 'create',
+      activity: 'Freelance',
+      label: 'Franchise',
+      measure: 'revenue',
+      value: 37500,
+      consequence: 'VAT becomes due from the first day of overshoot',
+      sourceUrl: 'https://example.test/vat',
+      verifiedOn: '2026-01-10',
+    })
+  ).json() as { periodRef: string; comparison: string }
+  assert.equal(threshold.periodRef, 'ytd')
+  assert.equal(threshold.comparison, 'lte')
+  const updated = (
+    await call(client, 'manage_thresholds', {
+      action: 'update',
+      activity: 'Freelance',
+      threshold: 'Franchise',
+      periodRef: 'year-1',
+    })
+  ).json() as { periodRef: string; value: number }
+  assert.equal(updated.periodRef, 'year-1')
+  assert.equal(updated.value, 37500)
+})
+
+test('invoices are declared, followed and settled through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Studio' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client A' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client B' })
+  // The regime and the client defaults are written straight to the columns:
+  // this test is about the invoice tools, not about the gestures that set them.
+  const sql = db()
+  await sql`update activity set kind = 'business', vat_registered = true, default_vat_rate = 20 where name = 'Studio'`
+  await sql`update actor set invoice_withholding_rate = 15 where name = 'Client A'`
+
+  // One line per invoice, each on its own: the unknown client fails with guidance.
+  const declared = (
+    await call(client, 'declare_invoices', {
+      invoices: [
+        {
+          activity: 'Studio',
+          client: 'Client A',
+          reference: 'F-1',
+          issuedOn: '2026-03-01',
+          dueOn: '2026-03-31',
+          baseAmount: 1000,
+        },
+        {
+          activity: 'Studio',
+          client: 'Client B',
+          reference: 'F-2',
+          issuedOn: '2026-03-05',
+          dueOn: '2999-01-01',
+          baseAmount: 500,
+          vatRate: 0,
+        },
+        { activity: 'Studio', client: 'Nobody', issuedOn: '2026-03-06', baseAmount: 10 },
+      ],
+    })
+  ).json() as {
+    declared: number
+    failed: number
+    results: { ok: boolean; total?: number; receivable?: number; state?: string; error?: string }[]
+  }
+  assert.equal(declared.declared, 2)
+  assert.equal(declared.failed, 1)
+  // 20 % VAT from the activity, 15 % withheld by the client: owed 1200, received 1050.
+  assert.equal(declared.results[0]!.total, 1200)
+  assert.equal(declared.results[0]!.receivable, 1050)
+  assert.equal(declared.results[0]!.state, 'overdue')
+  assert.equal(declared.results[1]!.total, 500)
+  assert.match(declared.results[2]!.error!, /createUnknownActors/)
+
+  // What is owed, already grouped by urgency.
+  const listed = (await call(client, 'list_invoices', { activity: 'Studio' })).json() as {
+    outstanding: {
+      pending: { count: number; remaining: number }
+      overdue: { count: number; remaining: number }
+    }
+    invoices: { reference: string; client: string; state: string; remaining: number }[]
+  }
+  assert.deepEqual(listed.outstanding, {
+    pending: { count: 1, remaining: 500 },
+    overdue: { count: 1, remaining: 1050 },
+  })
+  assert.deepEqual(
+    listed.invoices.map((i) => [i.reference, i.client, i.state]),
+    [
+      ['F-2', 'Client B', 'pending'],
+      ['F-1', 'Client A', 'overdue'],
+    ],
+  )
+
+  // A partial payment: the income is written, the invoice stays open for the rest.
+  const partial = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 500, date: '2026-04-02' })
+  ).json() as {
+    amount: number
+    account: string
+    invoice: { reference: string; paid: number; remaining: number; state: string }
+  }
+  assert.equal(partial.amount, 500)
+  assert.equal(partial.account, 'Pro')
+  assert.equal(partial.invoice.reference, 'F-1')
+  assert.equal(partial.invoice.paid, 500)
+  assert.equal(partial.invoice.remaining, 550)
+  assert.equal(partial.invoice.state, 'overdue')
+
+  const reminded = (
+    await call(client, 'fix_invoice', { invoice: 'F-1', action: 'remind', on: '2026-04-10' })
+  ).json() as {
+    remindedOn: string
+  }
+  assert.equal(reminded.remindedOn, '2026-04-10')
+
+  // Beyond the remainder is a typo or another invoice, never a payment.
+  const tooMuch = await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 600 })
+  assert.equal(tooMuch.isError, true)
+  assert.match(tooMuch.text, /left to receive/)
+
+  // The rest, by default: paid, and the incomes read back in the activity.
+  const rest = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', date: '2026-04-15' })
+  ).json() as {
+    amount: number
+    invoice: { state: string }
+  }
+  assert.equal(rest.amount, 550)
+  assert.equal(rest.invoice.state, 'paid')
+  const incomes = rows<{ kind: string; counterparty: string; amount: number }>(
+    await call(client, 'list_movements', { activity: 'Studio' }),
+    'movements',
+  )
+  assert.deepEqual(
+    incomes.map((m) => [m.kind, m.counterparty, m.amount]),
+    [
+      ['income', 'Client A', 550],
+      ['income', 'Client A', 500],
+    ],
+  )
+
+  // Paid money is a fact the invoice cannot shrink under.
+  const below = await call(client, 'fix_invoice', { invoice: 'F-1', action: 'correct', baseAmount: 100 })
+  assert.equal(below.isError, true)
+  assert.match(below.text, /already been received/)
+
+  // Cancelled: out of the outstanding list, still readable under its state.
+  const cancelled = (
+    await call(client, 'fix_invoice', { invoice: 'F-2', action: 'cancel', on: '2026-05-01' })
+  ).json() as {
+    state: string
+    cancelledOn: string
+  }
+  assert.equal(cancelled.state, 'cancelled')
+  assert.equal(cancelled.cancelledOn, '2026-05-01')
+  const after = (await call(client, 'list_invoices', { state: 'cancelled' })).json() as {
+    outstanding: { pending: { count: number }; overdue: { count: number } }
+    invoices: { reference: string }[]
+  }
+  assert.deepEqual(
+    after.invoices.map((i) => i.reference),
+    ['F-2'],
+  )
+  assert.equal(after.outstanding.pending.count, 0)
+
+  // An unknown invoice is guidance, not a stack trace.
+  const missing = await call(client, 'settle_invoice', { invoice: 'F-9', account: 'Pro' })
+  assert.equal(missing.isError, true)
+  assert.match(missing.text, /list_invoices/)
 })

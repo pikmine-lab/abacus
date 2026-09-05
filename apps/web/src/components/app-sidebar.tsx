@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftRightIcon,
+  BriefcaseBusinessIcon,
   ChartCandlestickIcon,
   ChartNoAxesColumnIcon,
   CircleArrowDownIcon,
@@ -40,6 +41,7 @@ const GROUPS = [
       { href: '/', label: 'Vue d’ensemble', icon: LayoutDashboardIcon },
       { href: '/movements', label: 'Mouvements', icon: ArrowLeftRightIcon },
       { href: '/analysis', label: 'Analyse', icon: ChartNoAxesColumnIcon },
+      { href: '/activity', label: 'Activité', icon: BriefcaseBusinessIcon },
     ],
   },
   {

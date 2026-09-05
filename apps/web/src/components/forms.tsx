@@ -64,16 +64,27 @@ export function TextField({
   name,
   label,
   defaultValue = '',
+  onValueChange,
   ...props
 }: Omit<React.ComponentProps<typeof Input>, 'name' | 'value' | 'defaultValue'> & {
   name: string
   label: string
   defaultValue?: string
+  /** For callers deriving something from what is typed, such as a proposal. */
+  onValueChange?: (value: string) => void
 }) {
   const [value, setValue] = useState(defaultValue)
   return (
     <Field label={label} name={name}>
-      <Input name={name} value={value} onChange={(e) => setValue(e.target.value)} {...props} />
+      <Input
+        name={name}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value)
+          onValueChange?.(e.target.value)
+        }}
+        {...props}
+      />
     </Field>
   )
 }
@@ -89,6 +100,7 @@ export function FormSelect({
   required,
   noneLabel,
   defaultValue = '',
+  ariaLabel,
   onValueChange,
 }: {
   name: string
@@ -98,6 +110,8 @@ export function FormSelect({
   /** Visible item that clears the selection, for optional fields. */
   noneLabel?: string
   defaultValue?: string
+  /** For a select standing in a row rather than under a `Field` label. */
+  ariaLabel?: string
   /** For callers deriving something from the choice, such as a preview. */
   onValueChange?: (value: string) => void
 }) {
@@ -113,7 +127,7 @@ export function FormSelect({
         onValueChange?.(next)
       }}
     >
-      <SelectTrigger className="w-full">
+      <SelectTrigger className="w-full" aria-label={ariaLabel}>
         <SelectValue placeholder={placeholder ?? noneLabel} />
       </SelectTrigger>
       <SelectContent>
@@ -337,8 +351,11 @@ export function ActionForm({
   className?: string
   /** Acknowledgement kept in place, so entering several in a row stays fluid. */
   successLabel?: string
-  /** Called once per success, for a panel that should close itself. */
-  onSuccess?: () => void
+  /**
+   * Called once per success with what the action reported, for a panel that
+   * should close itself, or act on a figure the action answered with.
+   */
+  onSuccess?: (state: FormState) => void
   children: React.ReactNode
 }) {
   const [state, formAction] = useActionState(
@@ -356,9 +373,9 @@ export function ActionForm({
   useEffect(() => {
     if (state.ok && state.n > fired.current) {
       fired.current = state.n
-      onSuccess?.()
+      onSuccess?.(state)
     }
-  }, [state.n, state.ok, onSuccess])
+  }, [state, onSuccess])
   return (
     // noValidate: validation is ours, so the browser never puts a bubble on a
     // field the user was not editing.

@@ -55,12 +55,15 @@ export function PageBody({ className, children }: { className?: string; children
  * subscriptions has to lead to subscriptions.
  */
 export function Section({
+  id,
   title,
   description,
   action,
   className,
   children,
 }: {
+  /** Anchor, for a tile that leads to the section holding its detail. */
+  id?: string
   title: string
   description?: string
   action?: React.ReactNode
@@ -68,7 +71,7 @@ export function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className={cn('flex min-w-0 flex-col gap-3', className)}>
+    <section id={id} className={cn('flex min-w-0 flex-col gap-3', className)}>
       <div className="flex items-baseline gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">{title}</h2>
         {description && <p className="min-w-0 truncate text-[11.5px] text-faint">{description}</p>}

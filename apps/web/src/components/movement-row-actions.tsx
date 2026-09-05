@@ -2,7 +2,7 @@
 
 import { EllipsisIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
-import { type MovementDraft, MovementForm } from '@/components/movement-form'
+import { type ActivityOption, type MovementDraft, MovementForm } from '@/components/movement-form'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -48,7 +48,7 @@ export function MovementRowActions({
   accounts: Option[]
   actors: Option[]
   categories: Option[]
-  activities: Option[]
+  activities: ActivityOption[]
   today: string
 }) {
   const [editing, setEditing] = useState(false)

@@ -34,8 +34,9 @@ function checkOpening(openingBalance: number | undefined, openedOn: string | nul
 
 export async function createAccount(input: NewAccount): Promise<Account> {
   checkOpening(input.openingBalance, input.openedOn)
+  const sql = db()
   try {
-    return await insertAccount(db(), input)
+    return await insertAccount(sql, input)
   } catch (e) {
     rethrowUnique(e, 'account_exists', `An account already uses the name "${input.name}"`)
   }
