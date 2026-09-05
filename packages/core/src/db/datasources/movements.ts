@@ -25,6 +25,8 @@ export interface NewMovement {
   accrualMonth?: string | null
   /** Out of every analysis, while still counted in balances. */
   ghost?: boolean
+  /** The invoice this income pays, when it pays one. */
+  invoiceId?: string | null
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {

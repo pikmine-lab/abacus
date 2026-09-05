@@ -65,6 +65,13 @@ import {
   stopFollowing,
 } from '@abacus/core/services/investments'
 import {
+  cancelInvoice,
+  correctInvoice,
+  declareInvoice,
+  remindInvoice,
+  settleInvoice,
+} from '@abacus/core/services/invoices'
+import {
   addModifier,
   closeLevy,
   createLevy,
@@ -169,7 +176,8 @@ const FR: Record<string, string> = {
   activity_regime_fixed:
     'Cette activité porte des règles ou des factures : elle ne change pas de régime. Clos-la et crée la suivante.',
   activity_has_accounts: 'Des comptes sont rattachés à cette activité : détache-les d’abord.',
-  activity_not_business: 'Seule une activité indépendante porte des comptes, des règles et des seuils.',
+  activity_not_business:
+    'Seule une activité indépendante porte des comptes, des factures, des règles et des seuils.',
   vat_rate_needs_registration: 'Un taux de TVA suppose une activité assujettie.',
   activity_closes_before_start: 'La clôture précède le début de l’activité.',
   bad_rate: 'Un taux est un pourcentage entre 0 et 100.',
@@ -238,6 +246,22 @@ const FR: Record<string, string> = {
   input_value_invalid: 'Ce paramètre a besoin d’un nom et d’une valeur.',
   threshold_not_found: 'Ce seuil n’existe plus.',
   threshold_value_invalid: 'Un seuil a besoin d’un libellé, d’une valeur et de ce qui change au-delà.',
+  bad_amount: 'Le montant doit être supérieur à zéro.',
+  due_before_issue: 'L’échéance ne peut pas précéder l’émission.',
+  withholding_exceeds_total: 'La retenue ne peut pas dépasser le total dû (HT + TVA).',
+  invoice_not_found: 'Cette facture n’existe plus.',
+  invoice_reference_taken: 'Une facture de cette activité porte déjà cette référence.',
+  invoice_needs_income: 'Seul un revenu règle une facture.',
+  invoice_other_client: 'Une facture est réglée par le client à qui elle a été émise.',
+  invoice_other_activity: 'Le revenu qui règle une facture appartient à l’activité de la facture.',
+  invoice_cancelled: 'Cette facture est annulée : rien n’est plus dû dessus.',
+  invoice_currency_mismatch: 'Le revenu se déclare dans la devise de la facture.',
+  invoice_overpaid: 'Ce montant dépasse le reste à recevoir sur la facture.',
+  invoice_settled: 'Cette facture est déjà encaissée en entier.',
+  invoice_has_payments: 'Des revenus règlent déjà cette facture : détache-les d’abord.',
+  invoice_below_payments: 'Le net à recevoir ne peut pas passer sous ce qui a déjà été encaissé.',
+  invoice_already_cancelled: 'Cette facture est déjà annulée.',
+  invoice_not_open: 'Cette facture est encaissée ou annulée : rien à relancer.',
 }
 
 /**
@@ -323,6 +347,7 @@ function refreshAll() {
     '/recurring-income',
     '/accounts',
     '/investments',
+    '/activity',
     '/settings',
   ])
     revalidatePath(path)
@@ -335,7 +360,7 @@ function refreshAll() {
  */
 function errorRedirect(formData: FormData, message: string): never {
   const back = str(formData, 'back') || '/recurring-expenses'
-  redirect(`${back}?error=${encodeURIComponent(message)}`)
+  redirect(`${back}${back.includes('?') ? '&' : '?'}error=${encodeURIComponent(message)}`)
 }
 
 /** The fields a movement needs, which depend on the kind being declared. */
@@ -381,6 +406,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       accrualMonth: opt(formData, 'accrualMonth'),
       ghost: formData.get('ghost') !== null,
       refundsMovementId: opt(formData, 'refundsMovementId'),
+      invoiceId: opt(formData, 'invoiceId'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : undefined,
@@ -937,6 +963,109 @@ export async function closeAdvanceAction(formData: FormData): Promise<void> {
     errorRedirect(formData, frError(e))
   }
   refreshAll()
+}
+
+/** What an invoice needs to exist; the rates and their amounts are optional, the service fills them. */
+const INVOICE_RULES: FieldRule[] = [
+  { name: 'client' },
+  { name: 'issuedOn', kind: 'date' },
+  { name: 'baseAmount', kind: 'amount' },
+]
+
+/**
+ * The figures as the panel sends them: a rate and its amount both, whichever
+ * was typed, because an amount given is the truth and the rate only proposes.
+ */
+function invoiceFigures(formData: FormData) {
+  return {
+    reference: opt(formData, 'reference'),
+    issuedOn: str(formData, 'issuedOn'),
+    dueOn: opt(formData, 'dueOn'),
+    baseAmount: num(formData, 'baseAmount'),
+    vatRate: optNum(formData, 'vatRate'),
+    vatAmount: optNum(formData, 'vatAmount'),
+    withholdingRate: optNum(formData, 'withholdingRate'),
+    withholdingAmount: optNum(formData, 'withholdingAmount'),
+    note: opt(formData, 'note'),
+  }
+}
+
+export async function declareInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'activityId' }, ...INVOICE_RULES])
+  if (invalid) return { fields: invalid }
+  try {
+    await declareInvoice(userId, {
+      activityId: str(formData, 'activityId'),
+      actorId: await actorIdFromName(userId, str(formData, 'client')),
+      ...invoiceFigures(formData),
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** Same panel as the declaration, so the invoice is rebuilt whole: an emptied field clears. */
+export async function correctInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, INVOICE_RULES)
+  if (invalid) return { fields: invalid }
+  try {
+    const figures = invoiceFigures(formData)
+    await correctInvoice(userId, str(formData, 'invoiceId'), {
+      ...figures,
+      actorId: await actorIdFromName(userId, str(formData, 'client')),
+      reference: figures.reference ?? null,
+      dueOn: figures.dueOn ?? null,
+      note: figures.note ?? null,
+    })
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * "The client paid": writes the income that pays the invoice, onto the chosen
+ * account. The amount is editable on the way, because a payment arrives
+ * partial as often as whole.
+ */
+export async function settleInvoiceAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await settleInvoice(userId, str(formData, 'invoiceId'), {
+      amount: optNum(formData, 'amount'),
+      date: opt(formData, 'date'),
+      accountId: str(formData, 'accountId'),
+    })
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+export async function remindInvoiceAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await remindInvoice(userId, str(formData, 'invoiceId'))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+export async function cancelInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await cancelInvoice(userId, str(formData, 'invoiceId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
 }
 
 export async function createCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {

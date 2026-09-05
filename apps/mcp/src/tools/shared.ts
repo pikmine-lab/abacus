@@ -101,13 +101,13 @@ export const GUIDANCE: Record<string, string> = {
   activity_exists:
     'An activity already uses that name. Reuse it: activities partition the finances, duplicates defeat that.',
   activity_closed:
-    'This activity is closed at that date: a later movement belongs to the activity that followed it. Check the date, name the right activity (or activity: "none"), or reopen it with manage_activities if it was closed by mistake.',
+    'This activity is closed at that date: a movement or an invoice dated after the closure belongs to the activity that followed it, one dated before still records here. Check the date, name the right activity (or activity: "none"), or reopen it with manage_activities if it was closed by mistake.',
   activity_regime_fixed:
     'This activity carries rules or invoices, so its kind and revenue basis are fixed: an activity never changes regime. Close it on its last day (manage_activities, action close) and create the next one with the new settings.',
   activity_has_accounts:
     'Accounts are attached to this activity, and only a business activity owns accounts. Detach them first (manage_accounts, activity: "none") if it really is personal.',
   activity_not_business:
-    'Only a business activity owns accounts and carries rules, inputs and thresholds; a personal one is an analysis dimension and nothing more. Make it a business with manage_activities (kind: business), or leave the account without an activity.',
+    'Only a business activity owns accounts, issues invoices and carries rules, inputs and thresholds; a personal one is an analysis dimension and nothing more. Check the activity name, make it a business with manage_activities (kind: business), or leave the account without an activity.',
   vat_rate_needs_registration:
     'A default VAT rate only goes with vatRegistered: true. Pass both, or drop the rate.',
   activity_closes_before_start: 'The closing day is before the day the activity started: check both dates.',
@@ -152,6 +152,30 @@ export const GUIDANCE: Record<string, string> = {
     'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
   // asset_not_found stays out on purpose, like the other name resolutions: the
   // resolver's own message lists what is held, which is what unblocks the call.
+  invoice_needs_income:
+    'Only an income (client → account) pays an invoice: an expense or a transfer cannot be linked to one.',
+  invoice_other_client:
+    'An invoice is paid by the client it was issued to, and this income comes from someone else. Check the actor, or the invoice.',
+  invoice_other_activity:
+    "An income paying an invoice belongs to the invoice's activity: drop activity, it is taken from the invoice.",
+  invoice_cancelled:
+    'This invoice is cancelled, so nothing is owed on it and no income pays it. Cancelled by mistake: declare it again with declare_invoices.',
+  invoice_currency_mismatch:
+    "An income paying an invoice is declared in the invoice's currency: pass that currency (and eurAmount when the bank statement shows the euros).",
+  invoice_overpaid:
+    'This income exceeds what is left to receive on the invoice. A partial payment is fine; more than the remainder is another invoice or a typo. list_invoices says the remainder.',
+  invoice_settled:
+    'This invoice is already paid in full: nothing is left to receive. Another payment from this client is another invoice, or an income without one.',
+  invoice_has_payments:
+    'Incomes are already linked to this invoice, so it cannot be cancelled nor change client or currency. Unlink them first with fix_movement (invoice: "none"), or delete them if they never happened.',
+  invoice_below_payments:
+    'The corrected receivable would fall below what has already been received on this invoice. Check the amounts, or correct the linked incomes first.',
+  invoice_already_cancelled: 'This invoice is already cancelled.',
+  invoice_not_open: 'This invoice is paid or cancelled: there is nothing left to remind the client of.',
+  invoice_reference_taken:
+    'Another invoice of this activity already carries that reference, and two invoices of one activity never share one. Check list_invoices; the same reference in another activity is fine.',
+  due_before_issue: 'dueOn cannot be earlier than issuedOn.',
+  withholding_exceeds_total: 'The withholding cannot exceed what the invoice asks for (base + VAT).',
 }
 
 /** Optional text fields where the AI clears a value by passing "none". */
