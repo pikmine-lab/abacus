@@ -1,5 +1,10 @@
 import { listAccounts } from '@abacus/core/services/accounts'
-import { type ActivityAlert, activityAlerts, isThresholdAlert } from '@abacus/core/services/activityAlerts'
+import {
+  type ActivityAlert,
+  activityAlerts,
+  isRuleAlert,
+  isThresholdAlert,
+} from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   listCommitmentsWithProgress,
@@ -17,12 +22,14 @@ import { isoDate, ok, run } from './shared.ts'
 
 /** What an alert is worth: where a measure stands against its threshold, or how old a rule's source is. */
 function alertFacts(alert: ActivityAlert) {
-  if (!isThresholdAlert(alert))
+  if (isRuleAlert(alert))
     return {
       status: alert.status,
       reviewOn: alert.reviewOn ?? undefined,
       verifiedOn: alert.verifiedOn ?? undefined,
     }
+  // A statement that will not compute: the reason names the rule to correct.
+  if (!isThresholdAlert(alert)) return { reason: alert.reason }
   return {
     measure: alert.measure,
     over: alert.periodRef,

@@ -5,6 +5,7 @@ import { createAccount } from '../src/services/accounts.ts'
 import { activityAlerts } from '../src/services/activityAlerts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createActivity } from '../src/services/catalog.ts'
+import { createLevy } from '../src/services/levies.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
@@ -216,4 +217,46 @@ test('the alerts of one user never reach another', async () => {
 
   assert.deepEqual(await activityAlerts(mine, TODAY), [])
   assert.equal((await activityAlerts(theirs, TODAY)).length, 1)
+})
+
+test('a rule the engine cannot read becomes an alert, and the others still answer', async () => {
+  const user = await seedUser()
+  const broken = await createActivity(user, {
+    name: 'Cassée',
+    kind: 'business',
+    startedOn: '2026-01-01',
+  })
+  const sound = await createActivity(user, {
+    name: 'Saine',
+    kind: 'business',
+    startedOn: '2026-01-01',
+  })
+  // Something the sound activity has to say, so its silence would be a failure
+  // rather than simply nothing to report.
+  await createLevy(user, {
+    activityId: sound.id,
+    name: 'Cotisation',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    status: 'unconfirmed',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 10,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+  })
+  // Parameters the engine cannot read, which only a row written outside the
+  // service can carry: the point is that the overview survives one.
+  await db()`
+    insert into levy (user_id, activity_id, name, kind, valid_from, base_measure, amount_form, brackets, period, due)
+    values (${user}, ${broken.id}, 'Illisible', 'social', '2026-01-01', 'revenue', 'brackets',
+            ${db().json({ mode: 'nope' })}, 'month', ${db().json({ type: 'end_of_next_month' })})
+  `
+
+  const alerts = await activityAlerts(user, '2026-09-05')
+  const unreadable = alerts.filter((a) => a.kind === 'activity_unreadable')
+  assert.equal(unreadable.length, 1)
+  assert.equal(unreadable[0]!.activityName, 'Cassée')
+  // The sound activity is still read: one misconfiguration does not blind the rest.
+  assert.ok(alerts.some((a) => a.activityId === sound.id))
 })

@@ -1,3 +1,4 @@
+import { DomainError } from '../domain/errors.ts'
 import { fiscalYearOf } from '../domain/levy-engine.ts'
 import { today as todayOf } from '../domain/period.ts'
 import type { LevyStatus, PeriodRef, ThresholdMeasure } from '../domain/types.ts'
@@ -39,6 +40,7 @@ export type ActivityAlertKind =
   | 'threshold_near'
   | 'rule_review_due'
   | 'rule_unconfirmed'
+  | 'activity_unreadable'
 
 interface AlertOf {
   activityId: string
@@ -75,7 +77,19 @@ export interface RuleAlert extends AlertOf {
   verifiedOn: string | null
 }
 
-export type ActivityAlert = ThresholdAlert | RuleAlert
+/**
+ * An activity whose statement will not compute, because a rule carries
+ * parameters the engine cannot read. It becomes an alert rather than an
+ * exception: this list is read on the overview, and one activity misconfigured
+ * in a corner of the settings must not take down the page every other activity
+ * is read on. The message names the rule, which is where the correction is.
+ */
+export interface UnreadableAlert extends AlertOf {
+  kind: 'activity_unreadable'
+  reason: string
+}
+
+export type ActivityAlert = ThresholdAlert | RuleAlert | UnreadableAlert
 
 /**
  * Whether an alert is about a threshold, and so carries its figures. A guard
@@ -86,12 +100,18 @@ export function isThresholdAlert(alert: ActivityAlert): alert is ThresholdAlert 
   return alert.kind === 'threshold_crossed' || alert.kind === 'threshold_near'
 }
 
+/** Whether an alert is about a rule's source, and so carries its dates. */
+export function isRuleAlert(alert: ActivityAlert): alert is RuleAlert {
+  return alert.kind === 'rule_review_due' || alert.kind === 'rule_unconfirmed'
+}
+
 /** Worst first: a crossed threshold changes the regime, a stale source only dates a figure. */
 const RANK: Record<ActivityAlertKind, number> = {
-  threshold_crossed: 0,
-  threshold_near: 1,
-  rule_review_due: 2,
-  rule_unconfirmed: 3,
+  activity_unreadable: 0,
+  threshold_crossed: 1,
+  threshold_near: 2,
+  rule_review_due: 3,
+  rule_unconfirmed: 4,
 }
 
 /** Whether a measure still complying is close enough to its threshold to be worth saying. */
@@ -112,13 +132,23 @@ export async function activityAlerts(userId: string, today: string = todayOf()):
 
   for (const activity of activities) {
     const cal = { startMonth: activity.fiscalYearStartMonth, startDay: activity.fiscalYearStartDay }
-    const statement = await activityStatement(userId, activity.id, fiscalYearOf(today, cal), today)
     const of = (subject: string, sourceUrl: string | null) => ({
       activityId: activity.id,
       activityName: activity.name,
       subject,
       sourceUrl,
     })
+
+    let statement: Awaited<ReturnType<typeof activityStatement>>
+    try {
+      statement = await activityStatement(userId, activity.id, fiscalYearOf(today, cal), today)
+    } catch (e) {
+      // Only a rule the engine cannot read is turned into an alert; anything
+      // else is a real failure and belongs to whoever called.
+      if (!(e instanceof DomainError && e.code === 'levy_misconfigured')) throw e
+      alerts.push({ ...of(activity.name, null), kind: 'activity_unreadable', reason: e.message })
+      continue
+    }
 
     for (const threshold of statement.thresholds) {
       const kind = threshold.breached

@@ -2,7 +2,12 @@ import { auth } from '@abacus/core/auth'
 import type { ThresholdMeasure } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
-import { type ActivityAlert, activityAlerts, isThresholdAlert } from '@abacus/core/services/activityAlerts'
+import {
+  type ActivityAlert,
+  activityAlerts,
+  isRuleAlert,
+  isThresholdAlert,
+} from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   listCommitmentsWithProgress,
@@ -504,6 +509,8 @@ function alertHeadline(alert: ActivityAlert): string {
       return `${alert.subject} à revérifier`
     case 'rule_unconfirmed':
       return `${alert.subject} non confirmé`
+    case 'activity_unreadable':
+      return `${alert.subject} : relevé illisible`
   }
 }
 
@@ -519,15 +526,17 @@ function alertDetail(alert: ActivityAlert): string {
       `${thresholdFigure(alert.measure, alert.current)} pour un ${alert.comparison === 'lte' ? 'plafond' : 'plancher'} à ${thresholdFigure(alert.measure, alert.value)}`,
       alert.consequence,
     ].join(' · ')
-  return [
-    alert.activityName,
-    alert.kind === 'rule_review_due'
-      ? `à revérifier depuis le ${frDate(alert.reviewOn!)}`
-      : 'aucun texte ne fixe cette valeur',
-    alert.verifiedOn ? `vérifié le ${frDate(alert.verifiedOn)}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  if (isRuleAlert(alert))
+    return [
+      alert.activityName,
+      alert.kind === 'rule_review_due'
+        ? `à revérifier depuis le ${frDate(alert.reviewOn!)}`
+        : 'aucun texte ne fixe cette valeur',
+      alert.verifiedOn ? `vérifié le ${frDate(alert.verifiedOn)}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  return `une règle porte des paramètres illisibles : corrige-la pour retrouver les chiffres de l’activité`
 }
 
 /** Breakdown rows as the charts read them: numbers, not decimal strings. */
