@@ -1,6 +1,8 @@
 import { auth } from '@abacus/core/auth'
+import type { ThresholdMeasure } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
+import { type ActivityAlert, activityAlerts, isThresholdAlert } from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import {
   listCommitmentsWithProgress,
@@ -83,6 +85,7 @@ export default async function OverviewPage({
     pending,
     advances,
     commitments,
+    alerts,
   ] = await Promise.all([
     listAccounts(userId),
     firstDeclaredDay(userId),
@@ -96,6 +99,7 @@ export default async function OverviewPage({
     pendingOccurrences(userId),
     outstandingAdvances(userId),
     listCommitmentsWithProgress(userId),
+    activityAlerts(userId, now),
   ])
 
   const active = commitments.filter((c) => !c.cancelledOn)
@@ -358,6 +362,39 @@ export default async function OverviewPage({
           </Section>
         )}
 
+        {/* Nothing when nothing alerts: a block saying "aucun seuil franchi"
+            would take the place of the day a seuil is. */}
+        {alerts.length > 0 && (
+          <Section title="Activité" description="ce qui change un régime, et ce qui n’est plus sûr">
+            <Rows>
+              {alerts.map((alert) => (
+                <Link
+                  key={`${alert.activityId}-${alert.kind}-${alert.subject}`}
+                  href={
+                    isThresholdAlert(alert)
+                      ? `/activity?activity=${alert.activityId}&from=overview`
+                      : `/settings/activities/${alert.activityId}?from=overview`
+                  }
+                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
+                >
+                  <CircleAlertIcon
+                    className={`size-3.5 shrink-0 translate-y-0.5 ${
+                      alert.kind === 'threshold_crossed'
+                        ? 'text-destructive'
+                        : alert.kind === 'threshold_near'
+                          ? 'text-primary'
+                          : 'text-faint'
+                    }`}
+                  />
+                  <span className="shrink-0 text-[13px]">{alertHeadline(alert)}</span>
+                  <span className="truncate text-[11.5px] text-faint">{alertDetail(alert)}</span>
+                  <RowArrow />
+                </Link>
+              ))}
+            </Rows>
+          </Section>
+        )}
+
         <Section
           title="Soldes"
           description={`${period.label}${reading === 'accrual' ? ' (date réelle)' : ''} · calculé depuis les mouvements déclarés`}
@@ -449,6 +486,48 @@ export default async function OverviewPage({
       </PageBody>
     </>
   )
+}
+
+/** A threshold's figures: every measure is money but the share of receipts that bore a withholding. */
+function thresholdFigure(measure: ThresholdMeasure, value: number): string {
+  return measure === 'withholding_share' ? `${Math.round(value)} %` : eur(value)
+}
+
+/** What the alert is, in two to five words. */
+function alertHeadline(alert: ActivityAlert): string {
+  switch (alert.kind) {
+    case 'threshold_crossed':
+      return `${alert.subject} franchi`
+    case 'threshold_near':
+      return `${alert.subject} bientôt atteint`
+    case 'rule_review_due':
+      return `${alert.subject} à revérifier`
+    case 'rule_unconfirmed':
+      return `${alert.subject} non confirmé`
+  }
+}
+
+/**
+ * What it is worth. On a threshold the sentence ends on the consequence the
+ * user wrote: what a crossing costs is a fact of a regime, so it is written
+ * once, in the configuration, and never here.
+ */
+function alertDetail(alert: ActivityAlert): string {
+  if (isThresholdAlert(alert))
+    return [
+      alert.activityName,
+      `${thresholdFigure(alert.measure, alert.current)} pour un ${alert.comparison === 'lte' ? 'plafond' : 'plancher'} à ${thresholdFigure(alert.measure, alert.value)}`,
+      alert.consequence,
+    ].join(' · ')
+  return [
+    alert.activityName,
+    alert.kind === 'rule_review_due'
+      ? `à revérifier depuis le ${frDate(alert.reviewOn!)}`
+      : 'aucun texte ne fixe cette valeur',
+    alert.verifiedOn ? `vérifié le ${frDate(alert.verifiedOn)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** Breakdown rows as the charts read them: numbers, not decimal strings. */
