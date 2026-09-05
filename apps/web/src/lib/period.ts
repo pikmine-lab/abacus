@@ -1,5 +1,6 @@
 import type { Reading } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
+import { frDate } from '@/lib/utils'
 
 /**
  * The period a view is scoped to, resolved from the URL so it survives a
@@ -7,7 +8,7 @@ import { today } from '@abacus/core/domain/period'
  * read it without any client state. One row of filters scopes everything
  * below it (DESIGN.md); this is where that row's meaning lives.
  */
-export type Preset = 'month' | 'year' | '90d' | '12m' | 'all'
+export type Preset = 'month' | 'year' | '90d' | '12m' | 'all' | 'range'
 
 export interface Period {
   preset: Preset
@@ -22,7 +23,11 @@ export interface Period {
   next: string | null
 }
 
-const PRESETS: Preset[] = ['month', 'year', '90d', '12m', 'all']
+const PRESETS: Preset[] = ['month', 'year', '90d', '12m', 'all', 'range']
+
+function isDay(value: string | undefined): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value ?? '')
+}
 
 export const PRESET_LABEL: Record<Preset, string> = {
   month: 'Mois',
@@ -30,6 +35,17 @@ export const PRESET_LABEL: Record<Preset, string> = {
   '90d': '90 jours',
   '12m': '12 mois',
   all: 'Tout',
+  range: 'Période',
+}
+
+/**
+ * A window nothing on the picker can express, carried whole in the anchor
+ * ("YYYY-MM-DD..YYYY-MM-DD"). A fiscal year opening on 6 April is such a
+ * window: without it the figures of an activity would lead to a ledger framed
+ * on some other span, which is worse than leading nowhere.
+ */
+export function rangeRef(from: string, to: string): string {
+  return `${from}..${to}`
 }
 
 /** Presets that slide along the calendar, and therefore get arrows. */
@@ -76,6 +92,20 @@ export function resolvePeriod(
   fallback: Preset = 'month',
 ): Period {
   const preset = (PRESETS as string[]).includes(params.period ?? '') ? (params.period as Preset) : fallback
+
+  if (preset === 'range') {
+    const [from, to] = (params.ref ?? '').split('..')
+    if (isDay(from) && isDay(to) && from! <= to!)
+      return {
+        preset,
+        ref: params.ref!,
+        from: from!,
+        to: to!,
+        label: `du ${frDate(from!)} au ${frDate(to!)}`,
+        prev: null,
+        next: null,
+      }
+  }
   const currentMonth = now.slice(0, 7)
   const currentYear = now.slice(0, 4)
 
@@ -166,11 +196,13 @@ export function previousWindow(period: Period): { from: string; to: string; labe
   }
   const span = daysSpan(period.from, period.to)
   const to = shiftDays(period.from, -1)
-  return {
-    from: shiftDays(to, -(span - 1)),
-    to,
-    label: period.preset === '90d' ? 'vs 90 jours avant' : 'vs 12 mois avant',
-  }
+  const label =
+    period.preset === '90d'
+      ? 'vs 90 jours avant'
+      : period.preset === '12m'
+        ? 'vs 12 mois avant'
+        : 'vs la période précédente'
+  return { from: shiftDays(to, -(span - 1)), to, label }
 }
 
 function shiftDays(iso: string, by: number): string {

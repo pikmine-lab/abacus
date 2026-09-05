@@ -621,6 +621,15 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
   // the net alone.
   assert.equal(statement.totals.provisions, 11945.8)
   assert.equal(statement.totals.provisionsPassThrough, 11550)
+  // A month counts its provisions the way the year does, VAT apart: a column
+  // that mixed the two would not add up to the total printed under it.
+  const spreadCharges = statement.months.reduce((sum, m) => sum + m.provisions, 0)
+  const spreadVat = statement.months.reduce((sum, m) => sum + m.provisionsPassThrough, 0)
+  assert.ok(Math.abs(spreadCharges - statement.totals.provisions) < 0.1, `${spreadCharges} against the year`)
+  assert.ok(
+    Math.abs(spreadVat - statement.totals.provisionsPassThrough) < 0.1,
+    `${spreadVat} against the year`,
+  )
   assert.equal(statement.totals.net, 39454.2)
   assert.equal(statement.reserve, 11495.8)
   assert.equal(statement.payableToSelf.treasury, 41800)

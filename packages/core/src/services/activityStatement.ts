@@ -146,7 +146,10 @@ export interface StatementMonth {
   /** First day of the month, so it sorts and formats like any other date. */
   month: string
   revenue: number
+  /** Accrued provisions of the rules that are a charge, as the totals count them. */
   provisions: number
+  /** Accrued provisions of the pass-through rules: owed, but never a charge. */
+  provisionsPassThrough: number
   expenses: number
   net: number
   paidToSelf: number
@@ -736,7 +739,11 @@ export async function activityStatement(
 
   // --- rule by rule -----------------------------------------------------------
   const months = monthsOfYear(fiscalYear, cal)
+  // Kept apart the way the totals keep them: a pass-through rule is money
+  // owed and collected for someone else, so it never enters a net, and a
+  // column that mixed the two would not add up to the total under it.
   const provisionPerMonth = new Array(months.length).fill(0)
+  const passThroughPerMonth = new Array(months.length).fill(0)
   const statementLevies: StatementLevy[] = []
   const schedule: ScheduleEntry[] = []
   const categoryNames = new Map<string, string>()
@@ -768,7 +775,8 @@ export async function activityStatement(
       // Spread over the months of the period already begun, so the monthly
       // reading of a quarterly rule is not one spike every three months.
       const begun = months.filter((m) => m.from >= period.from && m.from <= period.to && m.from <= asOf)
-      for (const month of begun) provisionPerMonth[month.index - 1]! += evaluated.amount / begun.length
+      const perMonth = row.passThrough ? passThroughPerMonth : provisionPerMonth
+      for (const month of begun) perMonth[month.index - 1]! += evaluated.amount / begun.length
 
       for (const window of dueWindows(period, levy.due, cal, {
         declarationLagMonths: row.declarationLagMonths,
@@ -877,6 +885,7 @@ export async function activityStatement(
       month: `${month.from.slice(0, 7)}-01`,
       revenue: round2(monthly?.revenue ?? 0),
       provisions: round2(provisions),
+      provisionsPassThrough: round2(passThroughPerMonth[month.index - 1]!),
       expenses: round2(monthly?.expenses ?? 0),
       net: round2((monthly?.revenue ?? 0) - (monthly?.expenses ?? 0) - provisions),
       paidToSelf: empty ? 0 : round2(await paidToSelfDs(sql, scope, window)),

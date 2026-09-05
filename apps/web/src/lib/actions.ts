@@ -17,6 +17,7 @@ import type {
 } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
+import { confirmLevyPayment } from '@abacus/core/services/activityStatement'
 import {
   addAlias,
   countReattachableMovements,
@@ -226,6 +227,8 @@ const FR: Record<string, string> = {
   asset_exists: 'Ce nom est pris, ou tu détiens déjà cet instrument sous un autre nom.',
   asset_not_found: 'Cet actif n’existe plus.',
   levy_not_found: 'Cette règle n’existe plus.',
+  levy_has_no_settlement_category:
+    'Cette règle ne dit pas où ses règlements se classent : donne-lui une catégorie de règlement dans Réglages.',
   levy_validity: 'La fin de validité tombe avant le début.',
   levy_form_needs_param: 'Cette forme de montant a besoin de son paramètre.',
   levy_form_param_unexpected: 'Un paramètre d’une autre forme de montant a été envoyé.',
@@ -1063,6 +1066,31 @@ export async function remindInvoiceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
   try {
     await remindInvoice(userId, str(formData, 'invoiceId'))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+/**
+ * "Payé": records what really left against one due date of a rule, which is
+ * what makes its reserve fall. The amount is editable like a commitment's,
+ * because an assessment differing from the estimate is the normal case and the
+ * gap is worth seeing rather than smoothing over.
+ */
+export async function confirmLevyPaymentAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  const actor = str(formData, 'actor')
+  if (actor === '') errorRedirect(formData, 'Indique qui a été payé.')
+  try {
+    await confirmLevyPayment(userId, {
+      levyId: str(formData, 'levyId'),
+      periodStart: str(formData, 'periodStart'),
+      amount: num(formData, 'amount'),
+      date: str(formData, 'date'),
+      accountId: str(formData, 'accountId'),
+      actorId: await actorIdFromName(userId, actor),
+    })
   } catch (e) {
     errorRedirect(formData, frError(e))
   }
