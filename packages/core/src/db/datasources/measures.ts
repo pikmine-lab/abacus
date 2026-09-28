@@ -3,6 +3,8 @@ import type {
   ActivityInput,
   DeductibleExpenses,
   Levy,
+  LevyDue,
+  LevyEntry,
   LevyModifier,
   RevenueBasis,
   Threshold,
@@ -274,6 +276,8 @@ export interface Settlement {
   happenedOn: string
   amount: number
   movementId: string
+  /** The due date it was paid against, when the payment named one. */
+  due: LevyDue | null
 }
 
 /**
@@ -282,7 +286,7 @@ export interface Settlement {
  * regime's basis: a payment has no other date.
  *
  * The rows come back one by one rather than summed, because the schedule has
- * to know which window each payment falls in, and the reserve has to sum them
+ * to know which due date each payment answers, and the reserve has to sum them
  * from the start of the year.
  */
 export async function levySettlements(
@@ -292,8 +296,20 @@ export async function levySettlements(
   range: DateRange,
 ): Promise<Settlement[]> {
   if (categoryIds.length === 0) return []
-  const rows = await tx<{ categoryId: string; happenedOn: string; amount: string; movementId: string }[]>`
-    select m.category_id, m.happened_on, m.amount, m.id as movement_id
+  const rows = await tx<
+    {
+      categoryId: string
+      happenedOn: string
+      amount: string
+      movementId: string
+      levyId: string | null
+      levyEntry: LevyEntry | null
+      levyPeriodStart: string | null
+      levyInstalment: number | null
+    }[]
+  >`
+    select m.category_id, m.happened_on, m.amount, m.id as movement_id,
+           m.levy_id, m.levy_entry, m.levy_period_start, m.levy_instalment
     from movement m
     where m.user_id = ${scope.userId} and m.activity_id = ${scope.activityId}
       and m.kind = 'expense' and m.ghost = false
@@ -306,6 +322,14 @@ export async function levySettlements(
     happenedOn: r.happenedOn,
     amount: Number(r.amount),
     movementId: r.movementId,
+    due: r.levyId
+      ? {
+          levyId: r.levyId,
+          entry: r.levyEntry!,
+          periodStart: r.levyPeriodStart!,
+          instalment: r.levyInstalment!,
+        }
+      : null,
   }))
 }
 

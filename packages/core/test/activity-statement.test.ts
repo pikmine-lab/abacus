@@ -408,6 +408,214 @@ test('paying a due date writes the settlement and drops the reserve', async () =
 })
 
 // ---------------------------------------------------------------------------
+// A payment names the due date it settles
+// ---------------------------------------------------------------------------
+
+/** A monthly rule filed during the month after, on the receipts of one July. */
+async function monthlyRegime(userId: string) {
+  const activityId = await businessActivity(userId, 'Freelance', { startedOn: '2026-01-01' })
+  const account = await activityAccount(userId, 'Pro', activityId)
+  const client = await createActor(userId, { name: 'ACME', activityId })
+  const collector = await createActor(userId, { name: 'Collector' })
+  const social = await createCategory(userId, 'Social contributions')
+  const levy = await insertLevy(userId, activityId, {
+    name: 'Contributions',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 25.6,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    settlementCategoryId: social.id,
+  })
+  await declareMovement(userId, {
+    happenedOn: '2026-07-15',
+    amount: 2000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+  return { activityId, account, collector, levy }
+}
+
+function periodStarting(statement: Awaited<ReturnType<typeof activityStatement>>, from: string) {
+  const entry = statement.schedule.find((e) => e.entry === 'period' && e.period.from === from)
+  assert.ok(entry, `no period starting ${from}`)
+  return entry
+}
+
+test('a payment early in its window settles the period it names, not the one that just closed', async () => {
+  const user = await seedUser()
+  const { activityId, account, collector, levy } = await monthlyRegime(user)
+  // July is filed from 1 to 31 August. The 4th is inside that window, and
+  // also within the margin of June's, which closed on 31 July.
+  await confirmLevyPayment(user, {
+    levyId: levy.id,
+    periodStart: '2026-07-01',
+    amount: 512,
+    date: '2026-08-04',
+    accountId: account,
+    actorId: collector.id,
+  })
+
+  const statement = await activityStatement(user, activityId, 2026, '2026-09-10')
+  const july = periodStarting(statement, '2026-07-01')
+  assert.deepEqual([july.amount, july.status, july.paidOn, july.paidAmount], [512, 'paid', '2026-08-04', 512])
+  assert.equal(periodStarting(statement, '2026-06-01').paidOn, null)
+})
+
+test('two payments naming two periods settle two periods, whatever day they left', async () => {
+  for (const [user, periodStart] of [
+    ['user-1', '2026-07-01'],
+    ['user-2', '2026-08-01'],
+  ] as const) {
+    await seedUser(user)
+    const { activityId, account, collector, levy } = await monthlyRegime(user)
+    await confirmLevyPayment(user, {
+      levyId: levy.id,
+      periodStart,
+      amount: 512,
+      date: '2026-08-04',
+      accountId: account,
+      actorId: collector.id,
+    })
+    const statement = await activityStatement(user, activityId, 2026, '2026-09-10')
+    assert.deepEqual(
+      statement.schedule.filter((e) => e.status === 'paid').map((e) => e.period.from),
+      [periodStart],
+    )
+  }
+})
+
+test('the settlement of a year and the first period of that year are two due dates', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Practice', { startedOn: '2026-01-01' })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const client = await createActor(user, { name: 'Client', activityId })
+  const collector = await createActor(user, { name: 'Collector' })
+  const fund = await createCategory(user, 'Contributions')
+  const levy = await insertLevy(user, activityId, {
+    name: 'Provisional contribution',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'profit',
+    basePeriodRef: 'year-1',
+    baseScale: 'per_month',
+    amountForm: 'rate',
+    rate: 20,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    regularization: 'provisional_then_settled',
+    settlementCategoryId: fund.id,
+  })
+  await db()`
+    update levy set regularization_params = ${db().json({ settleMonthOffset: 6 })} where id = ${levy.id}
+  `
+  for (const [on, amount] of [
+    ['2026-06-15', 24000],
+    ['2027-06-15', 36000],
+  ] as const)
+    await declareMovement(user, {
+      happenedOn: on,
+      amount,
+      sourceActorId: client.id,
+      targetAccountId: account,
+    })
+
+  // Both start on 1 January 2027: the first day alone cannot tell them apart.
+  const pay = (date: string, entry?: 'regularization') =>
+    confirmLevyPayment(user, {
+      levyId: levy.id,
+      periodStart: '2027-01-01',
+      entry,
+      amount: 400,
+      date,
+      accountId: account,
+      actorId: collector.id,
+    })
+  await pay('2028-02-10', 'regularization')
+  let statement = await activityStatement(user, activityId, 2027, '2028-03-01')
+  const settlement = () =>
+    statement.schedule.find((e) => e.entry === 'regularization' && e.forFiscalYear === 2027)
+  assert.equal(settlement()?.paidOn, '2028-02-10')
+  assert.equal(periodStarting(statement, '2027-01-01').paidOn, null)
+
+  await pay('2027-02-10')
+  statement = await activityStatement(user, activityId, 2027, '2028-03-01')
+  assert.equal(periodStarting(statement, '2027-01-01').paidOn, '2027-02-10')
+  assert.equal(settlement()?.paidOn, '2028-02-10')
+})
+
+test('a period paid in instalments is settled one instalment at a time', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Freelance', { startedOn: '2026-01-01' })
+  const account = await activityAccount(user, 'Pro', activityId)
+  const collector = await createActor(user, { name: 'Tax office' })
+  const localTax = await createCategory(user, 'Local tax')
+  const levy = await insertLevy(user, activityId, {
+    name: 'Local business tax',
+    kind: 'other',
+    validFrom: '2026-01-01',
+    baseMeasure: 'none',
+    amountForm: 'fixed',
+    fixedAmount: 600,
+    period: 'year',
+    due: {
+      type: 'fixed_dates',
+      dates: [
+        { month: 6, day: 15, yearOffset: 0 },
+        { month: 12, day: 15, yearOffset: 0 },
+      ],
+    },
+    settlementCategoryId: localTax.id,
+  })
+  // The second instalment, paid inside the window of the first.
+  await confirmLevyPayment(user, {
+    levyId: levy.id,
+    periodStart: '2026-01-01',
+    instalment: 2,
+    amount: 300,
+    date: '2026-06-10',
+    accountId: account,
+    actorId: collector.id,
+  })
+
+  const statement = await activityStatement(user, activityId, 2026, '2026-07-01')
+  assert.deepEqual(
+    statement.schedule.map((e) => [e.instalment, e.status, e.paidOn]),
+    [
+      [1, 'overdue', null],
+      [2, 'paid', '2026-06-10'],
+    ],
+  )
+})
+
+test('a payment naming no due date of its rule is refused', async () => {
+  const user = await seedUser()
+  const { account, collector, levy } = await monthlyRegime(user)
+  const pay = (due: { periodStart: string; entry?: 'period' | 'regularization'; instalment?: number }) =>
+    confirmLevyPayment(user, {
+      levyId: levy.id,
+      ...due,
+      amount: 512,
+      date: '2026-08-04',
+      accountId: account,
+      actorId: collector.id,
+    })
+  const refused = (e: DomainError) => e.code === 'levy_due_not_found'
+  // Not the first day of a period.
+  await assert.rejects(pay({ periodStart: '2026-07-15' }), refused)
+  // Before the rule was in force.
+  await assert.rejects(pay({ periodStart: '2025-12-01' }), refused)
+  // A period with a single due date.
+  await assert.rejects(pay({ periodStart: '2026-07-01', instalment: 2 }), refused)
+  // A rule that never settles a closed year.
+  await assert.rejects(pay({ periodStart: '2026-01-01', entry: 'regularization' }), refused)
+  const [{ count }] = await db()<{ count: string }[]>`select count(*) from movement where kind = 'expense'`
+  assert.equal(Number(count), 0)
+})
+
+// ---------------------------------------------------------------------------
 // A direct-assessment regime: a chosen base, a schedule, an allowance by step
 // ---------------------------------------------------------------------------
 

@@ -171,6 +171,8 @@ export const GUIDANCE: Record<string, string> = {
     'A modifier lasts for durationMonths, or durationPeriods, or until endsOn: pass one of the three, or none for an open-ended one.',
   levy_has_no_settlement_category:
     'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
+  levy_due_not_found:
+    'This rule has no such due date. Copy it from an entry of get_activity_statement (schedule): periodStart is its period.from, what is settlement when the entry reads "settlement of <year>", instalment is k when it reads "k of n". A date inside a period is not its first day, and a period before the rule came into force or before the activity started has nothing to settle.',
   levy_misconfigured:
     'This rule carries parameters the engine cannot read (a bracket table, a due window, a credit list). Fix the rule before asking for the statement.',
   levy_cycle:

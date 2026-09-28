@@ -131,6 +131,14 @@ export async function countSettlements(
   return Number(row!.count)
 }
 
+/** Payments that named a due date of this rule, whatever their date or category. */
+export async function countNamedSettlements(tx: Executor, levyId: string): Promise<number> {
+  const [row] = await tx<
+    { count: string }[]
+  >`select count(*) as count from movement where levy_id = ${levyId}`
+  return Number(row!.count)
+}
+
 export async function insertModifier(tx: Executor, row: Record<string, unknown>): Promise<LevyModifier> {
   const [modifier] = await tx<LevyModifier[]>`insert into levy_modifier ${tx(compact(row))} returning *`
   return modifier!

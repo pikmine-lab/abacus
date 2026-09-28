@@ -125,13 +125,27 @@ export function registerActivityTools(server: McpServer, userId: string): void {
     'confirm_levy_payment',
     {
       description:
-        "Records that a levy was actually paid: writes the expense from one of the activity's accounts, in the rule's settlement category, which is what makes its reserve fall. Use it when the user says a contribution, a tax or a VAT return was paid, and prefer it over declare_movements, which would file the same money as an ordinary charge and leave the provision standing. Pass the amount that really left, not the estimate: an assessment differing from the estimate is the normal case, and the gap is worth seeing. Get the due dates from get_activity_statement (schedule): each one names the levy, its period and what is estimated.",
+        "Records that a levy was actually paid: writes the expense from one of the activity's accounts, in the rule's settlement category, which is what makes its reserve fall. Use it when the user says a contribution, a tax or a VAT return was paid, and prefer it over declare_movements, which would file the same money as an ordinary charge and leave the provision standing. Pass the amount that really left, not the estimate: an assessment differing from the estimate is the normal case, and the gap is worth seeing. Get the due dates from get_activity_statement (schedule): each one names the levy, its period and what is estimated. The payment settles the due date you name and no other, whatever day the money left: a return paid early in its window, or late, lands on the period named rather than on the one its date falls near. So name the period the user paid for, never the one the date suggests; when unsure which it was, ask.",
       inputSchema: z.object({
         activity: z.string().describe('The activity the rule belongs to, by name'),
         levy: z.string().describe('The rule being settled, by its name as get_activity_statement gives it'),
         periodStart: isoDate.describe(
-          "First day of the period being settled, as the schedule gives it (a settlement of a closed year names that year's first day)",
+          "First day of the period being settled, as the schedule gives it in period.from (a settlement of a closed year names that year's first day)",
         ),
+        what: z
+          .enum(['period', 'settlement'])
+          .optional()
+          .describe(
+            'settlement for a schedule entry whose what reads "settlement of <year>": it opens on the same day as that year\'s first period, so periodStart alone would name the period. Absent: period',
+          ),
+        instalment: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'For a schedule entry whose instalment reads "k of n", pass k. Absent: the first, the only one of a period paid at once',
+          ),
         amount: z.number().positive().describe('What really left the account, in euros'),
         date: isoDate.describe('The day the money left'),
         account: z.string().describe('The account it left, one of those the activity lives on'),
@@ -158,6 +172,8 @@ export function registerActivityTools(server: McpServer, userId: string): void {
         const movement = await confirmLevyPayment(userId, {
           levyId: levy.id,
           periodStart: a.periodStart,
+          entry: a.what === 'settlement' ? 'regularization' : 'period',
+          instalment: a.instalment,
           amount: a.amount,
           date: a.date,
           accountId: (await requireAccountByName(userId, a.account)).id,
@@ -166,7 +182,9 @@ export function registerActivityTools(server: McpServer, userId: string): void {
         })
         return ok({
           levy: levy.name,
+          what: a.what ?? 'period',
           periodStart: a.periodStart,
+          instalment: a.instalment,
           movementId: movement.id,
           amount: Number(movement.amount),
           on: movement.happenedOn,

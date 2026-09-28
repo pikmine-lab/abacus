@@ -3,6 +3,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import { db } from '../src/db/client.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
+import { confirmLevyPayment } from '../src/services/activityStatement.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createActivity, createCategory } from '../src/services/catalog.ts'
 import {
@@ -432,6 +433,26 @@ test('a rule settled by an expense in its category is history: it closes, it is 
   assert.equal((await listLevies(user, activity)).length, 1)
   const [{ count }] = await db()<{ count: string }[]>`select count(*) from levy_modifier`
   assert.equal(Number(count), 0)
+})
+
+test('a payment naming a rule keeps it from being deleted, even dated after its last day', async () => {
+  const user = await seedUser()
+  const activity = await businessActivity(user)
+  const category = await createCategory(user, 'Cotisations')
+  const levy = await createLevy(user, rateRule(activity, { settlementCategoryId: category.id }))
+  await closeLevy(user, levy.id, '2026-06-30')
+  const account = await createAccount({ userId: user, name: 'Pro', behavior: 'payment' })
+  const office = await createActor(user, { name: 'Tax office' })
+  // June is filed during July, once the rule has ended.
+  await confirmLevyPayment(user, {
+    levyId: levy.id,
+    periodStart: '2026-06-01',
+    amount: 100,
+    date: '2026-07-20',
+    accountId: account.id,
+    actorId: office.id,
+  })
+  await assert.rejects(deleteLevy(user, levy.id), code('levy_has_settlements'))
 })
 
 test('a modifier carries one duration and a value unless it exempts', async () => {

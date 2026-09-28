@@ -963,6 +963,8 @@ export async function confirmLevyPaymentAction(formData: FormData): Promise<void
     await confirmLevyPayment(userId, {
       levyId: str(formData, 'levyId'),
       periodStart: str(formData, 'periodStart'),
+      entry: str(formData, 'entry') === 'regularization' ? 'regularization' : 'period',
+      instalment: num(formData, 'instalment') || undefined,
       amount: num(formData, 'amount'),
       date: str(formData, 'date'),
       accountId: str(formData, 'accountId'),

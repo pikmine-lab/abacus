@@ -293,6 +293,8 @@ export default async function ActivityPage({
     levyId: entry.levyId,
     levyName: entry.levyName,
     periodStart: entry.period.from,
+    entry: entry.entry,
+    instalmentNumber: entry.instalment,
     what:
       entry.entry === 'regularization'
         ? `régularisation de l’${fiscalYearLabel(entry.period)}`

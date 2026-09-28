@@ -127,6 +127,14 @@ export interface Movement {
   invoiceId: string | null
   /** The VAT inside the amount, when the activity is registered and it was stated. */
   vatAmount: string | null
+  /**
+   * The due date this expense settles, when it names one: the rule, the kind
+   * of entry, the first day of the period and the instalment, all four or none.
+   */
+  levyId: string | null
+  levyEntry: LevyEntry | null
+  levyPeriodStart: string | null
+  levyInstalment: number | null
 }
 
 export type CommitmentKind = 'subscription' | 'financing' | 'investment_plan'
@@ -319,6 +327,16 @@ export interface Invoice {
 /** One thing the activity owes, described entirely in data (see domain/levy.ts). */
 export type LevyKind = 'social' | 'income_tax' | 'vat' | 'other'
 export type LevyStatus = 'confirmed' | 'extended_by_default' | 'unconfirmed'
+/** A due date of a rule is one of its periods, or the settlement of a closed year. */
+export type LevyEntry = 'period' | 'regularization'
+/** What names a due date: the day a period starts is not enough on its own. */
+export interface LevyDue {
+  levyId: string
+  entry: LevyEntry
+  /** First day of the period; a settlement names the first day of the year it settles. */
+  periodStart: string
+  instalment: number
+}
 export type LevyMeasure =
   | 'revenue'
   | 'revenue_incl_vat'

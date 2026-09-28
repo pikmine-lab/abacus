@@ -118,6 +118,51 @@ test('settling a due date through the tool writes the movement and drops the res
   assert.equal((after.schedule as Record<string, unknown>[])[0]!.status, 'paid')
 })
 
+test('a payment early in its window settles the quarter it names, not the one before', async () => {
+  const user = await seedUser()
+  await activityWithOneRule(user)
+  const client = await clientFor(user)
+
+  // The second quarter, paid on 10 May: inside the margin of the first
+  // quarter's window, which closed on 30 April.
+  const paid = await call(client, 'confirm_levy_payment', {
+    activity: 'Freelance',
+    levy: 'Contributions',
+    periodStart: '2026-04-01',
+    amount: 100,
+    date: '2026-05-10',
+    account: 'Pro',
+    actor: 'Collector',
+  })
+  assert.equal(paid.isError, undefined)
+
+  const after = (await call(client, 'get_activity_statement', { activity: 'Freelance', year: 2026 })).json()
+  const schedule = after.schedule as { period: { from: string }; status: string; paidOn?: string }[]
+  assert.deepEqual(
+    schedule.filter((e) => e.paidOn).map((e) => e.period.from),
+    ['2026-04-01'],
+  )
+})
+
+test('a due date the rule does not have is refused with how to name one', async () => {
+  const user = await seedUser()
+  await activityWithOneRule(user)
+  const client = await clientFor(user)
+
+  const reply = await call(client, 'confirm_levy_payment', {
+    activity: 'Freelance',
+    levy: 'Contributions',
+    // A quarterly rule: February opens no period.
+    periodStart: '2026-02-01',
+    amount: 100,
+    date: '2026-04-20',
+    account: 'Pro',
+    actor: 'Collector',
+  })
+  assert.equal(reply.isError, true)
+  assert.match(reply.text, /period\.from/)
+})
+
 test('an unknown rule answers with the rules that exist', async () => {
   const user = await seedUser()
   await activityWithOneRule(user)
