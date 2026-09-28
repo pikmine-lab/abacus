@@ -1,5 +1,5 @@
 import type { SortChoice } from '../../domain/sort.ts'
-import type { Movement, MovementKind, Reading } from '../../domain/types.ts'
+import type { LevyDue, Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
 export interface NewMovement {
@@ -48,6 +48,19 @@ export async function updateMovementRow(
     returning *
   `
   return movement
+}
+
+export async function setLevyDue(tx: Executor, movementId: string, due: LevyDue): Promise<Movement> {
+  const [movement] = await tx<Movement[]>`
+    update movement set
+      levy_id = ${due.levyId},
+      levy_entry = ${due.entry},
+      levy_period_start = ${due.periodStart},
+      levy_instalment = ${due.instalment}
+    where id = ${movementId}
+    returning *
+  `
+  return movement!
 }
 
 export async function deleteMovementRow(tx: Executor, userId: string, id: string): Promise<number> {

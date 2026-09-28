@@ -23,8 +23,11 @@ export interface DueEntry {
   key: string
   levyId: string
   levyName: string
-  /** First day of the period being settled, which is what the service settles by. */
+  /** First day of the period being settled; with the entry and the instalment, what names the due date. */
   periodStart: string
+  entry: 'period' | 'regularization'
+  /** Which instalment of the period this due date is, 1 when it is paid at once. */
+  instalmentNumber: number
   /** What the entry is about: "août 2026", "régularisation de 2026". */
   what: string
   /** When the return is filed: "dépôt du 01/09 au 30/09". */
@@ -201,6 +204,8 @@ function DueRow({
           <form action={confirmLevyPaymentAction} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="levyId" value={entry.levyId} />
             <input type="hidden" name="periodStart" value={entry.periodStart} />
+            <input type="hidden" name="entry" value={entry.entry} />
+            <input type="hidden" name="instalment" value={entry.instalmentNumber} />
             <input type="hidden" name="back" value={back} />
             {!dateOpen && <input type="hidden" name="date" value={today} />}
             <AmountInput

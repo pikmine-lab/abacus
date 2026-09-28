@@ -99,6 +99,8 @@ export const FR: Record<string, string> = {
   levy_not_found: 'Cette règle n’existe plus.',
   levy_has_no_settlement_category:
     'Cette règle ne dit pas où ses règlements se classent : donne-lui une catégorie de règlement dans Réglages.',
+  levy_due_not_found:
+    'Cette échéance n’existe plus pour cette règle : l’échéancier a changé depuis l’affichage.',
   levy_validity: 'La fin de validité tombe avant le début.',
   levy_form_needs_param: 'Cette forme de montant a besoin de son paramètre.',
   levy_form_param_unexpected: 'Un paramètre d’une autre forme de montant a été envoyé.',

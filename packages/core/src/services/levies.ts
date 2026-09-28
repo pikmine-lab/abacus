@@ -3,6 +3,7 @@ import { db, type Executor } from '../db/client.ts'
 import { getActivity, getCategory } from '../db/datasources/catalog.ts'
 import {
   countLevyReferences,
+  countNamedSettlements,
   countSettlements,
   deleteInputRow,
   deleteLevyRow,
@@ -89,8 +90,8 @@ import type {
  *   overwrite.
  * - `closeLevy` ends a rule without a successor; `deleteLevy` removes one, and
  *   refuses once an expense of the activity settled it in its category over
- *   its validity (the rule is then part of the history: close it) or once
- *   another rule reads it.
+ *   its validity or named one of its due dates, whatever its day (the rule is
+ *   then part of the history: close it), or once another rule reads it.
  * - Modifiers assert an eligibility the engine never checks; they carry at
  *   most one duration (months, periods or an end date), and a value unless
  *   they exempt.
@@ -553,9 +554,15 @@ export async function deleteLevy(userId: string, id: string): Promise<void> {
         `Another rule reads "${levy.name}" as its base, add-back or credit`,
       )
     if (
-      levy.settlementCategoryId &&
-      (await countSettlements(tx, levy.activityId, levy.settlementCategoryId, levy.validFrom, levy.validTo)) >
-        0
+      (await countNamedSettlements(tx, id)) > 0 ||
+      (levy.settlementCategoryId &&
+        (await countSettlements(
+          tx,
+          levy.activityId,
+          levy.settlementCategoryId,
+          levy.validFrom,
+          levy.validTo,
+        )) > 0)
     )
       throw new DomainError(
         'levy_has_settlements',

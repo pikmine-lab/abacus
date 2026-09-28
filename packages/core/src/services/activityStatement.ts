@@ -22,6 +22,7 @@ import {
   treasuryAccounts,
   withholdingShare,
 } from '../db/datasources/measures.ts'
+import { setLevyDue } from '../db/datasources/movements.ts'
 import { DomainError } from '../domain/errors.ts'
 import {
   abatementSchema,
@@ -70,6 +71,8 @@ import type {
   AmountForm,
   DeductibleExpenses,
   Levy,
+  LevyDue,
+  LevyEntry,
   LevyKind,
   LevyModifier,
   LevyPeriod,
@@ -79,7 +82,7 @@ import type {
   ThresholdMeasure,
 } from '../domain/types.ts'
 import { pendingOccurrences } from './commitments.ts'
-import { declareMovement } from './movements.ts'
+import { declareMovementIn } from './movements.ts'
 
 /**
  * The statement of one fiscal year of a business activity: what came in, what
@@ -204,7 +207,7 @@ export interface ScheduleEntry {
   levyName: string
   levyKind: LevyKind
   /** A period of the year, or the settlement of a closed year. */
-  entry: 'period' | 'regularization'
+  entry: LevyEntry
   /** The year the entry is about, which for a regularisation is not the year it falls due in. */
   forFiscalYear: number
   /** The period it covers; a regularisation covers a whole year. */
@@ -221,7 +224,7 @@ export interface ScheduleEntry {
   instalment: number
   instalments: number
   status: ScheduleStatus
-  /** The settlement that answered it, when one did. */
+  /** What answered it, when anything did: the last day money left against it, and the total. */
   paidOn: string | null
   paidAmount: number | null
 }
@@ -403,6 +406,37 @@ function parseLevy(row: Levy, modifiers: LevyModifier[]): ParsedLevy {
   }
 }
 
+/**
+ * The periods of a fiscal year a rule governs: those its validity covers on
+ * their closing day, and during which the activity was open. A rate replaced
+ * on a date is a new row, so the day a period closes is what tells the two
+ * rows apart, exactly as it tells which modifiers a period was computed
+ * with.
+ */
+function governedPeriods(
+  row: Levy,
+  activity: Activity,
+  cal: FiscalCalendar,
+  fiscalYear: number,
+): FiscalPeriod[] {
+  return periodsOf(fiscalYear, cal, row.period).filter((p) => {
+    if (row.validFrom > p.to) return false
+    if (row.validTo && row.validTo < p.to) return false
+    if (activity.startedOn && activity.startedOn > p.to) return false
+    if (activity.closedOn && activity.closedOn < p.from) return false
+    return true
+  })
+}
+
+function windowsOf(levy: ParsedLevy, period: FiscalPeriod, activity: Activity, cal: FiscalCalendar) {
+  return dueWindows(period, levy.due, cal, {
+    declarationLagMonths: levy.row.declarationLagMonths,
+    firstDueAfterDays: levy.row.firstDueAfterDays,
+    activityStartedOn: activity.startedOn,
+    skipPeriods: levy.skipPeriods,
+  })
+}
+
 /** What one period of one rule came to, and everything the screen says about it. */
 interface PeriodResult {
   period: FiscalPeriod
@@ -463,22 +497,8 @@ class StatementEngine {
     return name ? inputAt(this.inputs, name, on) : null
   }
 
-  /**
-   * The periods of a fiscal year a rule governs: those its validity covers on
-   * their closing day, and during which the activity was open. A rate replaced
-   * on a date is a new row, so the day a period closes is what tells the two
-   * rows apart, exactly as it tells which modifiers a period was computed
-   * with.
-   */
   governedPeriods(levy: ParsedLevy, fiscalYear: number): FiscalPeriod[] {
-    const { validFrom, validTo } = levy.row
-    return periodsOf(fiscalYear, this.cal, levy.row.period).filter((p) => {
-      if (validFrom > p.to) return false
-      if (validTo && validTo < p.to) return false
-      if (this.activity.startedOn && this.activity.startedOn > p.to) return false
-      if (this.activity.closedOn && this.activity.closedOn < p.from) return false
-      return true
-    })
+    return governedPeriods(levy.row, this.activity, this.cal, fiscalYear)
   }
 
   /** A measure over a window, scaled up to the whole window when it is still running. */
@@ -681,9 +701,26 @@ function monthsOfYear(fiscalYear: number, cal: FiscalCalendar): FiscalPeriod[] {
   return periodsOf(fiscalYear, cal, 'month')
 }
 
-function scheduleStatus(window: DueWindow, on: string, settlement: Settlement | undefined): ScheduleStatus {
-  if (settlement) return 'paid'
+function scheduleStatus(window: DueWindow, on: string, paidBy: Settlement[]): ScheduleStatus {
+  if (paidBy.length > 0) return 'paid'
   return window.payment.to < on ? 'overdue' : 'upcoming'
+}
+
+function paidFields(paidBy: Settlement[]): Pick<ScheduleEntry, 'paidOn' | 'paidAmount'> {
+  if (paidBy.length === 0) return { paidOn: null, paidAmount: null }
+  return {
+    paidOn: paidBy[paidBy.length - 1]!.happenedOn,
+    paidAmount: round2(paidBy.reduce((sum, s) => sum + s.amount, 0)),
+  }
+}
+
+function sameDue(a: LevyDue, b: LevyDue): boolean {
+  return (
+    a.levyId === b.levyId &&
+    a.entry === b.entry &&
+    a.periodStart === b.periodStart &&
+    a.instalment === b.instalment
+  )
 }
 
 /**
@@ -824,8 +861,24 @@ async function buildStatement(
   const statementLevies: StatementLevy[] = []
   const schedule: ScheduleEntry[] = []
   const categoryNames = new Map<string, string>()
-  // The settlements a due date has already been credited with.
+  // The settlements naming no due date that one has already been credited with.
   const claimed = new Set<string>()
+  // What answers a due date. A payment that named it answers it and no other,
+  // whatever day the money left: an early payment is not the late settlement
+  // of the window before, nor a late one the settlement of the window after.
+  // Failing one, the first payment naming none that fell inside the window,
+  // give or take the tolerance; and one such payment answers one due date,
+  // or a single payment would clear a year.
+  const answer = (due: LevyDue, window: DateRange): Settlement[] => {
+    const named = engine.settlements(due.levyId).filter((s) => s.due !== null && sameDue(s.due, due))
+    if (named.length > 0) return named
+    const dated = engine
+      .settlements(due.levyId, widened(window, SETTLEMENT_TOLERANCE_DAYS))
+      .find((s) => s.due === null && !claimed.has(s.movementId))
+    if (!dated) return []
+    claimed.add(dated.movementId)
+    return [dated]
+  }
   for (const id of settlementCategories) {
     const category = await getCategory(sql, userId, id)
     if (category) categoryNames.set(id, category.name)
@@ -865,17 +918,11 @@ async function buildStatement(
       const perMonth = row.passThrough ? passThroughPerMonth : provisionPerMonth
       for (const month of begun) perMonth[month.index - 1]! += evaluated.amount / begun.length
 
-      for (const window of dueWindows(period, levy.due, cal, {
-        declarationLagMonths: row.declarationLagMonths,
-        firstDueAfterDays: row.firstDueAfterDays,
-        activityStartedOn: activity.startedOn,
-        skipPeriods: levy.skipPeriods,
-      })) {
-        // One settlement answers one due date: what a window already claimed
-        // cannot answer the next one, or a single payment would clear a year.
-        const tolerant = widened(window.payment, SETTLEMENT_TOLERANCE_DAYS)
-        const settlement = engine.settlements(row.id, tolerant).find((s) => !claimed.has(s.movementId))
-        if (settlement) claimed.add(settlement.movementId)
+      for (const window of windowsOf(levy, period, activity, cal)) {
+        const paidBy = answer(
+          { levyId: row.id, entry: 'period', periodStart: period.from, instalment: window.instalment },
+          window.payment,
+        )
         // A period whose figures are not in yet estimates nothing; the window
         // is still worth listing, because the return is owed either way.
         const share = window.instalments > 1 ? 1 / window.instalments : 1
@@ -893,9 +940,8 @@ async function buildStatement(
           absorbed: window.absorbed,
           instalment: window.instalment,
           instalments: window.instalments,
-          status: scheduleStatus(window, today, settlement),
-          paidOn: settlement?.happenedOn ?? null,
-          paidAmount: settlement ? settlement.amount : null,
+          status: scheduleStatus(window, today, paidBy),
+          ...paidFields(paidBy),
         })
       }
     }
@@ -936,9 +982,15 @@ async function buildStatement(
       const offset = levy.regularizationParams?.settleMonthOffset ?? 12
       const window = regularizationWindow(fiscalYearRange(settled, cal).to, offset)
       if (settled === fiscalYear - 1 && window.to > year.to) continue
-      const tolerant = widened(window, SETTLEMENT_TOLERANCE_DAYS)
-      const settlement = engine.settlements(row.id, tolerant).find((s) => !claimed.has(s.movementId))
-      if (settlement) claimed.add(settlement.movementId)
+      const paidBy = answer(
+        {
+          levyId: row.id,
+          entry: 'regularization',
+          periodStart: fiscalYearRange(settled, cal).from,
+          instalment: 1,
+        },
+        window,
+      )
       schedule.push({
         levyId: row.id,
         levyName: row.name,
@@ -953,9 +1005,8 @@ async function buildStatement(
         absorbed: false,
         instalment: 1,
         instalments: 1,
-        status: settlement ? 'paid' : window.to < today ? 'overdue' : 'upcoming',
-        paidOn: settlement?.happenedOn ?? null,
-        paidAmount: settlement ? settlement.amount : null,
+        status: paidBy.length > 0 ? 'paid' : window.to < today ? 'overdue' : 'upcoming',
+        ...paidFields(paidBy),
       })
     }
   }
@@ -1102,6 +1153,10 @@ export interface ConfirmLevyPaymentInput {
   levyId: string
   /** The period being settled, by its first day; a regularisation names the year it settles. */
   periodStart: string
+  /** A period unless said otherwise: a year's settlement opens on the same day as its first period. */
+  entry?: LevyEntry
+  /** Which instalment of the period, when it is paid in several: the first unless said otherwise. */
+  instalment?: number
   /** What actually left, which is the assessment and not necessarily the estimate. */
   amount: number
   date: string
@@ -1119,6 +1174,12 @@ export interface ConfirmLevyPaymentInput {
  * a screen or an AI asks for it, and it is a movement like any other
  * afterwards (correct it, delete it).
  *
+ * The due date is named, never inferred from the day the money left: the
+ * payment answers that one in the schedule however early or late it was
+ * made. A due date the rule does not have is refused, because a payment
+ * answering nothing would lower the reserve and leave the period it paid
+ * proposed for payment.
+ *
  * The amount is the one that really left. An assessment differing from the
  * estimate is the normal case, and seeing that gap is the point: nothing here
  * rewrites the provision to match.
@@ -1129,19 +1190,54 @@ export async function confirmLevyPayment(userId: string, input: ConfirmLevyPayme
     select * from levy where user_id = ${userId} and id = ${input.levyId}
   `
   if (!row) throw new DomainError('levy_not_found', `No rule ${input.levyId} for this user`)
-  if (!row.settlementCategoryId)
+  const categoryId = row.settlementCategoryId
+  if (!categoryId)
     throw new DomainError(
       'levy_has_no_settlement_category',
       `"${row.name}" says nothing about where its payments are filed: give it a settlement category first.`,
     )
   if (!(input.amount > 0)) throw new DomainError('bad_amount', 'An amount is always positive')
-  return await declareMovement(userId, {
-    happenedOn: input.date,
-    amount: input.amount,
-    sourceAccountId: input.accountId,
-    targetActorId: input.actorId,
-    categoryId: row.settlementCategoryId,
-    activityId: row.activityId,
-    note: input.note ?? `${row.name} ${input.periodStart}`,
+  const due: LevyDue = {
+    levyId: row.id,
+    entry: input.entry ?? 'period',
+    periodStart: input.periodStart,
+    instalment: input.instalment ?? 1,
+  }
+  const activity = await getActivity(sql, userId, row.activityId)
+  if (!activity || !hasDue(parseLevy(row, []), activity, due))
+    throw new DomainError(
+      'levy_due_not_found',
+      `"${row.name}" has no ${due.entry === 'regularization' ? 'settlement of a year' : 'period'} starting ${due.periodStart}${due.instalment > 1 ? `, instalment ${due.instalment}` : ''}`,
+    )
+  return await sql.begin(async (tx) => {
+    const movement = await declareMovementIn(tx, userId, {
+      happenedOn: input.date,
+      amount: input.amount,
+      sourceAccountId: input.accountId,
+      targetActorId: input.actorId,
+      categoryId,
+      activityId: row.activityId,
+      note: input.note ?? `${row.name} ${input.periodStart}`,
+    })
+    return await setLevyDue(tx, movement.id, due)
   })
+}
+
+/** Whether the schedule of a rule lists that due date, read as the statement reads it. */
+function hasDue(levy: ParsedLevy, activity: Activity, due: LevyDue): boolean {
+  const cal: FiscalCalendar = {
+    startMonth: activity.fiscalYearStartMonth,
+    startDay: activity.fiscalYearStartDay,
+  }
+  const fiscalYear = fiscalYearOf(due.periodStart, cal)
+  const governed = governedPeriods(levy.row, activity, cal, fiscalYear)
+  if (due.entry === 'regularization')
+    return (
+      levy.row.regularization !== 'none' &&
+      due.instalment === 1 &&
+      due.periodStart === fiscalYearRange(fiscalYear, cal).from &&
+      governed.length > 0
+    )
+  const period = governed.find((p) => p.from === due.periodStart)
+  return period !== undefined && due.instalment <= windowsOf(levy, period, activity, cal).length
 }
