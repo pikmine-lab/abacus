@@ -2,6 +2,7 @@
 
 import { EllipsisIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
+import type { CardChoice } from '@/components/card-forms'
 import { type ActivityOption, type MovementDraft, MovementForm } from '@/components/movement-form'
 import {
   AlertDialog,
@@ -40,6 +41,7 @@ export function MovementRowActions({
   actors,
   categories,
   activities,
+  cards,
   today,
 }: {
   draft: MovementDraft
@@ -49,6 +51,7 @@ export function MovementRowActions({
   actors: Option[]
   categories: Option[]
   activities: ActivityOption[]
+  cards?: CardChoice[]
   today: string
 }) {
   const [editing, setEditing] = useState(false)
@@ -99,6 +102,7 @@ export function MovementRowActions({
               actors={actors}
               categories={categories}
               activities={activities}
+              cards={cards}
               advances={[]}
               today={today}
               draft={draft}

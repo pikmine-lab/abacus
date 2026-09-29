@@ -56,6 +56,26 @@ test('a zero return refuses in French too', () => {
     assert.ok(FR[code], `no French message for ${code}`)
 })
 
+test('a card refuses in French too', () => {
+  for (const code of [
+    'card_not_found',
+    'card_exists',
+    'card_needs_payment_account',
+    'schedule_on_immediate',
+    'deferred_needs_schedule',
+    'card_in_use',
+    'card_other_account',
+    'card_expired',
+    'transfer_has_no_card',
+    'refund_has_no_card',
+    'card_on_subscription',
+    'statement_not_found',
+    'statement_debit_ahead',
+    'statement_debit_before_cut_off',
+  ])
+    assert.ok(FR[code], `no French message for ${code}`)
+})
+
 test('no message is left as its own code', () => {
   for (const [code, message] of Object.entries(FR)) {
     assert.ok(message.length > 0, `${code} has an empty message`)

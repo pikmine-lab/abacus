@@ -224,6 +224,34 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Clore n'est pas un cul-de-sac** : un compte clos garde son menu, s'y corrige et s'y
   réouvre. Une clôture par erreur ne doit pas obliger à recréer un compte, donc à redéclarer
   son historique.
+- **Une carte vit dans la ligne du compte qu'elle débite.** La ligne dit combien de cartes il
+  porte (« 2 cartes ») et se déplie sur elles, fermée par défaut : on revient sur une page de
+  comptes pour les soldes, les cartes se déclarent une fois. Même repli que les masses d'un
+  portefeuille, avec son retrait et son filet. Une carte s'ajoute depuis le menu du compte, qui
+  la présélectionne, et mène à sa page comme une position mène à la sienne. Un relevé qui attend
+  sa validation ouvre la ligne et s'y annonce : c'est un travail à faire, il ne se cache pas
+  derrière un repli.
+- **Une carte dit ce qu'elle doit encore au compte.** Sous une carte à débit différé, chaque
+  relevé pas encore validé : son total, qui mène au relevé sur la page de la carte, et son état. Un cycle ouvert dit
+  jusqu'à quand il court, un cycle arrêté quand son débit est attendu, et « à valider » une fois
+  ce jour passé. C'est là que se lit l'argent que le solde ne montre pas encore.
+  Suit le calendrier en mots (« arrêté le 25, prélevé en fin de mois »). Le panneau de la carte
+  montre sur un exemple ce que le calendrier donne (« acheté aujourd'hui → prélevé le 30/10 ») :
+  un calendrier se vérifie mieux sur un cas qu'à la lecture.
+- **Valider un relevé, c'est dire le jour du débit, et rien d'autre.** Le total est affiché
+  pour être comparé à la banque, jamais saisi : s'il ne colle pas, c'est un achat à corriger.
+  Le jour s'ouvre sur le débit attendu. Il ne se fait que sur la page de la carte, là où le total
+  se lit à côté des achats qui le font : un relevé validé s'y corrige, ou revient en attente.
+- **La page d'une carte dit ce qu'elle a payé.** Une carte différée s'y lit par relevé, le plus
+  récent d'abord, chacun replié sur ses achats : ouvert tant qu'il attend son débit, fermé une
+  fois validé. Une carte immédiate montre la liste de ses achats. Les dates sont celles des
+  achats, et chaque achat se corrige depuis sa ligne comme dans les mouvements. Les abonnements
+  qu'elle paie ferment la page : ce sont eux qu'il faut reporter sur une carte renouvelée.
+- **Sans carte, un mouvement est un prélèvement.** La carte se choisit parmi celles du compte
+  choisi, le choix vide nommant le cas ordinaire. Une carte différée renomme la date en date
+  d'achat et affiche dessous le prélèvement prévu. Le remboursement d'une avance ne propose pas
+  de carte : il revient sur le compte. La liste montre la date du prélèvement, qui est celle du
+  solde, avec la date d'achat dessous, et « prévu » tant que le relevé n'est pas validé.
 - **Un seul ordre, un contrôle par section.** Les comptes se rangent en trois sections
   (courants, épargne, investissement) plus les clos, mais ce sont les mêmes objets découpés
   par nature : le tri se choisit dans l'en-tête de chacune, et tous les menus affichent et

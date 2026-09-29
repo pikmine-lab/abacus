@@ -3,6 +3,7 @@ import type { MovementKind } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
+import { listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { outstandingInvoices } from '@abacus/core/services/invoices'
 import {
@@ -13,6 +14,7 @@ import {
   selectionTotals,
 } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { EntrySheet } from '@/components/entry-sheet'
 import { MovementFilters } from '@/components/movement-filters'
@@ -24,6 +26,7 @@ import { PeriodPicker } from '@/components/period-picker'
 import { ReadingTabs } from '@/components/reading-tabs'
 import { SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
 import { resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
 import { sorter } from '@/lib/sort'
@@ -55,13 +58,14 @@ export default async function MovementsPage({
   // The vocabulary first: a filter naming something this user does not own
   // (a stale link, a deleted category) is dropped rather than silently
   // returning an empty list the controls cannot explain.
-  const [accounts, actors, categories, activities, advances, openInvoices] = await Promise.all([
+  const [accounts, actors, categories, activities, advances, openInvoices, cards] = await Promise.all([
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
     outstandingAdvances(userId),
     outstandingInvoices(userId),
+    listCards(userId),
   ])
   const known = (id: string | undefined, among: { id: string }[]) =>
     id && among.some((entry) => entry.id === id) ? id : undefined
@@ -94,6 +98,7 @@ export default async function MovementsPage({
   const accountName = new Map(accounts.map((a) => [a.id, a.name]))
   const actorName = new Map(actors.map((a) => [a.id, a.name]))
   const categoryName = new Map(categories.map((c) => [c.id, c.name]))
+  const cardName = new Map(cards.map((c) => [c.id, c.name]))
 
   // The claims to settle: outside the period on purpose, an advance from four
   // months ago is exactly the one that got forgotten.
@@ -119,20 +124,7 @@ export default async function MovementsPage({
   const owedInList = movements.some((m) => stillOwed.has(m.id))
 
   const count = Number(selection.count)
-  const openAccounts = accounts.filter((a) => !a.closedOn)
-  const options = {
-    accounts: openAccounts.map((a) => ({ id: a.id, name: a.name })),
-    actors: actors.map((a) => ({ id: a.id, name: a.name })),
-    categories: categories.map((c) => ({ id: c.id, name: c.name })),
-    // Only a business activity registered for VAT reclaims any, and only
-    // there does an expense say how much of it was VAT.
-    activities: activities.map((a) => ({
-      id: a.id,
-      name: a.name,
-      vatRegistered: a.kind === 'business' && a.vatRegistered,
-      defaultVatRate: a.defaultVatRate === null ? undefined : Number(a.defaultVatRate),
-    })),
-  }
+  const options = movementFormOptions({ accounts, actors, categories, activities, cards })
 
   return (
     <>
@@ -241,11 +233,6 @@ export default async function MovementsPage({
                 // What is still owed, which is not the same as "was an advance":
                 // a claim that came back in full has nothing left to announce.
                 const owed = stillOwed.get(m.id)
-                const origin = m.commitmentId
-                  ? 'Ce mouvement vient d’une échéance confirmée.'
-                  : m.balanceCheckId
-                    ? 'Ce mouvement est un ajustement de pointage.'
-                    : undefined
                 return (
                   <TableRow key={m.id}>
                     <TableCell className="font-mono text-[11.5px] text-faint">
@@ -260,6 +247,21 @@ export default async function MovementsPage({
                           → {frMonth(m.accrualMonth)}
                         </span>
                       )}
+                      {/* The date above is the debit of the card's statement: the
+                          expected one while it waits, in no balance until then. */}
+                      {m.purchasedOn && (
+                        <span
+                          className="block text-[10.5px]"
+                          title={
+                            m.awaitingDebit
+                              ? 'Date d’achat. Prélèvement prévu à la date ci-dessus, relevé à valider'
+                              : 'Date d’achat, prélevé à la date ci-dessus'
+                          }
+                        >
+                          achat {frDate(m.purchasedOn)}
+                          {m.awaitingDebit && <span className="block">prévu</span>}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-0">
                       <span className="block truncate text-[13px]">{counterparty}</span>
@@ -267,6 +269,14 @@ export default async function MovementsPage({
                     </TableCell>
                     <TableCell className="hidden text-[12px] text-muted-foreground sm:table-cell">
                       {account}
+                      {m.cardId && (
+                        <Link
+                          href={`/accounts/cards/${m.cardId}?from=movements`}
+                          className="block text-[11px] text-faint transition-colors hover:text-primary"
+                        >
+                          carte {cardName.get(m.cardId) ?? ''}
+                        </Link>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-[12px] text-muted-foreground md:table-cell">
                       {m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''}
@@ -313,35 +323,7 @@ export default async function MovementsPage({
                         {...options}
                         today={today()}
                         label={`${frDate(m.happenedOn)} · ${counterparty} · ${eur(Number(m.amount), 2)}`}
-                        draft={{
-                          id: m.id,
-                          type: m.kind,
-                          happenedOn: m.happenedOn,
-                          amount: Number(m.amount).toFixed(2),
-                          originalAmount: m.originalAmount ? Number(m.originalAmount).toFixed(2) : undefined,
-                          originalCurrency: m.originalCurrency ?? undefined,
-                          accountId: (isIncome ? m.targetAccountId : m.sourceAccountId) ?? '',
-                          toAccountId: isTransfer ? (m.targetAccountId ?? undefined) : undefined,
-                          actorName: isTransfer
-                            ? undefined
-                            : actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!),
-                          categoryId: m.categoryId ?? undefined,
-                          activityId: m.activityId ?? undefined,
-                          note: m.note ?? undefined,
-                          accrualMonth: m.accrualMonth?.slice(0, 7),
-                          ghost: m.ghost,
-                          refundFromActorName: m.expectedRefundFromActorId
-                            ? (actorName.get(m.expectedRefundFromActorId) ?? '')
-                            : undefined,
-                          expectedRefundAmount: m.expectedRefundAmount
-                            ? Number(m.expectedRefundAmount)
-                            : undefined,
-                          vatAmount:
-                            m.vatAmount === null
-                              ? undefined
-                              : Number(m.vatAmount).toFixed(2).replace('.', ','),
-                          origin,
-                        }}
+                        draft={movementDraft(m, actorName)}
                       />
                     </TableCell>
                   </TableRow>

@@ -68,6 +68,8 @@ export function CommitmentRowActions({
     activityId: string
     period: string
     engagedUntil: string
+    accountId?: string
+    cardId?: string
   }
   /**
    * Investment plan only: what its own correction panel needs. Its fields are

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { type CardChoice, CardSelect, debitDayFor } from '@/components/card-forms'
 import { CurrencySelect } from '@/components/currency-select'
 import {
   ActionForm,
@@ -17,7 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correctMovementAction, declareMovementAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { eur, frDate } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -76,6 +77,8 @@ export interface MovementDraft {
   expectedRefundAmount?: number
   /** The VAT stated inside the amount, when the activity reclaims it. */
   vatAmount?: string
+  /** The card that paid it; with a deferred card, happenedOn above is the purchase day. */
+  cardId?: string
   /** Origin the form must not silently break (échéance, ajustement). */
   origin?: string
 }
@@ -87,6 +90,7 @@ export function MovementForm({
   activities,
   advances,
   invoices = [],
+  cards = [],
   today,
   draft,
 }: {
@@ -97,6 +101,8 @@ export function MovementForm({
   advances: Advance[]
   /** Open invoices, so an income from a client can say which one it pays. */
   invoices?: OpenInvoiceOption[]
+  /** The cards of the open accounts, offered on the account they debit. */
+  cards?: CardChoice[]
   today: string
   /** Present when correcting an existing movement instead of declaring one. */
   draft?: MovementDraft
@@ -125,6 +131,15 @@ export function MovementForm({
   const [eurAmount, setEurAmount] = useState(draft?.originalCurrency ? (draft?.amount ?? '') : '')
   // Editing the paid amount voids the prefilled statement euros.
   const [eurCleared, setEurCleared] = useState(false)
+  // The account and the card, watched because a deferred card turns the date
+  // into a purchase day and says the day it will be debited.
+  const [accountId, setAccountId] = useState(draft?.accountId ?? '')
+  const [cardId, setCardId] = useState(draft?.cardId ?? '')
+  // The refund of an advance comes back to the account, never to a card.
+  const [refunding, setRefunding] = useState(false)
+  const card = cards.find((c) => c.id === cardId && c.accountId === accountId)
+  const withCard = type !== 'transfer' && !refunding
+  const debitOn = withCard ? debitDayFor(card, day) : null
 
   const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
   const editing = draft !== undefined
@@ -147,6 +162,9 @@ export function MovementForm({
         setMonthOpen(false)
         setDay(today)
         setMonth(null)
+        setAccountId(draft?.accountId ?? '')
+        setCardId(draft?.cardId ?? '')
+        setRefunding(false)
       }}
     >
       <input type="hidden" name="type" value={type} />
@@ -177,8 +195,14 @@ export function MovementForm({
       </Tabs>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Date" name="date">
+        <Field label={debitOn ? 'Date d’achat' : 'Date'} name="date">
           <DateField name="date" defaultValue={draft?.happenedOn ?? today} onValueChange={setDay} />
+          {/* The day the balance moves, which is not the day of the purchase. */}
+          {debitOn && (
+            <span className="text-[11px] text-muted-foreground">
+              prélèvement prévu le <span className="font-mono tabular">{frDate(debitOn)}</span>
+            </span>
+          )}
         </Field>
         <Field label="Montant" name="amount">
           <div className="flex gap-2">
@@ -252,8 +276,21 @@ export function MovementForm({
           placeholder="Choisir un compte"
           options={accountOptions}
           defaultValue={draft?.accountId ?? ''}
+          onValueChange={setAccountId}
         />
       </Field>
+
+      {/* No card is the ordinary case: the account was debited directly. */}
+      {withCard && (
+        <CardSelect
+          cards={cards}
+          accountId={accountId}
+          label={type === 'income' ? 'Remboursé sur la carte' : 'Payé avec'}
+          noneLabel={type === 'income' ? 'aucune carte' : 'aucune carte (prélèvement)'}
+          defaultValue={draft?.cardId}
+          onValueChange={setCardId}
+        />
+      )}
 
       {type === 'transfer' ? (
         <Field label="Vers le compte" name="toAccountId">
@@ -386,6 +423,7 @@ export function MovementForm({
           <FormSelect
             name="refundsMovementId"
             noneLabel="non"
+            onValueChange={(v) => setRefunding(v !== '')}
             options={advances.map((adv) => ({
               value: adv.id,
               label: `${adv.happenedOn} · ${eur(adv.amount)} (reste ${eur(adv.remaining)})`,

@@ -10,6 +10,7 @@ import type {
   Threshold,
 } from '../../domain/types.ts'
 import type { Executor } from '../client.ts'
+import { debitedOnly } from './cards.ts'
 
 /**
  * The measures a levy rule computes on: named aggregates over an activity, a
@@ -374,6 +375,7 @@ export async function treasuryAccounts(
         select sum(case when m.target_account_id = a.id then m.amount else -m.amount end)
         from movement m
         where (m.source_account_id = a.id or m.target_account_id = a.id) and m.happened_on <= ${on}
+          and ${debitedOnly(tx, 'm')}
       ), 0)
       + coalesce((
         select sum(case when o.type in ('sell', 'dividend') then o.amount else -o.amount end)

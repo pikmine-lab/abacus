@@ -2,6 +2,7 @@ import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
+import { listCards } from '@abacus/core/services/cards'
 import { listCategories } from '@abacus/core/services/catalog'
 import {
   closeAdvance,
@@ -20,6 +21,7 @@ import {
   requireAccountByName,
   requireActivityByName,
   requireActorByName,
+  requireCardByName,
   requireCategoryByName,
   requireInvoice,
 } from '../resolve.ts'
@@ -61,12 +63,14 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'declare_movements',
     {
       description:
-        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. A movement that reached the account and says nothing about the flows (an insurance payout, a gift, a regularisation) is declared with ghost: true, which keeps it in the balances and out of every analysis. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). A client paying an invoice is settle_invoice; an income declared here pays one only when invoice names it. An expense of a VAT-registered business activity says the VAT inside it with vatAmount: that is what the activity reclaims, and without it the VAT return only counts the VAT collected. Each line succeeds or fails independently: read the result line by line.',
+        'Records a batch of movements the user declares: expenses, incomes, internal transfers. This is the daily entry tool. Everything is addressed by NAME (accounts, actors, categories), never by id. An unknown actor fails its own line with suggestions: reuse a close existing actor instead of creating a duplicate ("McDo" and "McDonald\'s" are the same actor), and only pass createUnknownActors: true for genuinely new actors. Amounts are always positive; the direction comes from the type. An expense or income paid in a foreign currency is declared as paid (amount + currency): the EUR counter-value is computed at that day\'s real rate and stored, so never convert yourself; when the bank statement already shows the euros moved, pass them as eurAmount. A movement that concerns a month other than the one the money moved in says so with month (a late salary, a rent paid ahead): that only moves it in the monthly analysis, never in a balance. A movement that reached the account and says nothing about the flows (an insurance payout, a gift, a regularisation) is declared with ghost: true, which keeps it in the balances and out of every analysis. Do not use it for subscription debits (confirm_due_movements) nor to settle a balance-check gap (settle_check_gap). A client paying an invoice is settle_invoice; an income declared here pays one only when invoice names it. An expense of a VAT-registered business activity says the VAT inside it with vatAmount: that is what the activity reclaims, and without it the VAT return only counts the VAT collected. A purchase paid by card names it with card (manage_cards lists them); on a deferred-debit card, date is the purchase day: the purchase joins the statement of its card for its cycle, dated on the debit that statement expects, and counts in no balance until the statement is validated with the day the bank really debited it (manage_card_statements). Each line succeeds or fails independently: read the result line by line.',
       inputSchema: z.object({
         movements: z
           .array(
             z.object({
-              date: isoDate,
+              date: isoDate.describe(
+                'YYYY-MM-DD, the day it happened. With a deferred-debit card: the purchase day, never the debit day',
+              ),
               amount: z
                 .number()
                 .positive()
@@ -106,6 +110,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .string()
                 .optional()
                 .describe('Exact name of an existing category. Never on a transfer'),
+              card: z
+                .string()
+                .optional()
+                .describe(
+                  "Name of the card that paid this expense, or that a merchant's refund was credited back to (manage_cards). It must debit the account given. Leave it out when the account was debited directly: a direct debit, a transfer order, a cheque. Never on a transfer, never on the refund of an advance, which comes back to the account",
+                ),
               activity: z
                 .string()
                 .nullable()
@@ -242,12 +252,21 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             refundsMovementId: m.refundsMovementId,
             invoiceId: m.invoice ? (await requireInvoice(userId, m.invoice)).id : undefined,
             vatAmount: m.vatAmount,
+            cardId: m.card ? (await requireCardByName(userId, m.card)).id : undefined,
           })
           results.push({
             index,
             ok: true,
             movementId: movement.id,
             kind: movement.kind,
+            // A deferred card moved it to its debit day: say so, it is what the balance reads.
+            ...(movement.purchasedOn
+              ? {
+                  purchasedOn: movement.purchasedOn,
+                  expectedDebitOn: movement.happenedOn,
+                  awaitingDebit: true,
+                }
+              : {}),
             ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
             ...(movement.ghost ? { ghost: true } : {}),
             ...(movement.vatAmount !== null ? { vatAmount: Number(movement.vatAmount) } : {}),
@@ -275,7 +294,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, and ghost when it is left out of the analyses. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
+        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -316,14 +335,16 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           limit: f.limit,
           sort,
         })
-        const [accounts, actors, categories] = await Promise.all([
+        const [accounts, actors, categories, cards] = await Promise.all([
           listAccounts(userId),
           listActors(userId),
           listCategories(userId),
+          listCards(userId),
         ])
         const accountName = new Map(accounts.map((a) => [a.id, a.name]))
         const actorName = new Map(actors.map((a) => [a.id, a.name]))
         const categoryName = new Map(categories.map((c) => [c.id, c.name]))
+        const cardName = new Map(cards.map((c) => [c.id, c.name]))
         return ok({
           order: orderedBy(sort),
           // What the window selected on, only where there was a window: the
@@ -333,6 +354,9 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           movements: movements.map((m) => ({
             id: m.id,
             date: m.happenedOn,
+            // Absent unless a deferred card put its statement's debit in date.
+            ...(m.purchasedOn ? { purchasedOn: m.purchasedOn } : {}),
+            ...(m.awaitingDebit ? { awaitingDebit: true } : {}),
             // Absent when the movement counts in the month of its own date.
             ...(m.accrualMonth ? { month: m.accrualMonth.slice(0, 7) } : {}),
             // Absent unless the movement is out of the analyses.
@@ -348,6 +372,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 ? accountName.get(m.targetAccountId!)
                 : actorName.get((m.sourceActorId ?? m.targetActorId)!),
             category: m.categoryId ? categoryName.get(m.categoryId) : undefined,
+            card: m.cardId ? cardName.get(m.cardId) : undefined,
             // Absent unless a VAT was stated inside the amount.
             ...(m.vatAmount !== null ? { vatAmount: Number(m.vatAmount) } : {}),
             note: m.note ?? undefined,
@@ -386,11 +411,13 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it. The invoice an income pays is repairable the same way: invoice links it (id or reference from list_invoices), "none" unlinks it, absent keeps it. So is the VAT inside an expense of a VAT-registered business activity: vatAmount states it, null clears it, absent keeps it.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it. The invoice an income pays is repairable the same way: invoice links it (id or reference from list_invoices), "none" unlinks it, absent keeps it. So is the VAT inside an expense of a VAT-registered business activity: vatAmount states it, null clears it, absent keeps it. And the card that paid it: card names it, "none" says the account was debited directly, absent keeps it. On a movement paid with a deferred-debit card, date is the purchase day (purchasedOn in list_movements), and its statement follows from the card; a correction that touches neither the date nor the card keeps the statement it had. A wrong debit day is fixed on the statement, for every purchase at once (manage_card_statements), never movement by movement.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
-        date: isoDate.optional().describe('correct: the real date'),
+        date: isoDate
+          .optional()
+          .describe('correct: the real date. On a deferred-debit card purchase: the purchase day'),
         amount: z
           .number()
           .positive()
@@ -472,6 +499,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .describe(
             'correct: the VAT inside the amount, on a movement of a VAT-registered business activity, or null to clear it. Absent: the stored one is kept',
           ),
+        card: z
+          .string()
+          .optional()
+          .describe(
+            'correct: name of the card that paid (manage_cards), or "none" when the account was debited directly. Absent: the stored one is kept',
+          ),
       }),
     },
     async (f) =>
@@ -504,6 +537,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const activity = clearable(f.activity)
         const debtor = clearable(f.expectedRefundFrom)
         const invoice = clearable(f.invoice)
+        const card = clearable(f.card)
         const movement = await correctMovement(userId, f.movement, {
           happenedOn: f.date,
           amount: f.amount,
@@ -521,10 +555,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           expectedRefundAmount: debtor === null ? null : f.expectedRefundAmount,
           invoiceId: invoice ? (await requireInvoice(userId, invoice)).id : invoice,
           vatAmount: f.vatAmount,
+          cardId: card ? (await requireCardByName(userId, card)).id : card,
         })
         return ok({
           movementId: movement.id,
           date: movement.happenedOn,
+          ...(movement.purchasedOn ? { purchasedOn: movement.purchasedOn } : {}),
           ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
           ...(movement.ghost ? { ghost: true } : {}),
           amount: Number(movement.amount),

@@ -3,6 +3,7 @@
 import type { Judgment } from '@abacus/core/domain'
 import { useOptimistic, useState, useTransition } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { type CardChoice, CardSelect } from '@/components/card-forms'
 import { CurrencySelect } from '@/components/currency-select'
 import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -28,6 +29,8 @@ export interface CommitmentOptions {
   actors: Option[]
   categories: Option[]
   activities: Option[]
+  /** The cards an outgoing subscription can be billed to. */
+  cards?: CardChoice[]
 }
 
 /**
@@ -53,6 +56,7 @@ function CommitmentIdentityFields({
   afterActivity,
   /** The account has its own dated gesture, so correction leaves it out. */
   withAccount = true,
+  onAccountChange,
 }: {
   outgoing: boolean
   accounts: Option[]
@@ -65,6 +69,8 @@ function CommitmentIdentityFields({
   /** Sits next to the activity: a lock-in date, where one can exist. */
   afterActivity?: React.ReactNode
   withAccount?: boolean
+  /** For a form offering what depends on the account, such as its cards. */
+  onAccountChange?: (accountId: string) => void
 }) {
   return (
     <>
@@ -90,6 +96,7 @@ function CommitmentIdentityFields({
               placeholder="Choisir"
               defaultValue={defaults?.accountId}
               options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              onValueChange={onAccountChange}
             />
           </Field>
         )}
@@ -126,6 +133,7 @@ export function NewCommitmentForm({
   actors,
   categories,
   activities,
+  cards = [],
   today,
 }: {
   direction: 'outgoing' | 'incoming'
@@ -133,9 +141,13 @@ export function NewCommitmentForm({
   actors: Option[]
   categories: Option[]
   activities: Option[]
+  /** Outgoing only: the cards a subscription can be billed to. */
+  cards?: CardChoice[]
   today: string
 }) {
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
+  // Watched so a subscription is offered the cards of the account it hits.
+  const [accountId, setAccountId] = useState('')
   const outgoing = direction === 'outgoing'
 
   const shared = (options: { withFirstDue: boolean; withLockIn?: boolean }) => (
@@ -145,6 +157,7 @@ export function NewCommitmentForm({
       actors={actors}
       categories={categories}
       activities={activities}
+      onAccountChange={setAccountId}
       beforeCategory={
         options.withFirstDue ? (
           <Field label="Première échéance" name="firstDueOn">
@@ -191,10 +204,21 @@ export function NewCommitmentForm({
       </Tabs>
 
       {kind === 'subscription' ? (
-        <ActionForm action={createSubscriptionAction} className="mt-3" successLabel="Abonnement créé">
+        <ActionForm
+          action={createSubscriptionAction}
+          className="mt-3"
+          successLabel="Abonnement créé"
+          onSuccess={() => setAccountId('')}
+        >
           <input type="hidden" name="direction" value="outgoing" />
           <TextField name="label" label="Nom" placeholder="Netflix" />
           {shared({ withFirstDue: true, withLockIn: true })}
+          <CardSelect
+            cards={cards}
+            accountId={accountId}
+            label="Payé avec"
+            noneLabel="aucune carte (prélèvement)"
+          />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Montant par période" name="amount">
               <div className="flex gap-2">
@@ -256,10 +280,15 @@ export function EditCommitmentForm({
     activityId: string
     period: string
     engagedUntil: string
+    /** The account it hits today, whose cards it can be billed to. */
+    accountId?: string
+    cardId?: string
   }
   options: CommitmentOptions
   onDone?: () => void
 }) {
+  // Only an outgoing subscription is billed to a card.
+  const billable = kind === 'subscription' && !incoming && defaults.accountId !== undefined
   return (
     <ActionForm action={editCommitmentAction} onSuccess={onDone} successLabel="Engagement corrigé">
       <input type="hidden" name="commitmentId" value={commitmentId} />
@@ -282,6 +311,19 @@ export function EditCommitmentForm({
         }
       />
       <PeriodField defaultValue={defaults.period} />
+      {billable && (
+        <>
+          {/* Says the field was offered, so an empty choice clears the card. */}
+          <input type="hidden" name="cardField" value="1" />
+          <CardSelect
+            cards={options.cards ?? []}
+            accountId={defaults.accountId!}
+            label="Payé avec"
+            noneLabel="aucune carte (prélèvement)"
+            defaultValue={defaults.cardId}
+          />
+        </>
+      )}
       <p className="text-[11.5px] text-faint">
         La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur acteur : ils
         disent ce qui s’est passé.

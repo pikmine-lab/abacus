@@ -1,5 +1,6 @@
 import type { Reading } from '../../domain/types.ts'
 import type { Executor } from '../client.ts'
+import { debitedOnly } from './cards.ts'
 
 /**
  * The period clause of an analysis, in the reading it was asked for.
@@ -58,12 +59,13 @@ export async function balanceSeries(
     ),
     flows as (
       select f.account_id, f.happened_on, sum(f.delta) as delta
+      -- A deferred card's purchase moves no balance until its debit is stated.
       from (
-        select source_account_id as account_id, happened_on, -amount as delta
-        from movement where user_id = ${userId} and source_account_id is not null
+        select m.source_account_id as account_id, m.happened_on, -m.amount as delta
+        from movement m where m.user_id = ${userId} and m.source_account_id is not null and ${debitedOnly(tx, 'm')}
         union all
-        select target_account_id, happened_on, amount
-        from movement where user_id = ${userId} and target_account_id is not null
+        select m.target_account_id, m.happened_on, m.amount
+        from movement m where m.user_id = ${userId} and m.target_account_id is not null and ${debitedOnly(tx, 'm')}
       ) f
       group by f.account_id, f.happened_on
     )

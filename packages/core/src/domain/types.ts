@@ -135,6 +135,58 @@ export interface Movement {
   levyEntry: LevyEntry | null
   levyPeriodStart: string | null
   levyInstalment: number | null
+  /** The card it was paid with, or credited back to. */
+  cardId: string | null
+  /**
+   * Deferred card only: the day of the purchase, `happenedOn` being the debit
+   * of its statement. Null everywhere else, where the two are one day.
+   */
+  purchasedOn: string | null
+  /** Deferred card only: the statement that debits it. */
+  cardStatementId: string | null
+  /**
+   * Read by the movement list only: a deferred purchase whose statement has no
+   * debit day yet, dated on the expected one and in no balance.
+   */
+  awaitingDebit?: boolean
+}
+
+/**
+ * One cycle of a deferred card: the cut-off that closes it, the debit its
+ * schedule expects, and the day the bank really debited it, once stated. Its
+ * purchases are dated on it, and count in no balance until that day is stated.
+ */
+export interface CardStatement {
+  id: string
+  cardId: string
+  cutOffOn: string
+  dueOn: string
+  debitedOn: string | null
+}
+
+/** When a card's purchases leave the account: one by one, or grouped on a later day. */
+export type DebitMode = 'immediate' | 'deferred'
+/** Where a scheduled day goes when it falls on a weekend. */
+export type DayShift = 'none' | 'previous' | 'next'
+
+/**
+ * A payment card, never its number. A deferred one carries its schedule: the
+ * cut-off day that closes a cycle of purchases and the day the total is
+ * debited, each a day of the month clamped to its end, each with its own way
+ * off a weekend.
+ */
+export interface Card {
+  id: string
+  userId: string
+  name: string
+  accountId: string
+  /** The month printed on the card, as its first day: it works through its last. */
+  expiryMonth: string
+  debitMode: DebitMode
+  statementDay: number | null
+  statementShift: DayShift | null
+  debitDay: number | null
+  debitShift: DayShift | null
 }
 
 export type CommitmentKind = 'subscription' | 'financing' | 'investment_plan'
@@ -175,6 +227,8 @@ export interface Commitment {
   cancelledOn: string | null
   installmentsTotal: number | null
   totalAmount: string | null
+  /** Outgoing subscription only: the card it is billed to. */
+  cardId: string | null
 }
 
 export type CommitmentEventType =

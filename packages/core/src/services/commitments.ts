@@ -1,6 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { getCard } from '../db/datasources/cards.ts'
 import {
   type AccountPeriod,
   accountTimeline,
@@ -91,6 +92,30 @@ async function requireInvestmentAccount(tx: Executor, userId: string, accountId:
     throw new DomainError('account_closed', `"${account.name}" is closed: reopen it before writing to it`)
 }
 
+/**
+ * The card a subscription is billed to. Only an outgoing subscription has one:
+ * a financing is settled by its written schedule, a revenue is not paid with a
+ * card, and a placement is a transfer between two accounts. The card debits
+ * the account the subscription hits today; after a later move, an occurrence
+ * that lands on another account is paid without it (see confirmNextOccurrence).
+ */
+async function requireCardFor(
+  tx: Executor,
+  userId: string,
+  cardId: string,
+  commitment: { kind: Commitment['kind']; direction: Commitment['direction']; accountId: string },
+): Promise<void> {
+  if (commitment.kind !== 'subscription' || commitment.direction !== 'outgoing')
+    throw new DomainError('card_on_subscription', 'Only an outgoing subscription is billed to a card')
+  const card = await getCard(tx, userId, cardId)
+  if (!card) throw new DomainError('card_not_found', `No card ${cardId} for this user`)
+  if (card.accountId !== commitment.accountId)
+    throw new DomainError(
+      'card_other_account',
+      `Card "${card.name}" debits another account than this commitment's`,
+    )
+}
+
 async function requireAsset(tx: Executor, userId: string, assetId: string): Promise<void> {
   if (!(await getAsset(tx, userId, assetId)))
     throw new DomainError('asset_not_found', `No asset ${assetId} for this user`)
@@ -122,6 +147,8 @@ export interface SubscriptionInput {
   judgment?: Judgment
   judgmentNote?: string
   engagedUntil?: string
+  /** Outgoing only: the card it is billed to, which must debit `accountId`. */
+  cardId?: string
 }
 
 export async function createSubscription(
@@ -132,11 +159,18 @@ export async function createSubscription(
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
+    if (input.cardId)
+      await requireCardFor(tx, userId, input.cardId, {
+        kind: 'subscription',
+        direction: input.direction ?? 'outgoing',
+        accountId: input.accountId,
+      })
     const currency = await resolveCurrency(tx, input.currency, history)
     const commitment = await insertCommitment(tx, {
       userId,
       kind: 'subscription',
       direction: input.direction ?? 'outgoing',
+      cardId: input.cardId ?? null,
       label: input.label,
       actorId: input.actorId,
       accountId: input.accountId,
@@ -558,6 +592,12 @@ export interface CommitmentEdit {
    */
   targetAccountId?: string
   assetId?: string
+  /**
+   * Outgoing subscription only: the card it is billed to, null for a direct
+   * debit. A correction like the others: the occurrences already confirmed
+   * keep what paid them.
+   */
+  cardId?: string | null
 }
 
 const EDITABLE = [
@@ -570,6 +610,7 @@ const EDITABLE = [
   'engagedUntil',
   'targetAccountId',
   'assetId',
+  'cardId',
 ] as const
 
 /**
@@ -611,6 +652,7 @@ export async function editCommitment(userId: string, id: string, input: Commitme
         )
     }
     if (input.assetId !== undefined) await requireAsset(tx, userId, input.assetId)
+    if (input.cardId) await requireCardFor(tx, userId, input.cardId, commitment)
 
     const patch: Record<string, unknown> = {}
     for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
@@ -942,6 +984,11 @@ export async function confirmNextOccurrence(
     // the commitment hits now: an occurrence confirmed after a move left the
     // old account, and writing it on the new one falsifies both balances.
     const accountId = accountAt(await accountTimeline(tx, commitment.id), happenedOn)
+    // Billed to a card, the occurrence is a purchase on it, dated on the day
+    // the card debits it. A card pays from its own account only: an occurrence
+    // landing on another one after a move is paid without it.
+    const card = commitment.cardId ? await getCard(tx, userId, commitment.cardId) : undefined
+    const cardId = card?.accountId === accountId ? card.id : undefined
     const movement = await declareMovementIn(
       tx,
       userId,
@@ -963,6 +1010,7 @@ export async function confirmNextOccurrence(
         activityId: commitment.activityId,
         commitmentId: commitment.id,
         accrualMonth,
+        cardId,
       },
       history,
     )
@@ -1008,7 +1056,7 @@ export async function confirmNextOccurrence(
       await insertCommitmentEvent(
         tx,
         id,
-        movement.happenedOn,
+        movement.purchasedOn ?? movement.happenedOn,
         'price_changed',
         confirmedAmount,
         null,

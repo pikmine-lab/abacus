@@ -1943,3 +1943,106 @@ test('invoices are declared, followed and settled through the MCP surface', asyn
   assert.equal(missing.isError, true)
   assert.match(missing.text, /list_invoices/)
 })
+
+test('a deferred card groups its purchases in statements validated through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+
+  const created = await call(client, 'manage_cards', {
+    action: 'create',
+    name: 'Gold',
+    account: 'Courant',
+    expiry: '2029-09',
+    debit: 'deferred',
+    cutOffDay: 25,
+    cutOffShift: 'none',
+    debitDay: 31,
+    debitShift: 'previous',
+  })
+  assert.ok(!created.isError, created.text)
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-01-26', amount: 80, type: 'expense', account: 'Courant', actor: 'Shop', card: 'Gold' },
+      {
+        date: '2026-01-26',
+        amount: 50,
+        type: 'transfer',
+        account: 'Courant',
+        toAccount: 'Livret',
+        card: 'Gold',
+      },
+    ],
+    createUnknownActors: true,
+  })
+  const [purchase, transfer] = (declared.json() as { results: Record<string, unknown>[] }).results
+  assert.equal(purchase!.purchasedOn, '2026-01-26')
+  assert.equal(purchase!.expectedDebitOn, '2026-02-27')
+  assert.equal(purchase!.awaitingDebit, true)
+  assert.equal(transfer!.ok, false)
+  assert.match(String(transfer!.error), /never moves money between two owned accounts/)
+
+  const [line] = rows<Record<string, unknown>>(
+    await call(client, 'list_movements', { kind: 'expense' }),
+    'movements',
+  )
+  assert.equal(line!.date, '2026-02-27')
+  assert.equal(line!.purchasedOn, '2026-01-26')
+  assert.equal(line!.awaitingDebit, true)
+  assert.equal(line!.card, 'Gold')
+
+  const [card] = rows<Record<string, unknown>>(
+    await call(client, 'manage_cards', { action: 'list' }),
+    'cards',
+  )
+  assert.equal(card!.debit, 'deferred')
+  assert.equal(card!.cutOffDay, 25)
+  assert.deepEqual(card!.statementsToValidate, [
+    { cutOff: '2026-02-25', expectedOn: '2026-02-27', amount: 80, purchases: 1, toValidate: true },
+  ])
+
+  // Past its expected day, the overview says it waits.
+  const overview = (await call(client, 'get_overview')).json() as {
+    cardStatementsToValidate?: { card: string; expectedOn: string }[]
+  }
+  assert.deepEqual(
+    overview.cardStatementsToValidate?.map((s) => [s.card, s.expectedOn]),
+    [['Gold', '2026-02-27']],
+  )
+
+  // The bank took it on the 26th: validating moves the purchase there.
+  const validated = await call(client, 'manage_card_statements', {
+    action: 'validate',
+    card: 'Gold',
+    debitedOn: '2026-02-26',
+  })
+  assert.ok(!validated.isError, validated.text)
+  const [debited] = rows<Record<string, unknown>>(
+    await call(client, 'list_movements', { kind: 'expense' }),
+    'movements',
+  )
+  assert.equal(debited!.date, '2026-02-26')
+  assert.equal(debited!.awaitingDebit, undefined)
+
+  const refused = await call(client, 'manage_cards', { action: 'delete', name: 'Gold' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /Something was paid with this card/)
+
+  const fixed = await call(client, 'fix_movement', { movement: line!.id, action: 'correct', card: 'none' })
+  assert.equal((fixed.json() as { date: string }).date, '2026-01-26')
+
+  const subscribed = await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Streaming',
+    actor: 'Shop',
+    account: 'Courant',
+    amount: 13,
+    firstDueOn: '2026-10-05',
+    card: 'Gold',
+  })
+  assert.ok(!subscribed.isError, subscribed.text)
+  const [streaming] = rows<Record<string, unknown>>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(streaming!.card, 'Gold')
+})

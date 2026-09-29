@@ -218,6 +218,8 @@ const MONTH_LABELS = Array.from({ length: 12 }, (_, i) =>
  *
  * `anchor` is the day the month is stated against: its own month is marked,
  * and choosing it means "no month of its own" rather than writing a default.
+ * Without one, the field holds a month of its own and nothing else, such as
+ * the expiry printed on a card.
  */
 export function MonthField({
   name,
@@ -227,13 +229,13 @@ export function MonthField({
 }: {
   name: string
   /** The movement's day, "YYYY-MM-DD". */
-  anchor: string
-  /** "YYYY-MM", or null when the month follows the day above. */
+  anchor?: string
+  /** "YYYY-MM", or null when the month follows the day above (or is not chosen yet). */
   value: string | null
   onValueChange: (month: string | null) => void
 }) {
-  const own = anchor.slice(0, 7)
-  const shown = value ?? own
+  const own = anchor?.slice(0, 7)
+  const shown = value ?? own ?? toIsoDay(new Date()).slice(0, 7)
   const [open, setOpen] = useState(false)
   const [year, setYear] = useState(Number(shown.slice(0, 4)))
   const pick = (month: string | null) => {
@@ -255,9 +257,11 @@ export function MonthField({
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-between font-normal">
             {value ? (
-              <span className="text-primary">{frMonthLong(value)}</span>
-            ) : (
+              <span className={cn(own && 'text-primary')}>{frMonthLong(value)}</span>
+            ) : own ? (
               <span className="text-muted-foreground">{frMonthLong(own)} · le mois de la date</span>
+            ) : (
+              <span className="text-muted-foreground">Choisir un mois</span>
             )}
             <CalendarIcon className="text-muted-foreground" />
           </Button>
@@ -310,15 +314,80 @@ export function MonthField({
               )
             })}
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mt-2 h-8 w-full font-normal text-muted-foreground"
-            onClick={() => pick(null)}
-          >
-            Le mois de la date
+          {own && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-2 h-8 w-full font-normal text-muted-foreground"
+              onClick={() => pick(null)}
+            >
+              Le mois de la date
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
+    </>
+  )
+}
+
+/**
+ * A day of the month, for what repeats every month on the same day (a card's
+ * cut-off, its debit). The month laid flat, like `MonthField` lays a year:
+ * the value is one click away and none has to be hunted in a list of 31. The
+ * 31st is the month's end in every month, which is how banks state it, so the
+ * cell says "fin".
+ */
+export function DayOfMonthField({
+  name,
+  defaultValue,
+  onValueChange,
+}: {
+  name: string
+  defaultValue?: number
+  onValueChange?: (day: number) => void
+}) {
+  const [day, setDay] = useState<number | undefined>(defaultValue)
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <input type="hidden" name={name} value={day ?? ''} />
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-between font-normal">
+            {day ? (
+              day === 31 ? (
+                'fin de mois'
+              ) : (
+                `le ${day}`
+              )
+            ) : (
+              <span className="text-muted-foreground">Choisir un jour</span>
+            )}
+            <CalendarIcon className="text-muted-foreground" />
           </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-3" align="start">
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+              <Button
+                key={d}
+                type="button"
+                variant={d === day ? 'default' : 'ghost'}
+                size="sm"
+                aria-pressed={d === day}
+                aria-label={d === 31 ? 'Fin de mois' : `Le ${d}`}
+                className="size-8 p-0 font-normal tabular"
+                onClick={() => {
+                  setDay(d)
+                  onValueChange?.(d)
+                  setOpen(false)
+                }}
+              >
+                {d === 31 ? 'fin' : d}
+              </Button>
+            ))}
+          </div>
         </PopoverContent>
       </Popover>
     </>
