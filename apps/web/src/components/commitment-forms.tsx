@@ -29,7 +29,7 @@ export interface CommitmentOptions {
   actors: Option[]
   categories: Option[]
   activities: Option[]
-  /** The cards an outgoing subscription can be billed to. */
+  /** The cards an outgoing subscription or a financing can be billed to. */
   cards?: CardChoice[]
 }
 
@@ -141,12 +141,12 @@ export function NewCommitmentForm({
   actors: Option[]
   categories: Option[]
   activities: Option[]
-  /** Outgoing only: the cards a subscription can be billed to. */
+  /** Outgoing only: the cards a subscription or a financing can be billed to. */
   cards?: CardChoice[]
   today: string
 }) {
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
-  // Watched so a subscription is offered the cards of the account it hits.
+  // Watched so an expense is offered the cards of the account it hits.
   const [accountId, setAccountId] = useState('')
   const outgoing = direction === 'outgoing'
 
@@ -196,7 +196,14 @@ export function NewCommitmentForm({
 
   return (
     <div>
-      <Tabs value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+      <Tabs
+        value={kind}
+        onValueChange={(v) => {
+          setKind(v as typeof kind)
+          // The other tab mounts its own form, with no account chosen yet.
+          setAccountId('')
+        }}
+      >
         <TabsList className="w-full">
           <TabsTrigger value="subscription">Abonnement</TabsTrigger>
           <TabsTrigger value="financing">Paiement en X fois</TabsTrigger>
@@ -242,9 +249,20 @@ export function NewCommitmentForm({
           <SubmitButton className="self-start">Créer l’abonnement</SubmitButton>
         </ActionForm>
       ) : (
-        <ActionForm action={createFinancingAction} className="mt-3" successLabel="Financement créé">
+        <ActionForm
+          action={createFinancingAction}
+          className="mt-3"
+          successLabel="Financement créé"
+          onSuccess={() => setAccountId('')}
+        >
           <TextField name="label" label="Ce qui est financé" placeholder="Canapé en 4x" />
           {shared({ withFirstDue: false })}
+          <CardSelect
+            cards={cards}
+            accountId={accountId}
+            label="Payé avec"
+            noneLabel="aucune carte (prélèvement)"
+          />
           <FinancingAmountFields today={today} />
           <SubmitButton className="self-start">Créer le financement</SubmitButton>
         </ActionForm>
@@ -287,8 +305,8 @@ export function EditCommitmentForm({
   options: CommitmentOptions
   onDone?: () => void
 }) {
-  // Only an outgoing subscription is billed to a card.
-  const billable = kind === 'subscription' && !incoming && defaults.accountId !== undefined
+  // Only an expense is billed to a card: an outgoing subscription or a financing.
+  const billable = !incoming && defaults.accountId !== undefined
   return (
     <ActionForm action={editCommitmentAction} onSuccess={onDone} successLabel="Engagement corrigé">
       <input type="hidden" name="commitmentId" value={commitmentId} />

@@ -177,7 +177,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .string()
           .optional()
           .describe(
-            'Outgoing subscription only: the card it is billed to from the next occurrence (manage_cards), which must debit its account, or "none" for a direct debit',
+            'Outgoing subscription or financing only: the card it is billed to from the next occurrence (manage_cards), which must debit its account, or "none" for a direct debit',
           ),
       }),
     },
@@ -277,6 +277,12 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .describe('Defaults to month; week with periodCount 2 for a pay-in-4 every two weeks'),
         periodCount: z.number().int().positive().optional(),
         category: z.string().optional(),
+        card: z
+          .string()
+          .optional()
+          .describe(
+            'The card each installment is charged to (manage_cards), which must debit the account: the usual case for a pay-in-N. Each confirmed installment is then a purchase on it: on a deferred-debit card, it leaves the account on the statement debit day, while the schedule keeps its own date. Leave it out for a direct debit',
+          ),
       }),
     },
     async (f) =>
@@ -285,6 +291,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           label: f.label,
           actorId: (await requireActorByName(userId, f.actor, { createIfUnknown: true })).actor.id,
           accountId: (await requireAccountByName(userId, f.account)).id,
+          cardId: f.card ? (await requireCardByName(userId, f.card)).id : undefined,
           installments: f.installments,
           installmentsTotal: f.installmentsTotal,
           totalAmount: f.totalAmount,
@@ -494,6 +501,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               label: c.label,
               id: c.id,
               ...account(c),
+              ...(c.cardId ? { card: cardNames.get(c.cardId) } : {}),
               // The plan's own currency: installment, remaining due and total
               // are all stated in it.
               ...(c.currency !== 'EUR' ? { currency: c.currency } : {}),

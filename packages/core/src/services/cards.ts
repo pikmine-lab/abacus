@@ -248,7 +248,7 @@ export async function editCard(userId: string, id: string, input: CardEdit): Pro
         if (refs.movements + refs.commitments > 0)
           throw new DomainError(
             'card_in_use',
-            `"${card.name}" already paid ${refs.movements} movement(s) and bills ${refs.commitments} subscription(s): its account cannot change`,
+            `"${card.name}" already paid ${refs.movements} movement(s) and bills ${refs.commitments} commitment(s): its account cannot change`,
           )
       }
       const updated = (await updateCardRow(tx, userId, id, {
@@ -284,7 +284,7 @@ export async function deleteCard(userId: string, id: string): Promise<void> {
     if (refs.movements + refs.commitments > 0)
       throw new DomainError(
         'card_in_use',
-        `"${card.name}" paid ${refs.movements} movement(s) and bills ${refs.commitments} subscription(s): it cannot be deleted`,
+        `"${card.name}" paid ${refs.movements} movement(s) and bills ${refs.commitments} commitment(s): it cannot be deleted`,
       )
     await deleteCardRow(tx, userId, id)
   })

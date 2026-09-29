@@ -38,12 +38,12 @@ export const FR: Record<string, string> = {
   bad_card_day: 'Un jour du mois va de 1 à 31 (31 pour la fin du mois).',
   bad_card_shift: 'Ce report de week-end n’existe pas.',
   card_in_use:
-    'Des mouvements ou des abonnements passent par cette carte : elle reste, et son compte ne change plus.',
+    'Des mouvements, des abonnements ou des financements passent par cette carte : elle reste, et son compte ne change plus.',
   card_other_account: 'Cette carte débite un autre compte que celui choisi.',
   card_expired: 'La carte avait expiré à cette date. Si elle a été renouvelée, mets à jour son expiration.',
   transfer_has_no_card: 'Un virement entre tes comptes ne passe pas par une carte.',
   refund_has_no_card: 'Le remboursement d’une avance arrive sur le compte, jamais sur la carte.',
-  card_on_subscription: 'Seul un abonnement sortant se paie par carte.',
+  card_needs_expense: 'Seuls un abonnement sortant ou un financement se paient par carte.',
   statement_not_found: 'Ce relevé n’existe plus.',
   statement_debit_ahead:
     'Ce jour n’est pas encore passé : un relevé se valide une fois débité par la banque.',

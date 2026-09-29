@@ -2045,4 +2045,19 @@ test('a deferred card groups its purchases in statements validated through the M
   assert.ok(!subscribed.isError, subscribed.text)
   const [streaming] = rows<Record<string, unknown>>(await call(client, 'list_commitments'), 'commitments')
   assert.equal(streaming!.card, 'Gold')
+
+  const financed = await call(client, 'declare_financing', {
+    label: 'Sofa x3',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 900,
+    installmentsTotal: 3,
+    firstDueOn: '2026-10-05',
+    card: 'Gold',
+  })
+  assert.ok(!financed.isError, financed.text)
+  const sofa = rows<Record<string, unknown>>(await call(client, 'list_commitments'), 'commitments').find(
+    (c) => c.label === 'Sofa x3',
+  )
+  assert.equal(sofa!.card, 'Gold')
 })

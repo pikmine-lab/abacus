@@ -68,7 +68,7 @@ test('a card refuses in French too', () => {
     'card_expired',
     'transfer_has_no_card',
     'refund_has_no_card',
-    'card_on_subscription',
+    'card_needs_expense',
     'statement_not_found',
     'statement_debit_ahead',
     'statement_debit_before_cut_off',

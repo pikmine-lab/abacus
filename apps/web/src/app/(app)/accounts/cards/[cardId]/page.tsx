@@ -6,7 +6,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { cardStatements, listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
-import { listCommitments, monthlyEquivalentEur } from '@abacus/core/services/commitments'
+import { listCommitmentsWithProgress, monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { listMovements } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
@@ -25,8 +25,8 @@ export const dynamic = 'force-dynamic'
  * One card, and the question it is opened for: what did it pay, and what does
  * it still owe the account? A deferred card answers by statement, one per
  * cycle, each with its purchases and its validation; an immediate one by the
- * list of what it paid. The subscriptions billed to it close the page, since
- * they are what a renewed card has to be given again.
+ * list of what it paid. The subscriptions and financings billed to it close
+ * the page, since they are what a renewed card has to be given again.
  */
 export default async function CardPage({ params }: { params: Promise<{ cardId: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -50,7 +50,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
     // Capped until movements paginate (#31).
     listMovements(userId, { cardId, limit: 1000 }),
     deferred ? cardStatements(userId, cardId) : Promise.resolve([]),
-    listCommitments(userId),
+    listCommitmentsWithProgress(userId),
   ])
   const account = accounts.find((a) => a.id === card.accountId)
   const actorName = new Map(actors.map((a) => [a.id, a.name]))
@@ -59,7 +59,13 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
   const cardAccounts = accounts
     .filter((a) => a.behavior === 'payment' && !a.closedOn)
     .map((a) => ({ id: a.id, name: a.name }))
-  const subscriptions = commitments.filter((c) => c.cardId === cardId && !c.cancelledOn)
+  // A financing whose last installment is paid needs the card no more.
+  const billed = commitments.filter(
+    (c) =>
+      c.cardId === cardId &&
+      !c.cancelledOn &&
+      !(c.progress && c.progress.paidInstallments >= (c.installmentsTotal ?? 0)),
+  )
 
   const purchaseDay = (m: Movement) => m.purchasedOn ?? m.happenedOn
   const signed = (m: Movement) => (m.kind === 'income' ? -Number(m.amount) : Number(m.amount))
@@ -251,18 +257,21 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
           </Section>
         )}
 
-        {subscriptions.length > 0 && (
+        {billed.length > 0 && (
           <Section
-            title="Abonnements"
+            title="Abonnements et financements"
             description="payés avec cette carte, à lui redonner quand elle est renouvelée"
             action={<SectionLink href="/recurring-expenses?from=accounts">Dépenses récurrentes</SectionLink>}
           >
             <Rows>
-              {subscriptions.map((c) => (
+              {billed.map((c) => (
                 <div key={c.id} className="flex items-center gap-3 py-2.5">
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-[13px]">{c.label}</span>
-                    <span className="text-[11.5px] text-faint">prochaine le {frDate(c.nextDueOn)}</span>
+                    <span className="text-[11.5px] text-faint">
+                      prochaine le {frDate(c.nextDueOn)}
+                      {c.progress && ` · ${c.progress.paidInstallments}/${c.installmentsTotal} payées`}
+                    </span>
                   </div>
                   <span className="ml-auto shrink-0 font-mono text-[13px] tabular">
                     −{eur(monthlyEquivalentEur(c), 2)}
