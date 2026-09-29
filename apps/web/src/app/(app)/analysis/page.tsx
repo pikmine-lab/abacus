@@ -203,6 +203,7 @@ export default async function AnalysisPage({
             rows={rows}
             dimension={groupBy}
             from="analysis"
+            period={period}
             emptyLabel={
               kind === 'expense' ? 'Aucune dépense sur cette période.' : 'Aucun revenu sur cette période.'
             }

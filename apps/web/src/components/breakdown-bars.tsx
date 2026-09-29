@@ -3,6 +3,7 @@
 import { ChevronRightIcon } from 'lucide-react'
 import Link from 'next/link'
 import { type PointerEvent, useState } from 'react'
+import { type Period, periodParams } from '@/lib/period'
 import { eur } from '@/lib/utils'
 
 /**
@@ -16,6 +17,11 @@ import { eur } from '@/lib/utils'
  * above another it ends up below once the refund is back. The gross keeps its
  * own reading in the translucent end of the bar, and the hover card spells it
  * out along with what a bar cannot say, the number of movements.
+ *
+ * A row links to the movements that make it, on the window it was computed
+ * over: the ledger would otherwise open on a window of its own, and no longer
+ * add up to the amount clicked. The reading needs no carrying, it follows from
+ * screen to screen on its own (lib/reading.ts).
  *
  * A group is the exception: it is a label written on categories, not an entity
  * movements can be filtered by, so its row unfolds into the categories it
@@ -72,6 +78,7 @@ export function BreakdownBars({
   /** The dimension ranked here; a group unfolds, the others link. */
   dimension,
   from,
+  period,
   emptyLabel = 'Rien sur cette période.',
   max: maxRows,
 }: {
@@ -79,6 +86,8 @@ export function BreakdownBars({
   dimension: BreakdownDimension
   /** Origin key, so the movements page can offer the way back. */
   from: string
+  /** The window the rows were computed over, which the movements open on. */
+  period: Period
   emptyLabel?: string
   max?: number
 }) {
@@ -141,6 +150,7 @@ export function BreakdownBars({
                   dimension="category"
                   peak={peak}
                   from={from}
+                  period={period}
                   indent
                   onHover={track}
                   onLeave={release}
@@ -156,6 +166,7 @@ export function BreakdownBars({
             dimension={dimension}
             peak={peak}
             from={from}
+            period={period}
             onHover={track}
             onLeave={release}
           />
@@ -232,6 +243,7 @@ function Cells({
   dimension,
   peak,
   from,
+  period,
   chevron,
   indent,
   onHover,
@@ -242,6 +254,7 @@ function Cells({
   dimension?: BreakdownDimension
   peak: number
   from?: string
+  period?: Period
   chevron?: boolean
   /** An unfolded row: only its label steps in, so the bars keep one origin. */
   indent?: boolean
@@ -281,9 +294,9 @@ function Cells({
   // the fold having it already and clipping anything that sticks out.
   const layout = `${row(indent)} ${indent ? '' : '-mx-2 px-2'}`
   const hover = { onPointerMove: onHover?.(item, label), onPointerLeave: onLeave }
-  return item.key && from && dimension ? (
+  return item.key && from && period && dimension ? (
     <Link
-      href={`/movements?${dimension}=${item.key}&from=${from}`}
+      href={`/movements?${dimension}=${item.key}&${periodParams(period)}&from=${from}`}
       className={`${layout} rounded-md hover:bg-secondary/40`}
       {...hover}
     >

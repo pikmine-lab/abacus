@@ -435,6 +435,7 @@ export default async function OverviewPage({
               rows={amounts(breakdown)}
               dimension="category"
               from="overview"
+              period={period}
               max={6}
               emptyLabel="Aucune dépense déclarée sur cette période."
             />
