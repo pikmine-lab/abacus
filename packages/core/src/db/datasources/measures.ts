@@ -333,6 +333,15 @@ export async function levySettlements(
   }))
 }
 
+/** The due dates of these rules the user said were filed at zero (see migration 0023). */
+export async function levyNilReturns(tx: Executor, userId: string, levyIds: string[]): Promise<LevyDue[]> {
+  if (levyIds.length === 0) return []
+  return await tx<LevyDue[]>`
+    select levy_id, entry, period_start, instalment from levy_nil_return
+    where user_id = ${userId} and levy_id::text = any(${levyIds}::text[])
+  `
+}
+
 /** One account of the treasury, and the other activities living on it. */
 export interface TreasuryAccount {
   id: string

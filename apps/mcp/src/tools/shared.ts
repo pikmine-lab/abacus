@@ -173,6 +173,16 @@ export const GUIDANCE: Record<string, string> = {
     'This rule says nothing about where its payments are filed, so a settlement cannot be written. Give it a settlement category first, then record the payment.',
   levy_due_not_found:
     'This rule has no such due date. Copy it from an entry of get_activity_statement (schedule): periodStart is its period.from, what is settlement when the entry reads "settlement of <year>", instalment is k when it reads "k of n". A date inside a period is not its first day, and a period before the rule came into force or before the activity started has nothing to settle.',
+  levy_files_no_return:
+    "This entry reads nothing_due: it comes to zero and files nothing of its own, because its rule computes on none of the activity's figures (an amount from a notice, a stated figure) or its period rides in another return. There is no return to confirm, and nothing to do.",
+  levy_period_running:
+    'This period has not ended, so its figures are not in yet: a return is filed once the period has closed. Confirm it then.',
+  levy_amount_unknown:
+    "This entry's amount rests on stated figures never given (missingInputs in get_activity_statement): it reads 0 but is unknown. Ask the user for them and state them with set_activity_inputs; an amount that really is zero then stops being owed, or can be confirmed.",
+  levy_due_not_nil:
+    'This period is estimated above zero: the recorded movements put receipts (or a VAT balance) in it, so a zero return would contradict them. Ask the user whether the return really was filed at zero, or whether a movement is misdated or filed under the wrong activity, before anything else. If it was paid, that is confirm_levy_payment.',
+  nil_return_not_found:
+    'No return was confirmed at zero for this due date. Check the levy, periodStart, what and instalment against get_activity_statement, where such an entry reads nil_return.',
   levy_misconfigured:
     'This rule carries parameters the engine cannot read (a bracket table, a due window, a credit list). Fix the rule before asking for the statement.',
   levy_cycle:

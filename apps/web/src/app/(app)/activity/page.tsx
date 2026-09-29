@@ -308,6 +308,8 @@ export default async function ActivityPage({
     instalment: entry.instalments > 1 ? `${entry.instalment} sur ${entry.instalments}` : undefined,
     paidOn: entry.paidOn,
     paidAmount: entry.paidAmount,
+    missingInputs: entry.missingInputs,
+    nilReturn: entry.nilReturn,
   }))
 
   const revenueRows: RankRow[] = statement.revenueByClient.map((row) => ({

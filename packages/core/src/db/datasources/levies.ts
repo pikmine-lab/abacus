@@ -1,4 +1,4 @@
-import type { ActivityInput, Levy, LevyModifier, Threshold } from '../../domain/types.ts'
+import type { ActivityInput, Levy, LevyDue, LevyModifier, Threshold } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
 /**
@@ -137,6 +137,24 @@ export async function countNamedSettlements(tx: Executor, levyId: string): Promi
     { count: string }[]
   >`select count(*) as count from movement where levy_id = ${levyId}`
   return Number(row!.count)
+}
+
+/** A due date said twice is still one return: the second saying changes nothing. */
+export async function insertNilReturn(tx: Executor, userId: string, due: LevyDue): Promise<void> {
+  await tx`
+    insert into levy_nil_return (user_id, levy_id, entry, period_start, instalment)
+    values (${userId}, ${due.levyId}, ${due.entry}, ${due.periodStart}, ${due.instalment})
+    on conflict (levy_id, entry, period_start, instalment) do nothing
+  `
+}
+
+export async function deleteNilReturn(tx: Executor, userId: string, due: LevyDue): Promise<number> {
+  const rows = await tx`
+    delete from levy_nil_return
+    where user_id = ${userId} and levy_id = ${due.levyId} and entry = ${due.entry}
+      and period_start = ${due.periodStart} and instalment = ${due.instalment}
+  `
+  return rows.count
 }
 
 export async function insertModifier(tx: Executor, row: Record<string, unknown>): Promise<LevyModifier> {

@@ -4,9 +4,15 @@ import { db } from '../src/db/client.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import type { Levy } from '../src/domain/types.ts'
 import { createAccount } from '../src/services/accounts.ts'
-import { activityStatement, confirmLevyPayment } from '../src/services/activityStatement.ts'
+import {
+  activityStatement,
+  confirmLevyPayment,
+  confirmNilReturn,
+  withdrawNilReturn,
+} from '../src/services/activityStatement.ts'
 import { createActor } from '../src/services/actors.ts'
 import { createActivity, createCategory, setActivityAccounts } from '../src/services/catalog.ts'
+import { deleteLevy } from '../src/services/levies.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
@@ -73,6 +79,7 @@ interface LevyRow {
   brackets?: Json
   elective?: Json
   fixedAmount?: number
+  fixedInputName?: string
   fixedCredit?: number
   period: 'month' | 'quarter' | 'half' | 'year'
   due: Json
@@ -92,7 +99,7 @@ async function insertLevy(userId: string, activityId: string, row: LevyRow): Pro
       user_id, activity_id, name, kind, valid_from, valid_to, status, review_on,
       base_measure, base_period_ref, base_coefficient, base_abatement, base_add_back_levy_ids,
       base_credits, base_scale,
-      amount_form, rate, brackets, elective, fixed_amount, fixed_credit,
+      amount_form, rate, brackets, elective, fixed_amount, fixed_input_name, fixed_credit,
       period, due, skip_periods, regularization,
       settlement_category_id, deductible, pass_through
     ) values (
@@ -104,7 +111,7 @@ async function insertLevy(userId: string, activityId: string, row: LevyRow): Pro
       ${row.baseCredits ? sql.json(row.baseCredits) : null}, ${row.baseScale ?? 'none'},
       ${row.amountForm}, ${row.rate ?? null},
       ${row.brackets ? sql.json(row.brackets) : null}, ${row.elective ? sql.json(row.elective) : null},
-      ${row.fixedAmount ?? null}, ${row.fixedCredit ?? null},
+      ${row.fixedAmount ?? null}, ${row.fixedInputName ?? null}, ${row.fixedCredit ?? null},
       ${row.period}, ${sql.json(row.due)}, ${row.skipPeriods ? sql.json(row.skipPeriods) : null},
       ${row.regularization ?? 'none'},
       ${row.settlementCategoryId ?? null}, ${row.deductible ?? false}, ${row.passThrough ?? false}
@@ -613,6 +620,150 @@ test('a payment naming no due date of its rule is refused', async () => {
   await assert.rejects(pay({ periodStart: '2026-01-01', entry: 'regularization' }), refused)
   const [{ count }] = await db()<{ count: string }[]>`select count(*) from movement where kind = 'expense'`
   assert.equal(Number(count), 0)
+})
+
+// ---------------------------------------------------------------------------
+// A period with nothing in it
+// ---------------------------------------------------------------------------
+
+async function nilReturnCount(): Promise<number> {
+  const [{ count }] = await db()<{ count: string }[]>`select count(*) from levy_nil_return`
+  return Number(count)
+}
+
+test('a closed period with nothing in it stays due until its return is said filed at zero', async () => {
+  const user = await seedUser()
+  const { activityId, levy } = await monthlyRegime(user)
+  const before = await activityStatement(user, activityId, 2026, '2026-09-10')
+  const june = periodStarting(before, '2026-06-01')
+  // Nothing came in, so nothing is estimated; the return is owed all the same.
+  assert.deepEqual([june.amount, june.status, june.missingInputs, june.nilReturn], [0, 'overdue', [], false])
+
+  const firstHalf = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01']
+  for (const periodStart of firstHalf)
+    await confirmNilReturn(user, { levyId: levy.id, periodStart }, '2026-09-10')
+  // Said twice, still one return.
+  await confirmNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' }, '2026-09-10')
+  assert.equal(await nilReturnCount(), 6)
+
+  const after = await activityStatement(user, activityId, 2026, '2026-09-10')
+  for (const from of firstHalf) {
+    const entry = periodStarting(after, from)
+    assert.deepEqual([from, entry.status, entry.nilReturn], [from, 'nil_return', true])
+  }
+  // July had receipts: it is still owed, and nothing was paid by saying so.
+  assert.equal(periodStarting(after, '2026-07-01').status, 'overdue')
+  assert.equal(levyNamed(after, 'Contributions').reserve, levyNamed(before, 'Contributions').reserve)
+})
+
+test('a receipt recorded after a zero return brings its period back as owed', async () => {
+  const user = await seedUser()
+  const { activityId, account, levy } = await monthlyRegime(user)
+  await confirmNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' }, '2026-09-10')
+  const client = await createActor(user, { name: 'Late client', activityId })
+  await declareMovement(user, {
+    happenedOn: '2026-06-20',
+    amount: 1000,
+    sourceActorId: client.id,
+    targetAccountId: account,
+  })
+
+  const june = periodStarting(await activityStatement(user, activityId, 2026, '2026-09-10'), '2026-06-01')
+  assert.deepEqual([june.amount, june.status, june.nilReturn], [256, 'overdue', true])
+})
+
+test('a zero return that would state something false is refused, and nothing is written', async () => {
+  const user = await seedUser()
+  const { levy } = await monthlyRegime(user)
+  const say = (periodStart: string) => confirmNilReturn(user, { levyId: levy.id, periodStart }, '2026-09-10')
+  const refused = (code: string) => (e: DomainError) => e.code === code
+  // July had 2000 of receipts.
+  await assert.rejects(say('2026-07-01'), refused('levy_due_not_nil'))
+  // September is still running on the 10th.
+  await assert.rejects(say('2026-09-01'), refused('levy_period_running'))
+  await assert.rejects(say('2026-06-15'), refused('levy_due_not_found'))
+  assert.equal(await nilReturnCount(), 0)
+})
+
+test('a rule that reads nothing of the activity files nothing at zero, and an amount never stated is unknown', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Freelance', { startedOn: '2026-01-01' })
+  const incomeTax = await createCategory(user, 'Income tax')
+  const levy = await insertLevy(user, activityId, {
+    name: 'Tax instalment',
+    kind: 'income_tax',
+    validFrom: '2026-01-01',
+    baseMeasure: 'none',
+    amountForm: 'fixed',
+    fixedInputName: 'tax_instalment',
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    settlementCategoryId: incomeTax.id,
+  })
+  const june = async () =>
+    periodStarting(await activityStatement(user, activityId, 2026, '2026-09-10'), '2026-06-01')
+  const say = () => confirmNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' }, '2026-09-10')
+
+  // The amount rests on a figure nobody gave: it reads zero, and is not.
+  const unknown = await june()
+  assert.deepEqual(
+    [unknown.amount, unknown.status, unknown.missingInputs],
+    [0, 'overdue', ['tax_instalment']],
+  )
+  await assert.rejects(say(), (e: DomainError) => e.code === 'levy_amount_unknown')
+
+  // Stated at zero, nothing is filed and nothing is paid.
+  await insertInput(user, activityId, 'tax_instalment', '2026-01-01', 0)
+  const stated = await june()
+  assert.deepEqual([stated.amount, stated.status, stated.missingInputs], [0, 'nothing_due', []])
+  await assert.rejects(say(), (e: DomainError) => e.code === 'levy_files_no_return')
+})
+
+test('a period riding in another return files nothing of its own at zero', async () => {
+  const user = await seedUser()
+  const activityId = await businessActivity(user, 'Freelance', { startedOn: '2026-01-01' })
+  const vat = await createCategory(user, 'VAT')
+  await insertLevy(user, activityId, {
+    name: 'VAT',
+    kind: 'vat',
+    validFrom: '2026-01-01',
+    baseMeasure: 'vat_balance',
+    amountForm: 'rate',
+    rate: 100,
+    period: 'quarter',
+    due: { type: 'after_period', monthOffset: 1, fromDay: 1, toDay: 25 },
+    skipPeriods: { quarter: [4] },
+    settlementCategoryId: vat.id,
+    passThrough: true,
+  })
+  const statement = await activityStatement(user, activityId, 2026, '2027-03-01')
+  assert.deepEqual(
+    statement.schedule.map((e) => [e.periodIndex, e.absorbed, e.status]),
+    [
+      [1, false, 'overdue'],
+      [2, false, 'overdue'],
+      [3, false, 'overdue'],
+      [4, true, 'nothing_due'],
+    ],
+  )
+})
+
+test('a zero return said by mistake is taken back, and a rule deleted takes its own with it', async () => {
+  const user = await seedUser()
+  const { activityId, levy } = await monthlyRegime(user)
+  await confirmNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' }, '2026-09-10')
+  await withdrawNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' })
+  const june = periodStarting(await activityStatement(user, activityId, 2026, '2026-09-10'), '2026-06-01')
+  assert.deepEqual([june.status, june.nilReturn], ['overdue', false])
+  // Taking back what was never said names the wrong due date.
+  await assert.rejects(
+    withdrawNilReturn(user, { levyId: levy.id, periodStart: '2026-06-01' }),
+    (e: DomainError) => e.code === 'nil_return_not_found',
+  )
+
+  await confirmNilReturn(user, { levyId: levy.id, periodStart: '2026-05-01' }, '2026-09-10')
+  await deleteLevy(user, levy.id)
+  assert.equal(await nilReturnCount(), 0)
 })
 
 // ---------------------------------------------------------------------------
