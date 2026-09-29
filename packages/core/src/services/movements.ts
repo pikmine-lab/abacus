@@ -103,8 +103,15 @@ export interface DeclareMovementInput {
   cardId?: string
 }
 
-/** A movement once its card has placed it: its statement's debit, and the purchase day it came from. */
-type Dated = DeclareMovementInput & { purchasedOn?: string; cardStatementId?: string }
+/**
+ * A movement once its card has placed it: its statement's debit, the purchase
+ * day it came from, and whether that statement still waits for its debit day.
+ */
+type Dated = DeclareMovementInput & {
+  purchasedOn?: string
+  cardStatementId?: string
+  awaitingDebit?: boolean
+}
 
 /**
  * A declared month as the column holds it: that month's first day. "YYYY-MM"
@@ -188,10 +195,10 @@ export async function declareMovementIn(
   const declared = { ...input, accrualMonth: monthOrNothing(input.accrualMonth) }
   const resolved = await inAccountCurrency(tx, await datedByCard(tx, userId, declared), history)
   const activityId = await checkMovement(tx, userId, resolved)
-  const { refundedNow, eurAmount: _, ...row } = resolved
+  const { refundedNow, eurAmount: _, awaitingDebit, ...row } = resolved
   const movement = await insertMovement(tx, { ...row, userId, activityId })
   if (refundedNow) await writeRefundIn(tx, userId, movement, {})
-  return movement
+  return awaitingDebit === undefined ? movement : { ...movement, awaitingDebit }
 }
 
 /**
@@ -285,6 +292,7 @@ async function datedByCard(
     happenedOn: statement.debitedOn ?? statement.dueOn,
     purchasedOn: input.happenedOn,
     cardStatementId: statement.id,
+    awaitingDebit: statement.debitedOn === null,
   }
 }
 
@@ -313,7 +321,7 @@ async function datedByCard(
 async function checkMovement(
   tx: Executor,
   userId: string,
-  input: DeclareMovementInput,
+  input: Dated,
   /** On a correction: the movement being corrected, left out of the sums it is measured against. */
   except?: string,
 ): Promise<string | null> {
@@ -378,7 +386,9 @@ async function checkMovement(
   if (activityId) {
     activity = (await getActivity(tx, userId, activityId)) ?? null
     if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
-    if (activity.closedOn && input.happenedOn > activity.closedOn)
+    // A deferred card's purchase belongs to the activity it was made under,
+    // whatever day the card debits it.
+    if (activity.closedOn && (input.purchasedOn ?? input.happenedOn) > activity.closedOn)
       throw new DomainError(
         'activity_closed',
         `Activity "${activity.name}" is closed since ${activity.closedOn}: a later movement belongs to the activity that followed it`,

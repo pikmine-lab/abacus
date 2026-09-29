@@ -4,7 +4,7 @@ import { debitDateOf } from '../src/domain/card.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import { addPeriod, today } from '../src/domain/period.ts'
 import type { DayShift } from '../src/domain/types.ts'
-import { createAccount, listAccounts } from '../src/services/accounts.ts'
+import { closeAccount, createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { recordBalanceCheck } from '../src/services/balanceChecks.ts'
 import {
@@ -15,6 +15,7 @@ import {
   editCard,
   listCards,
 } from '../src/services/cards.ts'
+import { closeActivity, createActivity } from '../src/services/catalog.ts'
 import {
   confirmNextOccurrence,
   createSubscription,
@@ -228,6 +229,49 @@ test('an account balance stops at today, and the card says what it will take', a
   )
 })
 
+test('a deferred purchase belongs to the activity it was bought under, and says whether its debit is stated', async () => {
+  const { user, checking, shop } = await seedLedger()
+  const card = await deferredCard(user, checking.id)
+  // Closed at the end of June: a purchase of the 26th is debited on July
+  // 31st, after the close, and still belongs to it.
+  const activity = await createActivity(user, { name: 'Side project' })
+  await closeActivity(user, activity.id, '2026-06-30')
+  const purchase = await declareMovement(user, {
+    happenedOn: '2026-06-26',
+    amount: 40,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    activityId: activity.id,
+    cardId: card.id,
+  })
+  assert.equal(purchase.happenedOn, '2026-07-31')
+  assert.equal(purchase.activityId, activity.id)
+  assert.equal(purchase.awaitingDebit, true)
+  await assert.rejects(
+    declareMovement(user, {
+      happenedOn: '2026-07-01',
+      amount: 40,
+      sourceAccountId: checking.id,
+      targetActorId: shop.id,
+      activityId: activity.id,
+      cardId: card.id,
+    }),
+    (e: DomainError) => e.code === 'activity_closed',
+  )
+
+  // Declared after its statement was validated, it is already in the balance.
+  await confirmStatement(user, purchase.cardStatementId!, '2026-07-31')
+  const late = await declareMovement(user, {
+    happenedOn: '2026-07-02',
+    amount: 10,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    cardId: card.id,
+  })
+  assert.equal(late.happenedOn, '2026-07-31')
+  assert.equal(late.awaitingDebit, false)
+})
+
 test('an immediate card dates the purchase on its day', async () => {
   const { user, checking, shop } = await seedLedger()
   const card = await createCard(user, {
@@ -420,6 +464,12 @@ test('a card is declared on a current account with a whole schedule, and stays w
       debitDay: 5,
     }),
     (e: DomainError) => e.code === 'schedule_on_immediate',
+  )
+  const closed = await createAccount({ userId: user, name: 'Old checking', behavior: 'payment' })
+  await closeAccount(user, closed.id, '2026-01-31')
+  await assert.rejects(
+    createCard(user, { name: 'X', accountId: closed.id, expiryMonth: '2029-09', debitMode: 'immediate' }),
+    (e: DomainError) => e.code === 'account_closed',
   )
 
   const card = await deferredCard(user, checking.id)

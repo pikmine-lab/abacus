@@ -260,13 +260,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             movementId: movement.id,
             kind: movement.kind,
             // A deferred card moved it to its debit day: say so, it is what the balance reads.
-            ...(movement.purchasedOn
-              ? {
-                  purchasedOn: movement.purchasedOn,
-                  expectedDebitOn: movement.happenedOn,
-                  awaitingDebit: true,
-                }
-              : {}),
+            ...(movement.purchasedOn ? { purchasedOn: movement.purchasedOn } : {}),
+            ...(movement.awaitingDebit ? { expectedDebitOn: movement.happenedOn, awaitingDebit: true } : {}),
             ...(movement.accrualMonth ? { month: movement.accrualMonth.slice(0, 7) } : {}),
             ...(movement.ghost ? { ghost: true } : {}),
             ...(movement.vatAmount !== null ? { vatAmount: Number(movement.vatAmount) } : {}),
@@ -294,7 +289,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category or activity (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -309,6 +304,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         actor: z.string().optional().describe('Actor name'),
         category: z.string().optional(),
         activity: z.string().optional(),
+        card: z.string().optional().describe('Card name: what it paid, or was credited back'),
         limit: z.number().int().min(1).max(500).optional().describe('Default 100'),
         sortBy: z
           .enum(['date', 'counterparty', 'account', 'category', 'amount'])
@@ -332,6 +328,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           actorId: f.actor ? (await requireActorByName(userId, f.actor)).actor.id : undefined,
           categoryId: f.category ? (await requireCategoryByName(userId, f.category)).id : undefined,
           activityId: f.activity ? (await requireActivityByName(userId, f.activity)).id : undefined,
+          cardId: f.card ? (await requireCardByName(userId, f.card)).id : undefined,
           limit: f.limit,
           sort,
         })

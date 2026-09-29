@@ -173,7 +173,7 @@ export function registerCardTools(server: McpServer, userId: string): void {
         const target = a.cutOff
           ? statements.find((s) => s.cutOffOn === a.cutOff)
           : a.action === 'validate'
-            ? [...statements].reverse().find((s) => !s.debitedOn && s.cutOffOn <= now)
+            ? [...statements].reverse().find((s) => !s.debitedOn && s.cutOffOn < now)
             : undefined
         if (!target)
           throw new DomainError(

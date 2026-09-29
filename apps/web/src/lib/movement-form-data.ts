@@ -1,5 +1,6 @@
-import type { Account, Activity, Actor, Category, Movement } from '@abacus/core/domain'
+import type { Account, Activity, Actor, Card, Category, Movement } from '@abacus/core/domain'
 import type { CardWithStatements } from '@abacus/core/services/cards'
+import type { CardChoice } from '@/components/card-forms'
 import type { MovementDraft } from '@/components/movement-form'
 
 /**
@@ -32,17 +33,22 @@ export function movementFormOptions({
       vatRegistered: a.kind === 'business' && a.vatRegistered,
       defaultVatRate: a.defaultVatRate === null ? undefined : Number(a.defaultVatRate),
     })),
-    cards: cards.map((c) => ({
-      id: c.id,
-      name: c.name,
-      accountId: c.accountId,
-      debitMode: c.debitMode,
-      statementDay: c.statementDay,
-      statementShift: c.statementShift,
-      debitDay: c.debitDay,
-      debitShift: c.debitShift,
-    })),
+    cards: cardChoices(cards),
   }
+}
+
+/** The cards as a form paying with one needs them: whose account, and when it debits. */
+export function cardChoices(cards: Card[]): CardChoice[] {
+  return cards.map((c) => ({
+    id: c.id,
+    name: c.name,
+    accountId: c.accountId,
+    debitMode: c.debitMode,
+    statementDay: c.statementDay,
+    statementShift: c.statementShift,
+    debitDay: c.debitDay,
+    debitShift: c.debitShift,
+  }))
 }
 
 /** A declared movement, flattened for the correction panel. */

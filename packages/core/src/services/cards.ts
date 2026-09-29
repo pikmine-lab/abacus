@@ -36,7 +36,7 @@ import { monthStart } from './movements.ts'
  * expects until the person states the day the bank really took it (see
  * declareMovementIn and confirmStatement).
  *
- * A card debits a current account, never a savings or an investment one. It
+ * A card debits an open current account, never a savings or an investment one. It
  * has no closing: its expiry month says when it stops working, and a purchase
  * dated after it is refused, which is what makes a renewal get typed in.
  */
@@ -98,6 +98,8 @@ async function requirePaymentAccount(tx: Executor, userId: string, accountId: st
       'card_needs_payment_account',
       `"${account.name}" is not a current account: a card debits a current account`,
     )
+  if (account.closedOn)
+    throw new DomainError('account_closed', `"${account.name}" is closed: reopen it before writing to it`)
 }
 
 export async function createCard(userId: string, input: CardInput): Promise<Card> {
@@ -256,7 +258,11 @@ export async function editCard(userId: string, id: string, input: CardEdit): Pro
         debitMode,
         ...schedule,
       }))!
-      await replacePending(tx, updated)
+      // A rename or a new expiry leaves every purchase where it is.
+      const rescheduled =
+        debitMode !== card.debitMode ||
+        (Object.keys(schedule) as (keyof typeof schedule)[]).some((key) => schedule[key] !== card[key])
+      if (rescheduled) await replacePending(tx, updated)
       return updated
     })
   } catch (e) {

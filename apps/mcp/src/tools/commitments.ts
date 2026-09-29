@@ -624,7 +624,9 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               // after the commitment moved lands on the one it really left.
               account: names.get(movement.sourceAccountId ?? movement.targetAccountId ?? ''),
               // Billed to a deferred card, it waits for its statement's debit.
-              ...(movement.purchasedOn ? { expectedDebitOn: movement.happenedOn, awaitingDebit: true } : {}),
+              ...(movement.awaitingDebit
+                ? { expectedDebitOn: movement.happenedOn, awaitingDebit: true }
+                : {}),
               ...(diverged
                 ? {
                     expected,

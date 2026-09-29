@@ -47,6 +47,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
+    // Capped until movements paginate (#31).
     listMovements(userId, { cardId, limit: 1000 }),
     deferred ? cardStatements(userId, cardId) : Promise.resolve([]),
     listCommitments(userId),

@@ -23,6 +23,7 @@ import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/pag
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
+import { cardChoices } from '@/lib/movement-form-data'
 import { sorter } from '@/lib/sort'
 import { eur, frDate } from '@/lib/utils'
 
@@ -80,16 +81,7 @@ export default async function RecurringExpensesPage({
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
     activities: activities.map((a) => ({ id: a.id, name: a.name })),
-    cards: cards.map((c) => ({
-      id: c.id,
-      name: c.name,
-      accountId: c.accountId,
-      debitMode: c.debitMode,
-      statementDay: c.statementDay,
-      statementShift: c.statementShift,
-      debitDay: c.debitDay,
-      debitShift: c.debitShift,
-    })),
+    cards: cardChoices(cards),
   }
   // The plans themselves, so a financing's schedule can be revised from its row.
   const schedules = new Map(

@@ -145,8 +145,9 @@ export interface Movement {
   /** Deferred card only: the statement that debits it. */
   cardStatementId: string | null
   /**
-   * Read by the movement list only: a deferred purchase whose statement has no
-   * debit day yet, dated on the expected one and in no balance.
+   * Read by the movement list, and returned by a declaration on a deferred
+   * card: a purchase whose statement has no debit day yet, dated on the
+   * expected one and in no balance.
    */
   awaitingDebit?: boolean
 }
