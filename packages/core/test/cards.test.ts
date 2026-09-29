@@ -18,8 +18,10 @@ import {
 import { closeActivity, createActivity } from '../src/services/catalog.ts'
 import {
   confirmNextOccurrence,
+  createFinancing,
   createSubscription,
   editCommitment,
+  financingSchedule,
   moveAccount,
 } from '../src/services/commitments.ts'
 import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
@@ -559,7 +561,7 @@ test('only an outgoing subscription on the card account is billed to it', async 
 
   await assert.rejects(
     createSubscription(user, { ...base, accountId: checking.id, direction: 'incoming' }),
-    (e: DomainError) => e.code === 'card_on_subscription',
+    (e: DomainError) => e.code === 'card_needs_expense',
   )
   await assert.rejects(
     createSubscription(user, { ...base, accountId: other.id }),
@@ -570,6 +572,59 @@ test('only an outgoing subscription on the card account is billed to it', async 
   assert.equal(billed.cardId, card.id)
   const direct = await editCommitment(user, plain.id, { cardId: null })
   assert.equal(direct.cardId, null)
+})
+
+test('a financing charged to a deferred card leaves the account with its statement, and its schedule keeps the day it was charged', async () => {
+  const { user, checking, shop } = await seedLedger()
+  const card = await deferredCard(user, checking.id)
+  const sofa = await createFinancing(user, {
+    label: 'Sofa',
+    actorId: shop.id,
+    accountId: checking.id,
+    totalAmount: 900,
+    installmentsTotal: 3,
+    firstDueOn: '2026-01-26',
+    cardId: card.id,
+  })
+  assert.equal(sofa.cardId, card.id)
+
+  // Charged after the January cut-off: expected on Friday, February 27th.
+  const { movement } = await confirmNextOccurrence(user, sofa.id)
+  assert.equal(movement.cardId, card.id)
+  assert.equal(movement.purchasedOn, '2026-01-26')
+  assert.equal(movement.happenedOn, '2026-02-27')
+  assert.equal((await recordBalanceCheck(user, checking.id, 1000, '2026-02-10')).gap, 0)
+
+  const [first] = await financingSchedule(user, sofa.id)
+  assert.equal(first!.movementId, movement.id)
+  assert.equal(first!.dueOn, '2026-01-26')
+
+  // Stating the debit moves the movement, not the day the installment was charged.
+  await confirmStatement(user, movement.cardStatementId!, '2026-02-26')
+  assert.equal((await financingSchedule(user, sofa.id))[0]!.dueOn, '2026-01-26')
+  assert.equal((await recordBalanceCheck(user, checking.id, 700, '2026-02-26')).gap, 0)
+})
+
+test('a financing is charged to a card of its own account, and the card can be set or cleared afterwards', async () => {
+  const { user, checking, shop } = await seedLedger()
+  const card = await deferredCard(user, checking.id)
+  const other = await createAccount({ userId: user, name: 'Other', behavior: 'payment' })
+  const base = {
+    label: 'Sofa',
+    actorId: shop.id,
+    totalAmount: 900,
+    installmentsTotal: 3,
+    firstDueOn: '2026-01-26',
+  }
+
+  await assert.rejects(
+    createFinancing(user, { ...base, accountId: other.id, cardId: card.id }),
+    (e: DomainError) => e.code === 'card_other_account',
+  )
+  const plain = await createFinancing(user, { ...base, accountId: checking.id })
+  assert.equal(plain.cardId, null)
+  assert.equal((await editCommitment(user, plain.id, { cardId: card.id })).cardId, card.id)
+  assert.equal((await editCommitment(user, plain.id, { cardId: null })).cardId, null)
 })
 
 test('a deferred purchase abroad converts at the rate of the purchase day', async () => {

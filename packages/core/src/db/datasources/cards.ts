@@ -45,7 +45,7 @@ export async function deleteCardRow(tx: Executor, userId: string, id: string): P
   await tx`delete from card where user_id = ${userId} and id = ${id}`
 }
 
-/** What still names a card: the movements paid with it, the subscriptions billed to it. */
+/** What still names a card: the movements paid with it, the subscriptions and financings billed to it. */
 export async function cardReferences(
   tx: Executor,
   cardId: string,

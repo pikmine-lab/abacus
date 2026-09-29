@@ -31,7 +31,7 @@ export const GUIDANCE: Record<string, string> = {
   card_other_account:
     'That card debits another account: pass the account the card debits (manage_cards list shows it), or leave card out if this account was debited directly.',
   card_expired:
-    'The card had expired on that date. If it was renewed, update its expiry with manage_cards (update, expiry) and retry; otherwise the purchase was paid with another card or debited directly. A subscription billed to it changes card with update_commitment.',
+    'The card had expired on that date. If it was renewed, update its expiry with manage_cards (update, expiry) and retry; otherwise the purchase was paid with another card or debited directly. A subscription or a financing billed to it changes card with update_commitment.',
   card_needs_payment_account:
     'A card debits a current account (behavior payment), never a savings or an investment one: name the current account the card belongs to.',
   schedule_on_immediate:
@@ -41,8 +41,8 @@ export const GUIDANCE: Record<string, string> = {
   card_in_use:
     'Something was paid with this card, so it stays: its account cannot change and it cannot be deleted. A card on another account is a new card (manage_cards create); an old one simply keeps its expiry.',
   card_exists: 'A card already uses that name: pick another one, or update the existing card.',
-  card_on_subscription:
-    'Only an outgoing subscription is billed to a card: a financing follows its written schedule, a revenue is not paid by card, and a placement is a transfer between two accounts.',
+  card_needs_expense:
+    'Only an expense is billed to a card, an outgoing subscription or a financing: a revenue is not paid by card, and a placement is a transfer between two accounts.',
   vat_outside_amount:
     'The VAT is inside the amount, not on top of it, so vatAmount cannot exceed it. Pass the amount actually paid, VAT included, and the VAT part of it.',
   vat_needs_registered_activity:

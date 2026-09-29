@@ -57,10 +57,11 @@ export function debitDayFor(card: CardChoice | undefined, day: string): string |
 }
 
 /**
- * What paid a movement or a subscription, among the cards of the account it
- * touches. Nothing chosen is the ordinary case, the account debited directly
- * (a direct debit, a transfer order), so the empty choice says it. Keyed on the
- * account: a card chosen for another account would be refused anyway.
+ * What paid a movement, a subscription or a financing, among the cards of the
+ * account it touches. Nothing chosen is the ordinary case, the account debited
+ * directly (a direct debit, a transfer order), so the empty choice says it.
+ * Keyed on the account: a card chosen for another account would be refused
+ * anyway.
  */
 export function CardSelect({
   cards,

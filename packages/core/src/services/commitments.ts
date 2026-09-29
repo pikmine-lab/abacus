@@ -93,11 +93,13 @@ async function requireInvestmentAccount(tx: Executor, userId: string, accountId:
 }
 
 /**
- * The card a subscription is billed to. Only an outgoing subscription has one:
- * a financing is settled by its written schedule, a revenue is not paid with a
- * card, and a placement is a transfer between two accounts. The card debits
- * the account the subscription hits today; after a later move, an occurrence
- * that lands on another account is paid without it (see confirmNextOccurrence).
+ * The card a commitment is billed to. Only an expense has one, an outgoing
+ * subscription or a financing: a revenue is not paid with a card, and a
+ * placement is a transfer between two accounts. A financing keeps its written
+ * schedule, which says what is owed and when; the card says what pays each
+ * installment and when the account is debited. The card debits the account
+ * the commitment hits today; after a later move, an occurrence that lands on
+ * another account is paid without it (see confirmNextOccurrence).
  */
 async function requireCardFor(
   tx: Executor,
@@ -105,8 +107,11 @@ async function requireCardFor(
   cardId: string,
   commitment: { kind: Commitment['kind']; direction: Commitment['direction']; accountId: string },
 ): Promise<void> {
-  if (commitment.kind !== 'subscription' || commitment.direction !== 'outgoing')
-    throw new DomainError('card_on_subscription', 'Only an outgoing subscription is billed to a card')
+  if (commitment.kind === 'investment_plan' || commitment.direction !== 'outgoing')
+    throw new DomainError(
+      'card_needs_expense',
+      'Only an outgoing subscription or a financing is billed to a card',
+    )
   const card = await getCard(tx, userId, cardId)
   if (!card) throw new DomainError('card_not_found', `No card ${cardId} for this user`)
   if (card.accountId !== commitment.accountId)
@@ -219,6 +224,8 @@ export interface FinancingInput {
   periodUnit?: PeriodUnit
   periodCount?: number
   firstDueOn: string
+  /** The card its installments are charged to, which must debit `accountId`. */
+  cardId?: string
 }
 
 /**
@@ -266,6 +273,12 @@ export async function createFinancing(
   const sql = db()
   return await sql.begin(async (tx) => {
     await requireRefs(tx, userId, input.actorId, input.accountId)
+    if (input.cardId)
+      await requireCardFor(tx, userId, input.cardId, {
+        kind: 'financing',
+        direction: 'outgoing',
+        accountId: input.accountId,
+      })
     const currency = await resolveCurrency(tx, input.currency, history)
     if (input.totalAmount === undefined && input.installments === undefined)
       throw new DomainError('financing_needs_amount', 'A financing needs a total amount or a schedule')
@@ -301,6 +314,7 @@ export async function createFinancing(
       userId,
       kind: 'financing',
       direction: 'outgoing',
+      cardId: input.cardId ?? null,
       label: input.label,
       actorId: input.actorId,
       accountId: input.accountId,
@@ -593,9 +607,9 @@ export interface CommitmentEdit {
   targetAccountId?: string
   assetId?: string
   /**
-   * Outgoing subscription only: the card it is billed to, null for a direct
-   * debit. A correction like the others: the occurrences already confirmed
-   * keep what paid them.
+   * Outgoing subscription or financing only: the card it is billed to, null
+   * for a direct debit. A correction like the others: the occurrences already
+   * confirmed keep what paid them.
    */
   cardId?: string | null
 }
@@ -1037,10 +1051,12 @@ export async function confirmNextOccurrence(
     if (installment) {
       // The schedule records what was really paid, and when: the remaining due
       // (the sum of the unpaid lines) stays exact without recomputing anything,
-      // and a settled line reads as the payment it was.
+      // and a settled line reads as the payment it was. Paid with a deferred
+      // card, the installment was charged on its purchase day, whatever day
+      // the statement debits the account.
       await settleInstallment(tx, installment.id, movement.id, {
         amount: confirmedAmount,
-        on: movement.happenedOn,
+        on: movement.purchasedOn ?? movement.happenedOn,
       })
       const next = await nextPendingInstallment(tx, commitment.id)
       await updateCommitment(tx, userId, id, { nextDueOn: next?.dueOn ?? installment.dueOn })

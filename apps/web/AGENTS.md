@@ -246,7 +246,8 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   récent d'abord, chacun replié sur ses achats : ouvert tant qu'il attend son débit, fermé une
   fois validé. Une carte immédiate montre la liste de ses achats. Les dates sont celles des
   achats, et chaque achat se corrige depuis sa ligne comme dans les mouvements. Les abonnements
-  qu'elle paie ferment la page : ce sont eux qu'il faut reporter sur une carte renouvelée.
+  et les financements en cours qu'elle paie ferment la page : ce sont eux qu'il faut reporter sur
+  une carte renouvelée.
 - **Sans carte, un mouvement est un prélèvement.** La carte se choisit parmi celles du compte
   choisi, le choix vide nommant le cas ordinaire. Une carte différée renomme la date en date
   d'achat et affiche dessous le prélèvement prévu. Le remboursement d'une avance ne propose pas

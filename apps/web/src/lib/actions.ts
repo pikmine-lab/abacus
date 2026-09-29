@@ -766,6 +766,7 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
       installments: scheduleFrom(formData),
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
+      cardId: opt(formData, 'cardId'),
     })
   } catch (e) {
     return { error: frError(e) }
