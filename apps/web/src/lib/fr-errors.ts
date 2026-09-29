@@ -101,6 +101,13 @@ export const FR: Record<string, string> = {
     'Cette règle ne dit pas où ses règlements se classent : donne-lui une catégorie de règlement dans Réglages.',
   levy_due_not_found:
     'Cette échéance n’existe plus pour cette règle : l’échéancier a changé depuis l’affichage.',
+  levy_files_no_return: 'Cette échéance ne se déclare pas : il n’y a rien à déclarer à zéro.',
+  levy_period_running: 'Cette période n’est pas terminée : elle se déclare une fois close.',
+  levy_amount_unknown:
+    'Le montant de cette échéance dépend d’un paramètre jamais saisi : renseigne-le dans Réglages plutôt que de la déclarer à zéro.',
+  levy_due_not_nil:
+    'Cette période compte des recettes, elle ne se déclare pas à zéro : vérifie la date ou l’activité des mouvements.',
+  nil_return_not_found: 'Cette échéance n’a pas de déclaration à zéro à retirer.',
   levy_validity: 'La fin de validité tombe avant le début.',
   levy_form_needs_param: 'Cette forme de montant a besoin de son paramètre.',
   levy_form_param_unexpected: 'Un paramètre d’une autre forme de montant a été envoyé.',

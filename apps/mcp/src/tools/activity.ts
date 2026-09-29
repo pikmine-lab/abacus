@@ -1,13 +1,17 @@
+import { DomainError } from '@abacus/core/domain/errors'
 import { fiscalYearOf } from '@abacus/core/domain/levy-engine'
+import type { Levy } from '@abacus/core/domain/types'
 import {
   activityLevies,
   activityStatement,
   confirmLevyPayment,
+  confirmNilReturn,
+  withdrawNilReturn,
 } from '@abacus/core/services/activityStatement'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { requireAccountByName, requireActivityByName, requireActorByName } from '../resolve.ts'
-import { fail, isoDate, ok, run } from './shared.ts'
+import { fail, GUIDANCE, isoDate, ok, run } from './shared.ts'
 
 /**
  * The activity statement, for an AI that never sees a screen: everything one
@@ -15,12 +19,50 @@ import { fail, isoDate, ok, run } from './shared.ts'
  * the state of every figure said in the answer rather than assumed.
  */
 
+/** How a due date of the schedule is named, the same way by every tool that answers one. */
+const DUE_DATE = {
+  levy: z.string().describe('The rule, by its name as get_activity_statement gives it'),
+  periodStart: isoDate.describe(
+    "First day of the period being settled, as the schedule gives it in period.from (a settlement of a closed year names that year's first day)",
+  ),
+  what: z
+    .enum(['period', 'settlement'])
+    .optional()
+    .describe(
+      'settlement for a schedule entry whose what reads "settlement of <year>": it opens on the same day as that year\'s first period, so periodStart alone would name the period. Absent: period',
+    ),
+  instalment: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'For a schedule entry whose instalment reads "k of n", pass k. Absent: the first, the only one of a period paid at once',
+    ),
+}
+
+/**
+ * The rule a due date names, or why none matches. A rate that changed is a
+ * new row with the same name: the one in force on the day of the period
+ * answers for it.
+ */
+function levyNamed(levies: Levy[], name: string, periodStart: string, activityName: string): Levy | string {
+  const wanted = name.trim().toLowerCase()
+  const matches = levies.filter((l) => l.name.toLowerCase() === wanted)
+  if (matches.length === 0)
+    return `No rule named "${name}" on ${activityName}. Rules: ${levies.map((l) => l.name).join(', ') || 'none'}.`
+  return (
+    matches.find((l) => l.validFrom <= periodStart && (l.validTo === null || l.validTo >= periodStart)) ??
+    matches[matches.length - 1]!
+  )
+}
+
 export function registerActivityTools(server: McpServer, userId: string): void {
   server.registerTool(
     'get_activity_statement',
     {
       description:
-        'The whole picture of one fiscal year of a business activity: revenue, charges, provisions, net, what was paid out to the owner, month by month, then rule by rule, with the schedule of what is due and what may be taken out today. Use it to answer "how is the business doing", "what do I still owe", "how much can I pay myself", or to prepare a return. Three figures answer three different questions and must never be swapped: a provision is what a period owes under a rule; the reserve is what has accrued and is not yet paid, money that has to stay on the account; payableToSelf is a stock (the money the accounts the activity lives on hold, less that reserve, less what every other activity living on those same accounts still owes, less the commitments falling due before the month ends), while net is a flow of the year. Those accounts come with it: each says which other activities live on it, and shared says what each of them is keeping, so a shared account is named rather than left to be discovered in a figure that looks too small. Every figure is an estimate computed from the rules the user declared and the movements recorded, never an official assessment: say so when reporting, and say the status of a rule whose figures you quote (confirmed, extended_by_default when a lapsed text is still being applied, unconfirmed when no text fixes the value), plus reviewDue when a rule is past the day it should have been checked again. Revenue is read in the regime\'s own basis (cash: the day the money arrived; invoiced: the day the invoice was issued) and the other reading travels beside it: name which one you are quoting. A rule with pass_through (VAT collected for the state) stays out of the net and inside the reserve, because it is owed. accrualMethod says how the running period was estimated. Rules themselves are configured elsewhere; this tool only reads them.',
+        'The whole picture of one fiscal year of a business activity: revenue, charges, provisions, net, what was paid out to the owner, month by month, then rule by rule, with the schedule of what is due and what may be taken out today. Use it to answer "how is the business doing", "what do I still owe", "how much can I pay myself", or to prepare a return. Three figures answer three different questions and must never be swapped: a provision is what a period owes under a rule; the reserve is what has accrued and is not yet paid, money that has to stay on the account; payableToSelf is a stock (the money the accounts the activity lives on hold, less that reserve, less what every other activity living on those same accounts still owes, less the commitments falling due before the month ends), while net is a flow of the year. Those accounts come with it: each says which other activities live on it, and shared says what each of them is keeping, so a shared account is named rather than left to be discovered in a figure that looks too small. Every figure is an estimate computed from the rules the user declared and the movements recorded, never an official assessment: say so when reporting, and say the status of a rule whose figures you quote (confirmed, extended_by_default when a lapsed text is still being applied, unconfirmed when no text fixes the value), plus reviewDue when a rule is past the day it should have been checked again. Revenue is read in the regime\'s own basis (cash: the day the money arrived; invoiced: the day the invoice was issued) and the other reading travels beside it: name which one you are quoting. A rule with pass_through (VAT collected for the state) stays out of the net and inside the reserve, because it is owed. accrualMethod says how the running period was estimated. Each schedule entry has a status: paid (a payment answers it), nil_return (the user said its return was filed at zero), nothing_due (it comes to zero and files nothing of its own, so there is nothing to file and nothing to pay), upcoming, then overdue once its payment window has closed. An entry at amount 0 that is upcoming or overdue is a return still owed at zero, not money owed: once the user says it was filed, record it with confirm_nil_returns, and never assume it was. missingInputs means the amount rests on stated figures never given: it reads 0 but is unknown, so ask the user for them (set_activity_inputs) rather than quoting a zero. Rules themselves are configured elsewhere; this tool only reads them.',
       inputSchema: z.object({
         activity: z.string().describe('The activity, by name (e.g. "Freelance")'),
         year: z
@@ -95,6 +137,11 @@ export function registerActivityTools(server: McpServer, userId: string): void {
             paidAmount: entry.paidAmount ?? undefined,
             absorbed: entry.absorbed ? 'files no return of its own: it rides in another one' : undefined,
             instalment: entry.instalments > 1 ? `${entry.instalment} of ${entry.instalments}` : undefined,
+            missingInputs: entry.missingInputs.length > 0 ? entry.missingInputs : undefined,
+            nilReturn:
+              entry.nilReturn && entry.status !== 'nil_return'
+                ? 'said filed at zero, but the estimate is no longer zero: a receipt was recorded in that period since'
+                : undefined,
           })),
           reserve: statement.reserve,
           payableToSelf: statement.payableToSelf,
@@ -125,27 +172,10 @@ export function registerActivityTools(server: McpServer, userId: string): void {
     'confirm_levy_payment',
     {
       description:
-        "Records that a levy was actually paid: writes the expense from one of the activity's accounts, in the rule's settlement category, which is what makes its reserve fall. Use it when the user says a contribution, a tax or a VAT return was paid, and prefer it over declare_movements, which would file the same money as an ordinary charge and leave the provision standing. Pass the amount that really left, not the estimate: an assessment differing from the estimate is the normal case, and the gap is worth seeing. Get the due dates from get_activity_statement (schedule): each one names the levy, its period and what is estimated. The payment settles the due date you name and no other, whatever day the money left: a return paid early in its window, or late, lands on the period named rather than on the one its date falls near. So name the period the user paid for, never the one the date suggests; when unsure which it was, ask.",
+        "Records that a levy was actually paid: writes the expense from one of the activity's accounts, in the rule's settlement category, which is what makes its reserve fall. Use it when the user says a contribution, a tax or a VAT return was paid, and prefer it over declare_movements, which would file the same money as an ordinary charge and leave the provision standing. Pass the amount that really left, not the estimate: an assessment differing from the estimate is the normal case, and the gap is worth seeing. Get the due dates from get_activity_statement (schedule): each one names the levy, its period and what is estimated. The payment settles the due date you name and no other, whatever day the money left: a return paid early in its window, or late, lands on the period named rather than on the one its date falls near. So name the period the user paid for, never the one the date suggests; when unsure which it was, ask. An entry at amount 0 is not paid: when the user filed its return at zero, that is confirm_nil_returns.",
       inputSchema: z.object({
         activity: z.string().describe('The activity the rule belongs to, by name'),
-        levy: z.string().describe('The rule being settled, by its name as get_activity_statement gives it'),
-        periodStart: isoDate.describe(
-          "First day of the period being settled, as the schedule gives it in period.from (a settlement of a closed year names that year's first day)",
-        ),
-        what: z
-          .enum(['period', 'settlement'])
-          .optional()
-          .describe(
-            'settlement for a schedule entry whose what reads "settlement of <year>": it opens on the same day as that year\'s first period, so periodStart alone would name the period. Absent: period',
-          ),
-        instalment: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe(
-            'For a schedule entry whose instalment reads "k of n", pass k. Absent: the first, the only one of a period paid at once',
-          ),
+        ...DUE_DATE,
         amount: z.number().positive().describe('What really left the account, in euros'),
         date: isoDate.describe('The day the money left'),
         account: z.string().describe('The account it left, one of those the activity lives on'),
@@ -156,19 +186,13 @@ export function registerActivityTools(server: McpServer, userId: string): void {
     async (a) =>
       run(async () => {
         const activity = await requireActivityByName(userId, a.activity)
-        const levies = await activityLevies(userId, activity.id)
-        const wanted = a.levy.trim().toLowerCase()
-        const matches = levies.filter((l) => l.name.toLowerCase() === wanted)
-        if (matches.length === 0)
-          return fail(
-            `No rule named "${a.levy}" on ${activity.name}. Rules: ${levies.map((l) => l.name).join(', ') || 'none'}.`,
-          )
-        // A rate that changed is a new row with the same name: the one in force
-        // on the day of the period settles it.
-        const levy =
-          matches.find(
-            (l) => l.validFrom <= a.periodStart && (l.validTo === null || l.validTo >= a.periodStart),
-          ) ?? matches[matches.length - 1]!
+        const levy = levyNamed(
+          await activityLevies(userId, activity.id),
+          a.levy,
+          a.periodStart,
+          activity.name,
+        )
+        if (typeof levy === 'string') return fail(levy)
         const movement = await confirmLevyPayment(userId, {
           levyId: levy.id,
           periodStart: a.periodStart,
@@ -189,6 +213,69 @@ export function registerActivityTools(server: McpServer, userId: string): void {
           amount: Number(movement.amount),
           on: movement.happenedOn,
           note: 'The reserve of this rule falls by that much; get_activity_statement shows where it stands now.',
+        })
+      }),
+  )
+
+  server.registerTool(
+    'confirm_nil_returns',
+    {
+      description:
+        'Records that returns were filed at zero: the user declared nothing for these due dates (no receipts, nothing to pay), which is what answers a period with nothing in it, since no payment of zero exists. Use it only once the user says they filed them, for instance a zero return to the social fund or a VAT return with nothing due: this app never assumes a return was filed, and a period at zero stays owed until then. Name each due date as get_activity_statement gives it, an entry at amount 0 that is upcoming or overdue; several go in one call, and each is answered on its own. Refused: a period still running, an entry whose amount is unknown (missingInputs), one estimated above zero, and one that reads nothing_due, which files nothing. A return said filed at zero stops answering its due date if a receipt is later recorded in that period. withdraw takes back returns confirmed by mistake.',
+      inputSchema: z.object({
+        activity: z.string().describe('The activity the rules belong to, by name'),
+        returns: z
+          .array(z.object(DUE_DATE))
+          .min(1)
+          .describe('The due dates whose return was filed at zero, each named as the schedule gives it'),
+        withdraw: z
+          .boolean()
+          .optional()
+          .describe(
+            'true takes these back instead, when they were confirmed by mistake: their periods are owed again',
+          ),
+      }),
+    },
+    async (a) =>
+      run(async () => {
+        const activity = await requireActivityByName(userId, a.activity)
+        const levies = await activityLevies(userId, activity.id)
+        const results: Record<string, unknown>[] = []
+        for (const [index, item] of a.returns.entries()) {
+          const levy = levyNamed(levies, item.levy, item.periodStart, activity.name)
+          if (typeof levy === 'string') {
+            results.push({ index, ok: false, error: levy })
+            continue
+          }
+          const due = {
+            levyId: levy.id,
+            periodStart: item.periodStart,
+            entry: item.what === 'settlement' ? ('regularization' as const) : ('period' as const),
+            instalment: item.instalment,
+          }
+          try {
+            if (a.withdraw) await withdrawNilReturn(userId, due)
+            else await confirmNilReturn(userId, due)
+            results.push({ index, ok: true, levy: levy.name, periodStart: item.periodStart })
+          } catch (e) {
+            if (!(e instanceof DomainError)) throw e
+            results.push({
+              index,
+              ok: false,
+              levy: levy.name,
+              periodStart: item.periodStart,
+              error: GUIDANCE[e.code] ?? e.message,
+            })
+          }
+        }
+        const failed = results.filter((r) => !r.ok).length
+        return ok({
+          results,
+          [a.withdraw ? 'withdrawn' : 'confirmed']: results.length - failed,
+          failed,
+          note: a.withdraw
+            ? 'Those periods are owed again: get_activity_statement shows them upcoming or overdue.'
+            : 'Those periods read nil_return in get_activity_statement. Nothing was paid, so no reserve moved.',
         })
       }),
   )

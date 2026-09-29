@@ -181,6 +181,70 @@ test('an unknown rule answers with the rules that exist', async () => {
   assert.match(reply.text, /Contributions/)
 })
 
+test('a quarter with nothing in it is confirmed filed at zero, and one with receipts is refused with why', async () => {
+  const user = await seedUser()
+  await activityWithOneRule(user)
+  const client = await clientFor(user)
+
+  const reply = await call(client, 'confirm_nil_returns', {
+    activity: 'Freelance',
+    returns: [
+      { levy: 'Contributions', periodStart: '2026-04-01' },
+      { levy: 'Contributions', periodStart: '2026-01-01' },
+    ],
+  })
+  assert.equal(reply.isError, undefined)
+  const answer = reply.json() as {
+    results: { ok: boolean; error?: string }[]
+    confirmed: number
+    failed: number
+  }
+  assert.deepEqual([answer.confirmed, answer.failed], [1, 1])
+  // The first quarter holds the February receipt: the answer says to look.
+  assert.match(answer.results[1]!.error!, /estimated above zero/)
+
+  const statusOf = async (from: string) => {
+    const statement = (
+      await call(client, 'get_activity_statement', { activity: 'Freelance', year: 2026 })
+    ).json()
+    return (statement.schedule as { period: { from: string }; status: string }[]).find(
+      (e) => e.period.from === from,
+    )?.status
+  }
+  assert.equal(await statusOf('2026-04-01'), 'nil_return')
+
+  const withdrawn = await call(client, 'confirm_nil_returns', {
+    activity: 'Freelance',
+    returns: [{ levy: 'Contributions', periodStart: '2026-04-01' }],
+    withdraw: true,
+  })
+  assert.equal((withdrawn.json() as { withdrawn: number }).withdrawn, 1)
+  assert.equal(await statusOf('2026-04-01'), 'overdue')
+})
+
+test('an amount resting on a figure never stated says so, rather than reading zero', async () => {
+  const user = await seedUser()
+  const { activityId } = await activityWithOneRule(user)
+  const tax = await createCategory(user, 'Income tax')
+  const sql = db()
+  await sql`
+    insert into levy (user_id, activity_id, name, kind, valid_from, base_measure, amount_form,
+                      fixed_input_name, period, due, settlement_category_id, source_url, verified_on)
+    values (${user}, ${activityId}, 'Instalment', 'income_tax', '2026-01-01', 'none', 'fixed',
+            'tax_instalment', 'quarter', ${sql.json({ type: 'end_of_next_month' })}, ${tax.id},
+            'https://example.test/instalment', '2026-01-02')
+  `
+  const client = await clientFor(user)
+
+  const statement = (
+    await call(client, 'get_activity_statement', { activity: 'Freelance', year: 2026 })
+  ).json()
+  const first = (statement.schedule as { levy: string; amount: number; missingInputs?: string[] }[]).find(
+    (e) => e.levy === 'Instalment',
+  )
+  assert.deepEqual([first?.amount, first?.missingInputs], [0, ['tax_instalment']])
+})
+
 /**
  * A regime that has something to say today, written entirely through the
  * tools an AI would use. The dates hang off today so the fixture stays inside

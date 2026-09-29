@@ -1,10 +1,12 @@
 import { db, type Executor } from '../db/client.ts'
 import { activitiesSharing, getActivity, getCategory } from '../db/datasources/catalog.ts'
+import { deleteNilReturn, insertNilReturn } from '../db/datasources/levies.ts'
 import {
   type ActivityScope,
   activityScope,
   type CategoryTotal,
   expensesByCategory,
+  levyNilReturns,
   levySettlements,
   listActivityInputs,
   listLevies,
@@ -200,7 +202,16 @@ export interface StatementLevy {
   assumedElectiveBase: boolean
 }
 
-export type ScheduleStatus = 'paid' | 'upcoming' | 'overdue'
+/**
+ * Where a due date stands. `paid`: a payment answers it. `nil_return`: the
+ * user said its return was filed at zero, which is what answers a period with
+ * nothing in it, since no payment of zero exists (migration 0023).
+ * `nothing_due`: it comes to zero and files nothing of its own, because its
+ * rule reads none of the activity's figures (see `filedOnFigures`) or the
+ * period rides in another return. Otherwise `upcoming`, then `overdue` once
+ * its window has closed.
+ */
+export type ScheduleStatus = 'paid' | 'nil_return' | 'nothing_due' | 'upcoming' | 'overdue'
 
 export interface ScheduleEntry {
   levyId: string
@@ -227,6 +238,10 @@ export interface ScheduleEntry {
   /** What answered it, when anything did: the last day money left against it, and the total. */
   paidOn: string | null
   paidAmount: number | null
+  /** Stated figures the estimate needed and was never given: its amount is unknown, not zero. */
+  missingInputs: string[]
+  /** The user said its return was filed at zero; that answers it only while the estimate is zero. */
+  nilReturn: boolean
 }
 
 /** What another activity living on the same accounts is keeping for what it owes. */
@@ -445,6 +460,8 @@ interface PeriodResult {
   amount: number
   /** The share of the period already lived through, 1 for a closed one. */
   elapsed: number
+  /** Stated figures read and never given, each standing in as zero. */
+  missingInputs: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -497,11 +514,22 @@ class StatementEngine {
     return name ? inputAt(this.inputs, name, on) : null
   }
 
+  /** A stated figure an amount rests on: zero when never given, and said missing. */
+  private stated(name: string | null, on: string, missing: Set<string>): number {
+    const value = this.input(name, on)
+    if (value === null && name) missing.add(name)
+    return value ?? 0
+  }
+
   governedPeriods(levy: ParsedLevy, fiscalYear: number): FiscalPeriod[] {
     return governedPeriods(levy.row, this.activity, this.cal, fiscalYear)
   }
 
-  /** A measure over a window, scaled up to the whole window when it is still running. */
+  /**
+   * A measure over a window, scaled up to the whole window when it is still
+   * running. A stated figure never given reads as zero, and its name goes into
+   * `missing` so the zero is not taken for a known one.
+   */
   private async measure(
     measure: string,
     range: DateRange,
@@ -509,16 +537,17 @@ class StatementEngine {
     levyId: string | null,
     inputName: string | null,
     seen: Set<string>,
+    missing: Set<string>,
   ): Promise<number> {
     switch (measure) {
       case 'none':
         return 0
       case 'input':
-        return this.input(inputName, range.to) ?? 0
+        return this.stated(inputName, range.to, missing)
       case 'paid':
         return levyId ? this.paidOver(levyId, range) * scale : 0
       case 'amount':
-        return levyId ? await this.amountOf(levyId, range, seen) : 0
+        return levyId ? await this.amountOf(levyId, range, seen, missing) : 0
       default: {
         const measures = await this.ledger.measures(range)
         const read = MEASURE_OF[measure]
@@ -532,7 +561,12 @@ class StatementEngine {
    * year's tax, a surcharge sitting on a tax. Every period of that rule
    * closing inside the window is evaluated and summed.
    */
-  private async amountOf(levyId: string, range: DateRange, seen: Set<string>): Promise<number> {
+  private async amountOf(
+    levyId: string,
+    range: DateRange,
+    seen: Set<string>,
+    missing: Set<string>,
+  ): Promise<number> {
     if (seen.has(levyId))
       throw new DomainError('levy_cycle', 'These rules read each other in a circle: one of them must not.')
     const levy = this.byId.get(levyId)
@@ -542,13 +576,15 @@ class StatementEngine {
     for (let year = Number(range.from.slice(0, 4)) - 1; year <= Number(range.to.slice(0, 4)) + 1; year++) {
       for (const period of this.governedPeriods(levy, year)) {
         if (period.to < range.from || period.to > range.to) continue
-        total += (await this.evaluate(levy, period, chain)).amount
+        const evaluated = await this.evaluate(levy, period, chain)
+        total += evaluated.amount
+        for (const name of evaluated.missingInputs) missing.add(name)
       }
     }
     return total
   }
 
-  private amountInput(levy: ParsedLevy, period: FiscalPeriod): AmountInput {
+  private amountInput(levy: ParsedLevy, period: FiscalPeriod, missing: Set<string>): AmountInput {
     const row = levy.row
     switch (row.amountForm) {
       case 'rate':
@@ -568,7 +604,7 @@ class StatementEngine {
           amount:
             row.fixedAmount !== null
               ? Number(row.fixedAmount)
-              : (this.input(row.fixedInputName, period.to) ?? 0),
+              : this.stated(row.fixedInputName, period.to, missing),
         }
       case 'none':
         return { form: 'none' }
@@ -585,6 +621,7 @@ class StatementEngine {
     const row = levy.row
     const baseRange = resolvePeriodRef(baseRefOverride ?? row.basePeriodRef, period, this.cal)
     const baseScale = projection(baseRange, this.on)
+    const missing = new Set<string>()
     const measure = await this.measure(
       row.baseMeasure,
       baseRange,
@@ -592,6 +629,7 @@ class StatementEngine {
       row.baseLevyId,
       row.baseInputName,
       seen,
+      missing,
     )
     let addBack = 0
     for (const id of row.baseAddBackLevyIds ?? []) addBack += this.paidOver(id, baseRange) * baseScale
@@ -606,6 +644,7 @@ class StatementEngine {
         null,
         null,
         seen,
+        missing,
       )
     }
     const credits: CreditValue[] = []
@@ -622,6 +661,7 @@ class StatementEngine {
           credit.levyId ?? null,
           null,
           seen,
+          missing,
         ),
       })
     }
@@ -638,7 +678,7 @@ class StatementEngine {
         monthsOpen: monthsOpen(baseRange, this.cal, this.activity.startedOn, this.activity.closedOn),
         periodsPerYear: periodsPerYear(row.period),
       },
-      amount: this.amountInput(levy, period),
+      amount: this.amountInput(levy, period, missing),
       modifiers: effectsOf(modifiersFor(levy.modifiers, period, this.activity.startedOn, this.cal)),
       credits,
       fixedCredit: row.fixedCredit === null ? null : Number(row.fixedCredit),
@@ -648,7 +688,7 @@ class StatementEngine {
     // read scaled to the whole period just above (a schedule has to be read on
     // a whole year), so the amount comes back down here.
     const elapsed = period.to <= this.on ? 1 : period.from > this.on ? 0 : 1 / projection(period, this.on)
-    return { period, result, amount: result.net * elapsed, elapsed }
+    return { period, result, amount: result.net * elapsed, elapsed, missingInputs: [...missing] }
   }
 
   /**
@@ -704,6 +744,19 @@ function monthsOfYear(fiscalYear: number, cal: FiscalCalendar): FiscalPeriod[] {
 function scheduleStatus(window: DueWindow, on: string, paidBy: Settlement[]): ScheduleStatus {
   if (paidBy.length > 0) return 'paid'
   return window.payment.to < on ? 'overdue' : 'upcoming'
+}
+
+/**
+ * Whether a rule is filed on a return stating the activity's own figures. One
+ * whose base is such a figure (its receipts, its profit, its VAT balance) is,
+ * and that return is owed at zero too: its period stays due until a payment
+ * or a nil return answers it. One whose amount comes from elsewhere (a
+ * notice, a stated figure, another rule's amount) has nothing of the activity
+ * to state, so at zero nothing is filed and nothing is paid. The distinction
+ * only ever decides a zero: an amount to pay is due either way.
+ */
+function filedOnFigures(row: Levy): boolean {
+  return row.baseMeasure in MEASURE_OF
 }
 
 function paidFields(paidBy: Settlement[]): Pick<ScheduleEntry, 'paidOn' | 'paidAmount'> {
@@ -815,10 +868,17 @@ async function buildStatement(
     listActivityInputs(sql, userId, activityId),
     listThresholds(sql, userId, activityId),
   ])
-  const modifiers = await listLevyModifiers(
-    sql,
-    rows.map((r) => r.id),
-  )
+  const [modifiers, nilReturns] = await Promise.all([
+    listLevyModifiers(
+      sql,
+      rows.map((r) => r.id),
+    ),
+    levyNilReturns(
+      sql,
+      userId,
+      rows.map((r) => r.id),
+    ),
+  ])
   const levies = rows.map((row) =>
     parseLevy(
       row,
@@ -919,13 +979,21 @@ async function buildStatement(
       for (const month of begun) perMonth[month.index - 1]! += evaluated.amount / begun.length
 
       for (const window of windowsOf(levy, period, activity, cal)) {
-        const paidBy = answer(
-          { levyId: row.id, entry: 'period', periodStart: period.from, instalment: window.instalment },
-          window.payment,
-        )
+        const due: LevyDue = {
+          levyId: row.id,
+          entry: 'period',
+          periodStart: period.from,
+          instalment: window.instalment,
+        }
+        const paidBy = answer(due, window.payment)
         // A period whose figures are not in yet estimates nothing; the window
         // is still worth listing, because the return is owed either way.
         const share = window.instalments > 1 ? 1 / window.instalments : 1
+        const amount = round2(evaluated.result.net * share)
+        const nilReturn = nilReturns.some((n) => sameDue(n, due))
+        // A zero resting on a figure never stated is unknown, and nothing
+        // answers it but that figure, or a payment.
+        const zero = amount === 0 && evaluated.missingInputs.length === 0
         schedule.push({
           levyId: row.id,
           levyName: row.name,
@@ -936,12 +1004,19 @@ async function buildStatement(
           periodIndex: period.index,
           declaration: window.declaration,
           payment: window.payment,
-          amount: round2(evaluated.result.net * share),
+          amount,
           absorbed: window.absorbed,
           instalment: window.instalment,
           instalments: window.instalments,
-          status: scheduleStatus(window, today, paidBy),
+          status:
+            paidBy.length === 0 && zero && nilReturn
+              ? 'nil_return'
+              : paidBy.length === 0 && zero && (window.absorbed || !filedOnFigures(row))
+                ? 'nothing_due'
+                : scheduleStatus(window, today, paidBy),
           ...paidFields(paidBy),
+          missingInputs: evaluated.missingInputs,
+          nilReturn,
         })
       }
     }
@@ -1007,6 +1082,8 @@ async function buildStatement(
         instalments: 1,
         status: paidBy.length > 0 ? 'paid' : window.to < today ? 'overdue' : 'upcoming',
         ...paidFields(paidBy),
+        missingInputs: [],
+        nilReturn: false,
       })
     }
   }
@@ -1204,11 +1281,7 @@ export async function confirmLevyPayment(userId: string, input: ConfirmLevyPayme
     instalment: input.instalment ?? 1,
   }
   const activity = await getActivity(sql, userId, row.activityId)
-  if (!activity || !hasDue(parseLevy(row, []), activity, due))
-    throw new DomainError(
-      'levy_due_not_found',
-      `"${row.name}" has no ${due.entry === 'regularization' ? 'settlement of a year' : 'period'} starting ${due.periodStart}${due.instalment > 1 ? `, instalment ${due.instalment}` : ''}`,
-    )
+  if (!activity || !hasDue(parseLevy(row, []), activity, due)) throw dueNotFound(row, due)
   return await sql.begin(async (tx) => {
     const movement = await declareMovementIn(tx, userId, {
       happenedOn: input.date,
@@ -1221,6 +1294,102 @@ export async function confirmLevyPayment(userId: string, input: ConfirmLevyPayme
     })
     return await setLevyDue(tx, movement.id, due)
   })
+}
+
+function dueNotFound(row: Levy, due: LevyDue): DomainError {
+  return new DomainError(
+    'levy_due_not_found',
+    `"${row.name}" has no ${due.entry === 'regularization' ? 'settlement of a year' : 'period'} starting ${due.periodStart}${due.instalment > 1 ? `, instalment ${due.instalment}` : ''}`,
+  )
+}
+
+/** A due date as a caller names it: the period is the first due date of it unless said otherwise. */
+export type DueDateInput = Pick<ConfirmLevyPaymentInput, 'levyId' | 'periodStart' | 'entry' | 'instalment'>
+
+function namedDue(input: DueDateInput): LevyDue {
+  return {
+    levyId: input.levyId,
+    entry: input.entry ?? 'period',
+    periodStart: input.periodStart,
+    instalment: input.instalment ?? 1,
+  }
+}
+
+async function requireLevyRow(userId: string, levyId: string): Promise<Levy> {
+  const [row] = await db()<Levy[]>`select * from levy where user_id = ${userId} and id = ${levyId}`
+  if (!row) throw new DomainError('levy_not_found', `No rule ${levyId} for this user`)
+  return row
+}
+
+/**
+ * Records that the return of a due date was filed at zero: that is what
+ * answers a period with nothing in it, since no payment of zero can be
+ * written. Saying it twice changes nothing.
+ *
+ * The due date is read as the statement reads it on the day, and refused when
+ * a zero return would state something false or needless: a due date the rule
+ * does not have; one that files nothing of its own (`nothing_due`); a period
+ * still running, whose figures are not in; an estimate resting on a figure
+ * never stated, which is unknown rather than zero; and an estimate that is not
+ * zero, because declaring nothing over receipts the facts record is a mistake
+ * on one side or the other, to be found rather than written over.
+ */
+export async function confirmNilReturn(
+  userId: string,
+  input: DueDateInput,
+  today: string = todayOf(),
+): Promise<void> {
+  const row = await requireLevyRow(userId, input.levyId)
+  const due = namedDue(input)
+  const activity = await getActivity(db(), userId, row.activityId)
+  if (!activity) throw dueNotFound(row, due)
+  const fiscalYear = fiscalYearOf(due.periodStart, {
+    startMonth: activity.fiscalYearStartMonth,
+    startDay: activity.fiscalYearStartDay,
+  })
+  const statement = await buildStatement(userId, activity.id, fiscalYear, today, false)
+  const entry = statement.schedule.find(
+    (e) =>
+      e.levyId === due.levyId &&
+      e.entry === due.entry &&
+      e.period.from === due.periodStart &&
+      e.instalment === due.instalment,
+  )
+  if (!entry) throw dueNotFound(row, due)
+  const what = `"${row.name}" for the period starting ${due.periodStart}`
+  if (entry.status === 'nothing_due')
+    throw new DomainError(
+      'levy_files_no_return',
+      `${what} comes to zero and files nothing of its own: there is no return to confirm`,
+    )
+  if (entry.period.to >= today)
+    throw new DomainError(
+      'levy_period_running',
+      `${what} runs until ${entry.period.to}: its figures are not in`,
+    )
+  if (entry.missingInputs.length > 0)
+    throw new DomainError(
+      'levy_amount_unknown',
+      `${what} rests on ${entry.missingInputs.join(', ')}, never stated: its amount is unknown, not zero`,
+    )
+  if (entry.amount !== 0)
+    throw new DomainError('levy_due_not_nil', `${what} is estimated at ${entry.amount}, not zero`)
+  await insertNilReturn(db(), userId, due)
+}
+
+/**
+ * Takes back a return said filed at zero by mistake: its period is owed
+ * again. One that was never said is refused, because the caller then named a
+ * due date other than the one it meant.
+ */
+export async function withdrawNilReturn(userId: string, input: DueDateInput): Promise<void> {
+  const row = await requireLevyRow(userId, input.levyId)
+  const due = namedDue(input)
+  if ((await deleteNilReturn(db(), userId, due)) === 0)
+    throw new DomainError(
+      'nil_return_not_found',
+      `"${row.name}" has no return filed at zero for the period starting ${due.periodStart}`,
+    )
 }
 
 /** Whether the schedule of a rule lists that due date, read as the statement reads it. */

@@ -18,7 +18,12 @@ import type {
 import { DomainError } from '@abacus/core/domain/errors'
 import type { Answers } from '@abacus/core/domain/regime'
 import { closeAccount, createAccount, editAccount, reopenAccount } from '@abacus/core/services/accounts'
-import { confirmLevyPayment } from '@abacus/core/services/activityStatement'
+import {
+  confirmLevyPayment,
+  confirmNilReturn,
+  type DueDateInput,
+  withdrawNilReturn,
+} from '@abacus/core/services/activityStatement'
 import {
   addAlias,
   countReattachableMovements,
@@ -949,6 +954,41 @@ export async function remindInvoiceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
+/** The due date a row of the schedule names, as the service takes it. */
+function dueDateOf(formData: FormData): DueDateInput {
+  return {
+    levyId: str(formData, 'levyId'),
+    periodStart: str(formData, 'periodStart'),
+    entry: str(formData, 'entry') === 'regularization' ? 'regularization' : 'period',
+    instalment: num(formData, 'instalment') || undefined,
+  }
+}
+
+/**
+ * "Déclarée à 0": the return of a period with nothing in it was filed at zero,
+ * which is what answers it, no payment of zero being possible.
+ */
+export async function confirmNilReturnAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await confirmNilReturn(userId, dueDateOf(formData))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
+/** Takes back a return said filed at zero by mistake: the period is owed again. */
+export async function withdrawNilReturnAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId()
+  try {
+    await withdrawNilReturn(userId, dueDateOf(formData))
+  } catch (e) {
+    errorRedirect(formData, frError(e))
+  }
+  refreshAll()
+}
+
 /**
  * "Payé": records what really left against one due date of a rule, which is
  * what makes its reserve fall. The amount is editable like a commitment's,
@@ -961,10 +1001,7 @@ export async function confirmLevyPaymentAction(formData: FormData): Promise<void
   if (actor === '') errorRedirect(formData, 'Indique qui a été payé.')
   try {
     await confirmLevyPayment(userId, {
-      levyId: str(formData, 'levyId'),
-      periodStart: str(formData, 'periodStart'),
-      entry: str(formData, 'entry') === 'regularization' ? 'regularization' : 'period',
-      instalment: num(formData, 'instalment') || undefined,
+      ...dueDateOf(formData),
       amount: num(formData, 'amount'),
       date: str(formData, 'date'),
       accountId: str(formData, 'accountId'),

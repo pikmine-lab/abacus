@@ -45,6 +45,17 @@ test('applying a regime refuses in French too', () => {
     assert.ok(FR[code], `no French message for ${code}`)
 })
 
+test('a zero return refuses in French too', () => {
+  for (const code of [
+    'levy_files_no_return',
+    'levy_period_running',
+    'levy_amount_unknown',
+    'levy_due_not_nil',
+    'nil_return_not_found',
+  ])
+    assert.ok(FR[code], `no French message for ${code}`)
+})
+
 test('no message is left as its own code', () => {
   for (const [code, message] of Object.entries(FR)) {
     assert.ok(message.length > 0, `${code} has an empty message`)
