@@ -35,8 +35,11 @@ docker compose -f {{ primary_worktree_path }}/compose.dev.yml exec -T db \
 # Ask portless for this worktree's URL rather than spelling it out: the scheme
 # and the proxy port belong to the local portless setup, not here. Stored as a
 # branch variable so every consumer below agrees on one value.
+# --no-worktree because the name already carries the branch: without it,
+# `portless get` prefixes the branch it detects once more, while the
+# `portless <name>` that serves the route in post-start keeps the name as is.
 dev-url = """
-wt config state vars set dev-url="$(portless get {{ branch | sanitize }}.abacus)"
+wt config state vars set dev-url="$(portless get --no-worktree {{ branch | sanitize }}.abacus)"
 """
 
 [[pre-start]]
@@ -49,6 +52,13 @@ sed -i \
   apps/web/.env.local
 """
 
+[[pre-start]]
+# The clone is only as recent as the last `nr migrate:dev` on the dev database,
+# so it often lags this branch, and nothing fails until a screen reads a missing
+# column. Reading the URL from .env.local migrates the very database the app
+# opens; on an up-to-date database the runner applies nothing.
+migrate = "node --env-file=apps/web/.env.local packages/core/src/db/migrate.ts"
+
 [post-start]
 # portless names the route instead of allocating a port, and `wt step tether`
 # kills the dev server when the worktree is removed.
@@ -57,9 +67,27 @@ web = "wt step tether -- portless {{ branch | sanitize }}.abacus pnpm --filter @
 [list]
 url = '{{ vars["dev-url"] }}'
 
-[pre-remove]
+[[pre-remove]]
+# Stop the dev server before anything is deleted. `wt step tether` stops it only
+# once the worktree path is gone, and Next recreates apps/web/.next/dev the
+# instant its cache disappears: the path never goes, and the server outlives the
+# worktree. portless stops the server it runs on SIGTERM. `[/]` keeps the
+# pattern from matching this hook's own command line.
+server = """
+pkill -TERM -f '[/]portless {{ branch | sanitize }}.abacus '
+for _ in $(seq 50); do
+  pgrep -f '[/]portless {{ branch | sanitize }}.abacus ' > /dev/null || exit 0
+  sleep 0.2
+done
+echo 'dev server still running after 10 s' >&2
+exit 1
+"""
+
+[[pre-remove]]
+# FORCE closes any connection still open, a plain DROP refusing a database in
+# use: the server's while it finishes closing them, or another client's.
 database = """
 docker compose -f {{ primary_worktree_path }}/compose.dev.yml exec -T db \
   psql -U abacus -d postgres \
-  -c 'DROP DATABASE IF EXISTS abacus_{{ branch | sanitize_db }}'
+  -c 'DROP DATABASE IF EXISTS abacus_{{ branch | sanitize_db }} WITH (FORCE)'
 """
