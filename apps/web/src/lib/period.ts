@@ -53,6 +53,17 @@ export function isNavigable(preset: Preset): boolean {
   return preset === 'month' || preset === 'year'
 }
 
+/**
+ * A period as the URL carries it, for a link that opens another screen on the
+ * same window. The preset travels rather than its two dates, so the screen
+ * reached names the window as the one left did. The other presets resolve
+ * from today alone and need no ref.
+ */
+export function periodParams(period: Period): string {
+  const anchored = isNavigable(period.preset) || period.preset === 'range'
+  return `period=${period.preset}${anchored ? `&ref=${period.ref}` : ''}`
+}
+
 const MONTHS = [
   'janvier',
   'février',
