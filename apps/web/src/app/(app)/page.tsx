@@ -9,6 +9,7 @@ import {
   isThresholdAlert,
 } from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
+import { listCards } from '@abacus/core/services/cards'
 import {
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
@@ -91,6 +92,7 @@ export default async function OverviewPage({
     advances,
     commitments,
     alerts,
+    cards,
   ] = await Promise.all([
     listAccounts(userId),
     firstDeclaredDay(userId),
@@ -105,6 +107,7 @@ export default async function OverviewPage({
     outstandingAdvances(userId),
     listCommitmentsWithProgress(userId),
     activityAlerts(userId, now),
+    listCards(userId),
   ])
 
   const active = commitments.filter((c) => !c.cancelledOn)
@@ -187,6 +190,11 @@ export default async function OverviewPage({
     .reduce((sum, c) => sum + monthlyEquivalentEur(c), 0)
   // What is owed back, not what was spent: an advance covers a share of its
   // expense, so the claim is that share minus what already came back.
+  // A statement whose debit is expected by now waits for its day to be stated,
+  // which is done on the card's page: one line per card, leading there.
+  const statementsDue = cards
+    .map((card) => ({ card, waiting: card.pending.filter((s) => s.dueOn <= now) }))
+    .filter(({ waiting }) => waiting.length > 0)
   const claims = advances.reduce((sum, a) => sum + Number(a.expectedRefundAmount) - Number(a.refunded), 0)
 
   const staleChecks = accounts
@@ -289,7 +297,7 @@ export default async function OverviewPage({
           />
         </StatRow>
 
-        {(due.length > 0 || staleChecks.length > 0 || claims > 0) && (
+        {(due.length > 0 || staleChecks.length > 0 || claims > 0 || statementsDue.length > 0) && (
           <Section title="À faire" description="ce qui attend une décision de ta part">
             <Rows>
               {/* One line per direction: an occurrence to confirm lives on the
@@ -326,6 +334,26 @@ export default async function OverviewPage({
                     <RowArrow />
                   </Link>
                 ))}
+              {statementsDue.map(({ card, waiting }) => (
+                <Link
+                  key={card.id}
+                  href={`/accounts/cards/${card.id}?from=overview#statement-${waiting[0]!.id}`}
+                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
+                >
+                  <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
+                  <span className="text-[13px]">
+                    {waiting.length > 1 ? `${waiting.length} relevés` : 'Relevé'} de {card.name} à valider
+                  </span>
+                  <span className="text-[11.5px] text-faint">
+                    {eur(
+                      waiting.reduce((sum, s) => sum + Number(s.amount), 0),
+                      2,
+                    )}{' '}
+                    attendus depuis le {frDate(waiting[0]!.dueOn)}
+                  </span>
+                  <RowArrow />
+                </Link>
+              ))}
               {staleChecks.length > 0 && (
                 <Link
                   href="/accounts?from=overview"

@@ -1,6 +1,7 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { dropEmptyStatements, getCard, statementFor } from '../db/datasources/cards.ts'
 import { getActivity, soleActivityOfAccount } from '../db/datasources/catalog.ts'
 import {
   alignInstallmentOnMovement,
@@ -22,6 +23,7 @@ import {
   setRefundClosed,
   updateMovementRow,
 } from '../db/datasources/movements.ts'
+import { cycleOf, isValidOn } from '../domain/card.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { SortChoice, SortFields } from '../domain/sort.ts'
@@ -91,6 +93,24 @@ export interface DeclareMovementInput {
    * that pays no invoice. Part of the amount, never on top of it.
    */
   vatAmount?: number
+  /**
+   * The card that paid an expense, or that a merchant's refund is credited
+   * back to. Omitted, the account was debited directly (a direct debit, a
+   * transfer order). With a deferred-debit card, `happenedOn` is the purchase
+   * day: the movement is dated on the day the card's schedule debits it, and
+   * the purchase day is kept alongside.
+   */
+  cardId?: string
+}
+
+/**
+ * A movement once its card has placed it: its statement's debit, the purchase
+ * day it came from, and whether that statement still waits for its debit day.
+ */
+type Dated = DeclareMovementInput & {
+  purchasedOn?: string
+  cardStatementId?: string
+  awaitingDebit?: boolean
 }
 
 /**
@@ -98,7 +118,7 @@ export interface DeclareMovementInput {
  * is the form both interfaces speak, and a full date is accepted because
  * "attach it to the month of the 5th" states the same thing.
  */
-function monthStart(value: string): string {
+export function monthStart(value: string): string {
   const match = /^(\d{4})-(0[1-9]|1[0-2])(-\d{2})?$/.exec(value)
   if (!match) throw new DomainError('bad_month', `"${value}" is not a month: write it as YYYY-MM`)
   return `${match[1]}-${match[2]}-01`
@@ -128,9 +148,9 @@ async function requireActor(tx: Executor, userId: string, id: string, role: stri
  */
 async function inAccountCurrency(
   tx: Executor,
-  input: DeclareMovementInput,
+  input: Dated,
   history: HistoryFetcher,
-): Promise<DeclareMovementInput & { originalAmount?: number; originalCurrency?: string }> {
+): Promise<Dated & { originalAmount?: number; originalCurrency?: string }> {
   const code = (input.currency ?? 'EUR').toUpperCase()
   if (code === 'EUR') {
     if (input.eurAmount !== undefined)
@@ -147,7 +167,10 @@ async function inAccountCurrency(
     )
   if (input.eurAmount !== undefined && !(input.eurAmount > 0))
     throw new DomainError('bad_amount', 'An amount is always positive')
-  const eur = input.eurAmount ?? toEur(input.amount, await eurRateOn(tx, code, input.happenedOn, history))
+  // The bank converts on the day of the purchase, not on the day a deferred
+  // card debits it.
+  const rateOn = input.purchasedOn ?? input.happenedOn
+  const eur = input.eurAmount ?? toEur(input.amount, await eurRateOn(tx, code, rateOn, history))
   if (!(eur > 0)) throw new DomainError('bad_amount', `${input.amount} ${code} converts to less than a cent`)
   return {
     ...input,
@@ -170,12 +193,12 @@ export async function declareMovementIn(
   history: HistoryFetcher = fetchHistory,
 ): Promise<Movement> {
   const declared = { ...input, accrualMonth: monthOrNothing(input.accrualMonth) }
-  const resolved = await inAccountCurrency(tx, declared, history)
+  const resolved = await inAccountCurrency(tx, await datedByCard(tx, userId, declared), history)
   const activityId = await checkMovement(tx, userId, resolved)
-  const { refundedNow, eurAmount: _, ...row } = resolved
+  const { refundedNow, eurAmount: _, awaitingDebit, ...row } = resolved
   const movement = await insertMovement(tx, { ...row, userId, activityId })
   if (refundedNow) await writeRefundIn(tx, userId, movement, {})
-  return movement
+  return awaitingDebit === undefined ? movement : { ...movement, awaitingDebit }
 }
 
 /**
@@ -197,13 +220,80 @@ async function writeRefundIn(
   if (!(received > 0))
     throw new DomainError('advance_settled', 'This advance has already been refunded in full')
   return await declareMovementIn(tx, userId, {
-    happenedOn: on ?? advance.happenedOn,
+    // Paid with a deferred card, the advance is dated on its debit: the
+    // person who owed it paid back on the day of the purchase, straight to the
+    // account, never to the card.
+    happenedOn: on ?? advance.purchasedOn ?? advance.happenedOn,
     amount: received,
     currency: advance.currency,
     sourceActorId: advance.expectedRefundFromActorId,
     targetAccountId: advance.sourceAccountId!,
     refundsMovementId: advance.id,
   })
+}
+
+/**
+ * Places a movement paid with a card. The card must belong to the account the
+ * movement touches: the one an expense left, the one a merchant's refund came
+ * back to. It never pays a transfer between two of the person's accounts, and
+ * never receives the refund of an advance: whoever owed it pays the account
+ * back, not the card. It works through its expiry month, so a purchase dated
+ * later is refused, which is what makes a renewed card get its new expiry.
+ *
+ * On a deferred-debit card the day given is the purchase day, and the
+ * movement joins the statement of its cycle, created with the debit the card's
+ * schedule expects if it is the first purchase of that cycle. It is dated on
+ * that statement: the day the bank debited it once stated, the expected one
+ * until then, and it counts in no balance before that day is stated. The
+ * purchase day is kept alongside, and the counted month follows it. `stored`
+ * keeps the statement a correction did not move the purchase off.
+ */
+async function datedByCard(
+  tx: Executor,
+  userId: string,
+  input: DeclareMovementInput,
+  stored?: { happenedOn: string; purchasedOn: string | null; cardStatementId: string | null },
+): Promise<Dated> {
+  if (!input.cardId) return input
+  const card = await getCard(tx, userId, input.cardId)
+  if (!card) throw new DomainError('card_not_found', `No card ${input.cardId} for this user`)
+  if (input.sourceAccountId && input.targetAccountId)
+    throw new DomainError(
+      'transfer_has_no_card',
+      'A card pays or is refunded: it never moves money between two of your accounts',
+    )
+  if (input.refundsMovementId)
+    throw new DomainError(
+      'refund_has_no_card',
+      'An advance is paid back to the account, never to the card that paid it',
+    )
+  const account = input.sourceAccountId ?? input.targetAccountId
+  if (card.accountId !== account)
+    throw new DomainError(
+      'card_other_account',
+      `Card "${card.name}" debits another account than this movement's`,
+    )
+  if (!isValidOn(card, input.happenedOn))
+    throw new DomainError(
+      'card_expired',
+      `Card "${card.name}" expired at the end of ${card.expiryMonth.slice(0, 7)}: update its expiry if it was renewed`,
+    )
+  if (stored)
+    return {
+      ...input,
+      happenedOn: stored.happenedOn,
+      purchasedOn: stored.purchasedOn ?? undefined,
+      cardStatementId: stored.cardStatementId ?? undefined,
+    }
+  if (card.debitMode === 'immediate') return input
+  const statement = await statementFor(tx, card.id, cycleOf(card, input.happenedOn))
+  return {
+    ...input,
+    happenedOn: statement.debitedOn ?? statement.dueOn,
+    purchasedOn: input.happenedOn,
+    cardStatementId: statement.id,
+    awaitingDebit: statement.debitedOn === null,
+  }
 }
 
 /**
@@ -231,7 +321,7 @@ async function writeRefundIn(
 async function checkMovement(
   tx: Executor,
   userId: string,
-  input: DeclareMovementInput,
+  input: Dated,
   /** On a correction: the movement being corrected, left out of the sums it is measured against. */
   except?: string,
 ): Promise<string | null> {
@@ -296,7 +386,9 @@ async function checkMovement(
   if (activityId) {
     activity = (await getActivity(tx, userId, activityId)) ?? null
     if (!activity) throw new DomainError('activity_not_found', `No activity ${activityId} for this user`)
-    if (activity.closedOn && input.happenedOn > activity.closedOn)
+    // A deferred card's purchase belongs to the activity it was made under,
+    // whatever day the card debits it.
+    if (activity.closedOn && (input.purchasedOn ?? input.happenedOn) > activity.closedOn)
       throw new DomainError(
         'activity_closed',
         `Activity "${activity.name}" is closed since ${activity.closedOn}: a later movement belongs to the activity that followed it`,
@@ -445,10 +537,19 @@ export interface CorrectMovementInput {
   invoiceId?: string | null
   /** The VAT inside the amount: a figure states it, null clears it. Absent, the stored one is kept. */
   vatAmount?: number | null
+  /**
+   * The card that paid: an id sets it, null says the account was debited
+   * directly. Absent, the stored one is kept. On a movement paid with a
+   * deferred card, `happenedOn` is the purchase day, as on declaration.
+   */
+  cardId?: string | null
 }
 
 const CORRECTABLE = [
   'happenedOn',
+  'purchasedOn',
+  'cardId',
+  'cardStatementId',
   'amount',
   'accrualMonth',
   'ghost',
@@ -504,7 +605,9 @@ export async function correctMovementIn(
   // the stored original (the declared figure), not to its counter-value.
   const moneyTouched = input.currency !== undefined || input.eurAmount !== undefined
   const merged: DeclareMovementInput = {
-    happenedOn: input.happenedOn ?? current.happenedOn,
+    // The day a person knows: the purchase day of a deferred card purchase,
+    // which the card turns into its debit day again below.
+    happenedOn: input.happenedOn ?? current.purchasedOn ?? current.happenedOn,
     amount:
       input.amount ??
       (moneyTouched && current.originalAmount !== null
@@ -554,10 +657,30 @@ export async function correctMovementIn(
   merged.ghost = becomesTransfer && input.ghost === undefined ? false : (input.ghost ?? current.ghost)
   // And for the VAT inside it, which a transfer never carries.
   if (becomesTransfer && input.vatAmount === undefined) merged.vatAmount = undefined
+  // And for the card that paid it, which a transfer never has: the movement
+  // then falls back on the day it was bought.
+  merged.cardId =
+    input.cardId !== undefined
+      ? (input.cardId ?? undefined)
+      : becomesTransfer
+        ? undefined
+        : (current.cardId ?? undefined)
+  // A purchase keeps its debit day unless its day or its card is corrected:
+  // the day was debited as the card then said, whatever its schedule says now.
+  // Compared rather than tested for presence, because the web panel sends the
+  // whole movement back, its unchanged day included.
+  const sameDay = merged.happenedOn === (current.purchasedOn ?? current.happenedOn)
+  const sameCard = merged.cardId === (current.cardId ?? undefined)
+  const dated = await datedByCard(
+    tx,
+    userId,
+    merged,
+    sameDay && sameCard && merged.cardId ? current : undefined,
+  )
   const resolved = moneyTouched
-    ? await inAccountCurrency(tx, merged, history)
+    ? await inAccountCurrency(tx, dated, history)
     : {
-        ...merged,
+        ...dated,
         originalAmount:
           !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
         originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
@@ -591,6 +714,9 @@ export async function correctMovementIn(
   }
   const updated = await updateMovementRow(tx, userId, id, row)
   if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+  // Moved off a statement (another day, another card, no card): the one it
+  // left may be empty now.
+  if (current.cardId) await dropEmptyStatements(tx, current.cardId)
 
   // A settled financing installment says what its movement says: the amount
   // debited and the day it was debited. Correcting one corrects the other, or
@@ -602,12 +728,14 @@ export async function correctMovementIn(
   const settled = await installmentByMovement(tx, id)
   const paid = updated.originalAmount !== null ? Number(updated.originalAmount) : Number(updated.amount)
   const paidCurrency = updated.originalCurrency ?? 'EUR'
+  // Paid with a deferred card, the installment was charged on its purchase day.
+  const paidOn = updated.purchasedOn ?? updated.happenedOn
   if (
     settled &&
     paidCurrency === settled.planCurrency &&
-    (Number(settled.amount) !== paid || settled.dueOn !== updated.happenedOn)
+    (Number(settled.amount) !== paid || settled.dueOn !== paidOn)
   ) {
-    await alignInstallmentOnMovement(tx, settled.id, { amount: paid, on: updated.happenedOn })
+    await alignInstallmentOnMovement(tx, settled.id, { amount: paid, on: paidOn })
     await resyncFinancing(tx, settled.commitmentId)
   }
   return updated
@@ -657,6 +785,7 @@ export async function deleteMovementIn(tx: Executor, userId: string, id: string)
     throw new DomainError('refunded_movement', 'A refund is linked to this movement: delete the refund first')
   await deleteMovementRow(tx, userId, id)
   if (movement.commitmentId) await resyncFinancing(tx, movement.commitmentId)
+  if (movement.cardId) await dropEmptyStatements(tx, movement.cardId)
 }
 
 /**

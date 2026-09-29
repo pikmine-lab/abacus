@@ -1,9 +1,17 @@
 'use client'
 
-import { ArchiveIcon, ArchiveRestoreIcon, HistoryIcon, PencilIcon, ScaleIcon } from 'lucide-react'
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  CreditCardIcon,
+  HistoryIcon,
+  PencilIcon,
+  ScaleIcon,
+} from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { BalanceCheckHistory, type CheckEntry, type SettleOptions } from '@/components/balance-check-history'
+import { NewCardForm } from '@/components/card-forms'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
 import {
@@ -50,6 +58,7 @@ export function AccountRowActions({
   closed,
   checks,
   settleOptions,
+  newCard,
 }: {
   accountId: string
   name: string
@@ -64,12 +73,18 @@ export function AccountRowActions({
   checks: CheckEntry[]
   /** References a gap can be settled against, from that same panel. */
   settleOptions: SettleOptions
+  /**
+   * Current account only: what declaring a card on it needs. The card is added
+   * from the account it debits, which is where it will be listed.
+   */
+  newCard?: { accounts: { id: string; name: string }[]; today: string }
 }) {
   const [checking, setChecking] = useState(false)
   const [editing, setEditing] = useState(false)
   const [history, setHistory] = useState(false)
   const [closing, setClosing] = useState(false)
   const [reopening, setReopening] = useState(false)
+  const [addingCard, setAddingCard] = useState(false)
   const [closeState, close, closePending] = useActionState(closeAccountAction, {})
   const [reopenState, reopen, reopenPending] = useActionState(reopenAccountAction, {})
 
@@ -97,6 +112,12 @@ export function AccountRowActions({
           <HistoryIcon />
           Pointages
         </DropdownMenuItem>
+        {newCard && !closed && (
+          <DropdownMenuItem onSelect={() => setAddingCard(true)}>
+            <CreditCardIcon />
+            Ajouter une carte
+          </DropdownMenuItem>
+        )}
         {closed ? (
           <DropdownMenuItem onSelect={() => setReopening(true)}>
             <ArchiveRestoreIcon />
@@ -182,6 +203,23 @@ export function AccountRowActions({
           </div>
         </SheetContent>
       </Sheet>
+
+      {newCard && (
+        <Sheet open={addingCard} onOpenChange={setAddingCard}>
+          <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+            <SheetHeader className="border-b border-border">
+              <SheetTitle className="text-[15px]">Nouvelle carte</SheetTitle>
+              <SheetDescription className="text-[12px]">
+                Jamais son numéro : un nom suffit à la reconnaître. Une carte à débit différé dit quand ses
+                achats sortent du compte.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="p-4">
+              <NewCardForm accounts={newCard.accounts} accountId={accountId} today={newCard.today} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       <AlertDialog open={closing} onOpenChange={setClosing}>
         <AlertDialogContent>

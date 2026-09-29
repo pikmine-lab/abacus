@@ -24,6 +24,25 @@ export const GUIDANCE: Record<string, string> = {
     'An internal transfer already counts in no analysis: drop ghost. Only an expense or an income can be left out of one.',
   transfer_has_no_vat:
     'An internal transfer carries no VAT, as it carries no category: drop vatAmount. Money moving between two owned accounts buys nothing.',
+  transfer_has_no_card:
+    'A card pays a merchant or is credited a merchant refund: it never moves money between two owned accounts. Drop card on a transfer.',
+  refund_has_no_card:
+    'Whoever owed an advance pays it back to the account, never to the card that paid it: drop card on this refund.',
+  card_other_account:
+    'That card debits another account: pass the account the card debits (manage_cards list shows it), or leave card out if this account was debited directly.',
+  card_expired:
+    'The card had expired on that date. If it was renewed, update its expiry with manage_cards (update, expiry) and retry; otherwise the purchase was paid with another card or debited directly. A subscription billed to it changes card with update_commitment.',
+  card_needs_payment_account:
+    'A card debits a current account (behavior payment), never a savings or an investment one: name the current account the card belongs to.',
+  schedule_on_immediate:
+    'An immediate-debit card debits each purchase on its day: drop cutOffDay, cutOffShift, debitDay and debitShift, or declare the card deferred.',
+  deferred_needs_schedule:
+    'A deferred-debit card needs its whole schedule: cutOffDay, cutOffShift, debitDay and debitShift. Ask the user what their bank states, never guess it.',
+  card_in_use:
+    'Something was paid with this card, so it stays: its account cannot change and it cannot be deleted. A card on another account is a new card (manage_cards create); an old one simply keeps its expiry.',
+  card_exists: 'A card already uses that name: pick another one, or update the existing card.',
+  card_on_subscription:
+    'Only an outgoing subscription is billed to a card: a financing follows its written schedule, a revenue is not paid by card, and a placement is a transfer between two accounts.',
   vat_outside_amount:
     'The VAT is inside the amount, not on top of it, so vatAmount cannot exceed it. Pass the amount actually paid, VAT included, and the VAT part of it.',
   vat_needs_registered_activity:

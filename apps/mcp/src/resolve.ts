@@ -1,7 +1,8 @@
-import type { Account, Activity, Actor, Asset, Category, Commitment } from '@abacus/core/domain'
+import type { Account, Activity, Actor, Asset, Card, Category, Commitment } from '@abacus/core/domain'
 import { DomainError } from '@abacus/core/domain/errors'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { createActor, resolveActor } from '@abacus/core/services/actors'
+import { listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { listCommitments } from '@abacus/core/services/commitments'
 import { listAssets } from '@abacus/core/services/investments'
@@ -28,6 +29,17 @@ export async function requireAccountByName(userId: string, name: string): Promis
       `No account named "${name}". Existing accounts: ${accounts.map((a) => a.name).join(', ') || 'none'}. Create it with manage_accounts if needed.`,
     )
   return account
+}
+
+export async function requireCardByName(userId: string, name: string): Promise<Card> {
+  const cards = await listCards(userId)
+  const card = byName(cards, name)
+  if (!card)
+    throw new DomainError(
+      'card_not_found',
+      `No card named "${name}". Existing cards: ${cards.map((c) => c.name).join(', ') || 'none'}. Declare it with manage_cards if needed, or leave card out when the account was debited directly.`,
+    )
+  return card
 }
 
 export async function requireCategoryByName(userId: string, name: string): Promise<Category> {

@@ -28,6 +28,8 @@ export interface NewCommitment {
   engagedUntil?: string | null
   installmentsTotal?: number | null
   totalAmount?: number | null
+  /** Outgoing subscription only: the card it is billed to. */
+  cardId?: string | null
 }
 
 /**

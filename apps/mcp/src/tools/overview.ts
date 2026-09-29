@@ -1,3 +1,4 @@
+import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
   type ActivityAlert,
@@ -6,6 +7,7 @@ import {
   isThresholdAlert,
 } from '@abacus/core/services/activityAlerts'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
+import { listCards } from '@abacus/core/services/cards'
 import {
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
@@ -46,7 +48,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'get_overview',
     {
       description:
-        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences to confirm (past their date, or of the coming period and flagged ahead), outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. activityAlerts is what the regime of a business activity needs said today, and it is only ever a warning: this app never switches a regime on its own, because leaving a VAT exemption is adding the VAT rule (manage_levies) and changing regime is closing the activity and opening the next one (manage_activities). threshold_crossed: the measure went past the value the regime hinges on, and consequence says what that costs, in the user\'s own words: report it as written, never paraphrase it into a rule of your own. threshold_near: it is close enough to say so while there is still room to act. rule_review_due: the rule was computed against a text that was due to be checked again on reviewOn, and a yearly schedule ages every 1 January. rule_unconfirmed: no text ever fixed that value. Whenever you state a figure that a rule of one of the last two kinds produced (a provision, a reserve, what can be paid to oneself), say in the same breath that its source is unconfirmed or overdue, and name the rule: a figure is never quieter than its source. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows), and not for the figures of an activity (get_activity_statement).',
+        'The financial state, ready to reason about: balance per account with the freshness of its latest balance check and what that check still leaves unexplained (openGap: zero once an adjustment has settled the gap, so a non-zero one is always something to act on), commitment occurrences to confirm (past their date, or of the coming period and flagged ahead), the statements of deferred-debit cards whose debit is expected by now (cardStatementsToValidate: their purchases count in no balance until validated, so ask the user the day the bank debited each one, then manage_card_statements validate), outstanding advances, and the committed monthly recurring cost. It also carries reading, which of the two readings of a month the user counts in, so every later analysis can be given in theirs and named. activityAlerts is what the regime of a business activity needs said today, and it is only ever a warning: this app never switches a regime on its own, because leaving a VAT exemption is adding the VAT rule (manage_levies) and changing regime is closing the activity and opening the next one (manage_activities). threshold_crossed: the measure went past the value the regime hinges on, and consequence says what that costs, in the user\'s own words: report it as written, never paraphrase it into a rule of your own. threshold_near: it is close enough to say so while there is still room to act. rule_review_due: the rule was computed against a text that was due to be checked again on reviewOn, and a yearly schedule ages every 1 January. rule_unconfirmed: no text ever fixed that value. Whenever you state a figure that a rule of one of the last two kinds produced (a provision, a reserve, what can be paid to oneself), say in the same breath that its source is unconfirmed or overdue, and name the rule: a figure is never quieter than its source. Start here when taking over without context, or to answer "where do I stand". Not for detailed history (list_movements) nor period analysis (analyze_flows), and not for the figures of an activity (get_activity_statement).',
       inputSchema: z.object({}),
     },
     async () =>
@@ -67,6 +69,18 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         )
         const pending = await pendingOccurrences(userId)
         const advances = await advancesView(userId)
+        const now = today()
+        const statementsDue = (await listCards(userId)).flatMap((card) =>
+          card.pending
+            .filter((s) => s.dueOn <= now)
+            .map((s) => ({
+              card: card.name,
+              cutOff: s.cutOffOn,
+              expectedOn: s.dueOn,
+              amount: Number(s.amount),
+              purchases: s.purchases,
+            })),
+        )
         const commitments = (await listCommitmentsWithProgress(userId)).filter((c) => !c.cancelledOn)
         // In euros at the latest rate: a USD line added as-is would count
         // dollars as euros. A scheduled placement leaves the account like a
@@ -125,6 +139,8 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
                 }
               : {}),
           })),
+          // Absent when nothing waits: an empty list would read as a section to comment on.
+          cardStatementsToValidate: statementsDue.length > 0 ? statementsDue : undefined,
           outstandingAdvances: advances,
           monthlyCommittedCost: Math.round(monthlyOut * 100) / 100,
           // Counted apart, never inside the cost above: what a scheduled

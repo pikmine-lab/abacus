@@ -65,7 +65,10 @@ export function CommitmentRow({
     // The periodicity is asked as one question, so it travels as one value.
     period: `${c.periodUnit}:${c.periodCount}`,
     engagedUntil: c.engagedUntil ?? '',
+    accountId: c.accountId,
+    cardId: c.cardId ?? undefined,
   }
+  const cardName = c.cardId ? options?.cards?.find((card) => card.id === c.cardId)?.name : undefined
   return (
     <div className="flex items-center gap-3 py-3">
       {financing && c.progress && (
@@ -88,6 +91,7 @@ export function CommitmentRow({
               ` · ≈ ${eur(monthlyEquivalentEur(c), 2)}/mois`}
           </span>
           <span>prochaine le {frDate(c.nextDueOn)}</span>
+          {cardName && <span>carte {cardName}</span>}
           {/* A move already declared: the only place it shows before its date. */}
           {c.nextAccountMove && (
             <span>

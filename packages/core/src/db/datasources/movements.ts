@@ -1,6 +1,7 @@
 import type { SortChoice } from '../../domain/sort.ts'
 import type { LevyDue, Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
+import { debitedOnly } from './cards.ts'
 
 export interface NewMovement {
   userId: string
@@ -29,6 +30,12 @@ export interface NewMovement {
   invoiceId?: string | null
   /** The VAT inside the amount, when the activity reclaims it and it was stated. */
   vatAmount?: number | null
+  /** The card it was paid with, or credited back to. */
+  cardId?: string | null
+  /** Deferred card only: the purchase day, happenedOn being the debit. */
+  purchasedOn?: string | null
+  /** Deferred card only: the statement that debits it. */
+  cardStatementId?: string | null
 }
 
 export async function insertMovement(tx: Executor, row: NewMovement): Promise<Movement> {
@@ -88,6 +95,8 @@ export interface MovementFilters {
   categoryId?: string
   activityId?: string
   commitmentId?: string
+  /** What a card paid, or was credited back. */
+  cardId?: string
   /** Free text, matched on the note and on the counterparty's name. */
   search?: string
   /** Only expenses still awaiting a refund. */
@@ -156,6 +165,7 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.categoryId ? tx`and m.category_id = ${f.categoryId}` : tx``}
     ${f.activityId ? tx`and m.activity_id = ${f.activityId}` : tx``}
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
+    ${f.cardId ? tx`and m.card_id = ${f.cardId}` : tx``}
     ${
       f.advancesOnly
         ? tx`and m.expected_refund_from_actor_id is not null and m.refund_closed = false
@@ -183,7 +193,11 @@ export async function listMovements(
   // Only when the order asks for them: a list read by date pays for no join.
   const named = sortsOnName(sort.field)
   return await tx<Movement[]>`
-    select m.* from movement m
+    select m.*,
+      exists (
+        select 1 from card_statement cs where cs.id = m.card_statement_id and cs.debited_on is null
+      ) as awaiting_debit
+    from movement m
     ${
       named
         ? tx`left join actor sa on sa.id = m.source_actor_id
@@ -254,12 +268,14 @@ export async function accountBalance(
         where id = ${accountId}
         ${upTo ? tx`and opened_on <= ${upTo}` : tx``}
       ), 0)
+      -- A deferred card's purchase has left nothing until its debit is stated.
       + coalesce((
-        select sum(case when target_account_id = ${accountId} then amount else -amount end)
-        from movement
-        where (source_account_id = ${accountId} or target_account_id = ${accountId})
-        ${upTo ? tx`and happened_on <= ${upTo}` : tx``}
-        ${except ? tx`and id <> ${except}` : tx``}
+        select sum(case when mv.target_account_id = ${accountId} then mv.amount else -mv.amount end)
+        from movement mv
+        where (mv.source_account_id = ${accountId} or mv.target_account_id = ${accountId})
+        and ${debitedOnly(tx, 'mv')}
+        ${upTo ? tx`and mv.happened_on <= ${upTo}` : tx``}
+        ${except ? tx`and mv.id <> ${except}` : tx``}
       ), 0)
       -- Operations move the cash of an investment account just as movements do,
       -- and a balance check compares against its cash: without them the check

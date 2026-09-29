@@ -1,5 +1,6 @@
 import type { Account } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
+import { debitedOnly } from './cards.ts'
 
 export interface NewAccount {
   userId: string
@@ -25,9 +26,18 @@ export async function listAccounts(tx: Executor, userId: string): Promise<Accoun
   return await tx<Account[]>`select * from account where user_id = ${userId} order by name`
 }
 
+/**
+ * Every account with its balance on a day, today for every caller that shows
+ * one. A movement dated later has not touched the account yet (an occurrence
+ * confirmed ahead waits for its own day), and neither has a deferred card's
+ * purchase whose debit day is not stated. Counting them would show a balance
+ * the bank does not, and contradict the balance check, which leaves out the
+ * same ones.
+ */
 export async function listAccountsWithBalance(
   tx: Executor,
   userId: string,
+  on: string,
 ): Promise<(Account & { balance: string })[]> {
   return await tx<(Account & { balance: string })[]>`
     -- A balance starts at what the account already held before the ledger
@@ -37,7 +47,8 @@ export async function listAccountsWithBalance(
     left join lateral (
       select sum(case when mv.target_account_id = a.id then mv.amount else -mv.amount end) as delta
       from movement mv
-      where mv.source_account_id = a.id or mv.target_account_id = a.id
+      where (mv.source_account_id = a.id or mv.target_account_id = a.id) and mv.happened_on <= ${on}
+        and ${debitedOnly(tx, 'mv')}
     ) m on true
     -- Operations move the cash inside an investment account: buying and paying
     -- fees take money out, selling and dividends put it back. Counting only
@@ -46,7 +57,7 @@ export async function listAccountsWithBalance(
     left join lateral (
       select sum(case when op.type in ('sell', 'dividend') then op.amount else -op.amount end) as delta
       from investment_operation op
-      where op.account_id = a.id
+      where op.account_id = a.id and op.operated_on <= ${on}
     ) o on true
     where a.user_id = ${userId}
     order by a.name

@@ -2,6 +2,7 @@ import { auth } from '@abacus/core/auth'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
+import { listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import type { CommitmentSortField } from '@abacus/core/services/commitments'
 import {
@@ -22,6 +23,7 @@ import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/pag
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
+import { cardChoices } from '@/lib/movement-form-data'
 import { sorter } from '@/lib/sort'
 import { eur, frDate } from '@/lib/utils'
 
@@ -52,7 +54,7 @@ export default async function RecurringExpensesPage({
     params,
   )
 
-  const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
+  const [commitments, pending, accounts, actors, categories, activities, cards] = await Promise.all([
     // Cancelled ones included: a subscription's history is the point of the
     // event log, and "what did I cut this year" is a real question.
     listCommitmentsWithProgress(userId, false),
@@ -61,6 +63,7 @@ export default async function RecurringExpensesPage({
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
+    listCards(userId),
   ])
 
   // A scheduled placement leaves an account like a subscription does, and it is
@@ -78,6 +81,7 @@ export default async function RecurringExpensesPage({
     actors: actors.map((a) => ({ id: a.id, name: a.name })),
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
     activities: activities.map((a) => ({ id: a.id, name: a.name })),
+    cards: cardChoices(cards),
   }
   // The plans themselves, so a financing's schedule can be revised from its row.
   const schedules = new Map(
@@ -126,6 +130,7 @@ export default async function RecurringExpensesPage({
             actors={options.actors}
             categories={options.categories}
             activities={options.activities}
+            cards={options.cards}
             today={today()}
           />
         </EntrySheet>

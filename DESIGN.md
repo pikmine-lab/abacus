@@ -248,6 +248,13 @@ de page.
   détachable (le bloc de connexion). Le titre d'une page, sa rangée de filtres, ses
   listes et ses tuiles vivent sur le fond de page ; ce sont les **filets** et
   l'**espacement** qui séparent (`Rows`, `StatRow`, `Section`).
+- **Une carte bancaire se dessine comme l'objet qu'elle est**, au format d'une carte (1,586) :
+  c'est la seule chose de l'application qu'on reconnaît à sa face avant son nom. La face est
+  tirée de son identifiant (un fond sombre désaturé, un motif de filets et sa position), donc
+  stable, distincte des autres cartes, et rien n'est stocké pour elle. Elle porte ce que porte
+  la carte physique, nom, compte débité, expiration et mode de débit, jamais de numéro, même
+  masqué : il n'y en a pas derrière. Le cuivre en est exclu, puce comprise, qui est en argent.
+  Expirée, elle perd sa couleur et garde sa place.
 - Header de page collant (56px), rangée de filtres collante juste dessous.
 - Argent : `font-mono` + `tabular-nums` (classe `.tabular`) dans toute colonne de
   chiffres. Geist pour l'interface, Geist Mono pour les montants et les axes.

@@ -43,7 +43,7 @@ export async function createAccount(input: NewAccount): Promise<Account> {
 }
 
 export async function listAccounts(userId: string): Promise<(Account & { balance: string })[]> {
-  return await listAccountsWithBalance(db(), userId)
+  return await listAccountsWithBalance(db(), userId, today())
 }
 
 /**

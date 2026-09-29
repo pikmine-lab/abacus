@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import { registerActivityTools } from './tools/activity.ts'
 import { registerBalanceCheckTools } from './tools/balanceChecks.ts'
+import { registerCardTools } from './tools/cards.ts'
 import { registerCatalogTools } from './tools/catalog.ts'
 import { registerCommitmentTools } from './tools/commitments.ts'
 import { registerInvestmentTools } from './tools/investments.ts'
@@ -28,6 +29,7 @@ export function buildServer(userId: string): McpServer {
   registerBalanceCheckTools(server, userId)
   registerCommitmentTools(server, userId)
   registerCatalogTools(server, userId)
+  registerCardTools(server, userId)
   registerInvestmentTools(server, userId)
   registerInvoiceTools(server, userId)
   registerLevyTools(server, userId)

@@ -5,6 +5,8 @@ import type {
   AccountBehavior,
   ActivityKind,
   AssetNature,
+  DayShift,
+  DebitMode,
   DeductibleExpenses,
   InstrumentKind,
   Judgment,
@@ -40,6 +42,13 @@ import {
   deleteBalanceCheck,
   recordBalanceCheck,
 } from '@abacus/core/services/balanceChecks'
+import {
+  type CardInput,
+  confirmStatement,
+  createCard,
+  deleteCard,
+  editCard,
+} from '@abacus/core/services/cards'
 import {
   closeActivity,
   createActivity,
@@ -308,6 +317,8 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
         : undefined,
       expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : undefined,
       refundedNow: expectedRefundFrom ? formData.get('refundedNow') !== null : undefined,
+      // No card chosen: the account was debited directly.
+      cardId: type === 'transfer' ? undefined : opt(formData, 'cardId'),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -383,6 +394,8 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       // Same as the claim: an emptied (or unrendered) field clears the VAT
       // rather than keeping a figure the panel no longer shows.
       vatAmount: optNum(formData, 'vatAmount') ?? null,
+      // Same: no card chosen (or none offered) means debited directly.
+      cardId: type === 'transfer' ? null : (opt(formData, 'cardId') ?? null),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -543,6 +556,100 @@ export async function closeAccountAction(_prev: FormState, formData: FormData): 
   return { ok: true }
 }
 
+/**
+ * A card as the panel sends it: the schedule only travels with a deferred
+ * card, since the service refuses one on an immediate card rather than
+ * storing it and forgetting it.
+ */
+function cardFields(formData: FormData): { fields?: Record<string, string>; input?: CardInput } {
+  const debitMode = (str(formData, 'debitMode') || 'immediate') as DebitMode
+  const deferred = debitMode === 'deferred'
+  const invalid = checkFields(formData, [
+    { name: 'name' },
+    { name: 'accountId' },
+    { name: 'expiryMonth' },
+    ...(deferred ? [{ name: 'statementDay' }, { name: 'debitDay' }] : []),
+  ])
+  if (invalid) return { fields: invalid }
+  return {
+    input: {
+      name: str(formData, 'name'),
+      accountId: str(formData, 'accountId'),
+      expiryMonth: str(formData, 'expiryMonth'),
+      debitMode,
+      ...(deferred && {
+        statementDay: num(formData, 'statementDay'),
+        statementShift: (str(formData, 'statementShift') || 'none') as DayShift,
+        debitDay: num(formData, 'debitDay'),
+        debitShift: (str(formData, 'debitShift') || 'none') as DayShift,
+      }),
+    },
+  }
+}
+
+export async function createCardAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const { fields, input } = cardFields(formData)
+  if (fields) return { fields }
+  try {
+    await createCard(userId, input!)
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function editCardAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const { fields, input } = cardFields(formData)
+  if (fields) return { fields }
+  try {
+    await editCard(userId, str(formData, 'cardId'), input!)
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** The bank debited a statement: the day it did, which moves every purchase of the cycle onto it. */
+export async function confirmStatementAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const invalid = checkFields(formData, [{ name: 'debitedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
+  try {
+    await confirmStatement(userId, str(formData, 'statementId'), str(formData, 'debitedOn'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** A statement validated by mistake goes back to waiting, off the balances. */
+export async function undoStatementAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await confirmStatement(userId, str(formData, 'statementId'), null)
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+export async function deleteCardAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await deleteCard(userId, str(formData, 'cardId'))
+  } catch (e) {
+    return { error: frError(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
 export async function createSubscriptionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const invalid = checkFields(formData, [
@@ -569,6 +676,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       activityId: opt(formData, 'activityId'),
       judgment: opt(formData, 'judgment') as Judgment | undefined,
       engagedUntil: opt(formData, 'engagedUntil'),
+      cardId: str(formData, 'direction') === 'incoming' ? undefined : opt(formData, 'cardId'),
     })
   } catch (e) {
     return { error: frError(e) }
@@ -775,6 +883,8 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
           }),
       activityId: opt(formData, 'activityId') ?? null,
       ...every,
+      // Only where the panel offered one: an empty choice then means a direct debit.
+      ...(formData.get('cardField') !== null && { cardId: opt(formData, 'cardId') ?? null }),
     })
   } catch (e) {
     return { error: frError(e) }

@@ -1,6 +1,7 @@
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
+import { listCards } from '@abacus/core/services/cards'
 import {
   COMMITMENT_SORTS,
   cancelCommitment,
@@ -28,6 +29,7 @@ import {
   requireActivityByName,
   requireActorByName,
   requireAssetByName,
+  requireCardByName,
   requireCategoryByName,
   requireCommitment,
 } from '../resolve.ts'
@@ -80,6 +82,12 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
         judgment: z.enum(['essential', 'reducible', 'to_cancel']).optional().describe('create/set_judgment'),
         judgmentNote: z.string().optional(),
         engagedUntil: isoDate.optional().describe('create: end of the contractual lock-in period, if any'),
+        card: z
+          .string()
+          .optional()
+          .describe(
+            'create, outgoing only: the card it is billed to (manage_cards), which must debit the account. Each occurrence is then a purchase on it: on a deferred-debit card, it leaves the account on the debit day. Leave it out for a direct debit',
+          ),
         effectiveOn: isoDate.optional().describe('change_price/cancel: effective date, defaults to today'),
       }),
     },
@@ -103,6 +111,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             judgment: a.judgment,
             judgmentNote: a.judgmentNote,
             engagedUntil: a.engagedUntil,
+            cardId: a.card ? (await requireCardByName(userId, a.card)).id : undefined,
           })
           return ok({ commitmentId: commitment.id, label: commitment.label, nextDueOn: commitment.nextDueOn })
         }
@@ -138,7 +147,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'update_commitment',
     {
       description:
-        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, a subscription lock-in date, and for an investment plan the asset it buys and the account it feeds. Works on subscriptions, recurring incomes, financings and investment plans alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, a subscription lock-in date and the card it is billed to, and for an investment plan the asset it buys and the account it feeds. Works on subscriptions, recurring incomes, financings and investment plans alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
       inputSchema: z.object({
         commitment: z.string().describe('Label (or id) of the commitment to correct'),
         label: z.string().optional().describe('New label'),
@@ -164,6 +173,12 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .string()
           .optional()
           .describe('Investment plan only: the investment account it feeds from now on'),
+        card: z
+          .string()
+          .optional()
+          .describe(
+            'Outgoing subscription only: the card it is billed to from the next occurrence (manage_cards), which must debit its account, or "none" for a direct debit',
+          ),
       }),
     },
     async (u) =>
@@ -171,6 +186,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
         const target = await requireCommitment(userId, u.commitment)
         const category = clearable(u.category)
         const activity = clearable(u.activity)
+        const card = clearable(u.card)
         const updated = await editCommitment(userId, target.id, {
           label: u.label,
           actorId: u.actor ? (await requireActorByName(userId, u.actor)).actor.id : undefined,
@@ -183,6 +199,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           targetAccountId: u.targetAccount
             ? (await requireAccountByName(userId, u.targetAccount)).id
             : undefined,
+          cardId: card ? (await requireCardByName(userId, card)).id : card,
         })
         return ok({
           commitmentId: updated.id,
@@ -452,6 +469,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             : undefined,
         })
         const assetNames = new Map((await listAssets(userId)).map((a) => [a.id, a.name]))
+        const cardNames = new Map((await listCards(userId)).map((card) => [card.id, card.name]))
         const view = commitments.map((c) => {
           if (c.kind === 'investment_plan') {
             return {
@@ -491,6 +509,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             id: c.id,
             ...account(c),
             direction: c.direction,
+            ...(c.cardId ? { card: cardNames.get(c.cardId) } : {}),
             amount: Number(c.amount),
             ...(c.currency !== 'EUR' ? { currency: c.currency } : {}),
             every: `${c.periodCount} ${c.periodUnit}`,
@@ -604,6 +623,10 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               // The account of the movement's own date: an occurrence confirmed
               // after the commitment moved lands on the one it really left.
               account: names.get(movement.sourceAccountId ?? movement.targetAccountId ?? ''),
+              // Billed to a deferred card, it waits for its statement's debit.
+              ...(movement.awaitingDebit
+                ? { expectedDebitOn: movement.happenedOn, awaitingDebit: true }
+                : {}),
               ...(diverged
                 ? {
                     expected,

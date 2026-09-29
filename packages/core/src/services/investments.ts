@@ -529,7 +529,9 @@ export async function portfolio(
   sort: SortChoice<PositionSortField> = DEFAULT_POSITION_SORT,
 ): Promise<PortfolioAccount[]> {
   const sql = db()
-  const accounts = (await listAccountsWithBalance(sql, userId)).filter((a) => a.behavior === 'investment')
+  const accounts = (await listAccountsWithBalance(sql, userId, today())).filter(
+    (a) => a.behavior === 'investment',
+  )
   const contributions = await netContributionsPerAccount(sql, userId)
   return await Promise.all(
     accounts.map(async (account) => {

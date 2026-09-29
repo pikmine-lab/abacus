@@ -28,6 +28,26 @@ export const FR: Record<string, string> = {
   movement_not_found: 'Ce mouvement n’existe plus.',
   refunded_movement: 'Un remboursement est lié à ce mouvement : supprime d’abord le remboursement.',
   account_exists: 'Un compte porte déjà ce nom.',
+  card_not_found: 'Cette carte n’existe plus.',
+  card_exists: 'Une carte porte déjà ce nom.',
+  card_needs_payment_account:
+    'Une carte débite un compte courant, pas un livret ni un compte d’investissement.',
+  schedule_on_immediate: 'Une carte à débit immédiat n’a ni arrêté ni jour de prélèvement.',
+  deferred_needs_schedule:
+    'Une carte à débit différé a besoin de son jour d’arrêté et de son jour de prélèvement.',
+  bad_card_day: 'Un jour du mois va de 1 à 31 (31 pour la fin du mois).',
+  bad_card_shift: 'Ce report de week-end n’existe pas.',
+  card_in_use:
+    'Des mouvements ou des abonnements passent par cette carte : elle reste, et son compte ne change plus.',
+  card_other_account: 'Cette carte débite un autre compte que celui choisi.',
+  card_expired: 'La carte avait expiré à cette date. Si elle a été renouvelée, mets à jour son expiration.',
+  transfer_has_no_card: 'Un virement entre tes comptes ne passe pas par une carte.',
+  refund_has_no_card: 'Le remboursement d’une avance arrive sur le compte, jamais sur la carte.',
+  card_on_subscription: 'Seul un abonnement sortant se paie par carte.',
+  statement_not_found: 'Ce relevé n’existe plus.',
+  statement_debit_ahead:
+    'Ce jour n’est pas encore passé : un relevé se valide une fois débité par la banque.',
+  statement_debit_before_cut_off: 'Un relevé ne peut pas être débité avant son arrêté.',
   account_not_found: 'Ce compte n’existe plus.',
   account_has_operations:
     'Ce compte porte des opérations d’investissement : son type ne change plus. Le reste se corrige.',
