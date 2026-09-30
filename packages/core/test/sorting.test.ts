@@ -244,7 +244,7 @@ test('commitments rank on euros, and what was never priced ranks last', async ()
   )
 })
 
-test('commitments group by account then by what pays them, every level ranked on the criterion', async () => {
+test('commitments group by account then by what pays them, subscriptions and financings each in their own order', async () => {
   const user = await seedUser()
   const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
   const joint = await createAccount({ userId: user, name: 'Joint', behavior: 'payment' })
@@ -265,19 +265,22 @@ test('commitments group by account then by what pays them, every level ranked on
       firstDueOn: '2026-04-05',
       ...extra,
     })
+  const financing = async (label: string, totalAmount: number, firstDueOn: string) =>
+    await createFinancing(user, {
+      label,
+      actorId: actor.id,
+      accountId: checking.id,
+      totalAmount,
+      installmentsTotal: 3,
+      firstDueOn,
+      cardId: card.id,
+    })
   await subscription('Streaming', checking.id, 15, { cardId: card.id })
   await subscription('Cloud', checking.id, 120, { cardId: card.id, periodUnit: 'year' })
   await subscription('Phone', checking.id, 20)
-  await subscription('Energy', joint.id, 80, { firstDueOn: '2026-04-02' })
-  await createFinancing(user, {
-    label: 'Laptop',
-    actorId: actor.id,
-    accountId: checking.id,
-    totalAmount: 300,
-    installmentsTotal: 3,
-    firstDueOn: '2026-04-20',
-    cardId: card.id,
-  })
+  await subscription('Energy', joint.id, 80)
+  await financing('Laptop', 300, '2026-04-20')
+  await financing('Bike', 900, '2026-04-10')
 
   const listed = await listCommitmentsWithProgress(user)
   const names = new Map([
@@ -285,55 +288,52 @@ test('commitments group by account then by what pays them, every level ranked on
     [joint.id, 'Joint'],
     [card.id, 'Visa'],
   ])
-  const read = (sort?: Parameters<typeof groupCommitments>[1]) =>
-    groupCommitments(listed, sort, names).map((account) => ({
+  const read = (order?: Parameters<typeof groupCommitments>[1]) =>
+    groupCommitments(listed, order).map((account) => ({
       account: names.get(account.accountId),
       monthly: account.monthlyEur,
       means: account.means.map((m) => ({
         card: m.cardId && names.get(m.cardId),
         monthly: m.monthlyEur,
-        lines: m.commitments.map((c) => c.label),
+        subscriptions: m.subscriptions.map((c) => c.label),
+        financings: m.financings.map((c) => c.label),
       })),
     }))
 
-  // What each account and each card has to cover a month, the dearest first.
-  assert.deepEqual(read(), [
+  // What each account and each card has to cover a month, the heaviest first;
+  // subscriptions by what they cost, financings by what falls next.
+  const opening = [
     {
       account: 'Checking',
-      monthly: 145,
+      monthly: 445,
       means: [
-        { card: 'Visa', monthly: 125, lines: ['Laptop', 'Streaming', 'Cloud'] },
-        { card: null, monthly: 20, lines: ['Phone'] },
+        { card: 'Visa', monthly: 425, subscriptions: ['Streaming', 'Cloud'], financings: ['Bike', 'Laptop'] },
+        { card: null, monthly: 20, subscriptions: ['Phone'], financings: [] },
       ],
     },
-    { account: 'Joint', monthly: 80, means: [{ card: null, monthly: 80, lines: ['Energy'] }] },
-  ])
+    {
+      account: 'Joint',
+      monthly: 80,
+      means: [{ card: null, monthly: 80, subscriptions: ['Energy'], financings: [] }],
+    },
+  ]
+  assert.deepEqual(read(), opening)
 
-  // The soonest date of a group is what ranks it.
+  // Each kind follows its own order, and neither moves the groups.
   assert.deepEqual(
-    read({ field: 'next', direction: 'asc' }).map((a) => a.account),
-    ['Joint', 'Checking'],
+    read({
+      subscriptions: { field: 'label', direction: 'asc' },
+      financings: { field: 'label', direction: 'desc' },
+    }),
+    opening.map((account) => ({
+      ...account,
+      means: account.means.map((m) =>
+        m.card === 'Visa'
+          ? { ...m, subscriptions: ['Cloud', 'Streaming'], financings: ['Laptop', 'Bike'] }
+          : m,
+      ),
+    })),
   )
-  // By name, what an account pays directly has no name and stays after its
-  // cards, whichever way the list runs.
-  for (const direction of ['asc', 'desc'] as const)
-    assert.deepEqual(
-      read({ field: 'label', direction })
-        .find((a) => a.account === 'Checking')!
-        .means.map((m) => m.card),
-      ['Visa', null],
-    )
-  assert.deepEqual(
-    read({ field: 'label', direction: 'desc' }).map((a) => a.account),
-    ['Joint', 'Checking'],
-  )
-  // Only a financing has a remaining due: a group of subscriptions alone does
-  // not answer the criterion and ranks last in both directions.
-  for (const direction of ['asc', 'desc'] as const)
-    assert.deepEqual(
-      read({ field: 'remaining', direction }).map((a) => a.account),
-      ['Checking', 'Joint'],
-    )
 })
 
 test('accounts rank on their last check, the never checked one first', async () => {
