@@ -165,9 +165,12 @@ export function SortColumn<Field extends string>({
 export function SortMenu<Field extends string>({
   sorter,
   options,
+  label = 'Trier',
 }: {
   sorter: Sorter<Field>
   options: { field: Field; label: string }[]
+  /** What the control reads before its criterion: the list it orders, when a header carries several. */
+  label?: string
 }) {
   const go = useSortHref()
   const current = options.find((o) => o.field === sorter.current.field)
@@ -193,7 +196,7 @@ export function SortMenu<Field extends string>({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[12px] text-muted-foreground">
-          Trier : {current?.label ?? ''}
+          {label} : {current?.label ?? ''}
           <Chevron direction={sorter.current.direction} />
         </Button>
       </DropdownMenuTrigger>

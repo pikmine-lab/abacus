@@ -778,6 +778,15 @@ export const DEFAULT_COMMITMENT_SORT: SortChoice<CommitmentSortField> = {
   direction: 'desc',
 }
 
+/**
+ * A financing is read by what falls next, which is how a plan is followed: its
+ * cost is known from the day it was signed, its calendar is what moves.
+ */
+export const DEFAULT_FINANCING_SORT: SortChoice<CommitmentSortField> = {
+  field: 'next',
+  direction: 'asc',
+}
+
 type SortableCommitment = CommitmentWithEur & { progress?: FinancingProgress | null }
 
 function commitmentKey(c: SortableCommitment, field: CommitmentSortField): string | number | null {
@@ -807,7 +816,8 @@ export interface CommitmentMeans<T> {
   cardId: string | null
   /** What these lines cost a month, in euros, summed the way the committed monthly cost is. */
   monthlyEur: number
-  commitments: T[]
+  subscriptions: T[]
+  financings: T[]
 }
 
 /** What one account has to cover, split by what pays it. */
@@ -823,45 +833,44 @@ export interface AccountCommitments<T> {
  * directly. A card debits a single account, so the nesting is strict and no
  * line counts twice.
  *
- * One criterion orders all three levels. Accounts and means rank on what their
- * lines add up to (the sum of a money criterion, the soonest date, their
- * name), then the lines rank inside their means. A group whose lines all lack
- * the criterion (a remaining due among subscriptions only) ranks last, like
- * any unknown key; under the name criterion, what the account pays directly
- * has no name to rank on and comes after its cards.
- *
- * `names` resolves account and card ids, for the name criterion only.
+ * Accounts and means rank on what they cost a month, the heaviest first: what
+ * an account has to cover is the question the grouping answers, and no chosen
+ * order changes it. Inside a means, subscriptions and financings stay apart,
+ * each in its own order: an open-ended cost and a plan that ends are not read
+ * on the same criterion, and ranking one against the other compares nothing.
  */
 export function groupCommitments<T extends SortableCommitment>(
   commitments: T[],
-  sort: SortChoice<CommitmentSortField> = DEFAULT_COMMITMENT_SORT,
-  names: ReadonlyMap<string, string> = new Map(),
+  order: {
+    subscriptions?: SortChoice<CommitmentSortField>
+    financings?: SortChoice<CommitmentSortField>
+  } = {},
 ): AccountCommitments<T>[] {
-  const aggregate = (lines: T[], id: string | null): string | number | null => {
-    if (sort.field === 'label') return id === null ? null : (names.get(id) ?? null)
-    const keys = lines.map((c) => commitmentKey(c, sort.field)).filter((key) => key !== null)
-    if (keys.length === 0) return null
-    if (sort.field === 'next')
-      return (keys as string[]).reduce((soonest, key) => (key < soonest ? key : soonest))
-    return (keys as number[]).reduce((sum, key) => sum + key, 0)
-  }
   const monthly = (lines: T[]) =>
     Math.round(lines.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0) * 100) / 100
+  const heaviestFirst = <G extends { monthlyEur: number }>(groups: G[]) =>
+    sortBy(groups, (g) => g.monthlyEur, 'desc')
 
-  const accounts = [...Map.groupBy(commitments, (c) => c.accountId)].map(([accountId, lines]) => {
-    const means = [...Map.groupBy(lines, (c) => c.cardId)].map(([cardId, paid]) => ({
-      cardId,
-      monthlyEur: monthly(paid),
-      commitments: sortCommitments(paid, sort),
-    }))
-    const account: AccountCommitments<T> = {
+  return heaviestFirst(
+    [...Map.groupBy(commitments, (c) => c.accountId)].map(([accountId, lines]) => ({
       accountId,
       monthlyEur: monthly(lines),
-      means: sortBy(means, (m) => aggregate(m.commitments, m.cardId), sort.direction),
-    }
-    return { account, key: aggregate(lines, accountId) }
-  })
-  return sortBy(accounts, (a) => a.key, sort.direction).map((a) => a.account)
+      means: heaviestFirst(
+        [...Map.groupBy(lines, (c) => c.cardId)].map(([cardId, paid]) => ({
+          cardId,
+          monthlyEur: monthly(paid),
+          subscriptions: sortCommitments(
+            paid.filter((c) => c.kind !== 'financing'),
+            order.subscriptions ?? DEFAULT_COMMITMENT_SORT,
+          ),
+          financings: sortCommitments(
+            paid.filter((c) => c.kind === 'financing'),
+            order.financings ?? DEFAULT_FINANCING_SORT,
+          ),
+        })),
+      ),
+    })),
+  )
 }
 
 export interface PendingOccurrence {

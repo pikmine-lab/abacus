@@ -8,6 +8,7 @@ import {
   COMMITMENT_SORTS,
   type CommitmentMeans,
   DEFAULT_COMMITMENT_SORT,
+  DEFAULT_FINANCING_SORT,
   financingSchedule,
   groupCommitments,
   listCommitmentsWithProgress,
@@ -44,9 +45,11 @@ export default async function RecurringExpensesPage({
   const userId = session.user.id
   const params = await searchParams
   const { error } = params
-  // One list, one order, whatever account a line falls under: it opens on what
-  // things cost a month, the question the review exists for.
-  const sort = sorter('commitments', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
+  // Two kinds, two orders, whatever account a line falls under: subscriptions
+  // open on what they cost a month, the question the review exists for, and
+  // financings on what falls next, which is how a plan is read.
+  const subscriptionSort = sorter('subscriptions', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
+  const financingSort = sorter('financings', COMMITMENT_SORTS, DEFAULT_FINANCING_SORT, params)
 
   const [commitments, pending, accounts, actors, categories, activities, cards] = await Promise.all([
     // Ended ones included, cancelled or paid off: a subscription's history is
@@ -73,7 +76,10 @@ export default async function RecurringExpensesPage({
   const cardNames = new Map(cards.map((card) => [card.id, card.name]))
   // What each account has to cover, split by what pays it: a subscription and
   // an installment weigh the same on the account they fall on.
-  const byAccount = groupCommitments(active, sort.current, new Map([...accountNames, ...cardNames]))
+  const byAccount = groupCommitments(active, {
+    subscriptions: subscriptionSort.current,
+    financings: financingSort.current,
+  })
   // Same references the creation form offers, so a row can be corrected too.
   const options = {
     accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
@@ -125,6 +131,15 @@ export default async function RecurringExpensesPage({
       options={options}
     />
   )
+  // Inside a means, each kind under its own name: the two are not read on the
+  // same criterion, so they are not ranked against each other.
+  const kind = (title: string, lines: CommitmentWithProgress[]) =>
+    lines.length > 0 && (
+      <div key={title} className="flex flex-col">
+        <p className="pt-2.5 text-[11px] text-faint">{title}</p>
+        <div className="flex flex-col divide-y divide-border/70">{lines.map(row)}</div>
+      </div>
+    )
 
   return (
     <>
@@ -220,61 +235,61 @@ export default async function RecurringExpensesPage({
             </EmptyLine>
           </Section>
         ) : (
-          // One section per account, each carrying the same order: a menu on
-          // every header rather than one far from the lists it moves.
-          byAccount.map((account) => {
-            const only = account.means.length === 1 ? account.means[0]! : null
-            return (
-              <Section
-                key={account.accountId}
-                title={accountNames.get(account.accountId) ?? ''}
-                description={[
-                  `${eur(account.monthlyEur, 2)} à couvrir par mois`,
-                  only && paidBy(only, cardNames).phrase,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-                action={
-                  active.length > 1 && (
+          // One section per account, each carrying the same two orders: the
+          // menus sit on every header rather than far from the lists they move.
+          byAccount.map((account) => (
+            <Section
+              key={account.accountId}
+              title={accountNames.get(account.accountId) ?? ''}
+              description={`${eur(account.monthlyEur, 2)} à couvrir par mois`}
+              action={
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  {subscriptions.length > 1 && account.means.some((m) => m.subscriptions.length > 0) && (
                     <SortMenu
-                      sorter={sort}
+                      label="Abonnements"
+                      sorter={subscriptionSort}
                       options={[
                         { field: 'monthly', label: 'Coût mensuel' },
                         { field: 'amount', label: 'Montant facturé' },
                         { field: 'next', label: 'Prochaine échéance' },
-                        ...(financings.length > 0
-                          ? [{ field: 'remaining' as const, label: 'Restant dû' }]
-                          : []),
                         { field: 'label', label: 'Nom' },
                       ]}
                     />
-                  )
-                }
-              >
-                <Rows>
-                  {/* Paid one way only, the account needs no header of that
-                      means: its total would repeat the section's, and the
-                      section already names it. */}
-                  {only
-                    ? only.commitments.map(row)
-                    : account.means.map((means) => (
-                        <MassFold
-                          key={means.cardId ?? 'direct'}
-                          label={paidBy(means, cardNames).title}
-                          figures={
-                            <span className="shrink-0 font-mono text-[12.5px] font-semibold tabular">
-                              −{eur(means.monthlyEur, 2)}
-                              <span className="text-[11px] font-normal text-faint"> /mois</span>
-                            </span>
-                          }
-                        >
-                          {means.commitments.map(row)}
-                        </MassFold>
-                      ))}
-                </Rows>
-              </Section>
-            )
-          })
+                  )}
+                  {financings.length > 1 && account.means.some((m) => m.financings.length > 0) && (
+                    <SortMenu
+                      label="Financements"
+                      sorter={financingSort}
+                      options={[
+                        { field: 'next', label: 'Prochaine échéance' },
+                        { field: 'remaining', label: 'Restant dû' },
+                        { field: 'amount', label: 'Mensualité' },
+                        { field: 'label', label: 'Nom' },
+                      ]}
+                    />
+                  )}
+                </div>
+              }
+            >
+              <Rows>
+                {account.means.map((means) => (
+                  <MassFold
+                    key={means.cardId ?? 'direct'}
+                    label={paidBy(means, cardNames)}
+                    figures={
+                      <span className="shrink-0 font-mono text-[12.5px] font-semibold tabular">
+                        −{eur(means.monthlyEur, 2)}
+                        <span className="text-[11px] font-normal text-faint"> /mois</span>
+                      </span>
+                    }
+                  >
+                    {kind('Abonnements', means.subscriptions)}
+                    {kind('Financements', means.financings)}
+                  </MassFold>
+                ))}
+              </Rows>
+            </Section>
+          ))
         )}
 
         {ended.length > 0 && (
@@ -300,11 +315,9 @@ export default async function RecurringExpensesPage({
 }
 
 /**
- * What pays a group of lines, as a header names it and as a sentence does. What
- * an account pays without a card is a direct debit, the ordinary case.
+ * What pays a group of lines, as its fold names it. What an account pays
+ * without a card is a direct debit, the ordinary case.
  */
-function paidBy(means: CommitmentMeans<unknown>, cardNames: Map<string, string>) {
-  if (!means.cardId) return { title: 'Prélèvements', phrase: 'par prélèvement' }
-  const name = cardNames.get(means.cardId) ?? ''
-  return { title: `Carte ${name}`, phrase: `par la carte ${name}` }
+function paidBy(means: CommitmentMeans<unknown>, cardNames: Map<string, string>): string {
+  return means.cardId ? `Carte ${cardNames.get(means.cardId) ?? ''}` : 'Prélèvements'
 }
