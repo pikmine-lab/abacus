@@ -295,8 +295,8 @@ test('commitments group by account then by what pays them, subscriptions and fin
       means: account.means.map((m) => ({
         card: m.cardId && names.get(m.cardId),
         monthly: m.monthlyEur,
-        subscriptions: m.subscriptions.map((c) => c.label),
-        financings: m.financings.map((c) => c.label),
+        subscriptions: m.subscriptions.lines.map((c) => c.label),
+        financings: m.financings.lines.map((c) => c.label),
       })),
     }))
 
@@ -318,6 +318,11 @@ test('commitments group by account then by what pays them, subscriptions and fin
     },
   ]
   assert.deepEqual(read(), opening)
+
+  // Each kind carries what it costs a month on its own, the yearly plan
+  // brought back to a month: together they make the card's total.
+  const visa = groupCommitments(listed)[0]!.means[0]!
+  assert.deepEqual([visa.subscriptions.monthlyEur, visa.financings.monthlyEur], [25, 400])
 
   // Each kind follows its own order, and neither moves the groups.
   assert.deepEqual(

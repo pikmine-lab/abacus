@@ -156,9 +156,11 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   un repli par carte et un pour les prélèvements, chacun avec son total, ouverts par défaut,
   même quand le compte n'est payé que d'une façon : le repli est un geste de lecture, il ne
   dépend pas du nombre de groupes. Dans un repli, les abonnements puis les financements,
-  chacun sous son intitulé et dans son propre ordre ; chaque section porte les deux menus,
-  qui pilotent le même ordre partout, comme sur Comptes. La ligne ne répète pas la carte
-  que son repli nomme. Ce qui est terminé, résilié ou soldé, ferme la page avec sa date.
+  chacun sous son intitulé, qui porte son total mensuel et son menu de tri : le menu des
+  abonnements vit avec les abonnements, celui des financements avec les financements, et
+  chacun pilote sa sorte dans tous les replis, comme sur Comptes. L'en-tête du compte ne
+  porte que ce qu'il doit couvrir. La ligne ne répète pas la carte que son repli nomme. Ce
+  qui est terminé, résilié ou soldé, ferme la page avec sa date.
 - **La périodicité est une seule question** : « chaque mois », « toutes les 2 semaines »,
   « tous les 3 mois », plutôt qu'une unité et un multiple à combiner de tête. La liste couvre
   les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste garde le
