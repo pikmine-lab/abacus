@@ -99,7 +99,7 @@ export async function requireCommitment(userId: string, labelOrId: string): Prom
       'commitment_ambiguous',
       `Several commitments are labeled "${labelOrId}". Use the id: ${matches.map((c) => `${c.label} (${c.id})`).join(', ')}.`,
     )
-  const active = all.filter((c) => !c.cancelledOn)
+  const active = all.filter((c) => !c.cancelledOn && !c.settledOn)
   throw new DomainError(
     'commitment_not_found',
     `No commitment "${labelOrId}". Active commitments: ${active.map((c) => c.label).join(', ') || 'none'}.`,

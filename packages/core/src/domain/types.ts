@@ -226,6 +226,11 @@ export interface Commitment {
   judgmentNote: string | null
   engagedUntil: string | null
   cancelledOn: string | null
+  /**
+   * Financing only: the day its last installment was paid. A paid-off plan is
+   * over as surely as a cancelled one, without anyone having closed it.
+   */
+  settledOn: string | null
   installmentsTotal: number | null
   totalAmount: string | null
   /** Outgoing subscription only: the card it is billed to. */

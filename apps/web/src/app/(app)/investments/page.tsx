@@ -49,6 +49,7 @@ import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { NATURE_LABEL } from '@/lib/nature'
 import { sorter } from '@/lib/sort'
 import { eur, eurSigned, frDate } from '@/lib/utils'
 
@@ -520,7 +521,7 @@ export default async function InvestmentsPage({
                         : masses.map((mass) => (
                             <MassFold
                               key={mass.nature}
-                              nature={mass.nature}
+                              label={NATURE_LABEL[mass.nature]}
                               note={
                                 mass.unpriced > 0
                                   ? `${mass.unpriced} sans cours, non valorisée${mass.unpriced > 1 ? 's' : ''}`

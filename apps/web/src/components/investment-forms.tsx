@@ -750,7 +750,7 @@ export function AssetRows({ assets }: { assets: (AssetEntry & { price: string | 
       {masses.length === 1
         ? assets.map((asset) => <AssetRow key={asset.id} asset={asset} />)
         : masses.map(([nature, group]) => (
-            <MassFold key={nature} nature={nature}>
+            <MassFold key={nature} label={NATURE_LABEL[nature]}>
               {group.map((asset) => (
                 <AssetRow key={asset.id} asset={asset} />
               ))}

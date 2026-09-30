@@ -59,13 +59,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
   const cardAccounts = accounts
     .filter((a) => a.behavior === 'payment' && !a.closedOn)
     .map((a) => ({ id: a.id, name: a.name }))
-  // A financing whose last installment is paid needs the card no more.
-  const billed = commitments.filter(
-    (c) =>
-      c.cardId === cardId &&
-      !c.cancelledOn &&
-      !(c.progress && c.progress.paidInstallments >= (c.installmentsTotal ?? 0)),
-  )
+  // The list holds running commitments only: a cancelled one, or a financing
+  // whose last installment is paid, needs the card no more.
+  const billed = commitments.filter((c) => c.cardId === cardId)
 
   const purchaseDay = (m: Movement) => m.purchasedOn ?? m.happenedOn
   const signed = (m: Movement) => (m.kind === 'income' ? -Number(m.amount) : Number(m.amount))

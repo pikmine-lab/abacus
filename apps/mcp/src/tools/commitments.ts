@@ -13,6 +13,7 @@ import {
   DEFAULT_COMMITMENT_SORT,
   editCommitment,
   financingSchedule,
+  groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
   moveAccount,
@@ -447,7 +448,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes cancelled ones only with includeCancelled. Ranked by monthly-equivalent cost, biggest first, which is the order the user sees on screen and the one "what costs me the most" is answered with: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost), ranked on the same criterion, which is how the user reads them on screen. Quote those totals rather than adding the lines up.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
         sortBy: z
@@ -508,7 +509,9 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               installment: Number(c.amount),
               paidInstallments: `${c.progress.paidInstallments}/${c.installmentsTotal}`,
               remainingDue: c.progress.remainingDue,
-              nextDueOn: c.progress.paidInstallments >= (c.installmentsTotal ?? 0) ? 'settled' : c.nextDueOn,
+              cancelledOn: c.cancelledOn ?? undefined,
+              settledOn: c.settledOn ?? undefined,
+              nextDueOn: c.settledOn ? undefined : c.nextDueOn,
             }
           }
           return {
@@ -531,7 +534,23 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             nextDueOn: c.nextDueOn,
           }
         })
-        return ok({ order: orderedBy(sort), commitments: view })
+        // Same grouping and same order as the screen: an agent adding the
+        // lines itself would convert nothing and could count a placement.
+        const costs = commitments.filter(
+          (c) => c.direction === 'outgoing' && c.kind !== 'investment_plan' && !c.cancelledOn && !c.settledOn,
+        )
+        const costByAccount = groupCommitments(costs, sort, new Map([...names, ...cardNames])).map(
+          (group) => ({
+            account: names.get(group.accountId),
+            monthlyCost: group.monthlyEur,
+            paidBy: group.means.map((means) => ({
+              ...(means.cardId ? { card: cardNames.get(means.cardId) } : { directDebit: true }),
+              monthlyCost: means.monthlyEur,
+              commitments: means.commitments.map((c) => c.label),
+            })),
+          }),
+        )
+        return ok({ order: orderedBy(sort), commitments: view, costByAccount })
       }),
   )
 

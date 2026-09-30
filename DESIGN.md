@@ -232,6 +232,10 @@ de page.
   un défaut que là où on cherche une ligne avant de la comparer, comme les comptes et le
   référentiel. Un tri choisi remplace un ordre décidé le temps d'une lecture ; il ne rend
   pas ce défaut arbitraire.
+- **Une liste groupée s'ordonne à tous ses niveaux sur le même critère.** Les groupes se
+  classent sur ce que leurs lignes donnent ensemble (la somme d'un montant, l'échéance la
+  plus proche, leur nom), puis les lignes se classent dans leur groupe. Un groupe dont
+  aucune ligne ne répond au critère passe en fin de liste, comme une valeur inconnue.
 - **Ce qui est inconnu ne devient pas le plus petit.** Une position sans cours, un montant
   jamais converti restent en fin de liste dans les deux sens : un tiret n'est pas un zéro,
   et l'inversion ne doit pas le promouvoir en tête.
