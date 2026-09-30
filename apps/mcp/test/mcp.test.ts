@@ -2079,8 +2079,18 @@ test('a deferred card groups its purchases in statements validated through the M
       account: 'Courant',
       monthlyCost: 343,
       paidBy: [
-        { card: 'Gold', monthlyCost: 313, subscriptions: ['Streaming'], financings: ['Sofa x3'] },
-        { directDebit: true, monthlyCost: 30, subscriptions: ['Box'], financings: [] },
+        {
+          card: 'Gold',
+          monthlyCost: 313,
+          subscriptions: { monthlyCost: 13, commitments: ['Streaming'] },
+          financings: { monthlyCost: 300, commitments: ['Sofa x3'] },
+        },
+        {
+          directDebit: true,
+          monthlyCost: 30,
+          subscriptions: { monthlyCost: 30, commitments: ['Box'] },
+          financings: { monthlyCost: 0, commitments: [] },
+        },
       ],
     },
   ])

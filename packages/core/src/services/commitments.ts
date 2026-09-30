@@ -811,13 +811,19 @@ export function sortCommitments<T extends SortableCommitment>(
   return sortBy(commitments, (c) => commitmentKey(c, sort.field), sort.direction)
 }
 
+/** One kind of line inside a means, with what it costs a month on its own. */
+export interface CommitmentKind<T> {
+  monthlyEur: number
+  lines: T[]
+}
+
 /** What pays some of an account's commitments: one of its cards, or the account itself (`cardId` null). */
 export interface CommitmentMeans<T> {
   cardId: string | null
   /** What these lines cost a month, in euros, summed the way the committed monthly cost is. */
   monthlyEur: number
-  subscriptions: T[]
-  financings: T[]
+  subscriptions: CommitmentKind<T>
+  financings: CommitmentKind<T>
 }
 
 /** What one account has to cover, split by what pays it. */
@@ -836,8 +842,9 @@ export interface AccountCommitments<T> {
  * Accounts and means rank on what they cost a month, the heaviest first: what
  * an account has to cover is the question the grouping answers, and no chosen
  * order changes it. Inside a means, subscriptions and financings stay apart,
- * each in its own order: an open-ended cost and a plan that ends are not read
- * on the same criterion, and ranking one against the other compares nothing.
+ * each with its own total and in its own order: an open-ended cost and a plan
+ * that ends are not read on the same criterion, and ranking one against the
+ * other compares nothing.
  */
 export function groupCommitments<T extends SortableCommitment>(
   commitments: T[],
@@ -850,6 +857,10 @@ export function groupCommitments<T extends SortableCommitment>(
     Math.round(lines.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0) * 100) / 100
   const heaviestFirst = <G extends { monthlyEur: number }>(groups: G[]) =>
     sortBy(groups, (g) => g.monthlyEur, 'desc')
+  const kind = (lines: T[], sort: SortChoice<CommitmentSortField>): CommitmentKind<T> => ({
+    monthlyEur: monthly(lines),
+    lines: sortCommitments(lines, sort),
+  })
 
   return heaviestFirst(
     [...Map.groupBy(commitments, (c) => c.accountId)].map(([accountId, lines]) => ({
@@ -859,11 +870,11 @@ export function groupCommitments<T extends SortableCommitment>(
         [...Map.groupBy(lines, (c) => c.cardId)].map(([cardId, paid]) => ({
           cardId,
           monthlyEur: monthly(paid),
-          subscriptions: sortCommitments(
+          subscriptions: kind(
             paid.filter((c) => c.kind !== 'financing'),
             order.subscriptions ?? DEFAULT_COMMITMENT_SORT,
           ),
-          financings: sortCommitments(
+          financings: kind(
             paid.filter((c) => c.kind === 'financing'),
             order.financings ?? DEFAULT_FINANCING_SORT,
           ),

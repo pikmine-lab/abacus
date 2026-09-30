@@ -6,7 +6,9 @@ import { listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   COMMITMENT_SORTS,
+  type CommitmentKind,
   type CommitmentMeans,
+  type CommitmentSortField,
   DEFAULT_COMMITMENT_SORT,
   DEFAULT_FINANCING_SORT,
   financingSchedule,
@@ -26,7 +28,7 @@ import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
 import { cardChoices } from '@/lib/movement-form-data'
-import { sorter } from '@/lib/sort'
+import { type Sorter, sorter } from '@/lib/sort'
 import { eur, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +36,20 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Dépenses récurrentes' }
 
 const PATH = '/recurring-expenses'
+
+const SUBSCRIPTION_SORTS: { field: CommitmentSortField; label: string }[] = [
+  { field: 'monthly', label: 'Coût mensuel' },
+  { field: 'amount', label: 'Montant facturé' },
+  { field: 'next', label: 'Prochaine échéance' },
+  { field: 'label', label: 'Nom' },
+]
+
+const FINANCING_SORTS: { field: CommitmentSortField; label: string }[] = [
+  { field: 'next', label: 'Prochaine échéance' },
+  { field: 'remaining', label: 'Restant dû' },
+  { field: 'amount', label: 'Mensualité' },
+  { field: 'label', label: 'Nom' },
+]
 
 export default async function RecurringExpensesPage({
   searchParams,
@@ -131,13 +147,31 @@ export default async function RecurringExpensesPage({
       options={options}
     />
   )
-  // Inside a means, each kind under its own name: the two are not read on the
-  // same criterion, so they are not ranked against each other.
-  const kind = (title: string, lines: CommitmentWithProgress[]) =>
-    lines.length > 0 && (
+  // Inside a means, each kind under its own name, with its own total and its
+  // own order: the two are not read on the same criterion, so they are not
+  // ranked against each other. The menu sits on the kind it orders and drives
+  // that kind in every fold, as the account menus do on Accounts.
+  const kind = (
+    title: string,
+    group: CommitmentKind<CommitmentWithProgress>,
+    sort: Sorter<CommitmentSortField>,
+    criteria: { field: CommitmentSortField; label: string }[],
+  ) =>
+    group.lines.length > 0 && (
       <div key={title} className="flex flex-col">
-        <p className="pt-2.5 text-[11px] text-faint">{title}</p>
-        <div className="flex flex-col divide-y divide-border/70">{lines.map(row)}</div>
+        <div className="flex items-center gap-2 pt-2.5">
+          <p className="text-[11px] text-faint">{title}</p>
+          <span className="font-mono text-[11px] text-muted-foreground tabular">
+            −{eur(group.monthlyEur, 2)}
+            <span className="text-faint"> /mois</span>
+          </span>
+          {group.lines.length > 1 && (
+            <div className="ml-auto">
+              <SortMenu sorter={sort} options={criteria} />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col divide-y divide-border/70">{group.lines.map(row)}</div>
       </div>
     )
 
@@ -235,41 +269,13 @@ export default async function RecurringExpensesPage({
             </EmptyLine>
           </Section>
         ) : (
-          // One section per account, each carrying the same two orders: the
-          // menus sit on every header rather than far from the lists they move.
+          // One section per account: what it has to cover is the question, so
+          // the header carries its total and no order.
           byAccount.map((account) => (
             <Section
               key={account.accountId}
               title={accountNames.get(account.accountId) ?? ''}
               description={`${eur(account.monthlyEur, 2)} à couvrir par mois`}
-              action={
-                <div className="flex flex-wrap items-center justify-end gap-1">
-                  {subscriptions.length > 1 && account.means.some((m) => m.subscriptions.length > 0) && (
-                    <SortMenu
-                      label="Abonnements"
-                      sorter={subscriptionSort}
-                      options={[
-                        { field: 'monthly', label: 'Coût mensuel' },
-                        { field: 'amount', label: 'Montant facturé' },
-                        { field: 'next', label: 'Prochaine échéance' },
-                        { field: 'label', label: 'Nom' },
-                      ]}
-                    />
-                  )}
-                  {financings.length > 1 && account.means.some((m) => m.financings.length > 0) && (
-                    <SortMenu
-                      label="Financements"
-                      sorter={financingSort}
-                      options={[
-                        { field: 'next', label: 'Prochaine échéance' },
-                        { field: 'remaining', label: 'Restant dû' },
-                        { field: 'amount', label: 'Mensualité' },
-                        { field: 'label', label: 'Nom' },
-                      ]}
-                    />
-                  )}
-                </div>
-              }
             >
               <Rows>
                 {account.means.map((means) => (
@@ -283,8 +289,8 @@ export default async function RecurringExpensesPage({
                       </span>
                     }
                   >
-                    {kind('Abonnements', means.subscriptions)}
-                    {kind('Financements', means.financings)}
+                    {kind('Abonnements', means.subscriptions, subscriptionSort, SUBSCRIPTION_SORTS)}
+                    {kind('Financements', means.financings, financingSort, FINANCING_SORTS)}
                   </MassFold>
                 ))}
               </Rows>

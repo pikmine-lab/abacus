@@ -236,7 +236,8 @@ de page.
   classent sur ce qu'ils totalisent, le plus lourd d'abord, parce que c'est la question à
   laquelle le regroupement répond ; le critère choisi range les lignes dans chaque groupe.
   Deux sortes de lignes qui ne se lisent pas sur les mêmes critères (un abonnement et un
-  financement) ne se classent pas l'une contre l'autre : chacune a son intitulé et son tri.
+  financement) ne se classent pas l'une contre l'autre : chacune a son intitulé, qui porte
+  son total et son propre tri.
 - **Ce qui est inconnu ne devient pas le plus petit.** Une position sans cours, un montant
   jamais converti restent en fin de liste dans les deux sens : un tiret n'est pas un zéro,
   et l'inversion ne doit pas le promouvoir en tête.
