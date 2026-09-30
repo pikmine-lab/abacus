@@ -150,6 +150,14 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 
 ### Engagements et échéances
 
+- **Les dépenses récurrentes se lisent par compte.** Abonnements et financements en cours
+  vivent ensemble, une section par compte débité : une mensualité pèse sur un compte autant
+  qu'un abonnement, et l'en-tête dit ce que le compte doit couvrir par mois. Dans un compte,
+  un repli par carte et un pour les prélèvements, chacun avec son total, ouverts par défaut.
+  Un compte payé d'une seule façon n'en affiche pas et la nomme dans son en-tête, pour que
+  le même total ne s'écrive pas deux fois. Chaque section porte le même menu de tri, comme
+  sur Comptes, et la ligne ne répète pas la carte que son repli nomme. Ce qui est terminé,
+  résilié ou soldé, ferme la page avec sa date.
 - **La périodicité est une seule question** : « chaque mois », « toutes les 2 semaines »,
   « tous les 3 mois », plutôt qu'une unité et un multiple à combiner de tête. La liste couvre
   les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste garde le

@@ -36,13 +36,14 @@ export interface NewCommitment {
  * A commitment as stored, before the dated account history is applied:
  * `accountId` is the account it started on.
  */
-type StoredCommitment = Omit<Commitment, 'nextAccountMove'>
+type StoredCommitment = Omit<Commitment, 'nextAccountMove' | 'settledOn'>
 
-/** The stored row plus what the two lateral joins below resolved. */
+/** The stored row plus what the lateral joins below resolved. */
 interface ReadCommitment extends StoredCommitment {
   movedAccountId: string | null
   movingToAccountId: string | null
   movingOn: string | null
+  settledOn: string | null
 }
 
 /**
@@ -65,11 +66,31 @@ function accountOn(tx: Executor, on: string) {
   `
 }
 
+/**
+ * When a financing was paid off: the day its last installment was paid, once
+ * no line of its plan is owed any more. A settled line carries its payment
+ * date, so that is the latest date of the plan. It is derived and never
+ * stored, because every write on a schedule (a confirmed installment, a
+ * corrected or deleted payment, a revised plan) can close the plan or reopen
+ * it, and a stored state would have to be told each time. A subscription has
+ * no schedule, so it is never settled.
+ */
+function settled(tx: Executor) {
+  return tx`
+    left join lateral (
+      select max(i.due_on) as settled_on from financing_installment i
+      where i.commitment_id = c.id
+      having bool_and(i.movement_id is not null)
+    ) settled on true
+  `
+}
+
 const READ = (tx: Executor) => tx`
   c.*,
   moved.account_id as moved_account_id,
   moving.account_id as moving_to_account_id,
-  moving.occurred_on as moving_on
+  moving.occurred_on as moving_on,
+  settled.settled_on
 `
 
 /**
@@ -88,7 +109,7 @@ function asCommitment(row: ReadCommitment): Commitment {
 
 export async function insertCommitment(tx: Executor, row: NewCommitment): Promise<Commitment> {
   const [commitment] = await tx<StoredCommitment[]>`insert into commitment ${tx(compact(row))} returning *`
-  return { ...commitment!, nextAccountMove: null }
+  return { ...commitment!, nextAccountMove: null, settledOn: null }
 }
 
 export async function getCommitment(
@@ -98,7 +119,7 @@ export async function getCommitment(
   on = today(),
 ): Promise<Commitment | undefined> {
   const [commitment] = await tx<ReadCommitment[]>`
-    select ${READ(tx)} from commitment c ${accountOn(tx, on)}
+    select ${READ(tx)} from commitment c ${accountOn(tx, on)} ${settled(tx)}
     where c.user_id = ${userId} and c.id = ${id}
   `
   return commitment && asCommitment(commitment)
@@ -112,7 +133,7 @@ export async function getCommitmentForUpdate(
   on = today(),
 ): Promise<Commitment | undefined> {
   const [commitment] = await tx<ReadCommitment[]>`
-    select ${READ(tx)} from commitment c ${accountOn(tx, on)}
+    select ${READ(tx)} from commitment c ${accountOn(tx, on)} ${settled(tx)}
     where c.user_id = ${userId} and c.id = ${id}
     for update of c
   `
@@ -125,9 +146,9 @@ export async function listCommitments(
   opts: { activeOnly?: boolean; on?: string } = {},
 ): Promise<Commitment[]> {
   const rows = await tx<ReadCommitment[]>`
-    select ${READ(tx)} from commitment c ${accountOn(tx, opts.on ?? today())}
+    select ${READ(tx)} from commitment c ${accountOn(tx, opts.on ?? today())} ${settled(tx)}
     where c.user_id = ${userId}
-    ${opts.activeOnly ? tx`and c.cancelled_on is null` : tx``}
+    ${opts.activeOnly ? tx`and c.cancelled_on is null and settled.settled_on is null` : tx``}
     order by c.next_due_on
   `
   return rows.map(asCommitment)

@@ -4,21 +4,22 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
-import type { CommitmentSortField } from '@abacus/core/services/commitments'
 import {
   COMMITMENT_SORTS,
+  type CommitmentMeans,
   DEFAULT_COMMITMENT_SORT,
   financingSchedule,
+  groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
   pendingOccurrences,
-  sortCommitments,
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { CommitmentRow } from '@/components/commitment-blocks'
+import { CommitmentRow, type CommitmentWithProgress } from '@/components/commitment-blocks'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
+import { MassFold } from '@/components/mass-fold'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
@@ -43,20 +44,13 @@ export default async function RecurringExpensesPage({
   const userId = session.user.id
   const params = await searchParams
   const { error } = params
-  // Two lists, two orders: subscriptions open on what they cost a month, the
-  // question the review exists for, and financings on what falls next, which
-  // is how a plan is read.
-  const subscriptionSort = sorter('subscriptions', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
-  const financingSort = sorter<CommitmentSortField>(
-    'financings',
-    COMMITMENT_SORTS,
-    { field: 'next', direction: 'asc' },
-    params,
-  )
+  // One list, one order, whatever account a line falls under: it opens on what
+  // things cost a month, the question the review exists for.
+  const sort = sorter('commitments', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
 
   const [commitments, pending, accounts, actors, categories, activities, cards] = await Promise.all([
-    // Cancelled ones included: a subscription's history is the point of the
-    // event log, and "what did I cut this year" is a real question.
+    // Ended ones included, cancelled or paid off: a subscription's history is
+    // the point of the event log, and "what did I cut this year" is a real question.
     listCommitmentsWithProgress(userId, false),
     pendingOccurrences(userId),
     listAccounts(userId),
@@ -70,11 +64,16 @@ export default async function RecurringExpensesPage({
   // no cost: it lives in Placements, with the asset it buys, and it enters
   // neither these lists nor the committed cost below.
   const outgoing = commitments.filter((c) => c.direction === 'outgoing' && c.kind !== 'investment_plan')
-  const active = outgoing.filter((c) => !c.cancelledOn)
+  const active = outgoing.filter((c) => !c.cancelledOn && !c.settledOn)
   const subscriptions = active.filter((c) => c.kind === 'subscription')
   const financings = active.filter((c) => c.kind === 'financing')
-  const cancelled = outgoing.filter((c) => c.cancelledOn)
+  // Cancelled, or paid off: over either way, and kept for their history.
+  const ended = outgoing.filter((c) => c.cancelledOn || c.settledOn)
   const accountNames = new Map(accounts.map((a) => [a.id, a.name]))
+  const cardNames = new Map(cards.map((card) => [card.id, card.name]))
+  // What each account has to cover, split by what pays it: a subscription and
+  // an installment weigh the same on the account they fall on.
+  const byAccount = groupCommitments(active, sort.current, new Map([...accountNames, ...cardNames]))
   // Same references the creation form offers, so a row can be corrected too.
   const options = {
     accounts: accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name })),
@@ -116,6 +115,17 @@ export default async function RecurringExpensesPage({
     .filter(Boolean)
     .join(' · ')
 
+  const row = (c: CommitmentWithProgress) => (
+    <CommitmentRow
+      key={c.id}
+      commitment={c}
+      showJudgment={c.kind === 'subscription'}
+      schedule={schedules.get(c.id)}
+      today={today()}
+      options={options}
+    />
+  )
+
   return (
     <>
       <PageHeader title="Dépenses récurrentes" description="ce qui part tout seul, tous les mois">
@@ -154,8 +164,8 @@ export default async function RecurringExpensesPage({
             label="Abonnements actifs"
             value={String(subscriptions.length)}
             hint={
-              cancelled.length > 0
-                ? `${cancelled.length} résilié${cancelled.length > 1 ? 's' : ''} dans l’historique`
+              ended.length > 0
+                ? `${ended.length} terminé${ended.length > 1 ? 's' : ''} dans l’historique`
                 : undefined
             }
           />
@@ -203,74 +213,81 @@ export default async function RecurringExpensesPage({
           </Section>
         )}
 
-        <Section
-          title="Abonnements"
-          description={`${subscriptions.length} actif${subscriptions.length > 1 ? 's' : ''} · le jugement prépare la revue « que couper ? »`}
-          action={
-            subscriptions.length > 1 && (
-              <SortMenu
-                sorter={subscriptionSort}
-                options={[
-                  { field: 'monthly', label: 'Coût mensuel' },
-                  { field: 'amount', label: 'Montant facturé' },
-                  { field: 'next', label: 'Prochaine échéance' },
-                  { field: 'label', label: 'Nom' },
-                ]}
-              />
-            )
-          }
-        >
-          {subscriptions.length === 0 ? (
-            <EmptyLine>Aucun abonnement déclaré. Le bouton « Ajouter » est en haut à droite.</EmptyLine>
-          ) : (
-            <Rows>
-              {sortCommitments(subscriptions, subscriptionSort.current).map((c) => (
-                <CommitmentRow key={c.id} commitment={c} showJudgment options={options} today={today()} />
-              ))}
-            </Rows>
-          )}
-        </Section>
-
-        {financings.length > 0 && (
-          <Section
-            title="Financements en cours"
-            description="s’éteignent seuls à la dernière échéance"
-            action={
-              financings.length > 1 && (
-                <SortMenu
-                  sorter={financingSort}
-                  options={[
-                    { field: 'next', label: 'Prochaine échéance' },
-                    { field: 'remaining', label: 'Restant dû' },
-                    { field: 'amount', label: 'Mensualité' },
-                    { field: 'label', label: 'Nom' },
-                  ]}
-                />
-              )
-            }
-          >
-            <Rows>
-              {sortCommitments(financings, financingSort.current).map((c) => (
-                <CommitmentRow
-                  key={c.id}
-                  commitment={c}
-                  showJudgment={false}
-                  schedule={schedules.get(c.id)}
-                  today={today()}
-                  options={options}
-                />
-              ))}
-            </Rows>
+        {active.length === 0 ? (
+          <Section title="Abonnements et financements">
+            <EmptyLine>
+              Aucune dépense récurrente déclarée. Le bouton « Ajouter » est en haut à droite.
+            </EmptyLine>
           </Section>
+        ) : (
+          // One section per account, each carrying the same order: a menu on
+          // every header rather than one far from the lists it moves.
+          byAccount.map((account) => {
+            const only = account.means.length === 1 ? account.means[0]! : null
+            return (
+              <Section
+                key={account.accountId}
+                title={accountNames.get(account.accountId) ?? ''}
+                description={[
+                  `${eur(account.monthlyEur, 2)} à couvrir par mois`,
+                  only && paidBy(only, cardNames).phrase,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                action={
+                  active.length > 1 && (
+                    <SortMenu
+                      sorter={sort}
+                      options={[
+                        { field: 'monthly', label: 'Coût mensuel' },
+                        { field: 'amount', label: 'Montant facturé' },
+                        { field: 'next', label: 'Prochaine échéance' },
+                        ...(financings.length > 0
+                          ? [{ field: 'remaining' as const, label: 'Restant dû' }]
+                          : []),
+                        { field: 'label', label: 'Nom' },
+                      ]}
+                    />
+                  )
+                }
+              >
+                <Rows>
+                  {/* Paid one way only, the account needs no header of that
+                      means: its total would repeat the section's, and the
+                      section already names it. */}
+                  {only
+                    ? only.commitments.map(row)
+                    : account.means.map((means) => (
+                        <MassFold
+                          key={means.cardId ?? 'direct'}
+                          label={paidBy(means, cardNames).title}
+                          figures={
+                            <span className="shrink-0 font-mono text-[12.5px] font-semibold tabular">
+                              −{eur(means.monthlyEur, 2)}
+                              <span className="text-[11px] font-normal text-faint"> /mois</span>
+                            </span>
+                          }
+                        >
+                          {means.commitments.map(row)}
+                        </MassFold>
+                      ))}
+                </Rows>
+              </Section>
+            )
+          })
         )}
 
-        {cancelled.length > 0 && (
-          <Section title="Résiliés" description="gardés pour l’historique des prix">
+        {ended.length > 0 && (
+          <Section title="Terminés" description="résiliés ou soldés, gardés pour l’historique des prix">
             <Rows>
-              {cancelled.map((c) => (
+              {ended.map((c) => (
                 <div key={c.id} className="flex items-baseline gap-3 py-2 text-faint">
                   <span className="text-[12.5px]">{c.label}</span>
-                  <span className="text-[11px]">résilié le {frDate(c.cancelledOn!)}</span>
+                  <span className="text-[11px]">
+                    {c.cancelledOn
+                      ? `résilié le ${frDate(c.cancelledOn)}`
+                      : `soldé le ${frDate(c.settledOn!)}`}
+                  </span>
                   <span className="ml-auto font-mono text-[12.5px] tabular">{eur(Number(c.amount), 2)}</span>
                 </div>
               ))}
@@ -280,4 +297,14 @@ export default async function RecurringExpensesPage({
       </PageBody>
     </>
   )
+}
+
+/**
+ * What pays a group of lines, as a header names it and as a sentence does. What
+ * an account pays without a card is a direct debit, the ordinary case.
+ */
+function paidBy(means: CommitmentMeans<unknown>, cardNames: Map<string, string>) {
+  if (!means.cardId) return { title: 'Prélèvements', phrase: 'par prélèvement' }
+  const name = cardNames.get(means.cardId) ?? ''
+  return { title: `Carte ${name}`, phrase: `par la carte ${name}` }
 }

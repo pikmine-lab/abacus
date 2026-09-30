@@ -227,6 +227,41 @@ test('a financing stops at its last installment and derives its total', async ()
   assert.deepEqual(await pendingOccurrences(user, '2027-12-31'), [])
 })
 
+test('a paid-off financing is closed on the day of its last payment, and reopens when a payment is undone', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const store = await createActor(user, { name: 'Store' })
+  const financing = await createFinancing(user, {
+    label: 'Phone x2',
+    actorId: store.id,
+    accountId: account.id,
+    totalAmount: 400,
+    installmentsTotal: 2,
+    firstDueOn: '2026-01-15',
+  })
+  const running = async () => (await listCommitmentsWithProgress(user)).map((c) => c.id)
+  const everything = async () =>
+    (await listCommitmentsWithProgress(user, false)).find((c) => c.id === financing.id)!
+
+  await confirmNextOccurrence(user, financing.id)
+  assert.deepEqual(await running(), [financing.id])
+  assert.equal((await everything()).settledOn, null)
+
+  const last = (await confirmNextOccurrence(user, financing.id, { happenedOn: '2026-02-17' })).movement
+  assert.deepEqual(await running(), [])
+  assert.equal((await everything()).settledOn, '2026-02-17')
+  assert.equal((await everything()).cancelledOn, null)
+  await assert.rejects(
+    cancelCommitment(user, financing.id),
+    (e: DomainError) => e.code === 'financing_settled',
+  )
+
+  // The last payment was a mistake: the installment is owed again, so the plan runs again.
+  await deleteMovement(user, last.id)
+  assert.deepEqual(await running(), [financing.id])
+  assert.equal((await everything()).settledOn, null)
+})
+
 test('an incoming commitment (salary) confirms into an income', async () => {
   const user = await seedUser()
   const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })

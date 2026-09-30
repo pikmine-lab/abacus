@@ -11,6 +11,7 @@ import {
 } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { recordBalanceCheck } from '../src/services/balanceChecks.ts'
+import { createCard } from '../src/services/cards.ts'
 import {
   CATEGORY_SORTS,
   createCategory,
@@ -20,8 +21,10 @@ import {
 } from '../src/services/catalog.ts'
 import {
   COMMITMENT_SORTS,
+  createFinancing,
   createSubscription,
   DEFAULT_COMMITMENT_SORT,
+  groupCommitments,
   listCommitmentsWithProgress,
   sortCommitments,
 } from '../src/services/commitments.ts'
@@ -239,6 +242,98 @@ test('commitments rank on euros, and what was never priced ranks last', async ()
     sortCommitments(listed, { field: 'label', direction: 'asc' }).map((c) => c.label),
     ['Cheap', 'Foreign', 'Yearly'],
   )
+})
+
+test('commitments group by account then by what pays them, every level ranked on the criterion', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const joint = await createAccount({ userId: user, name: 'Joint', behavior: 'payment' })
+  const card = await createCard(user, {
+    name: 'Visa',
+    accountId: checking.id,
+    expiryMonth: '2029-09',
+    debitMode: 'immediate',
+  })
+  const actor = await createActor(user, { name: 'Provider' })
+  const subscription = async (label: string, accountId: string, amount: number, extra = {}) =>
+    await createSubscription(user, {
+      label,
+      actorId: actor.id,
+      accountId,
+      amount,
+      periodUnit: 'month',
+      firstDueOn: '2026-04-05',
+      ...extra,
+    })
+  await subscription('Streaming', checking.id, 15, { cardId: card.id })
+  await subscription('Cloud', checking.id, 120, { cardId: card.id, periodUnit: 'year' })
+  await subscription('Phone', checking.id, 20)
+  await subscription('Energy', joint.id, 80, { firstDueOn: '2026-04-02' })
+  await createFinancing(user, {
+    label: 'Laptop',
+    actorId: actor.id,
+    accountId: checking.id,
+    totalAmount: 300,
+    installmentsTotal: 3,
+    firstDueOn: '2026-04-20',
+    cardId: card.id,
+  })
+
+  const listed = await listCommitmentsWithProgress(user)
+  const names = new Map([
+    [checking.id, 'Checking'],
+    [joint.id, 'Joint'],
+    [card.id, 'Visa'],
+  ])
+  const read = (sort?: Parameters<typeof groupCommitments>[1]) =>
+    groupCommitments(listed, sort, names).map((account) => ({
+      account: names.get(account.accountId),
+      monthly: account.monthlyEur,
+      means: account.means.map((m) => ({
+        card: m.cardId && names.get(m.cardId),
+        monthly: m.monthlyEur,
+        lines: m.commitments.map((c) => c.label),
+      })),
+    }))
+
+  // What each account and each card has to cover a month, the dearest first.
+  assert.deepEqual(read(), [
+    {
+      account: 'Checking',
+      monthly: 145,
+      means: [
+        { card: 'Visa', monthly: 125, lines: ['Laptop', 'Streaming', 'Cloud'] },
+        { card: null, monthly: 20, lines: ['Phone'] },
+      ],
+    },
+    { account: 'Joint', monthly: 80, means: [{ card: null, monthly: 80, lines: ['Energy'] }] },
+  ])
+
+  // The soonest date of a group is what ranks it.
+  assert.deepEqual(
+    read({ field: 'next', direction: 'asc' }).map((a) => a.account),
+    ['Joint', 'Checking'],
+  )
+  // By name, what an account pays directly has no name and stays after its
+  // cards, whichever way the list runs.
+  for (const direction of ['asc', 'desc'] as const)
+    assert.deepEqual(
+      read({ field: 'label', direction })
+        .find((a) => a.account === 'Checking')!
+        .means.map((m) => m.card),
+      ['Visa', null],
+    )
+  assert.deepEqual(
+    read({ field: 'label', direction: 'desc' }).map((a) => a.account),
+    ['Joint', 'Checking'],
+  )
+  // Only a financing has a remaining due: a group of subscriptions alone does
+  // not answer the criterion and ranks last in both directions.
+  for (const direction of ['asc', 'desc'] as const)
+    assert.deepEqual(
+      read({ field: 'remaining', direction }).map((a) => a.account),
+      ['Checking', 'Joint'],
+    )
 })
 
 test('accounts rank on their last check, the never checked one first', async () => {

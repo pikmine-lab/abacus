@@ -2060,4 +2060,61 @@ test('a deferred card groups its purchases in statements validated through the M
     (c) => c.label === 'Sofa x3',
   )
   assert.equal(sofa!.card, 'Gold')
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Box',
+    actor: 'Shop',
+    account: 'Courant',
+    amount: 30,
+    firstDueOn: '2026-10-05',
+  })
+  // What the account has to cover and what pays it, totalled by the server
+  // rather than left to an agent's arithmetic.
+  const { costByAccount } = (await call(client, 'list_commitments')).json() as {
+    costByAccount: unknown[]
+  }
+  assert.deepEqual(costByAccount, [
+    {
+      account: 'Courant',
+      monthlyCost: 343,
+      paidBy: [
+        { card: 'Gold', monthlyCost: 313, commitments: ['Sofa x3', 'Streaming'] },
+        { directDebit: true, monthlyCost: 30, commitments: ['Box'] },
+      ],
+    },
+  ])
+})
+
+test('a paid-off financing leaves the review, and says when it was settled', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'declare_financing', {
+    label: 'Phone x2',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 400,
+    installmentsTotal: 2,
+    firstDueOn: '2026-08-05',
+  })
+  await call(client, 'confirm_due_movements', {
+    items: [
+      { commitment: 'Phone x2', action: 'confirm' },
+      { commitment: 'Phone x2', action: 'confirm' },
+    ],
+  })
+
+  const running = (await call(client, 'list_commitments')).json() as {
+    commitments: unknown[]
+    costByAccount: unknown[]
+  }
+  assert.deepEqual(running.commitments, [])
+  assert.deepEqual(running.costByAccount, [])
+  const [ended] = rows<Record<string, unknown>>(
+    await call(client, 'list_commitments', { includeCancelled: true }),
+    'commitments',
+  )
+  assert.equal(ended!.settledOn, '2026-09-05')
+  assert.equal(ended!.nextDueOn, undefined)
 })

@@ -1,12 +1,11 @@
-import type { AssetNature } from '@abacus/core/domain'
 import { ChevronRightIcon } from 'lucide-react'
-import { NATURE_LABEL } from '@/lib/nature'
 
 /**
- * One mass of holdings and the lines under it: shares, funds, crypto, and what
- * no market quotes. The split between them is what an account is read for
- * first, so the header carries the mass's own total and the lines stay one
- * click away rather than a page away.
+ * One mass of lines under a header carrying its total: the holdings of one
+ * nature (shares, funds, crypto, what no market quotes), the commitments one
+ * card pays. The split is what the account is read for first, so the header
+ * carries the mass's own total and the lines stay one click away rather than a
+ * page away.
  *
  * Same fold as the rankings (#45): a native `<details>`, animated in
  * `globals.css`, so no client state holds it and it still works on a page whose
@@ -17,12 +16,12 @@ import { NATURE_LABEL } from '@/lib/nature'
  * hairline rail confirm it where a filled background would shout it.
  */
 export function MassFold({
-  nature,
+  label,
   note,
   figures,
   children,
 }: {
-  nature: AssetNature
+  label: string
   /** Under the label: what the header cannot total, such as a missing price. */
   note?: string
   /** The mass's totals, in the same columns its lines use. */
@@ -35,7 +34,7 @@ export function MassFold({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-0.5">
             <ChevronRightIcon className="size-3 shrink-0 text-faint transition-transform group-open/mass:rotate-90" />
-            <span className="truncate text-[12.5px] font-semibold">{NATURE_LABEL[nature]}</span>
+            <span className="truncate text-[12.5px] font-semibold">{label}</span>
           </span>
           {note && <span className="truncate pl-3.5 text-[11px] text-faint">{note}</span>}
         </span>
