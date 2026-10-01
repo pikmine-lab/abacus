@@ -14,9 +14,11 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 # Build-only placeholders: pages are dynamic, nothing connects at build time,
-# but the auth module refuses to load without a secret in production mode.
+# but the auth module refuses to load without a secret in production mode, or
+# without the MCP endpoint its tokens are bound to.
 ENV NEXT_TELEMETRY_DISABLED=1 \
     BETTER_AUTH_SECRET=build-only \
+    MCP_URL=https://build.invalid/mcp \
     DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm --filter @abacus/web build
 # Next's file tracer copies only cjs/ out of @swc/helpers in a pnpm store, but

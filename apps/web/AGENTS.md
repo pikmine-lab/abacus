@@ -367,17 +367,24 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 
 ### Brancher une IA
 
-- **Une clé nue n'est pas une connexion** : l'écran livre la commande complète, clé incluse,
-  en deux formes (CLI Claude Code, bloc `mcpServers` pour les clients à fichier). Le geste
-  attendu est de brancher un agent, pas de ranger un secret.
-- **Deux pas numérotés**, comme au premier lancement : créer la clé, coller la commande. Avant
-  création, le bloc porte une clé factice et le badge « aperçu » ; la forme se voit sans qu'une
-  phrase l'annonce, et rien n'est mémorisé du client choisi puisque la commande entière
-  n'existe que le temps où la clé est visible.
+- **Deux pas numérotés**, comme au premier lancement : ajouter le serveur, autoriser dans le
+  navigateur. Il n'y a pas de secret à livrer : le premier pas donne l'adresse sous la forme
+  que prend chaque client, un onglet par client, et le second se joue sur l'écran de
+  consentement que le client ouvre lui-même.
 - **Le bloc de code s'enroule, il ne défile pas**, et la commande se coupe sur ses propres
   arguments : une commande à moitié copiée coûte plus cher qu'une commande longue.
-- **Où la clé marche, et où elle ne marche pas**, se lit en deux lignes ✓ / ✗. Le motif (les
-  connecteurs de l'application Claude veulent un OAuth) appartient au dépôt.
+- **Applications autorisées** liste ce qui a reçu l'accès, nom et domaine, avec la date
+  d'autorisation et du dernier usage. La révocation est dans le menu de la ligne, derrière
+  une confirmation.
+
+### Consentement
+
+- **Hors de la coquille de l'app**, comme la connexion : une carte seule, puisqu'on y arrive
+  depuis un client, pas depuis la navigation.
+- **Le nom d'un client ne s'affiche jamais seul**, toujours avec son domaine : un client à
+  document de métadonnées choisit son nom, pas l'hôte de son URL.
+- **La destination du retour se voit**, avec un avertissement quand c'est une boucle locale
+  ou un schéma d'application : n'importe quel programme de la machine peut écouter là.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -1,31 +1,68 @@
-import { auth } from '@abacus/core/auth'
-import { type AuthInfo, OAuthError, OAuthErrorCode } from '@modelcontextprotocol/server'
+import { authIssuer, MCP_SCOPE } from '@abacus/core/oauth'
+import { createMcpProtectedRequestHandler } from '@better-auth/mcp'
+import type { AuthInfo } from '@modelcontextprotocol/server'
 
 /**
- * The MCP server authenticates with the per-user API keys managed by Better
- * Auth (auth_apikey table). The bearer token IS the API key; a valid key
- * yields the owning user, and every tool call is scoped to that user.
+ * The MCP server is an OAuth protected resource; the web app is its
+ * authorization server, on another domain. An access token is a JWT the web
+ * app signed for this exact endpoint: it is verified here against the web
+ * app's published keys, without a database round trip, and its subject is the
+ * user every tool call is scoped to.
  */
-export async function verifyApiKeyToken(token: string): Promise<AuthInfo> {
-  const result = await auth.api.verifyApiKey({ body: { key: token } })
-  const key = result.key as { userId?: string; referenceId?: string; expiresAt?: Date | null } | null
-  const userId = key?.userId ?? key?.referenceId
-  if (!result.valid || !userId) {
-    // The typed error is what turns into a clean 401; anything else is a 500.
-    // Better Auth says why it refused (unknown key, disabled, expired); a fixed
-    // "Invalid API key" hid that behind the one cause the AI can act on, and
-    // sent it creating keys that changed nothing. The refusal is the AI's whole
-    // world here, so it carries the real reason.
-    const reason = (result.error as { message?: string } | null)?.message
-    throw new OAuthError(OAuthErrorCode.InvalidToken, reason ?? 'Invalid API key')
-  }
-  // The bearer gate requires an expiration. API keys may not carry one; the
-  // key is re-verified on every request anyway, so a short synthetic window
-  // is enough and never caches a revoked key for long.
-  const expiresAt = key?.expiresAt
-    ? Math.floor(new Date(key.expiresAt).getTime() / 1000)
-    : Math.floor(Date.now() / 1000) + 300
-  return { token, clientId: userId, scopes: ['mcp'], expiresAt, extra: { userId } }
+
+function required(name: string): string {
+  const value = process.env[name]?.trim()
+  if (!value) throw new Error(`${name} is not set`)
+  return value
+}
+
+/**
+ * The endpoint as the user types it into a client. Tokens carry it as their
+ * audience, so it must match the resource the web app issues tokens for
+ * character for character: both read the same MCP_URL.
+ */
+const resource = required('MCP_URL')
+const issuer = authIssuer(required('PUBLIC_URL'))
+
+/**
+ * RFC 9728 document a client reads after its first 401, to learn which
+ * authorization server to send the user to. The scope is the resource's own:
+ * offline_access belongs to the authorization server, which advertises it.
+ */
+export const protectedResourceMetadata = {
+  resource,
+  resource_name: 'abacus',
+  authorization_servers: [issuer],
+  bearer_methods_supported: ['header'],
+  scopes_supported: [MCP_SCOPE],
+}
+
+/** Where the document is served: the well-known prefix inserted before the endpoint's path. */
+export const protectedResourceMetadataPath = `/.well-known/oauth-protected-resource${new URL(resource).pathname}`
+
+/**
+ * Wraps a request handler so it only runs with a valid access token. Anything
+ * else is answered 401 with the `WWW-Authenticate` challenge pointing at the
+ * metadata document: a client reads that header only on a 401, and without it
+ * never finds the authorization server.
+ */
+export function protect(
+  handler: (request: Request, authInfo: AuthInfo) => Promise<Response>,
+): (request: Request) => Promise<Response> {
+  return createMcpProtectedRequestHandler(
+    { issuer, audience: resource, jwksUrl: `${issuer}/jwks`, requiredScopes: [MCP_SCOPE] },
+    (request, claims) => {
+      const token = request.headers.get('authorization')?.replace(/^\w+\s+/, '') ?? ''
+      const authInfo: AuthInfo = {
+        token,
+        clientId: String(claims.client_id ?? claims.azp ?? ''),
+        scopes: typeof claims.scope === 'string' ? claims.scope.split(' ') : [],
+        expiresAt: claims.exp,
+        extra: { userId: claims.sub },
+      }
+      return handler(request, authInfo)
+    },
+  )
 }
 
 export function userIdOf(authInfo: AuthInfo | undefined): string {

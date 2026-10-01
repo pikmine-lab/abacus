@@ -27,8 +27,8 @@ export default function LoginPage() {
       mode === 'signin'
         ? await authClient.signIn.email({ email, password })
         : await authClient.signUp.email({ name, email, password })
-    setBusy(false)
     if (result.error) {
+      setBusy(false)
       setError(
         mode === 'signin'
           ? 'Connexion refusée : vérifie l’email et le mot de passe.'
@@ -36,6 +36,11 @@ export default function LoginPage() {
       )
       return
     }
+    // Reached from an AI client, the server answers with where the
+    // authorization goes next and the client plugin navigates there itself.
+    // The button stays busy until the page leaves, so no second submit races it.
+    if ((result.data as { redirect?: boolean } | null)?.redirect) return
+    setBusy(false)
     router.push('/')
     router.refresh()
   }

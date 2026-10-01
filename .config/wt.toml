@@ -43,12 +43,24 @@ wt config state vars set dev-url="$(portless get --no-worktree {{ branch | sanit
 """
 
 [[pre-start]]
+# The MCP server's own route, for when the OAuth flow is tried against a real
+# client: every access token is bound to this exact address.
+mcp-url = """
+wt config state vars set mcp-url="$(portless get --no-worktree {{ branch | sanitize }}-mcp.abacus)/mcp"
+"""
+
+[[pre-start]]
 # PUBLIC_URL matters as much as DATABASE_URL here: Better Auth validates the
 # base URL, so leaving the source worktree's value breaks sign-in in this one.
+# MCP_URL is required too, and a source file predating it has no line to edit:
+# it is dropped and appended by sed, which also terminates an unterminated last
+# line (a shell append would glue onto it).
 env = """
 sed -i \
   -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql://abacus:abacus@127.0.0.1:5544/abacus_{{ branch | sanitize_db }}#' \
   -e 's#^PUBLIC_URL=.*#PUBLIC_URL={{ vars["dev-url"] }}#' \
+  -e '$a MCP_URL={{ vars["mcp-url"] }}' \
+  -e '/^MCP_URL=/d' \
   apps/web/.env.local
 """
 

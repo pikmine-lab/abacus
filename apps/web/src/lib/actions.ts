@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@abacus/core/auth'
+import { revokeAuthorization } from '@abacus/core/authorizations'
 import type {
   AccountBehavior,
   ActivityKind,
@@ -1484,28 +1485,8 @@ export async function setReadingPreferenceAction(reading: string): Promise<strin
   return null
 }
 
-export interface ApiKeyFormState extends FormState {
-  /** Plain key value: returned once at creation, never retrievable again. */
-  key?: string
-}
-
-export async function createApiKeyAction(
-  _prev: ApiKeyFormState,
-  formData: FormData,
-): Promise<ApiKeyFormState> {
-  const created = await auth.api.createApiKey({
-    body: { name: str(formData, 'name') },
-    headers: await headers(),
-  })
-  revalidatePath('/connect-ai')
-  return { ok: true, key: created.key }
-}
-
-export async function deleteApiKeyAction(formData: FormData): Promise<void> {
-  await auth.api.deleteApiKey({
-    body: { keyId: str(formData, 'keyId') },
-    headers: await headers(),
-  })
+export async function revokeAuthorizationAction(formData: FormData): Promise<void> {
+  await revokeAuthorization(await requireUserId(), str(formData, 'consentId'), await headers())
   revalidatePath('/connect-ai')
 }
 

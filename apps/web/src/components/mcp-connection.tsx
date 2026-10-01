@@ -1,83 +1,60 @@
 'use client'
 
+import { PREREGISTERED_CLIENT_IDS } from '@abacus/core/oauth'
 import { CheckIcon, CopyIcon } from 'lucide-react'
-import { useActionState, useState } from 'react'
-import { Field, SubmitButton } from '@/components/forms'
-import { Badge } from '@/components/ui/badge'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { createApiKeyAction } from '@/lib/actions'
-import { cn } from '@/lib/utils'
 
 /**
- * Two steps and a command. What the connection buys is said once by the page;
- * here the command is the content and everything around it stays a label. The
- * client chosen is not remembered because the whole command only exists while
- * the key is visible.
+ * Two steps: add the server, then authorize in the browser. There is no
+ * secret to hand over, so what each client needs is the address in the form
+ * it takes it; the authorization itself happens in abacus, on the consent
+ * screen the client opens.
  */
-
-/** Stands in for the key in the preview, before one exists. */
-const KEY_PLACEHOLDER = 'ta-clé'
 
 /** The server name the agent will see; the product's name, not the user's. */
 const SERVER_NAME = 'abacus'
 
-function claudeCodeCommand(url: string, key: string): string {
-  return `claude mcp add --transport http ${SERVER_NAME} \\\n  ${url} \\\n  --scope user \\\n  --header "Authorization: Bearer ${key}"`
+function claudeCodeCommand(url: string): string {
+  return `claude mcp add --transport http ${SERVER_NAME} \\\n  ${url} \\\n  --scope user`
 }
 
-function clientConfig(url: string, key: string): string {
+function clientConfig(url: string): string {
+  return JSON.stringify({ mcpServers: { [SERVER_NAME]: { type: 'http', url } } }, null, 2)
+}
+
+/** Cursor reads no metadata document: it names itself with the client_id it is given. */
+function cursorConfig(url: string): string {
   return JSON.stringify(
-    {
-      mcpServers: {
-        [SERVER_NAME]: {
-          type: 'http',
-          url,
-          headers: { Authorization: `Bearer ${key}` },
-        },
-      },
-    },
+    { mcpServers: { [SERVER_NAME]: { url, auth: { CLIENT_ID: PREREGISTERED_CLIENT_IDS.cursor } } } },
     null,
     2,
   )
 }
 
-/* Copy state is per text, so the caller keys the block by it: a new key must
-   never show up as already copied. */
-function CodeBlock({ text, copyable }: { text: string; copyable: boolean }) {
+function CodeBlock({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="relative min-w-0 rounded-md border border-border bg-card">
       {/* Wrapping, not scrolling: half a copied command costs more than a long
           one, and nothing hides behind the button. */}
-      <pre
-        className={cn(
-          'p-3 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap',
-          copyable ? 'pr-24 text-foreground' : 'pr-20 text-muted-foreground',
-        )}
-      >
+      <pre className="p-3 pr-24 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap text-foreground">
         {text}
       </pre>
-      {copyable ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="absolute top-2 right-2 h-7 text-[12px]"
-          onClick={async () => {
-            await navigator.clipboard.writeText(text)
-            setCopied(true)
-          }}
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-          {copied ? 'Copiée' : 'Copier'}
-        </Button>
-      ) : (
-        <Badge variant="outline" className="absolute top-2.5 right-2 text-[10.5px] text-faint">
-          aperçu
-        </Badge>
-      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="absolute top-2 right-2 h-7 text-[12px]"
+        onClick={async () => {
+          await navigator.clipboard.writeText(text)
+          setCopied(true)
+        }}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+        {copied ? 'Copié' : 'Copier'}
+      </Button>
     </div>
   )
 }
@@ -98,55 +75,54 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
-  const [state, formAction] = useActionState(createApiKeyAction, {})
-  const key = state.key ?? KEY_PLACEHOLDER
-
   return (
     <div className="flex min-w-0 max-w-2xl flex-col gap-6">
-      <Step n={1} title="Crée une clé">
-        <form action={formAction} key={`form-${state.key ?? ''}`} className="flex flex-wrap items-end gap-2">
-          <Field label="Nom" name="name" className="w-48">
-            <Input name="name" required placeholder="claude-code" className="h-9" />
-          </Field>
-          <SubmitButton size="sm" className="h-9">
-            Créer
-          </SubmitButton>
-          {state.key && (
-            <p aria-live="polite" className="self-center text-[12px] text-good">
-              ✓ visible une seule fois
-            </p>
-          )}
-        </form>
-      </Step>
-
-      <Step n={2} title="Colle la commande">
+      <Step n={1} title="Ajoute le serveur">
         {mcpUrl ? (
-          <Tabs defaultValue="claude-code" className="min-w-0 gap-2.5">
+          <Tabs defaultValue="claude-app" className="min-w-0 gap-2.5">
             <TabsList className="h-7" aria-label="Client à brancher">
+              <TabsTrigger value="claude-app" className="px-2 text-[12px]">
+                App Claude
+              </TabsTrigger>
               <TabsTrigger value="claude-code" className="px-2 text-[12px]">
                 Claude Code
+              </TabsTrigger>
+              <TabsTrigger value="cursor" className="px-2 text-[12px]">
+                Cursor
               </TabsTrigger>
               <TabsTrigger value="other" className="px-2 text-[12px]">
                 Autre client
               </TabsTrigger>
             </TabsList>
 
+            <TabsContent value="claude-app" className="flex min-w-0 flex-col gap-1.5">
+              <p className="text-[12px] text-faint">connecteurs de l’app › connecteur personnalisé</p>
+              <CodeBlock text={mcpUrl} />
+            </TabsContent>
+
             <TabsContent value="claude-code" className="flex min-w-0 flex-col gap-1.5">
               <p className="text-[12px] text-faint">dans ton terminal</p>
-              <CodeBlock
-                key={`cc-${key}`}
-                text={claudeCodeCommand(mcpUrl, key)}
-                copyable={state.key !== undefined}
-              />
+              <CodeBlock text={claudeCodeCommand(mcpUrl)} />
+            </TabsContent>
+
+            <TabsContent value="cursor" className="flex min-w-0 flex-col gap-1.5">
+              <p className="text-[12px] text-faint">dans ~/.cursor/mcp.json</p>
+              <CodeBlock text={cursorConfig(mcpUrl)} />
             </TabsContent>
 
             <TabsContent value="other" className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[12px] text-faint">dans le fichier MCP de ton client</p>
-              <CodeBlock
-                key={`cfg-${key}`}
-                text={clientConfig(mcpUrl, key)}
-                copyable={state.key !== undefined}
-              />
+              <p className="text-[12px] text-faint">
+                l’adresse, ou ce bloc dans le fichier MCP de ton client
+              </p>
+              <CodeBlock text={mcpUrl} />
+              <CodeBlock text={clientConfig(mcpUrl)} />
+              <p className="text-[12px] text-faint">
+                Microsoft 365 Copilot : identifiant client{' '}
+                <span className="font-mono text-muted-foreground">
+                  {PREREGISTERED_CLIENT_IDS.microsoft365Copilot}
+                </span>
+                , sans secret
+              </p>
             </TabsContent>
           </Tabs>
         ) : (
@@ -154,6 +130,12 @@ export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
             Adresse du serveur MCP absente (<span className="font-mono">MCP_URL</span>).
           </p>
         )}
+      </Step>
+
+      <Step n={2} title="Autorise l’accès">
+        <p className="text-[12.5px] text-muted-foreground">
+          Ton IA ouvre abacus dans le navigateur : connecte-toi, puis autorise.
+        </p>
       </Step>
     </div>
   )

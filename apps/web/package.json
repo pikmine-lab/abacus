@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@abacus/core": "workspace:*",
-    "better-auth": "^1.7.0",
+    "@better-auth/oauth-provider": "1.7.6",
+    "better-auth": "1.7.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

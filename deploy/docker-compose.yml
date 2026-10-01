@@ -16,10 +16,12 @@ services:
 
   mcp:
     image: ghcr.io/pikmine-lab/abacus-mcp:${IMAGE_TAG}
+    # PUBLIC_URL locates the authorization server whose keys sign the access
+    # tokens; MCP_URL is the audience they must carry.
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       PUBLIC_URL: ${PUBLIC_URL}
+      MCP_URL: ${MCP_URL}
       PORT: "3000"
       MCP_ALLOWED_HOSTS: abacus-mcp.payangar.dev
     networks:
