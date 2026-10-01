@@ -98,7 +98,9 @@ Trois conséquences, qui valent pour les cinq lignes :
 - **Next.js + Postgres** (instance partagée du socle, base et rôle `abacus`). L'accès
   arrive uniquement par `DATABASE_URL`, jamais de nom d'hôte en dur.
 - **Better Auth** pour l'authentification. Ses tables sont préfixées `auth_*` pour ne pas
-  percuter la table métier `account`. Tokens MCP par utilisateur via son plugin api-key.
+  percuter la table métier `account`. L'application web est aussi le serveur d'autorisation
+  OAuth du MCP (plugins `jwt`, `mcp`, `cimd`) ; ses versions sont épinglées, et le code
+  d'abacus ne passe que par ses points d'extension.
 - Couche données : **SQL à la main**, datasources CRUD sans métier prenant un `Executor`
   (pool ou transaction), la transaction appartenant à la couche service.
 - Migrations : `migrations/*.sql`, forward-only, runner `nr migrate` (advisory lock,
@@ -120,8 +122,12 @@ nr db:reset      # base vierge (détruit le volume)
 
 L'app web se lance avec `pnpm --filter @abacus/web dev` et lit `apps/web/.env.local`
 (non commité) : `DATABASE_URL` vers la base Docker, `BETTER_AUTH_SECRET` quelconque,
-`PUBLIC_URL=http://localhost:3000`, et `MCP_URL` (l'endpoint que l'écran « Brancher une
-IA » livre ; sans elle, l'écran le signale au lieu d'afficher une commande fausse).
+`PUBLIC_URL=http://localhost:3000`, et `MCP_URL`, obligatoire : c'est l'adresse à laquelle
+chaque jeton d'accès MCP est lié, et l'app ne démarre pas sans elle. Un worktree reçoit la
+sienne à sa création (`.config/wt.toml`). Pour éprouver le flux OAuth avec un vrai client,
+le serveur MCP se lance sur cette adresse : `MCP_ALLOWED_HOSTS=<hôte de MCP_URL>
+NODE_OPTIONS=--use-system-ca portless <branche>-mcp.abacus node --env-file=apps/web/.env.local
+apps/mcp/src/main.ts` (l'option CA lui fait lire les clés du web derrière le HTTPS local).
 
 **Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
 toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
@@ -196,13 +202,16 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
 
 ## Se connecter au MCP de production
 
-Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, auth
-`Authorization: Bearer <clé d'API>`). Les clés sont par utilisateur, gérées par le plugin
-api-key de Better Auth. L'écran **Brancher une IA** (menu du compte) crée la clé et rend
-la commande complète, prête à coller, pour Claude Code comme pour un client à
-`mcpServers` : c'est la source à jour, ne pas recopier de commande ici.
+Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, protocoles
+2025 et 2026-07-28). Il s'autorise par OAuth, sans clé : le client ajoute l'URL, ouvre
+abacus dans le navigateur, l'utilisateur se connecte et consent, et le client reçoit un
+jeton d'accès de dix minutes lié à cette URL exacte, renouvelé par son jeton de
+rafraîchissement. La révocation se fait depuis **Applications autorisées**, sur l'écran
+**Brancher une IA** (menu du compte), qui donne aussi ce que chaque client attend : c'est
+la source à jour, ne pas recopier de commande ici.
 
-Une clé ne branche que les clients qui acceptent un en-tête HTTP (Claude Code, Cursor,
-VS Code, Codex). Les connecteurs personnalisés de l'application Claude ne prennent qu'une
-URL et un OAuth, que le serveur MCP ne sait pas encore servir.
+Un client s'identifie par l'URL du document de métadonnées qu'il publie (CIMD), ou, quand il
+n'en publie pas, par un `client_id` préenregistré : un client public par assistant, déclaré
+en données avec sa source dans `packages/core/src/oauth-clients.ts`. L'enregistrement
+dynamique reste fermé, et un client qui exige un secret ne se branche pas.
 

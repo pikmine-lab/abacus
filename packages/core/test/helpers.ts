@@ -16,7 +16,8 @@ export async function truncateAll(): Promise<void> {
     truncate levy_nil_return, levy_modifier, levy, activity_input, threshold, invoice, activity_category_exception,
              financing_installment, movement, card, balance_check, commitment_event, commitment, actor_alias, actor,
              category, activity, account, investment_operation, asset, instrument, user_preference,
-             auth_apikey, auth_session, auth_account, auth_verification, auth_user
+             auth_oauth_consent, auth_oauth_access_token, auth_oauth_refresh_token, auth_oauth_client_resource, auth_oauth_client,
+             auth_session, auth_account, auth_verification, auth_user
     cascade
   `
 }

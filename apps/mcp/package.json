@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@abacus/core": "workspace:*",
+    "@better-auth/mcp": "1.7.6",
     "@modelcontextprotocol/express": "^2.0.0",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",

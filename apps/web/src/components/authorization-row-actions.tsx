@@ -14,37 +14,37 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { deleteApiKeyAction } from '@/lib/actions'
+import { revokeAuthorizationAction } from '@/lib/actions'
 
 /**
- * Revoking is one click away from cutting an agent off, and nothing undoes it:
- * it belongs behind a confirmation, in the row menu like every other row-level
- * action.
+ * Revoking is one click away from cutting an agent off: it belongs behind a
+ * confirmation, in the row menu like every other row-level action. Unlike a
+ * deleted key it can be granted again, by connecting the client once more.
  */
-export function ApiKeyRowActions({ keyId, name }: { keyId: string; name: string }) {
+export function AuthorizationRowActions({ consentId, name }: { consentId: string; name: string }) {
   const [revoking, setRevoking] = useState(false)
 
   return (
     <>
-      <RowMenu label={`la clé ${name}`}>
+      <RowMenu label={`l’accès de ${name}`}>
         <DropdownMenuItem variant="destructive" onSelect={() => setRevoking(true)}>
           <Trash2Icon />
-          Révoquer la clé
+          Révoquer l’accès
         </DropdownMenuItem>
       </RowMenu>
 
       <AlertDialog open={revoking} onOpenChange={setRevoking}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Révoquer « {name} » ?</AlertDialogTitle>
+            <AlertDialogTitle>Révoquer l’accès de « {name} » ?</AlertDialogTitle>
             <AlertDialogDescription>
-              L’agent qui l’utilise perd l’accès aussitôt, et une clé révoquée ne revient pas.
+              Il perd l’accès d’ici dix minutes au plus. Pour le rebrancher, il faudra l’autoriser à nouveau.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <form action={deleteApiKeyAction}>
-              <input type="hidden" name="keyId" value={keyId} />
+            <form action={revokeAuthorizationAction}>
+              <input type="hidden" name="consentId" value={consentId} />
               <SubmitButton variant="destructive">Révoquer</SubmitButton>
             </form>
           </AlertDialogFooter>

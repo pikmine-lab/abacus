@@ -4,15 +4,20 @@
   "type": "module",
   "exports": {
     "./auth": "./src/auth.ts",
+    "./authorizations": "./src/authorizations.ts",
     "./db": "./src/db/client.ts",
     "./domain": "./src/domain/types.ts",
     "./domain/*": "./src/domain/*.ts",
+    "./oauth": "./src/oauth.ts",
+    "./oauth-clients": "./src/oauth-clients.ts",
     "./prices/*": "./src/prices/*.ts",
     "./services/*": "./src/services/*.ts"
   },
   "dependencies": {
-    "@better-auth/api-key": "^1.7.0",
-    "better-auth": "^1.7.0",
+    "@better-auth/cimd": "1.7.6",
+    "@better-auth/mcp": "1.7.6",
+    "@better-auth/oauth-provider": "1.7.6",
+    "better-auth": "1.7.6",
     "pg": "^8.23.0",
     "postgres": "^3.4.9",
     "zod": "^4.4.3"

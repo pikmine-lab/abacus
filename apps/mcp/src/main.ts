@@ -1,25 +1,6 @@
-import { createMcpExpressApp, requireBearerAuth } from '@modelcontextprotocol/express'
-import { toNodeHandler } from '@modelcontextprotocol/node'
-import { createMcpHandler } from '@modelcontextprotocol/server'
-import { userIdOf, verifyApiKeyToken } from './auth.ts'
-import { buildServer } from './server.ts'
-
-const handler = createMcpHandler(({ authInfo }) => buildServer(userIdOf(authInfo)))
-
-const gate = requireBearerAuth({ verifier: { verifyAccessToken: verifyApiKeyToken } })
-
-// Behind Traefik the Host header is the public domain: without it in the
-// allowed list, the built-in DNS-rebinding protection answers 403 to everyone.
-const allowedHosts = (process.env.MCP_ALLOWED_HOSTS ?? '')
-  .split(',')
-  .map((h) => h.trim())
-  .filter(Boolean)
-const app =
-  allowedHosts.length > 0 ? createMcpExpressApp({ host: '0.0.0.0', allowedHosts }) : createMcpExpressApp()
-const node = toNodeHandler(handler)
-app.all('/mcp', gate, (req, res) => void node(req, res, req.body))
+import { createApp } from './app.ts'
 
 const port = Number(process.env.PORT ?? 3000)
-app.listen(port, () => {
+createApp().listen(port, () => {
   console.log(`abacus MCP server listening on :${port}/mcp`)
 })

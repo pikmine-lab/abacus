@@ -79,6 +79,7 @@ jobs:
       - run: pnpm --filter @abacus/web build
         env:
           BETTER_AUTH_SECRET: ci-build-only
+          MCP_URL: https://build.invalid/mcp
 
   build:
     needs: test
