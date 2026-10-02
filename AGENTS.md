@@ -133,9 +133,14 @@ le serveur MCP se lance sur cette adresse : `MCP_ALLOWED_HOSTS=<hôte de MCP_URL
 NODE_OPTIONS=--use-system-ca portless <branche>-mcp.abacus node --env-file=apps/web/.env.local
 apps/mcp/src/main.ts` (l'option CA lui fait lire les clés du web derrière le HTTPS local).
 
-Impeccable s'installe par machine, avec son détecteur de défauts de design :
-`npx impeccable install --scope=project`. Sa copie locale n'est pas versionnée ; sa
-configuration partagée (`apps/web/.impeccable/config.json`) et les briefs d'écran le sont.
+Impeccable s'installe une fois par projet, pas par machine : la copie de la skill, ses
+sous-agents de revue et le hook de son détecteur de défauts de design
+(`.claude/settings.json`) sont versionnés, un clone n'a rien à installer. Une montée de
+version se lance une fois et se commite :
+`npx impeccable install --scope=project --providers=claude-code -y --force`. Seuls le
+consentement au hook, son cache et ce qu'une session de design produit restent hors du
+dépôt. Pas de copie globale (`~/.claude/skills/impeccable`) : Claude Code la ferait passer
+devant celle du projet.
 
 **Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
 toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
