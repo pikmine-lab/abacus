@@ -131,31 +131,20 @@ export function AccountRowActions({
         )}
       </RowMenu>
 
-      <Dialog open={checking} onOpenChange={setChecking}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Pointer {name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Saisis le solde lu dans ta banque. L’app le compare au solde calculé depuis tes déclarations (
-              {eur(computedBalance, 2)}) et te signale l’écart, que tu pourras solder par un ajustement.
-            </DialogDescription>
-          </DialogHeader>
-          <ActionForm action={recordBalanceCheckAction} onSuccess={() => setChecking(false)}>
-            <input type="hidden" name="accountId" value={accountId} />
-            <Field label="Solde réel (€)" name="balance">
-              <AmountInput name="balance" placeholder="0,00" />
-            </Field>
-            <SubmitButton className="self-start">Pointer</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
+      <CheckDialog
+        accountId={accountId}
+        name={name}
+        computedBalance={computedBalance}
+        open={checking}
+        onOpenChange={setChecking}
+      />
 
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-[15px]">{name}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              Ce que ce compte dit de lui-même. Son solde part de son ouverture, puis suit ses mouvements.
+              Son solde part de l’ouverture, puis suit ses mouvements.
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={editAccountAction} onSuccess={() => setEditing(false)}>
@@ -188,21 +177,13 @@ export function AccountRowActions({
         </DialogContent>
       </Dialog>
 
-      {/* A history has as many rows as the account was pointed: it needs the
-          panel's height, and the row stays visible behind it. */}
-      <Sheet open={history} onOpenChange={setHistory}>
-        <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="text-[15px]">Pointages de {name}</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Chaque ligne confronte le solde lu dans ta banque au solde calculé, ce jour-là.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="p-4">
-            <BalanceCheckHistory checks={checks} options={settleOptions} />
-          </div>
-        </SheetContent>
-      </Sheet>
+      <CheckHistorySheet
+        name={name}
+        checks={checks}
+        settleOptions={settleOptions}
+        open={history}
+        onOpenChange={setHistory}
+      />
 
       {newCard && (
         <Sheet open={addingCard} onOpenChange={setAddingCard}>
@@ -210,8 +191,7 @@ export function AccountRowActions({
             <SheetHeader className="border-b border-border">
               <SheetTitle className="text-[15px]">Nouvelle carte</SheetTitle>
               <SheetDescription className="text-[12px]">
-                Jamais son numéro : un nom suffit à la reconnaître. Une carte à débit différé dit quand ses
-                achats sortent du compte.
+                Un nom suffit à la reconnaître, jamais son numéro.
               </SheetDescription>
             </SheetHeader>
             <div className="p-4">
@@ -226,8 +206,7 @@ export function AccountRowActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Clore « {name} » ?</AlertDialogTitle>
             <AlertDialogDescription>
-              Le compte n’accepte plus de nouveaux mouvements après aujourd’hui. Son historique reste entier :
-              l’app garde la trace de ce qui s’y est passé, et tu peux le réouvrir.
+              Plus aucun mouvement après aujourd’hui. Son historique reste entier, et tu peux le réouvrir.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {closeState.error && <p className="text-xs text-destructive">{closeState.error}</p>}
@@ -264,5 +243,137 @@ export function AccountRowActions({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+/**
+ * Pointing a balance: the bank's figure, set against the computed one. The
+ * computed side is shown because the gap between them is the whole point of
+ * the gesture, and the panel lets it be seen before it is recorded.
+ */
+function CheckDialog({
+  accountId,
+  name,
+  computedBalance,
+  open,
+  onOpenChange,
+}: {
+  accountId: string
+  name: string
+  computedBalance: number
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">Pointer {name}</DialogTitle>
+          <DialogDescription className="text-[12px]">
+            Le solde que ta banque affiche, face au calculé : {eur(computedBalance, 2)}.
+          </DialogDescription>
+        </DialogHeader>
+        <ActionForm action={recordBalanceCheckAction} onSuccess={() => onOpenChange(false)}>
+          <input type="hidden" name="accountId" value={accountId} />
+          <Field label="Solde réel (€)" name="balance">
+            <AmountInput name="balance" placeholder="0,00" />
+          </Field>
+          <SubmitButton className="self-start">Pointer</SubmitButton>
+        </ActionForm>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** A history has as many rows as the account was pointed: it needs the panel's height. */
+function CheckHistorySheet({
+  name,
+  checks,
+  settleOptions,
+  open,
+  onOpenChange,
+}: {
+  name: string
+  checks: CheckEntry[]
+  settleOptions: SettleOptions
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle className="text-[15px]">Pointages de {name}</SheetTitle>
+          <SheetDescription className="text-[12px]">
+            Le solde lu, face au calculé ce jour-là.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="p-4">
+          <BalanceCheckHistory checks={checks} options={settleOptions} />
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+/**
+ * One line of the "À pointer" card: an account whose balance is not known to
+ * hold, and the gesture that settles it. An open gap leads to the history,
+ * where it is explained or settled; a check missing or too old leads to a new
+ * one. The same panels as the row's menu, so the card adds a way in, not a
+ * gesture.
+ */
+export function PendingCheck({
+  accountId,
+  name,
+  computedBalance,
+  checks,
+  settleOptions,
+  detail,
+  gap,
+}: {
+  accountId: string
+  name: string
+  computedBalance: number
+  checks: CheckEntry[]
+  settleOptions: SettleOptions
+  /** What is wrong with it, in a few words: the gap, or the age of the last check. */
+  detail: string
+  gap: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex items-center gap-3 py-2.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+        <span className="truncate text-[13.5px] font-medium">{name}</span>
+        <span className={gap ? 'text-[12px] text-destructive' : 'text-[12px] text-faint'}>{detail}</span>
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 shrink-0"
+        aria-label={gap ? `Voir l’écart de ${name}` : `Pointer ${name}`}
+        onClick={() => setOpen(true)}
+      >
+        {gap ? 'Voir l’écart' : 'Pointer'}
+      </Button>
+      {gap ? (
+        <CheckHistorySheet
+          name={name}
+          checks={checks}
+          settleOptions={settleOptions}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      ) : (
+        <CheckDialog
+          accountId={accountId}
+          name={name}
+          computedBalance={computedBalance}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      )}
+    </div>
   )
 }

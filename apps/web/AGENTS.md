@@ -236,6 +236,12 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   ouvre l'historique (lu, calculé, écart, soldé ou non), et chaque ligne se corrige ou se
   supprime. Corriger un pointage, c'est le refaire : le panneau le dit, et dit ce que devient
   l'ajustement qui le soldait.
+- **Ce qui est à pointer est la carte de l'écran Comptes**, à côté du patrimoine qu'elle
+  garde honnête. Un écart ouvert, un compte jamais pointé ou pointé depuis plus de 45 jours y
+  a sa ligne, les écarts d'abord, puis du plus ancien au plus récent. Chaque ligne porte son
+  geste : « Voir l'écart » ouvre les pointages, où l'écart s'explique ou se solde, « Pointer »
+  ouvre le panneau de pointage. Ce sont les panneaux du menu du compte : la carte ajoute un
+  chemin, pas un geste.
 - **Solder un écart est un dernier recours, et il le dit.** L'entrée n'existe que sur un
   pointage dont l'écart n'est pas soldé ; le panneau dit ce qui manque et dans quel sens
   (« 50,00 € de sorties manquent au 21/08 »), puis que déclarer ce qui manque vaut mieux.
@@ -251,7 +257,8 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   portefeuille, avec son retrait et son filet. Une carte s'ajoute depuis le menu du compte, qui
   la présélectionne, et mène à sa page comme une position mène à la sienne. Un relevé qui attend
   sa validation ouvre la ligne et s'y annonce : c'est un travail à faire, il ne se cache pas
-  derrière un repli.
+  derrière un repli. Repliée à la main, la ligne le dit (« relevé à valider ») ; dépliée, elle
+  laisse la carte le dire.
 - **Une carte dit ce qu'elle doit encore au compte.** Sous une carte à débit différé, chaque
   relevé pas encore validé : son total, qui mène au relevé sur la page de la carte, et son état. Un cycle ouvert dit
   jusqu'à quand il court, un cycle arrêté quand son débit est attendu, et « à valider » une fois
@@ -268,7 +275,8 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   fois validé. Une carte immédiate montre la liste de ses achats. Les dates sont celles des
   achats, et chaque achat se corrige depuis sa ligne comme dans les mouvements. Les abonnements
   et les financements en cours qu'elle paie ferment la page : ce sont eux qu'il faut reporter sur
-  une carte renouvelée.
+  une carte renouvelée, et le bloc le rappelle quand la carte a expiré ou expire d'ici la fin
+  du mois prochain.
 - **Sans carte, un mouvement est un prélèvement.** La carte se choisit parmi celles du compte
   choisi, le choix vide nommant le cas ordinaire. Une carte différée renomme la date en date
   d'achat et affiche dessous le prélèvement prévu. Le remboursement d'une avance ne propose pas

@@ -18,21 +18,21 @@ import { ArrowUpRightIcon, ChevronRightIcon, CreditCardIcon } from 'lucide-react
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Fragment } from 'react'
 import { AccountFold } from '@/components/account-fold'
-import { AccountRowActions } from '@/components/account-row-actions'
+import { AccountRowActions, PendingCheck } from '@/components/account-row-actions'
 import { AmountInput } from '@/components/amount-input'
 import type { CheckEntry } from '@/components/balance-check-history'
 import { BankCard } from '@/components/bank-card'
 import { CardActions } from '@/components/card-forms'
+import { CheckRail, CheckRailAxis } from '@/components/check-rail'
+import { ActionCard, Figure } from '@/components/composition'
 import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
+import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { SortMenu } from '@/components/sort'
-import { StatRow, StatTile } from '@/components/stats'
 import { createAccountAction } from '@/lib/actions'
 import { sorter } from '@/lib/sort'
-import { daysBetween, eur, frDate, freshness, frMonthLong } from '@/lib/utils'
+import { cn, daysBetween, eur, frDate, frMonthLong } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,12 +40,37 @@ export const metadata = { title: 'Comptes' }
 
 const STALE_CHECK_DAYS = 45
 
-const BEHAVIOR: Record<AccountBehavior, { label: string; blurb: string }> = {
-  payment: { label: 'Comptes courants', blurb: 'portent les mouvements du quotidien' },
-  savings: { label: 'Épargne', blurb: 'virements et intérêts' },
-  investment: { label: 'Investissement', blurb: 'espèces ici, positions dans Placements' },
+/**
+ * One word per kind of account. Only the investment block qualifies its
+ * balances, because they are its cash and not what it holds: the holdings
+ * are in Placements, where its arrow leads.
+ */
+const BEHAVIOR: Record<
+  AccountBehavior,
+  { label: string; qualifier?: string; href?: string; hrefLabel?: string }
+> = {
+  payment: { label: 'Courants' },
+  savings: { label: 'Épargne' },
+  investment: {
+    label: 'Investissement',
+    qualifier: 'espèces',
+    href: '/investments?from=accounts',
+    hrefLabel: 'Placements',
+  },
 }
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
+
+/**
+ * The columns every list of the page shares, its header included, so the
+ * rails and the balances line up from one kind of account to the next. When
+ * the list is too narrow for a rail beside the name, the rail passes under it.
+ */
+const COLUMNS =
+  'grid w-full grid-cols-[minmax(0,1fr)_8.5rem_1.75rem] items-center gap-x-4 gap-y-1.5 @xl:grid-cols-[minmax(0,1fr)_minmax(9rem,14rem)_8.5rem_1.75rem]'
+const NAME_CELL = 'col-start-1 row-start-1'
+const RAIL_CELL = 'col-start-1 row-start-2 @xl:col-start-2 @xl:row-start-1'
+const BALANCE_CELL = 'col-start-2 row-start-1 text-right @xl:col-start-3'
+const MENU_CELL = 'col-start-3 row-start-1 @xl:col-start-4'
 
 /**
  * What an account list orders on. The same three everywhere on the page, since
@@ -124,18 +149,24 @@ export default async function AccountsPage({
   const missing = open
     .filter((s) => s.account.behavior === 'investment' && Number(s.account.balance) < 0)
     .reduce((sum, s) => sum - Number(s.account.balance), 0)
-  const gaps = open.filter((s) => s.check && s.check.openGap !== 0)
   // Where a card can be declared: an open current account.
   const cardAccounts = open
     .filter((s) => s.account.behavior === 'payment')
     .map((s) => ({ id: s.account.id, name: s.account.name }))
-  const toCheck = open.filter((s) => !s.check || daysBetween(s.check.check.checkedOn, now) > STALE_CHECK_DAYS)
+  // What waits on a check: an open gap first, since it says an entry is
+  // missing; then the accounts never pointed, then the oldest checks.
+  const age = (s: (typeof open)[number]) =>
+    s.check ? daysBetween(s.check.check.checkedOn, now) : Number.MAX_SAFE_INTEGER
+  const hasGap = (s: (typeof open)[number]) => (s.check && s.check.openGap !== 0 ? 0 : 1)
+  const toCheck = open
+    .filter((s) => hasGap(s) === 0 || age(s) > STALE_CHECK_DAYS)
+    .sort((a, b) => hasGap(a) - hasGap(b) || age(b) - age(a))
 
   const newAccountForm = (
     <EntrySheet
       label="Ajouter un compte"
       title="Nouveau compte"
-      description="Ton montage bancaire réel, un compte à la fois. Un compte qui existait déjà porte ce qu’il contenait : son solde d’ouverture, qui n’est pas un revenu."
+      description="Un compte qui existait déjà part de son solde d’ouverture, qui n’est pas un revenu."
     >
       <ActionForm action={createAccountAction} successLabel="Compte créé">
         <TextField name="name" label="Nom" placeholder="Courant principal" />
@@ -166,127 +197,127 @@ export default async function AccountsPage({
     </EntrySheet>
   )
 
+  const menu = ({ account, checks }: (typeof state)[number], isClosed?: boolean) => (
+    <AccountRowActions
+      accountId={account.id}
+      name={account.name}
+      institution={account.institution ?? ''}
+      behavior={account.behavior}
+      openingBalance={account.openingBalance}
+      openedOn={account.openedOn}
+      computedBalance={Number(account.balance)}
+      closed={isClosed}
+      checks={checkEntries(checks)}
+      settleOptions={settleOptions}
+      newCard={
+        account.behavior === 'payment' && !isClosed ? { accounts: cardAccounts, today: now } : undefined
+      }
+    />
+  )
+
   return (
     <>
-      <PageHeader title="Comptes" description="soldes calculés, confrontés à la réalité par le pointage">
-        {newAccountForm}
-      </PageHeader>
+      <PageHeader title="Comptes">{newAccountForm}</PageHeader>
 
       <PageBody>
         {accounts.length === 0 ? (
-          <EmptyLine>
-            Aucun compte pour l’instant. Tout part de là : le bouton est en haut à droite.
-          </EmptyLine>
+          <EmptyLine>Aucun compte pour l’instant : tout part du premier.</EmptyLine>
         ) : (
           <>
-            <StatRow>
-              <StatTile
+            {/* The figure that dominates, beside what keeps it honest: the
+                accounts whose balance is not known to hold. */}
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-start">
+              <Figure
                 hero
                 label="Patrimoine"
-                value={eur(wealth)}
-                hint={
+                value={wealth}
+                note={
                   missing > 0
                     ? `${eur(missing)} d’apports non déclarés : pointe les espèces du compte`
                     : holdings.value > 0
-                      ? `${open.length} comptes, dont ${eur(holdings.value)} de placements`
-                      : `${open.length} compte${open.length > 1 ? 's' : ''} ouvert${open.length > 1 ? 's' : ''}`
+                      ? `dont ${eur(holdings.value)} de placements, au dernier cours`
+                      : undefined
                 }
               />
-              <StatTile
-                label="Écarts de pointage"
-                value={
-                  gaps.length > 0
-                    ? eur(
-                        gaps.reduce((s, g) => s + Math.abs(g.check!.openGap), 0),
-                        2,
-                      )
-                    : 'aucun'
-                }
-                hint={
-                  gaps.length > 0
-                    ? `sur ${gaps.length} compte${gaps.length > 1 ? 's' : ''} : un mouvement manque`
-                    : 'le calculé colle au réel'
-                }
-              />
-              <StatTile
-                label="À pointer"
-                value={String(toCheck.length)}
-                hint={
-                  toCheck.length > 0
-                    ? `jamais pointés ou plus vieux que ${STALE_CHECK_DAYS} jours`
-                    : 'tout est frais'
-                }
-              />
-            </StatRow>
+              {toCheck.length > 0 && (
+                <ActionCard label="À pointer">
+                  {toCheck.map(({ account, check, checks }) => (
+                    <PendingCheck
+                      key={account.id}
+                      accountId={account.id}
+                      name={account.name}
+                      computedBalance={Number(account.balance)}
+                      checks={checkEntries(checks)}
+                      settleOptions={settleOptions}
+                      gap={!!check && check.openGap !== 0}
+                      detail={
+                        !check
+                          ? 'jamais pointé'
+                          : check.openGap !== 0
+                            ? `écart de ${eur(Math.abs(check.openGap), 2)} au ${frDate(check.check.checkedOn)}`
+                            : `pointé le ${frDate(check.check.checkedOn)}`
+                      }
+                    />
+                  ))}
+                </ActionCard>
+              )}
+            </div>
 
-            {ORDER.filter((behavior) => open.some((s) => s.account.behavior === behavior)).map((behavior) => {
-              const rows = open.filter((s) => s.account.behavior === behavior)
-              return (
-                <Fragment key={behavior}>
-                  <Section
-                    title={BEHAVIOR[behavior].label}
-                    description={BEHAVIOR[behavior].blurb}
-                    action={rows.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
-                  >
-                    <Rows>
-                      {rows.map(({ account, check, checks }) => {
+            <div className="@container flex flex-col gap-8">
+              {ORDER.filter((behavior) => open.some((s) => s.account.behavior === behavior)).map(
+                (behavior) => {
+                  const rows = open.filter((s) => s.account.behavior === behavior)
+                  return (
+                    <AccountList
+                      key={behavior}
+                      {...BEHAVIOR[behavior]}
+                      sort={rows.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+                    >
+                      {rows.map((row) => {
+                        const { account, checks } = row
                         // A card debits a current account and is listed under it.
                         const own = cards.filter((c) => c.accountId === account.id)
                         // A debit to state is work to do: it never waits behind a fold.
                         const toValidate = own.some((c) => c.pending.some((st) => st.dueOn <= now))
                         const line = (
-                          <>
-                            <div className="flex min-w-0 flex-col gap-0.5">
-                              <div className="flex flex-wrap items-baseline gap-2">
-                                <span className="text-[13px] font-medium">{account.name}</span>
+                          <div key={account.id} className={COLUMNS}>
+                            <div className={cn(NAME_CELL, 'flex min-w-0 flex-col gap-0.5')}>
+                              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <span className="text-[13.5px] font-medium">{account.name}</span>
                                 {account.institution && (
-                                  <span className="text-[11px] text-faint">{account.institution}</span>
+                                  <span className="text-[11.5px] text-faint">{account.institution}</span>
                                 )}
                                 {own.length > 0 && (
-                                  <span className="flex items-center gap-1 self-center text-[11px] text-muted-foreground">
+                                  <span className="flex items-center gap-1 self-center text-[11.5px] text-muted-foreground">
                                     <CreditCardIcon className="size-3.5" />
                                     {own.length} carte{own.length > 1 ? 's' : ''}
                                     <ChevronRightIcon className="size-3 text-faint transition-transform group-open/account:rotate-90" />
                                   </span>
                                 )}
+                                {/* Said here only while the fold hides the statement that says it. */}
                                 {toValidate && (
-                                  <span className="self-center text-[11px] text-foreground">
+                                  <span className="self-center text-[11.5px] text-primary group-open/account:hidden">
                                     relevé à valider
                                   </span>
                                 )}
                               </div>
-                              <span
-                                className={`text-[11.5px] ${
-                                  check && check.openGap !== 0 ? 'text-destructive' : 'text-faint'
-                                }`}
-                              >
-                                {check
-                                  ? check.openGap === 0
-                                    ? `pointé ${freshness(check.check.checkedOn, now)} · aucun écart`
-                                    : `écart de ${eur(check.openGap, 2)} au dernier pointage`
-                                  : 'jamais pointé'}
-                              </span>
                             </div>
-                            <span className="ml-auto shrink-0 font-mono text-[14px] font-semibold tabular">
-                              {eur(Number(account.balance), 2)}
-                            </span>
-                            <div data-keeps-fold>
-                              <AccountRowActions
-                                accountId={account.id}
+                            {/* The rail says when; a gap or a missing check is worded once, in the card above. */}
+                            <div data-keeps-fold className={RAIL_CELL}>
+                              <CheckRail
                                 name={account.name}
-                                institution={account.institution ?? ''}
-                                behavior={account.behavior}
-                                openingBalance={account.openingBalance}
-                                openedOn={account.openedOn}
-                                computedBalance={Number(account.balance)}
                                 checks={checkEntries(checks)}
-                                settleOptions={settleOptions}
-                                newCard={
-                                  behavior === 'payment' ? { accounts: cardAccounts, today: now } : undefined
-                                }
+                                today={now}
+                                staleDays={STALE_CHECK_DAYS}
                               />
                             </div>
-                          </>
+                            <span className={cn(BALANCE_CELL, 'font-mono text-[14px] font-semibold tabular')}>
+                              {eur(Number(account.balance), 2)}
+                            </span>
+                            <div data-keeps-fold className={MENU_CELL}>
+                              {menu(row)}
+                            </div>
+                          </div>
                         )
                         return own.length > 0 ? (
                           <AccountFold key={account.id} header={line} open={toValidate}>
@@ -298,52 +329,94 @@ export default async function AccountsPage({
                             />
                           </AccountFold>
                         ) : (
-                          <div key={account.id} className="flex items-center gap-3 py-3">
+                          <div key={account.id} className="py-3">
                             {line}
                           </div>
                         )
                       })}
-                    </Rows>
-                  </Section>
-                </Fragment>
-              )
-            })}
+                    </AccountList>
+                  )
+                },
+              )}
 
-            {closed.length > 0 && (
-              <Section
-                title="Comptes clos"
-                description="l’historique survit au montage bancaire du moment"
-                action={closed.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
-              >
-                <Rows>
-                  {closed.map(({ account, checks }) => (
-                    <div key={account.id} className="flex items-center gap-3 py-2 text-faint">
-                      <span className="text-[12.5px]">{account.name}</span>
-                      <span className="text-[11px]">clos le {account.closedOn}</span>
-                      <span className="ml-auto font-mono text-[12.5px] tabular">
-                        {eur(Number(account.balance), 2)}
+              {closed.length > 0 && (
+                <AccountList
+                  label="Clos"
+                  axis={false}
+                  sort={closed.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+                >
+                  {closed.map((row) => (
+                    <div key={row.account.id} className={cn(COLUMNS, 'py-2.5 text-faint')}>
+                      <span className={cn(NAME_CELL, 'truncate text-[13px]')}>{row.account.name}</span>
+                      <span className={cn(RAIL_CELL, 'text-[11.5px]')}>
+                        clos le {frDate(row.account.closedOn!)}
                       </span>
-                      <AccountRowActions
-                        accountId={account.id}
-                        name={account.name}
-                        institution={account.institution ?? ''}
-                        behavior={account.behavior}
-                        openingBalance={account.openingBalance}
-                        openedOn={account.openedOn}
-                        computedBalance={Number(account.balance)}
-                        closed
-                        checks={checkEntries(checks)}
-                        settleOptions={settleOptions}
-                      />
+                      <span className={cn(BALANCE_CELL, 'font-mono text-[13px] tabular')}>
+                        {eur(Number(row.account.balance), 2)}
+                      </span>
+                      <div className={MENU_CELL}>{menu(row, true)}</div>
                     </div>
                   ))}
-                </Rows>
-              </Section>
-            )}
+                </AccountList>
+              )}
+            </div>
           </>
         )}
       </PageBody>
     </>
+  )
+}
+
+/**
+ * The accounts of one kind, named by one word. Its header is set on the
+ * list's own columns: the name over the names, the rail's scale over the
+ * rails, the order over the balances it reorders.
+ */
+function AccountList({
+  label,
+  qualifier,
+  href,
+  hrefLabel,
+  axis = true,
+  sort,
+  children,
+}: {
+  label: string
+  qualifier?: string
+  href?: string
+  hrefLabel?: string
+  /** The rail's scale; a list without rails has none. */
+  axis?: boolean
+  sort?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section aria-label={label} className="flex min-w-0 flex-col">
+      <div className={cn(COLUMNS, 'border-b border-border pb-2')}>
+        <div className={cn(NAME_CELL, 'flex items-center gap-2')}>
+          <h2 className="text-[13px] font-medium text-muted-foreground">{label}</h2>
+          {qualifier && <span className="text-[11.5px] text-faint">{qualifier}</span>}
+          {href && (
+            <Link
+              href={href}
+              aria-label={hrefLabel ?? label}
+              className="rounded-md p-1 text-faint transition-colors hover:bg-secondary/60 hover:text-primary"
+            >
+              <ArrowUpRightIcon className="size-3.5" />
+            </Link>
+          )}
+        </div>
+        {axis && (
+          <div className={RAIL_CELL}>
+            <CheckRailAxis staleDays={STALE_CHECK_DAYS} />
+          </div>
+        )}
+        {sort && (
+          <div className="col-span-2 col-start-2 row-start-1 justify-self-end @xl:col-start-3">{sort}</div>
+        )}
+      </div>
+      <div className="flex flex-col divide-y divide-border/70 border-b border-border">{children}</div>
+    </section>
   )
 }
 
@@ -397,23 +470,24 @@ function CardGrid({
                   const closed = st.cutOffOn < now
                   const due = st.dueOn <= now
                   return (
-                    <div key={st.id}>
-                      <Link
-                        href={`/accounts/cards/${card.id}?from=accounts#statement-${st.id}`}
-                        className="group flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground transition-colors hover:text-primary"
-                      >
-                        <span className="font-mono text-[12.5px] text-foreground tabular">
-                          −{eur(Number(st.amount), 2)}
-                        </span>
-                        <span>
-                          {closed
-                            ? `attendus le ${frDate(st.dueOn)}`
-                            : `en cours, arrêté le ${frDate(st.cutOffOn)}`}
-                        </span>
-                        {due && <span className="text-foreground">à valider</span>}
+                    // The amount first, then where its cycle stands: two lines,
+                    // so neither wraps into the other on a card's width.
+                    <Link
+                      key={st.id}
+                      href={`/accounts/cards/${card.id}?from=accounts#statement-${st.id}`}
+                      className="group -mx-1.5 flex flex-col rounded-md px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-secondary/40"
+                    >
+                      <span className="flex items-center gap-1 font-mono text-[12.5px] text-foreground tabular">
+                        −{eur(Number(st.amount), 2)}
                         <ArrowUpRightIcon className="size-3.5 text-faint group-hover:text-primary" />
-                      </Link>
-                    </div>
+                      </span>
+                      <span>
+                        {closed
+                          ? `débit attendu le ${frDate(st.dueOn)}`
+                          : `en cours jusqu’au ${frDate(st.cutOffOn)}`}
+                        {due && <span className="text-primary"> · à{' '}valider</span>}
+                      </span>
+                    </Link>
                   )
                 })}
                 {deferred && card.pending.length === 0 && <span className="text-faint">rien en attente</span>}
@@ -422,11 +496,9 @@ function CardGrid({
                     arrêté {dayLabel(card.statementDay!)}, prélevé {dayLabel(card.debitDay!)}
                   </span>
                 )}
-                {expired && <span className="text-destructive">expirée : elle ne paie plus</span>}
+                {expired && <span className="text-muted-foreground">expirée</span>}
                 {expiring && (
-                  <span className="text-muted-foreground">
-                    expire fin {frMonthLong(card.expiryMonth)} : à renouveler
-                  </span>
+                  <span className="text-muted-foreground">expire fin {frMonthLong(card.expiryMonth)}</span>
                 )}
               </div>
               <CardActions
