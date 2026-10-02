@@ -12,10 +12,10 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { BankCard } from '@/components/bank-card'
 import { CardActions, ValidateStatement } from '@/components/card-forms'
+import { Block, Figure } from '@/components/composition'
 import { MovementRowActions } from '@/components/movement-row-actions'
-import { EmptyLine, PageBody, PageHeader, Rows, Section, SectionLink } from '@/components/page-shell'
+import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { StatementFold } from '@/components/statement-fold'
-import { StatRow, StatTile } from '@/components/stats'
 import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
 import { eur, frDate, frMonthLong } from '@/lib/utils'
 
@@ -107,10 +107,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
 
   return (
     <>
-      <PageHeader
-        title={card.name}
-        description={`${deferred ? 'débit différé' : 'débit immédiat'} sur ${account?.name ?? ''}`}
-      >
+      <PageHeader title={card.name}>
         <CardActions
           cardId={card.id}
           accounts={cardAccounts}
@@ -130,7 +127,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
       </PageHeader>
 
       <PageBody>
-        <div className="flex flex-col gap-6 md:flex-row md:items-start">
+        {/* The card as the object it is, beside what it owes: its face already
+            says its mode, its account and its expiry, so nothing repeats them. */}
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-10">
           <div className="flex w-full shrink-0 flex-col gap-2 md:w-72">
             <BankCard
               id={card.id}
@@ -146,56 +145,58 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                   arrêté {dayLabel(card.statementDay!)}, prélevé {dayLabel(card.debitDay!)}
                 </span>
               )}
-              {expired && <span className="text-destructive">expirée : elle ne paie plus</span>}
+              {expired && <span className="text-muted-foreground">expirée</span>}
               {expiring && (
-                <span className="text-muted-foreground">
-                  expire fin {frMonthLong(card.expiryMonth)} : à renouveler
-                </span>
+                <span className="text-muted-foreground">expire fin {frMonthLong(card.expiryMonth)}</span>
               )}
             </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <StatRow>
-              {deferred && (
-                <StatTile
-                  hero
-                  label="À prélever"
-                  value={eur(owed, 2)}
-                  hint={
-                    nextDebit
-                      ? `${card.pending.length} relevé${card.pending.length > 1 ? 's' : ''} en attente, le premier attendu le ${frDate(nextDebit.dueOn)}`
-                      : 'rien en attente'
-                  }
-                />
-              )}
-              <StatTile
-                hero={!deferred}
-                label={`Payé en ${frMonthLong(month).split(' ')[0]}`}
-                value={eur(paidThisMonth, 2)}
-                hint="par date d’achat"
+          <div className="grid min-w-0 flex-1 grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 [&>*]:py-4 sm:[&>*]:px-6 sm:[&>*]:py-1 sm:[&>*:first-child]:pl-0">
+            {deferred && (
+              <Figure
+                hero
+                label="À prélever"
+                value={owed}
+                decimals={2}
+                // The total spans every statement still owed: the note dates the
+                // first debit, and says it is only part of the total when it is.
+                // Whether it waits on a validation is the statement's to say.
+                note={
+                  nextDebit &&
+                  `${card.pending.length > 1 ? `dont ${eur(Number(nextDebit.amount), 2)}, ` : ''}débit attendu le ${frDate(nextDebit.dueOn)}`
+                }
               />
-            </StatRow>
+            )}
+            <Figure
+              hero={!deferred}
+              label={`Payé en ${frMonthLong(month).split(' ')[0]}`}
+              value={paidThisMonth}
+              decimals={2}
+              note="par date d’achat"
+            />
           </div>
         </div>
 
         {deferred ? (
-          <Section title="Relevés" description="un par cycle, dans le solde une fois validé au jour du débit">
+          <Block label="Relevés" rule>
             {statements.length === 0 ? (
               <EmptyLine>Aucun achat pour l’instant.</EmptyLine>
             ) : (
-              <Rows>
+              <div className="flex flex-col divide-y divide-border/70 border-b border-border">
                 {statements.map((statement) => {
                   const closed = statement.cutOffOn < now
                   const purchases = movements
                     .filter((m) => m.cardStatementId === statement.id)
                     .sort((a, b) => purchaseDay(b).localeCompare(purchaseDay(a)))
+                  // A cycle still open is named by the day it runs to, as on Comptes;
+                  // a closed one by the day it was cut off, then where its debit stands.
                   const state = statement.debitedOn
                     ? `débité le ${frDate(statement.debitedOn)}`
                     : !closed
-                      ? 'en cours'
+                      ? null
                       : statement.dueOn <= now
-                        ? `attendu le ${frDate(statement.dueOn)}, à valider`
-                        : `attendu le ${frDate(statement.dueOn)}`
+                        ? `débit attendu le ${frDate(statement.dueOn)} · à valider`
+                        : `débit attendu le ${frDate(statement.dueOn)}`
                   return (
                     <StatementFold
                       key={statement.id}
@@ -203,17 +204,18 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                       open={!statement.debitedOn}
                       header={
                         <>
-                          <span className="text-[13px] font-medium">
-                            Cycle arrêté le {frDate(statement.cutOffOn)}
+                          <span className="text-[13.5px] font-medium">
+                            {closed ? 'Arrêté le' : 'En cours jusqu’au'} {frDate(statement.cutOffOn)}
                           </span>
                           <span className="text-[11.5px] text-faint">
-                            {statement.purchases} achat{statement.purchases > 1 ? 's' : ''} · {state}
+                            {statement.purchases} achat{statement.purchases > 1 ? 's' : ''}
+                            {state && ` · ${state}`}
                           </span>
                         </>
                       }
                       figures={
                         <>
-                          <span className="font-mono text-[13px] font-semibold tabular">
+                          <span className="font-mono text-[14px] font-semibold tabular">
                             −{eur(Number(statement.amount), 2)}
                           </span>
                           {closed && (
@@ -238,28 +240,30 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                     </StatementFold>
                   )
                 })}
-              </Rows>
+              </div>
             )}
-          </Section>
+          </Block>
         ) : (
-          <Section title="Achats" description="tout ce qu’elle a payé, le plus récent d’abord">
+          <Block label="Achats" rule>
             {movements.length === 0 ? (
               <EmptyLine>Rien n’a encore été payé avec cette carte.</EmptyLine>
             ) : (
-              <Rows>
+              <div className="flex flex-col divide-y divide-border/70 border-b border-border">
                 {[...movements].sort((a, b) => purchaseDay(b).localeCompare(purchaseDay(a))).map(row)}
-              </Rows>
+              </div>
             )}
-          </Section>
+          </Block>
         )}
 
+        {/* What a renewed card has to be given again: said only once a renewal is near. */}
         {billed.length > 0 && (
-          <Section
-            title="Abonnements et financements"
-            description="payés avec cette carte, à lui redonner quand elle est renouvelée"
-            action={<SectionLink href="/recurring-expenses?from=accounts">Dépenses récurrentes</SectionLink>}
+          <Block
+            label="Dépenses récurrentes"
+            qualifier={expired || expiring ? 'à reporter sur la nouvelle carte' : undefined}
+            href="/recurring-expenses?from=accounts"
+            rule
           >
-            <Rows>
+            <div className="flex flex-col divide-y divide-border/70 border-b border-border">
               {billed.map((c) => (
                 <div key={c.id} className="flex items-center gap-3 py-2.5">
                   <div className="flex min-w-0 flex-col gap-0.5">
@@ -275,8 +279,8 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                   </span>
                 </div>
               ))}
-            </Rows>
-          </Section>
+            </div>
+          </Block>
         )}
       </PageBody>
     </>

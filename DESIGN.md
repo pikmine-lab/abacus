@@ -53,6 +53,13 @@ new-york). Quatre principes gouvernent le reste :
   d'une ligne passent dessous plutôt que de le couper, et un contrôle segmenté prend une
   ligne entière plutôt que de défiler hors de vue. La place se lit sur le conteneur, pas
   sur l'écran : un panneau rangé resserre une table autant qu'une tablette.
+- **Un fait que porte chaque ligne se dessine dans une colonne alignée** plutôt que de
+  s'écrire ligne après ligne : le pointage d'un compte est un rail des 90 derniers jours,
+  à la même échelle sur toutes les lignes, un point par pointage, le dernier plein, un
+  repère à 45 jours. Un écart ouvert change la forme du point autant que sa couleur. Les
+  mots vivent une seule fois, dans la carte de ce qui est à pointer, et la date exacte dans
+  l'infobulle du rail, au survol, au focus ou au toucher. L'échelle se pose une fois, dans
+  l'en-tête de la liste, au-dessus de sa colonne, et le tri au-dessus des montants.
 
 Les pièces vivent dans `components/composition.tsx`. Un écran pas encore refondu garde
 `StatTile` et `Section` jusqu'à son tour (#114).
