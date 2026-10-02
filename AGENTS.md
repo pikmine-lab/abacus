@@ -140,7 +140,9 @@ version se lance une fois et se commite :
 `npx impeccable install --scope=project --providers=claude-code -y --force`. Seuls le
 consentement au hook, son cache et ce qu'une session de design produit restent hors du
 dépôt. Pas de copie globale (`~/.claude/skills/impeccable`) : Claude Code la ferait passer
-devant celle du projet.
+devant celle du projet. Le hook lit le `.impeccable/` du dossier où se trouve la session,
+la racine en temps normal, et non celui de l'app éditée : une exception du détecteur ou un
+réglage du hook s'enregistre depuis la racine, sinon il ne s'applique pas.
 
 **Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
 toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
