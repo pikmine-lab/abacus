@@ -44,7 +44,7 @@ export interface Delta {
   invert?: boolean
 }
 
-function DeltaLine({ delta }: { delta: Delta }) {
+export function DeltaLine({ delta }: { delta: Delta }) {
   if (delta.value === 0) return <p className="text-[11.5px] text-faint">stable {delta.label}</p>
   const up = delta.value > 0
   const good = delta.invert ? !up : up

@@ -31,24 +31,14 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { BalanceChart } from '@/components/balance-chart'
 import { BreakdownBars } from '@/components/breakdown-bars'
+import { ActionCard, ActionGroup, ActionRow, Block, Figure, FigureRow } from '@/components/composition'
 import { FlowChart } from '@/components/flow-chart'
 import { Onboarding, type Step } from '@/components/onboarding'
-import {
-  EmptyLine,
-  FilterBar,
-  PageBody,
-  PageHeader,
-  RowArrow,
-  Rows,
-  Section,
-  SectionLink,
-} from '@/components/page-shell'
-import { PeriodPicker } from '@/components/period-picker'
-import { ReadingTabs } from '@/components/reading-tabs'
+import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
+import { PeriodHeader } from '@/components/period-header'
 import { SpendingDonut } from '@/components/spending-donut'
-import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
-import { previousWindow, readingLabel, resolvePeriod, seriesFrom } from '@/lib/period'
+import { previousWindow, resolvePeriod, seriesFrom } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
 import { daysBetween, eur, frDate, freshness } from '@/lib/utils'
 
@@ -76,9 +66,6 @@ export default async function OverviewPage({
   const period = resolvePeriod(params, now)
   const previous = previousWindow(period)
   const reading = await currentReading(params, userId)
-  // Everything made of flows is named after the reading it was read in.
-  // Balances keep the bare period label: they have one reading and only one.
-  const scope = readingLabel(period, reading)
 
   const [
     accounts,
@@ -173,10 +160,6 @@ export default async function OverviewPage({
   const days = [...dayTotals.keys()].sort()
   const wealthStart = dayTotals.get(days[0]!) ?? 0
   const wealthEnd = dayTotals.get(days[days.length - 1]!) ?? wealth
-  const wealthSpark = sample(
-    days.map((d) => dayTotals.get(d)!),
-    12,
-  )
 
   const expenseNet = Number(totals.expenseNet)
   const expenseGross = Number(totals.expenseGross)
@@ -212,40 +195,60 @@ export default async function OverviewPage({
     expenseNet: Number(m.expenseNet),
   }))
 
+  // Balances have one reading only: when the other one is chosen for the
+  // flows, the block that ignores it says so.
+  const flowQualifier = reading === 'accrual' ? 'rattachement' : undefined
+  const wealthNote =
+    missingContributions > 0
+      ? `${eur(missingContributions)} d’apports non déclarés : pointe les espèces du compte`
+      : holdings.value > 0
+        ? `placements au dernier cours${holdings.unpriced > 0 ? `, ${holdings.unpriced} sans cours` : ''}`
+        : undefined
+  const pendingGroups = [
+    { items: pendingOut, href: '/recurring-expenses', one: 'prélèvement', many: 'prélèvements' },
+    { items: pendingIn, href: '/recurring-income', one: 'versement', many: 'versements' },
+    {
+      items: pendingPlacements,
+      href: '/investments',
+      one: 'versement programmé',
+      many: 'versements programmés',
+    },
+  ].filter((group) => group.items.length > 0)
+
   return (
     <>
-      <PageHeader title="Vue d’ensemble" description={`Période : ${period.label}`} />
-      <FilterBar>
-        <PeriodPicker period={period} />
-        <ReadingTabs value={reading} />
-      </FilterBar>
+      <PeriodHeader title="Vue d’ensemble" period={period} reading={reading} />
 
-      <PageBody>
-        <StatRow>
-          <StatTile
+      <PageBody className="gap-10 pt-8">
+        {/* The one figure that dominates, beside the balances that explain it. */}
+        <div className="grid items-end gap-8 lg:grid-cols-[minmax(18rem,4fr)_minmax(0,7fr)] lg:gap-12">
+          <Figure
             hero
             label="Patrimoine"
-            value={eur(wealth)}
+            value={wealth}
             href="/accounts?from=overview"
-            delta={
-              days.length > 1
-                ? { value: Math.round(wealthEnd - wealthStart), label: 'sur la période' }
-                : undefined
-            }
-            hint={
-              missingContributions > 0
-                ? `${eur(missingContributions)} d’apports non déclarés : pointe les espèces du compte`
-                : holdings.value > 0
-                  ? `${accounts.filter((a) => !a.closedOn).length} comptes, placements au dernier cours${
-                      holdings.unpriced > 0 ? ` (${holdings.unpriced} sans cours)` : ''
-                    }`
-                  : `${accounts.filter((a) => !a.closedOn).length} comptes ouverts`
-            }
-            spark={wealthSpark}
+            delta={days.length > 1 ? { value: Math.round(wealthEnd - wealthStart), label: '' } : undefined}
+            note={wealthNote}
           />
-          <StatTile
-            label={`Épargné · ${scope}`}
-            value={eur(saved)}
+          <Block
+            label="Soldes"
+            qualifier={reading === 'accrual' ? 'date réelle' : undefined}
+            href="/accounts?from=overview"
+            hrefLabel="Comptes"
+          >
+            <BalanceChart
+              lines={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
+              rows={series.map((r) => ({ day: r.day, lineId: r.accountId, balance: Number(r.balance) }))}
+              today={now}
+            />
+          </Block>
+        </div>
+
+        <FigureRow>
+          <Figure
+            label="Épargné"
+            qualifier={flowQualifier}
+            value={saved}
             delta={
               previousTotals
                 ? {
@@ -256,15 +259,11 @@ export default async function OverviewPage({
                   }
                 : undefined
             }
-            hint={`${eur(income)} entrés − ${eur(expenseNet)} sortis`}
-            spark={sample(
-              monthlyRows.map((m) => m.income - m.expenseNet),
-              12,
-            )}
           />
-          <StatTile
-            label={`Dépensé · ${scope}`}
-            value={eur(expenseNet)}
+          <Figure
+            label="Dépensé"
+            qualifier={flowQualifier}
+            value={expenseNet}
             href="/analysis?from=overview"
             delta={
               previousTotals
@@ -275,143 +274,91 @@ export default async function OverviewPage({
                   }
                 : undefined
             }
-            hint={
-              expenseGross !== expenseNet
-                ? `brut ${eur(expenseGross)} avant remboursements`
-                : `${totals.expenseCount} mouvements`
-            }
-            spark={sample(
-              monthlyRows.map((m) => m.expenseNet),
-              12,
-            )}
+            note={expenseGross !== expenseNet ? `brut ${eur(expenseGross)} avant remboursements` : undefined}
           />
-          <StatTile
-            label="Récurrent engagé"
-            value={`${eur(monthlyCommitted, 2)}/mois`}
+          <Figure
+            label="Engagé"
+            value={monthlyCommitted}
+            decimals={2}
+            per="/mois"
             href="/recurring-expenses?from=overview"
-            hint={`${subscriptions.length} abonnement${subscriptions.length > 1 ? 's' : ''}${
+            note={`${subscriptions.length} abonnement${subscriptions.length > 1 ? 's' : ''}${
               financings.length > 0
                 ? ` · ${financings.length} financement${financings.length > 1 ? 's' : ''}`
                 : ''
             }`}
           />
-        </StatRow>
+        </FigureRow>
 
-        {(due.length > 0 || staleChecks.length > 0 || claims > 0 || statementsDue.length > 0) && (
-          <Section title="À faire" description="ce qui attend une décision de ta part">
-            <Rows>
-              {/* One line per direction: an occurrence to confirm lives on the
-                  page of its own kind, and a single link could only guess. */}
-              {[
-                {
-                  items: pendingOut,
-                  href: '/recurring-expenses',
-                  one: 'prélèvement',
-                  many: 'prélèvements',
-                },
-                { items: pendingIn, href: '/recurring-income', one: 'versement', many: 'versements' },
-                {
-                  items: pendingPlacements,
-                  href: '/investments',
-                  one: 'versement programmé',
-                  many: 'versements programmés',
-                },
-              ]
-                .filter((group) => group.items.length > 0)
-                .map((group) => (
-                  <Link
-                    key={group.href}
-                    href={`${group.href}?from=overview`}
-                    className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                  >
-                    <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
-                    <span className="text-[13px]">
-                      {group.items.length} {group.items.length > 1 ? group.many : group.one} à confirmer
-                    </span>
-                    <span className="text-[11.5px] text-faint">
-                      attendu{group.items.length > 1 ? 's' : ''} depuis le {frDate(group.items[0]!.dueOn)}
-                    </span>
-                    <RowArrow />
-                  </Link>
-                ))}
-              {statementsDue.map(({ card, waiting }) => (
-                <Link
-                  key={card.id}
-                  href={`/accounts/cards/${card.id}?from=overview#statement-${waiting[0]!.id}`}
-                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                >
-                  <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
-                  <span className="text-[13px]">
-                    {waiting.length > 1 ? `${waiting.length} relevés` : 'Relevé'} de {card.name} à valider
-                  </span>
-                  <span className="text-[11.5px] text-faint">
-                    {eur(
-                      waiting.reduce((sum, s) => sum + Number(s.amount), 0),
-                      2,
-                    )}{' '}
-                    attendus depuis le {frDate(waiting[0]!.dueOn)}
-                  </span>
-                  <RowArrow />
-                </Link>
-              ))}
-              {staleChecks.length > 0 && (
-                <Link
-                  href="/accounts?from=overview"
-                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                >
-                  <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-faint" />
-                  <span className="text-[13px]">
-                    {staleChecks.length} compte{staleChecks.length > 1 ? 's' : ''} à pointer
-                  </span>
-                  <span className="truncate text-[11.5px] text-faint">
-                    {staleChecks
-                      .slice(0, 3)
-                      .map(({ account, check }) =>
-                        check
-                          ? check.openGap !== 0
-                            ? `${account.name} : écart de ${eur(check.openGap, 2)}`
-                            : `${account.name} : pointé ${freshness(check.check.checkedOn, now)}`
-                          : `${account.name} : jamais pointé`,
-                      )
-                      .join(' · ')}
-                  </span>
-                  <RowArrow />
-                </Link>
-              )}
-              {claims > 0 && (
-                <Link
-                  href="/movements?advances=1&from=overview"
-                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                >
-                  <CircleAlertIcon className="size-3.5 shrink-0 translate-y-0.5 text-faint" />
-                  <span className="text-[13px]">{eur(claims, 2)} en attente de remboursement</span>
-                  <span className="text-[11.5px] text-faint">
-                    {advances.length} avance{advances.length > 1 ? 's' : ''}
-                  </span>
-                  <RowArrow />
-                </Link>
-              )}
-            </Rows>
-          </Section>
-        )}
-
-        {/* Nothing when nothing alerts: a block saying "aucun seuil franchi"
-            would take the place of the day a seuil is. */}
-        {alerts.length > 0 && (
-          <Section title="Activité" description="ce qui change un régime, et ce qui n’est plus sûr">
-            <Rows>
-              {alerts.map((alert) => (
-                <Link
-                  key={`${alert.activityId}-${alert.kind}-${alert.subject}`}
-                  href={
-                    isThresholdAlert(alert)
-                      ? `/activity?activity=${alert.activityId}&from=overview`
-                      : `/settings/activities/${alert.activityId}?from=overview`
-                  }
-                  className="group flex items-baseline gap-3 py-2.5 hover:bg-secondary/40"
-                >
+        {(due.length > 0 ||
+          staleChecks.length > 0 ||
+          claims > 0 ||
+          statementsDue.length > 0 ||
+          alerts.length > 0) && (
+          <ActionCard label="À faire">
+            {/* One line per direction: an occurrence to confirm lives on the
+                page of its own kind, and a single link could only guess. */}
+            {pendingGroups.map((group) => (
+              <ActionRow
+                key={group.href}
+                href={`${group.href}?from=overview`}
+                icon={<CircleAlertIcon className="size-4 text-primary" />}
+                title={`${group.items.length} ${group.items.length > 1 ? group.many : group.one} à confirmer`}
+                detail={`depuis le ${frDate(group.items[0]!.dueOn)}`}
+              />
+            ))}
+            {statementsDue.map(({ card, waiting }) => (
+              <ActionRow
+                key={card.id}
+                href={`/accounts/cards/${card.id}?from=overview#statement-${waiting[0]!.id}`}
+                icon={<CircleAlertIcon className="size-4 text-primary" />}
+                title={`${waiting.length > 1 ? `${waiting.length} relevés` : 'Relevé'} de ${card.name} à valider`}
+                detail={`${eur(
+                  waiting.reduce((sum, s) => sum + Number(s.amount), 0),
+                  2,
+                )} depuis le ${frDate(waiting[0]!.dueOn)}`}
+              />
+            ))}
+            {staleChecks.length > 0 && (
+              <ActionRow
+                href="/accounts?from=overview"
+                icon={<CircleAlertIcon className="size-4 text-faint" />}
+                title={`${staleChecks.length} compte${staleChecks.length > 1 ? 's' : ''} à pointer`}
+                detail={staleChecks
+                  .slice(0, 3)
+                  .map(({ account, check }) =>
+                    check
+                      ? check.openGap !== 0
+                        ? `${account.name} : écart de ${eur(check.openGap, 2)}`
+                        : `${account.name} : pointé ${freshness(check.check.checkedOn, now)}`
+                      : `${account.name} : jamais pointé`,
+                  )
+                  .join(' · ')}
+              />
+            )}
+            {claims > 0 && (
+              <ActionRow
+                href="/movements?advances=1&from=overview"
+                icon={<CircleAlertIcon className="size-4 text-faint" />}
+                title={`${eur(claims, 2)} à récupérer`}
+                detail={`${advances.length} avance${advances.length > 1 ? 's' : ''}`}
+              />
+            )}
+            {/* Nothing when nothing alerts: a line saying "aucun seuil franchi"
+                would take the place of the day a seuil is. What changes a regime asks
+                for attention rather than a gesture, so it keeps its own label. */}
+            {alerts.length > 0 && <ActionGroup label="Activité" />}
+            {alerts.map((alert) => (
+              <ActionRow
+                key={`${alert.activityId}-${alert.kind}-${alert.subject}`}
+                href={
+                  isThresholdAlert(alert)
+                    ? `/activity?activity=${alert.activityId}&from=overview`
+                    : `/settings/activities/${alert.activityId}?from=overview`
+                }
+                icon={
                   <CircleAlertIcon
-                    className={`size-3.5 shrink-0 translate-y-0.5 ${
+                    className={`size-4 ${
                       alert.kind === 'threshold_crossed'
                         ? 'text-destructive'
                         : alert.kind === 'threshold_near'
@@ -419,66 +366,58 @@ export default async function OverviewPage({
                           : 'text-faint'
                     }`}
                   />
-                  <span className="shrink-0 text-[13px]">{alertHeadline(alert)}</span>
-                  <span className="truncate text-[11.5px] text-faint">{alertDetail(alert)}</span>
-                  <RowArrow />
-                </Link>
-              ))}
-            </Rows>
-          </Section>
+                }
+                title={alertHeadline(alert)}
+                detail={alertDetail(alert)}
+              />
+            ))}
+          </ActionCard>
         )}
 
-        <Section
-          title="Soldes"
-          description={`${period.label}${reading === 'accrual' ? ' (date réelle)' : ''} · calculé depuis les mouvements déclarés`}
-          action={<SectionLink href="/accounts?from=overview">Comptes</SectionLink>}
-        >
-          <BalanceChart
-            lines={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
-            rows={series.map((r) => ({ day: r.day, lineId: r.accountId, balance: Number(r.balance) }))}
-            today={now}
+        {/* No title: the months on the axis name the window, and the two sides
+            of the zero line name themselves. */}
+        <section aria-label="Entrées et sorties, douze derniers mois">
+          {flowQualifier && <p className="pb-1 text-[11.5px] text-faint">{flowQualifier}</p>}
+          <FlowChart
+            rows={monthlyRows}
+            currentMonth={now.slice(0, 7)}
+            selectedMonth={period.preset === 'month' ? period.ref : undefined}
+            legend="axis"
           />
-        </Section>
+        </section>
 
-        <Section
-          title="Ce qui rentre, ce qui sort"
-          description={`12 derniers mois${
-            reading === 'accrual' ? ' (rattachement)' : ''
-          } · clic sur un mois pour cadrer la page dessus`}
+        <Block
+          label="Dépenses"
+          qualifier={flowQualifier}
+          href="/analysis?from=overview"
+          hrefLabel="Analyse"
+          rule
         >
-          <FlowChart rows={monthlyRows} currentMonth={now.slice(0, 7)} />
-        </Section>
+          {byGroup.length === 0 && breakdown.length === 0 ? (
+            <EmptyLine>Aucune dépense déclarée sur cette période.</EmptyLine>
+          ) : (
+            <div className="grid gap-8 pt-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-12">
+              <SpendingDonut
+                rows={amounts(byGroup)}
+                emptyLabel="Aucune dépense déclarée sur cette période."
+              />
+              <BreakdownBars
+                rows={amounts(breakdown)}
+                dimension="category"
+                from="overview"
+                period={period}
+                max={6}
+                emptyLabel="Aucune dépense déclarée sur cette période."
+              />
+            </div>
+          )}
+        </Block>
 
-        <div className="grid gap-8 lg:grid-cols-2">
-          <Section title="Dépenses par groupe" description={scope}>
-            <SpendingDonut rows={amounts(byGroup)} emptyLabel="Aucune dépense déclarée sur cette période." />
-          </Section>
-
-          <Section
-            title="Dépenses par catégorie"
-            description={scope}
-            action={<SectionLink href="/analysis?from=overview">Analyse</SectionLink>}
-          >
-            <BreakdownBars
-              rows={amounts(breakdown)}
-              dimension="category"
-              from="overview"
-              period={period}
-              max={6}
-              emptyLabel="Aucune dépense déclarée sur cette période."
-            />
-          </Section>
-        </div>
-
-        <Section
-          title="Prochaines échéances"
-          description="abonnements, financements et revenus récurrents"
-          action={<SectionLink href="/recurring-expenses?from=overview">Tout voir</SectionLink>}
-        >
+        <Block label="À venir" href="/recurring-expenses?from=overview" hrefLabel="Toutes les échéances" rule>
           {active.length === 0 ? (
             <EmptyLine>Aucun engagement déclaré.</EmptyLine>
           ) : (
-            <Rows>
+            <div className="flex flex-col divide-y divide-border">
               {[...active]
                 .sort((a, b) => a.nextDueOn.localeCompare(b.nextDueOn))
                 .slice(0, 6)
@@ -490,22 +429,31 @@ export default async function OverviewPage({
                         ? '/recurring-income?from=overview'
                         : '/recurring-expenses?from=overview'
                     }
-                    className="group flex items-center gap-2 py-2.5 hover:bg-secondary/40"
+                    // On a phone the date and the judgment drop under the name, so
+                    // the name is not cut to make room for them.
+                    className="group -mx-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-md px-2 py-2.5 hover:bg-secondary/40 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto_7rem]"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px]">{c.label}</p>
-                      <p className="text-[11px] text-faint">
-                        {frDate(c.nextDueOn)}
-                        {c.kind === 'financing' && c.progress
-                          ? ` · ${c.progress.paidInstallments}/${c.installmentsTotal} échéances`
-                          : ''}
-                      </p>
-                    </div>
+                    <span className="col-start-1 row-start-2 font-mono text-[12px] text-faint tabular sm:row-start-1">
+                      {frDate(c.nextDueOn)}
+                    </span>
+                    <span className="col-start-1 row-start-1 truncate text-[13.5px] sm:col-start-2">
+                      {c.label}
+                      {c.kind === 'financing' && c.progress && (
+                        <span className="ml-2 text-[12px] text-faint">
+                          {c.progress.paidInstallments}/{c.installmentsTotal} échéances
+                        </span>
+                      )}
+                    </span>
                     {c.judgment && c.direction === 'outgoing' && (
-                      <Badge variant={JUDGMENT[c.judgment].variant}>{JUDGMENT[c.judgment].label}</Badge>
+                      <Badge
+                        variant={JUDGMENT[c.judgment].variant}
+                        className="col-start-2 row-start-2 justify-self-end sm:col-start-3 sm:row-start-1"
+                      >
+                        {JUDGMENT[c.judgment].label}
+                      </Badge>
                     )}
                     <span
-                      className={`ml-auto font-mono text-[13px] font-semibold tabular ${
+                      className={`col-start-2 row-start-1 text-right font-mono text-[13px] font-semibold tabular sm:col-start-4 ${
                         c.direction === 'incoming' ? 'text-good' : ''
                       }`}
                     >
@@ -514,9 +462,9 @@ export default async function OverviewPage({
                     </span>
                   </Link>
                 ))}
-            </Rows>
+            </div>
           )}
-        </Section>
+        </Block>
       </PageBody>
     </>
   )
@@ -577,13 +525,6 @@ function amounts(rows: BreakdownRow[]) {
     net: Number(r.net),
     count: Number(r.count),
   }))
-}
-
-/** Evenly spaced sample of a series, keeping the last point. */
-function sample(values: number[], count: number): number[] {
-  if (values.length <= count) return values
-  const step = (values.length - 1) / (count - 1)
-  return Array.from({ length: count }, (_, i) => values[Math.round(i * step)]!)
 }
 
 function shiftMonths(iso: string, by: number): string {

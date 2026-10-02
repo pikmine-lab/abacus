@@ -1,60 +1,77 @@
 # Design
 
-Ce document fixe ce qui se voit : parti pris, navigation, couleur, forme des graphes,
-tri, densité, ton des textes, identité. Comment le front se construit (quel composant pour quel
-besoin, pièges React et Next, ce que chaque écran doit dire) est dans `apps/web/AGENTS.md`.
+Ce document fixe ce qui se voit : parti pris, composition d'un écran, navigation, couleur,
+graphes, tri, conteneurs, écriture, identité. Ce qu'un écran précis compose est dans son
+brief (`apps/web/.impeccable/surfaces/`) ; comment le front se construit (composants,
+pièges React et Next, ce que chaque écran doit dire) est dans `apps/web/AGENTS.md`.
 
 ## Parti pris
 
-Minimaliste, technique, professionnel. **Thème sombre unique**, base **shadcn/ui**
-(style new-york). Trois principes gouvernent tout le reste :
+Minimaliste, technique, professionnel. **Thème sombre unique**, base **shadcn/ui** (style
+new-york). Quatre principes gouvernent le reste :
 
-1. **Une vue répond à une question.** Le nom d'un écran est la question qu'il traite,
-   pas l'entité qu'il liste. « Abonnements » mélangeait un salaire et un crédit auto :
-   il a été coupé en *Dépenses récurrentes* et *Revenus récurrents*.
-2. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la
-   saisie vit dans un panneau latéral qu'on ouvre. Un formulaire ne squatte jamais
-   la moitié d'un écran de lecture.
-3. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, et tout
-   détail sait revenir d'où il vient.
+1. **Une vue répond à une question.** Le nom d'un écran est la question qu'il traite, pas
+   l'entité qu'il liste : « Abonnements » mélangeait un salaire et un crédit, il est devenu
+   *Dépenses récurrentes* et *Revenus récurrents*.
+2. **Un chiffre domine.** Ce qui répond à la question de l'écran se lit en premier et en
+   grand ; le reste lui est subordonné.
+3. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la saisie vit
+   dans un panneau latéral qu'on ouvre, jamais dans la moitié d'un écran de lecture.
+4. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, tout détail sait
+   revenir d'où il vient.
+
+## Composition d'un écran
+
+- **Un écran qui se lit sur une période a la période pour titre** (`PeriodHeader`) : flèches
+  autour, préréglages et mois compté sur la même ligne. Le nom de l'écran reste le titre du
+  document pour les technologies d'assistance ; à l'écran, la navigation le dit déjà. Un
+  écran sans période garde son titre (`PageHeader`).
+- **Le chiffre qui domine est posé à côté de ce qui l'explique** : le patrimoine à côté du
+  graphe des soldes. Un seul par écran (`Figure hero`).
+- **Les autres chiffres forment une rangée séparée par des filets** (`FigureRow`) : un mot
+  pour les nommer, la valeur, l'écart signé contre une fenêtre nommée (la période du titre
+  quand c'est elle). Une note n'apparaît que si elle change ce que le chiffre veut dire : une
+  méthode (« placements au dernier cours »), une déclaration qui manque, un brut. Pas de
+  sparkline : l'historique se lit dans le graphe de l'écran.
+- **Un bloc se nomme d'un mot** (`Block`) : « Soldes », « Dépenses », « À venir ». Un
+  qualificatif court s'ajoute seulement quand il change le sens du contenu (« rattachement »).
+  Le chemin vers le détail est une flèche au bout du nom.
+- **Deux lectures d'une même chose vivent sous un seul nom**, côte à côte : groupes et
+  catégories de dépenses.
+- **Ce qui attend une action est la seule carte de l'écran** (`ActionCard`) : une liste de
+  travail est un objet à part, les lectures vivent sur le fond de page. Ce qui demande
+  seulement de l'attention (une alerte d'activité) la rejoint sous son propre libellé, sans
+  ouvrir une seconde carte. Un chiffre qui mène à son détail est cliquable en entier.
+- **Sur téléphone, un nom passe avant ce qui le qualifie** : la date ou le jugement d'une
+  ligne passent dessous plutôt que de le couper, et un contrôle segmenté prend une ligne
+  entière plutôt que de défiler hors de vue.
+
+Les pièces vivent dans `components/composition.tsx`. Un écran pas encore refondu garde
+`StatTile` et `Section` jusqu'à son tour (#114).
 
 ## Navigation
 
-Barre **latérale pliable** (`sidebar` shadcn, `collapsible="icon"`), groupée par
-question posée, jamais à plat :
+Barre **latérale pliable** (`collapsible="icon"`), groupée par question posée : ce qui s'est
+passé (Vue d'ensemble, Mouvements, Analyse, Activité), ce à quoi on est engagé (Dépenses
+récurrentes, Revenus récurrents), ce qu'on possède (Comptes, Placements). Réglages et le
+compte utilisateur ferment la barre. **Les groupes sont séparés par un filet, sans
+libellé** : chaque entrée nomme déjà son écran.
 
-| Groupe | Entrées |
-|---|---|
-| Suivi | Vue d'ensemble · Mouvements · Analyse · Activité |
-| Engagements | Dépenses récurrentes · Revenus récurrents |
-| Patrimoine | Comptes · Placements |
-| (pied) | Réglages · compte utilisateur |
-
-- **Le menu du compte porte ce qui n'est pas une question sur l'argent** : brancher une
-  IA, réglages, déconnexion. Un groupe de la barre répond à « qu'est-ce qui s'est passé »,
-  « à quoi suis-je engagé », « qu'est-ce que je possède » ; « comment je donne accès à mon
-  agent » n'a rien à y faire.
-- **Repliée**, seules les icônes restent ; le libellé passe en tooltip
-  (`SidebarMenuButton tooltip=`). Les icônes ne changent pas de taille en pliant :
-  le wordmark force `!size-6` contre le `[&>svg]:size-4` du bouton.
-- **Le pli se commande depuis la barre**, par une poignée à chevron posée sur sa
-  propre séparation (`SidebarEdgeToggle`) : replier la navigation est un acte sur la
-  navigation, pas sur la page. Le raccourci `Ctrl/⌘+B` reste actif. Sous `sm`, la
-  barre est un sheet et le header porte alors un déclencheur.
-- L'actif porte l'accent sur l'icône et l'encre pleine sur le texte ; rien d'autre.
-- Une vue non encore construite reste visible, désactivée et marquée `V2` : une
-  feuille de route lisible vaut mieux qu'une surprise.
-- **Un retour est nommé** : les liens qui traversent les pages disent d'où ils viennent, et
-  le retour ramène la page quittée avec sa période et ses filtres intacts, jamais sur une
-  route nue qu'il faudrait recadrer.
+- **Le menu du compte porte ce qui n'est pas une question sur l'argent** : brancher une IA,
+  réglages, déconnexion.
+- **Repliée**, seules les icônes restent, le libellé passe en tooltip ; les icônes ne
+  changent pas de taille (le wordmark force `!size-6`).
+- **Le pli se commande depuis la barre** (`SidebarEdgeToggle`) ; `Ctrl/⌘+B` reste actif.
+  Sous `sm`, la barre est un sheet et l'en-tête porte son déclencheur.
+- L'actif porte l'accent sur l'icône et l'encre pleine sur le texte, rien d'autre.
+- Une vue pas encore construite reste visible, désactivée et marquée `V2`.
+- **Un retour est nommé** et ramène la page quittée avec sa période et ses filtres.
 
 ## Couleur
 
-Fonds **bleu-nuit désaturés** (jamais de gris pur), accent **cuivre**. Toutes les
-valeurs ci-dessous sont mesurées, pas choisies à l'œil : les séries de graphes par
-les contrôles data-viz (bande de luminance OKLCH, plancher de chroma, ΔE sous
-simulation de daltonisme, contraste sur la surface), les encres par WCAG sur le fond
-de page.
+Fonds **bleu nuit désaturés** (jamais de gris pur), accent **cuivre**. Les valeurs sont
+mesurées : les séries par les contrôles data-viz (bande de luminance OKLCH, plancher de
+chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur la page.
 
 | Rôle | Valeur | Token | Mesure |
 |---|---|---|---|
@@ -72,233 +89,137 @@ de page.
 | Négatif / erreur | `#e5686b` | `--destructive` | 6,0:1 |
 | Grille de graphe | `#1c212c` | `--grid` | : |
 
-### Les règles qui gouvernent la couleur
-
-1. **Accent unique, réservé à l'actif** : onglet ou entrée sélectionnée, focus,
-   bouton primaire, fin de sparkline, badge « à résilier ». Jamais décoratif.
-2. **Le cuivre a deux pas, pour deux métiers.** `--primary` `#e2a04c` est une encre
-   d'interface (contrainte WCAG texte) ; `--chart-1` `#c58229` est la marque de
-   graphe (contrainte : bande de luminance sombre L 0,48–0,67, où le pas clair est
-   trop pâle pour qualifier). Même rampe, deux usages, aucune confusion.
-3. **Six séries de graphe.** `#c58229` cuivre · `#3987e5` bleu acier · `#d55181`
-   magenta · `#08856a` sarcelle · `#7d4cc0` violet · `#855e02` bronze. Validées
-   **en toutes paires** sur la surface `#14171f` : c'est la liste stricte, et la bonne
-   dès qu'une légende laisse afficher n'importe quel sous-ensemble. Six est le maximum
-   mesuré à côté des trois premières, par recherche exhaustive du gamut dans la bande
-   de luminance : aucune septième candidate ne passe, et les teintes de départ n'ont
-   pas bougé.
-4. **Ces six-là se paient en labels.** Leur pire paire tombe à ΔE 6,8 en protanopie,
-   dans la bande 6-8 qui n'est légale qu'avec un encodage secondaire. Les labels
-   directs en fin de ligne sont donc la condition de la palette, pas un confort. Le
-   quatrième slot coûte déjà ce prix et les deux suivants ne coûtent rien de plus : il
-   se paie une fois, en passant de trois à quatre. Au-delà de six séries les teintes se
-   répètent plutôt que de refuser une série, puisque c'est le label qui identifie.
-5. **Ni vert ni rouge en série.** Ces deux teintes portent le sens (revenu, erreur) :
-   les réutiliser comme identité brouillerait la lecture. La sarcelle du slot 4 est
-   mesurée à distance du vert positif, elle ne l'approche pas.
-6. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout delta,
-   position au-dessus/au-dessous de zéro sur les flux, libellé sur tout badge.
-7. **Pas de couleur par catégorie.** Une barre de dépenses porte son identité dans
-   son libellé et sa magnitude dans sa longueur ; la couleur n'encoderait rien.
-   Toutes les barres sont cuivre. L'arc d'un donut est l'exception qui se justifie :
-   une part de cercle n'a pas d'identité lisible sans sa teinte. D'où une teinte par
-   groupe, sur un jeu fermé de cinq plus un reste, jamais par catégorie.
-8. **Le thème sombre est le seul.** Un thème clair supposerait de revalider la famille
-   de séries sur la surface claire avant tout le reste : la palette est mesurée contre
-   `#14171f`, et rien ne garantit qu'elle tienne ailleurs.
+1. **Accent unique, réservé à l'actif** : sélection, focus, bouton primaire, ce qui attend
+   une action, badge « à résilier ». Jamais décoratif.
+2. **Le cuivre a deux pas** : `--primary` `#e2a04c` est une encre d'interface (contrainte
+   WCAG), `--chart-1` `#c58229` la marque de graphe (bande de luminance L 0,48–0,67).
+3. **Six séries**, validées en toutes paires sur `#14171f` : `#c58229` cuivre · `#3987e5`
+   bleu acier · `#d55181` magenta · `#08856a` sarcelle · `#7d4cc0` violet · `#855e02`
+   bronze. Six est le maximum mesuré ; au-delà, les teintes se répètent et le label
+   identifie.
+4. **Ces six-là se paient en labels** : leur pire paire tombe à ΔE 6,8 en protanopie, légal
+   seulement avec un encodage secondaire. Les labels directs sont la condition de la palette.
+5. **Ni vert ni rouge en série** : ces teintes portent le sens (revenu, erreur).
+6. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout écart, position
+   de part et d'autre de zéro sur les flux, libellé sur tout badge.
+7. **Pas de couleur par catégorie** : une barre se nomme par son libellé et se mesure par
+   sa longueur, toutes les barres sont cuivre. Seul l'arc d'un donut prend une teinte, par
+   groupe, sur un jeu fermé de cinq plus un reste.
+8. **Le thème sombre est le seul** : la palette est mesurée contre `#14171f`.
 
 ## Graphes
 
-- **Une seule rangée de filtres**, au-dessus du contenu, qui scope tout ce qui suit.
-  Le sélecteur écrit dans l'URL, donc une vue cadrée se partage, se recharge et se
-  défait au bouton retour.
-- **Un contrôle de période se pose là où porte sa portée.** La rangée est la forme
-  d'un écran dont tout se lit sur une période. Quand seul un graphe en a une, ses
-  durées se posent sur sa section (Placements : les tuiles, les positions et les
-  opérations sont des instantanés), parce qu'une rangée y promettrait de cadrer ce
-  qu'elle ne cadre pas. Ce qui se déplace est le contrôle, pas le reste : il écrit
-  dans l'URL comme la rangée, et un écran ne porte jamais deux périodes.
-- **Une fenêtre nommée dans le titre** peut différer de la période de la page quand
-  la forme l'exige (« 12 derniers mois » pour un graphe mensuel) : c'est déclaré,
-  pas subi.
-- **Une fenêtre par défaut ne montre pas du vide.** Celle d'un portefeuille part de la
-  première opération quand elle est plus récente qu'un an : douze mois de plat à zéro ne
-  disent rien et écrasent la partie qui parle.
-- **Deux lectures d'une même série, nommées par l'onglet actif.** Un portefeuille se
-  lit en valorisation contre les apports (« combien j'ai mis, combien ça vaut ») ou en
-  écart entre les deux, apports posés à plat (« combien ça a fait ») : deux questions,
-  pas une version dégradée de l'autre. La seconde existe parce que la première écrase
-  l'écart, du même ordre de grandeur que les courbes, et parce qu'elle seule ne saute
-  pas quand un apport rentre. Le titre de section ne redit pas l'onglet sélectionné ;
-  la description dit la méthode (« valorisation − apports »).
-- **Une horizontale de référence se trace et se nomme**, en trait plein plus marqué
-  que la grille : le pointillé veut dire « extrapolé » partout ailleurs. L'aire part
-  d'elle, pas du plancher, pour que le lavis soit ce qui a été gagné ou perdu.
-- **Le zéro n'entre dans l'échelle que quand la série se lit contre lui** : un solde,
-  une valorisation, une performance. Un cours ne se lit pas contre zéro, et l'y forcer
-  aplatit en ligne droite la variation qu'on est venu voir. Le pas de la grille est un
-  nombre rond taillé sur l'amplitude (1, 2 ou 5 fois une puissance de dix), jamais une
-  constante : un pas de 500 € écrit pour des soldes ne donnait qu'un trait à une action
-  à 709 € comme à une performance de 312 €.
-- **Deux lectures d'un même mois, toujours nommées.** À côté de la période, la rangée
-  porte le mois compté : la date réelle, ou le mois concerné (le rattachement). Le même
-  contrôle sur les trois écrans de flux, parce que deux écrans en désaccord sur août
-  sans que rien ne le dise est pire que de n'avoir qu'une lecture. Il ne cadre pas
-  l'écran qui le porte : basculé une fois, il tient sur les trois tant qu'on circule
-  dans l'application, parce que ce qu'il change n'est pas un cadrage mais ce que les
-  chiffres veulent dire. Il ne survit pas à un chargement de page : recharger, coller un
-  lien ou ouvrir un onglet repart de la lecture réglée dans Réglages, seul endroit où
-  une lecture durable s'écrit, et la bascule ne l'y écrit jamais. L'URL, elle, dit
-  toujours ce que l'écran compte, donc un lien qui la porte rouvre la même lecture. Il
-  ne touche que les
-  flux : un solde n'a qu'une lecture, et sa section le rappelle quand l'autre est
-  choisie. Chaque chiffre porte alors le nom de la lecture qui l'a produit, et une
-  fenêtre glissante lue au rattachement se renomme par les mois entiers qu'elle couvre :
-  c'est ce qu'elle a répondu.
-- **Le futur se voit.** Au-delà d'aujourd'hui, une courbe ne fait que prolonger le
-  dernier solde connu : elle passe en **pointillés**, son aire s'arrête, son point de
-  fin devient creux, et un **drapeau d'un mot** (« projection ») marque la frontière
-  sur une verticale pointillée. Un mois encore en cours est **hachuré** derrière un
-  drapeau « en cours » : inachevé n'est pas petit.
-- **Brut et net ensemble** : la part pleine est le net, la part translucide accolée
-  (2px de respiration) est ce qui est revenu en remboursement. Pleine + translucide
-  = brut.
-- **Le chiffre est le net, et le classement aussi.** Ce qu'une période a coûté, c'est
-  le net : c'est donc lui qu'un rang affiche et lui qui ordonne les lignes, sinon une
-  ligne se place au-dessus d'une autre qu'elle finit par passer dessous quand le
-  remboursement rentre. Le brut garde sa lecture dans la marque (la queue translucide)
-  et au survol ; il n'a pas de chiffre à lui dans la ligne, un second nombre sous le
-  premier rendant une ligne remboursée plus haute que ses voisines, ce qui casse le
-  rythme vertical dans lequel un classement se lit. Un total de section et la tuile
-  qui le résume répondent alors le même nombre.
-- **Un rang se creuse par proximité, pas par une boîte.** Quand une ligne se déplie
-  (un groupe vers ses catégories), ce qui dit l'appartenance est la distance : le
-  contenu se serre sous son en-tête (4px) et le rang suivant est repoussé (16px), soit
-  un rapport de un à quatre. L'indentation du libellé et un filet vertical gris bleuté
-  le confirment ; un fond plein est la manière lourde de dire la même chose. Les
-  marques restent à la même origine et à la même échelle d'un niveau à l'autre, une
-  longueur valant un montant partout dans la section, et le niveau déplié se dessine
-  plus fin que son en-tête.
-- **Interaction** : crosshair aimanté au point le plus proche, tooltip unique listant
-  toutes les séries, légende dès deux séries, labels directs en fin de ligne
-  (anticollision). Un mois du graphe de flux est un vrai contrôle (rôle, tabulation,
-  Entrée/Espace) qui cadre la page dessus.
-- **Une infobulle suit le curseur** et n'est jamais un `title` de navigateur. Sur une
-  marque qui traverse l'écran (la barre d'un rang), l'ancrer à sa ligne mettrait la
-  réponse loin de l'œil : elle se pose à côté du pointeur, se retourne au bord de la
-  fenêtre, ne passe pas sous la main (rien au doigt, le tap étant une navigation) et
-  porte l'encre des autres infobulles (fond `popover`, filet, montants alignés). Elle
-  ne répète pas ce que la ligne montre déjà : elle dit le nombre de mouvements, ce que
-  la ligne agrège, et le brut quand un remboursement l'a séparé du net.
-- **Le label de fin est mesuré, pas estimé.** La marge droite est taillée sur la largeur
-  réelle des labels, dans leur police, et plafonnée au tiers du cadre : un nom qui n'y
-  tient pas est raccourci par nous, jamais par le cadre. Le montant ne se coupe pas, lui,
-  parce qu'un nombre tronqué est un nombre faux. L'anticollision écarte vers le bas puis
-  recale la pile sur les deux bords, sinon la sixième série sort du cadre par le bas ; et
-  au-delà de ce que la hauteur tient, les labels cèdent la place à la légende.
-- **Une sélection par défaut dit quelque chose.** Le graphe de soldes s'ouvre sur les
-  comptes les mieux garnis, autant que la palette en tient, jamais sur les premiers par
-  ordre alphabétique. Il n'oppose pas non plus de plafond : comparer plus de comptes est
-  exactement ce que la vue d'ensemble promet.
-- **Le donut répond par masses, pas par lignes.** Une part par groupe, une ligne de
-  légende par part, l'identité et le montant dans la légende. Au-delà de cinq groupes
-  la queue fusionne en une seule part, nommée par ce qu'elle contient et tracée dans
-  l'encre estompée : c'est un reste, pas une identité, et il referme le cercle sans
-  buter sur la première teinte. Le survol relie l'arc à sa ligne (les autres
-  s'effacent) et le creux dit ce que la légende ne répète pas : le net et le nombre de
-  mouvements.
-- **Marques** : lignes 2px, points de fin r4 avec anneau de la couleur du fond,
-  barres ≤ 24px à bout arrondi, grille en filet discret, ticks au format français
-  (`13,5k`).
-- **Tuiles de stats** : label, valeur, delta signé contre une fenêtre **nommée**,
-  sparkline 12 points (gris estompé, dernier segment et point en accent). **Un seul
-  chiffre héro par vue.** Une tuile qui mène quelque part porte une flèche
-  ↗ dans son coin haut droit, à taille d'icône.
+- **Les contrôles qui cadrent un écran sont en haut et écrivent dans l'URL** : une vue
+  cadrée se partage, se recharge et se défait au bouton retour. Dans l'en-tête quand
+  l'écran se lit sur une période, sinon dans une rangée sous lui.
+- **Un contrôle de période se pose là où porte sa portée.** Quand seul un graphe a une
+  période (Placements, où le reste est instantané), ses durées se posent sur lui. Un écran
+  ne porte jamais deux périodes.
+- **Une fenêtre peut différer de la période de l'écran quand la forme l'exige** (douze mois
+  pour un graphe mensuel) ; ses mois sur l'axe la nomment.
+- **Une fenêtre par défaut ne montre pas du vide** : celle d'un portefeuille part de la
+  première opération quand elle a moins d'un an.
+- **Deux lectures d'une même série, nommées par l'onglet actif** : un portefeuille se lit
+  en valorisation contre les apports, ou en écart entre les deux.
+- **Une horizontale de référence se trace en plein et se nomme** ; le pointillé veut dire
+  « extrapolé ». L'aire part d'elle.
+- **Le zéro n'entre dans l'échelle que si la série se lit contre lui** (solde,
+  valorisation, performance ; pas un cours). Le pas de grille est un nombre rond taillé sur
+  l'amplitude (1, 2 ou 5 × 10ⁿ).
+- **Le mois compté a deux lectures, toujours nommées** : la date réelle ou le mois concerné
+  (rattachement). Le même contrôle sur les trois écrans de flux. Basculé, il tient tant
+  qu'on circule ; un chargement de page repart de la préférence de Réglages, seul endroit où
+  elle s'écrit. Il ne touche que les flux : un bloc de soldes rappelle « date réelle » quand
+  l'autre lecture est choisie, et un chiffre ou un graphe de flux porte « rattachement »
+  quand c'est elle.
+- **Le futur se voit** : au-delà d'aujourd'hui, une courbe passe en pointillés, son aire
+  s'arrête, son point de fin se creuse, un drapeau « projection » marque la frontière. Un
+  mois en cours est hachuré derrière un drapeau « en cours ».
+- **Le mois de l'écran est lavé** dans un graphe mensuel, pour que l'œil le trouve.
+- **Brut et net ensemble** : la part pleine est le net, la part translucide accolée (2 px
+  d'écart) ce qui est revenu en remboursement.
+- **Le chiffre est le net, et le classement aussi** ; le brut se lit dans la marque et au
+  survol, jamais en second nombre sous le premier.
+- **Un rang se creuse par proximité** : sous son en-tête, 4 px ; avant le rang suivant,
+  16 px ; un retrait et un filet le confirment. Même origine et même échelle d'un niveau à
+  l'autre.
+- **Interaction** : crosshair aimanté, tooltip unique listant toutes les séries, labels
+  directs en fin de ligne avec anticollision. **Une légende dès deux séries, sauf quand la
+  position les nomme** : le graphe des flux dit « entré » et « sorti » de part et d'autre
+  de zéro, et son infobulle nomme la part remboursée. Les bascules de séries d'un graphe sont sa légende. Un mois du graphe de flux est
+  un vrai contrôle (rôle, tabulation, Entrée/Espace) qui cadre l'écran dessus.
+- **Une infobulle suit le curseur**, jamais un `title` de navigateur ; elle se retourne au
+  bord, ne passe pas sous la main, et ne répète pas ce que la ligne montre.
+- **Le label de fin est mesuré, pas estimé** : la marge est taillée sur sa largeur réelle,
+  plafonnée au tiers du cadre ; un nom se raccourcit, un montant jamais.
+- **Une sélection par défaut dit quelque chose** : les soldes s'ouvrent sur les comptes les
+  mieux garnis, sans plafond.
+- **Le donut répond par masses** : une part par groupe ; au-delà de cinq, la queue fusionne
+  en un reste estompé. Le survol relie l'arc à sa ligne.
+- **Marques** : lignes 2 px, points de fin r4 avec anneau du fond, barres ≤ 24 px à bout
+  arrondi, grille en filet discret, ticks au format français (`13,5k`).
 
 ## Tri
 
-- **Le tri se désigne là où la liste le porte.** Une liste dont les colonnes sont déjà
-  alignées met le contrôle dans son en-tête : le libellé de colonne devient le bouton, et
-  un chevron dit le sens. Une liste faite de blocs à deux étages n'a pas de colonne à
-  cliquer, et ce qui s'y trie vit dans la phrase de contexte (« pointé il y a 3 j »,
-  « prochaine le 05/09 ») : elle porte alors un contrôle nommé (« Trier : Solde ↓ ») au
-  bout de son en-tête de section. Deux formes, un seul geste : désigner un critère
-  l'active dans son sens d'ouverture, le redésigner inverse la liste.
-- **Le sens d'ouverture appartient au critère**, pas au contrôle : un nom part de A, un
-  montant et une date passée partent du plus grand et du plus récent, une échéance part de
-  la plus proche. Désigner « Montant » répond « le plus gros » sans qu'on ait à le demander.
-- **Une liste s'ouvre sur l'ordre qui répond à sa question** : les mouvements sur la date,
-  les positions sur la valorisation, les abonnements sur le coût mensuel. L'alphabet n'est
-  un défaut que là où on cherche une ligne avant de la comparer, comme les comptes et le
-  référentiel. Un tri choisi remplace un ordre décidé le temps d'une lecture ; il ne rend
-  pas ce défaut arbitraire.
-- **Dans une liste groupée, le tri ordonne les lignes, pas les groupes.** Les groupes se
-  classent sur ce qu'ils totalisent, le plus lourd d'abord, parce que c'est la question à
-  laquelle le regroupement répond ; le critère choisi range les lignes dans chaque groupe.
-  Deux sortes de lignes qui ne se lisent pas sur les mêmes critères (un abonnement et un
-  financement) ne se classent pas l'une contre l'autre : chacune a son intitulé, qui porte
-  son total et son propre tri.
-- **Ce qui est inconnu ne devient pas le plus petit.** Une position sans cours, un montant
-  jamais converti restent en fin de liste dans les deux sens : un tiret n'est pas un zéro,
-  et l'inversion ne doit pas le promouvoir en tête.
-- **Le tri s'écrit dans l'URL**, comme la période et les filtres : un ordre est un cadrage,
-  il se partage, se recharge et se défait au bouton retour. Un paramètre par liste, nommé
-  par elle, parce que plusieurs listes partagent un écran et se lisent chacune à son ordre.
-- **Le chevron ne marque que le critère en vigueur.** Aligner une flèche sur chaque colonne
-  ferait du bruit ; les colonnes inactives révèlent la leur au survol, ce qui suffit à dire
-  qu'elles se cliquent.
+- **Le tri se désigne là où la liste le porte** : dans l'en-tête de colonne d'une liste
+  alignée (le libellé devient le bouton, un chevron dit le sens), ou par un contrôle nommé
+  (« Trier : Solde ↓ ») au bout de l'en-tête d'une liste de blocs. Désigner un critère
+  l'active dans son sens d'ouverture, le redésigner inverse.
+- **Le sens d'ouverture appartient au critère** : un nom part de A, un montant et une date
+  passée du plus grand et du plus récent, une échéance de la plus proche.
+- **Une liste s'ouvre sur l'ordre qui répond à sa question** ; l'alphabet seulement là où
+  on cherche une ligne avant de la comparer (comptes, référentiel).
+- **Dans une liste groupée, le tri range les lignes, pas les groupes**, classés par ce
+  qu'ils totalisent. Deux sortes de lignes qui ne se comparent pas ont chacune son intitulé,
+  son total et son tri.
+- **Ce qui est inconnu ne devient pas le plus petit** : il reste en fin de liste dans les
+  deux sens.
+- **Le tri s'écrit dans l'URL**, un paramètre par liste.
+- **Le chevron ne marque que le critère en vigueur** ; les autres colonnes révèlent le leur
+  au survol.
 
-## Densité et conteneurs
+## Conteneurs et densité
 
 - **La carte n'est pas le conteneur par défaut.** Elle sert un objet réellement
-  détachable (le bloc de connexion). Le titre d'une page, sa rangée de filtres, ses
-  listes et ses tuiles vivent sur le fond de page ; ce sont les **filets** et
-  l'**espacement** qui séparent (`Rows`, `StatRow`, `Section`).
-- **Une carte bancaire se dessine comme l'objet qu'elle est**, au format d'une carte (1,586) :
-  c'est la seule chose de l'application qu'on reconnaît à sa face avant son nom. La face est
-  tirée de son identifiant (un fond sombre désaturé, un motif de filets et sa position), donc
-  stable, distincte des autres cartes, et rien n'est stocké pour elle. Elle porte ce que porte
-  la carte physique, nom, compte débité, expiration et mode de débit, jamais de numéro, même
-  masqué : il n'y en a pas derrière. Le cuivre en est exclu, puce comprise, qui est en argent.
-  Expirée, elle perd sa couleur et garde sa place.
-- Header de page collant (56px), rangée de filtres collante juste dessous.
-- Argent : `font-mono` + `tabular-nums` (classe `.tabular`) dans toute colonne de
-  chiffres. Geist pour l'interface, Geist Mono pour les montants et les axes.
-- Un besoin d'interface passe d'abord par le système de composants, jamais par un
-  élément natif du navigateur, qui casserait la palette et ignorerait le thème. Le
-  catalogue et la façon d'y ajouter une pièce sont dans `apps/web/AGENTS.md`.
+  détachable : ce qui attend une action, le bloc de connexion. Le reste vit sur le fond de
+  page, séparé par des **filets** et l'**espacement**.
+- **Une carte bancaire se dessine comme l'objet qu'elle est**, au format 1,586. Sa face est
+  tirée de son identifiant (fond sombre désaturé, motif de filets), donc stable et distincte
+  sans rien stocker. Elle porte nom, compte débité, expiration et mode de débit, jamais de
+  numéro. Pas de cuivre, puce en argent. Expirée, elle perd sa couleur et garde sa place.
+- En-tête collant ; la rangée de filtres, quand l'écran en a une, colle juste dessous.
+- Argent : `font-mono` + `tabular-nums` (`.tabular`) dans toute colonne de chiffres ; Geist
+  pour l'interface et les chiffres de composition, Geist Mono pour les montants alignés et
+  les axes.
+- Un besoin d'interface passe par le système de composants, jamais par un élément natif du
+  navigateur (`apps/web/AGENTS.md`).
 
 ## Écran vide
 
-Le vide d'une application déclarative est un **chemin**, pas un avis. La vue
-d'ensemble affiche trois pas ordonnés, chacun disant ce qu'il débloque, cochés à
-mesure, avec l'appel à l'action sur le prochain pas ouvert seulement : et la voie
-MCP mentionnée pour qui préfère déclarer en langage naturel.
+Le vide d'une application déclarative est un **chemin**, pas un avis : trois pas ordonnés,
+chacun disant ce qu'il débloque, cochés à mesure, l'appel à l'action sur le prochain pas
+seulement, et la voie MCP pour qui préfère déclarer en langage naturel.
 
-## Ce qu'on écrit à l'écran
+## Écrire
 
-Le texte est le dernier recours, pas le premier réflexe : un écran qui doit s'expliquer
-est un écran mal découpé.
+Le texte est le dernier recours : un écran qui doit s'expliquer est mal découpé.
 
-1. **Ce qui peut être montré n'est pas écrit.** Une structure se lit d'un coup d'œil
-   (pas numérotés, exemples en pastilles, ✓ / ✗, bloc de code), une phrase demande d'être
-   lue en entier. Un exemple entre guillemets vaut mieux qu'une description de ce que
-   l'app sait faire.
-2. **Le fait le plus utile d'abord, et une seule fois.** Ce qui décide de l'action ouvre
-   le bloc ; ce qui l'explique n'y revient pas. Deux formulations du même fait sur un
-   écran valent zéro.
-3. **Ce qui ne change pas l'action de l'utilisateur reste dans le dépôt** : le motif
-   technique d'une limite, le détail d'un drapeau, le rappel d'une évidence. La limite
-   elle-même se dit, parce qu'elle change ce que l'utilisateur va faire.
-
-Un libellé fait deux à cinq mots, une explication tient en une phrase. Au-delà, c'est le
-découpage de l'écran qu'il faut revoir, pas la phrase qu'il faut raccourcir.
+1. **Ce qui peut être montré n'est pas écrit.** Une structure se lit d'un coup d'œil (pas
+   numérotés, pastilles, ✓ / ✗, bloc de code), une phrase demande d'être lue. Un exemple
+   vaut mieux qu'une description de ce que l'application sait faire.
+2. **Un mot nomme un bloc ou un chiffre** ; un libellé fait deux à cinq mots ; une
+   explication tient en une phrase. Au-delà, c'est le découpage qu'il faut revoir.
+3. **Le fait le plus utile d'abord, et une seule fois.** Deux formulations du même fait sur
+   un écran valent zéro.
+4. **Ce qui ne change pas l'action reste dans le dépôt** : le motif technique d'une limite,
+   le rappel d'une évidence. La limite elle-même se dit.
+5. **La voix** : on tutoie ; guillemets français « » et apostrophe typographique ’ ; pas de
+   point d'exclamation, pas d'emphase, pas de formule qui annonce au lieu de dire.
 
 ## Identité
 
-Marque **abaque** : trois tiges, une perle active par tige, décalées pour qu'on lise
-un compte et non un motif. Les tiges héritent de `currentColor`, les perles portent
-le cuivre : c'est ce qui la rend reconnaissable à 16px. Deux exemplaires à garder
-synchronisés : `components/logo.tsx` (dans l'interface) et `app/icon.svg` (onglet,
-sur son propre fond puisqu'un favicon n'hérite d'aucune encre). Wordmark
-`abacus` + underscore en cuivre.
+Marque **abaque** : trois tiges, une perle active par tige, décalées pour qu'on lise un
+compte et non un motif. Les tiges héritent de `currentColor`, les perles portent le cuivre :
+c'est ce qui la rend reconnaissable à 16 px. Deux exemplaires à garder synchronisés :
+`components/logo.tsx` et `app/icon.svg` (sur son propre fond). Wordmark `abacus` +
+underscore en cuivre.
