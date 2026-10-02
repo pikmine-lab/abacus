@@ -3,6 +3,7 @@
 import { EllipsisIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useActionState, useEffect, useState } from 'react'
 import type { CardChoice } from '@/components/card-forms'
+import { useEntryPanel } from '@/components/entry-dock'
 import { type ActivityOption, type MovementDraft, MovementForm } from '@/components/movement-form'
 import {
   AlertDialog,
@@ -20,8 +21,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { deleteMovementAction } from '@/lib/actions'
+import { cn } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -31,8 +33,9 @@ interface Option {
 /**
  * Per-row actions on a declared movement. A declarative ledger is typed by
  * hand, so correcting a line has to be as reachable as writing it: one menu at
- * the end of the row, correction in the same panel used to declare, deletion
- * behind a confirmation because nothing else undoes it.
+ * the end of the row, correction in the same panel used to declare (docked in
+ * the same place on a screen with an EntryDock), deletion behind a
+ * confirmation because nothing else undoes it.
  */
 export function MovementRowActions({
   draft,
@@ -54,7 +57,7 @@ export function MovementRowActions({
   cards?: CardChoice[]
   today: string
 }) {
-  const [editing, setEditing] = useState(false)
+  const editing = useEntryPanel()
   const [confirming, setConfirming] = useState(false)
   const [state, remove, pending] = useActionState(deleteMovementAction, {})
 
@@ -77,7 +80,7 @@ export function MovementRowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-40">
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
+          <DropdownMenuItem onSelect={() => editing.setOpen(true)}>
             <PencilIcon />
             Modifier
           </DropdownMenuItem>
@@ -88,13 +91,15 @@ export function MovementRowActions({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Sheet open={editing} onOpenChange={setEditing}>
-        <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+      <Sheet {...editing.sheet}>
+        <SheetContent
+          {...editing.content}
+          className={cn('w-full gap-0 overflow-y-auto sm:max-w-md', editing.content.className)}
+          // No description to read: what changes is the form itself.
+          aria-describedby={undefined}
+        >
           <SheetHeader className="border-b border-border">
             <SheetTitle className="text-[15px]">Modifier le mouvement</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Corrige ce qui a été mal saisi. Les soldes et les totaux suivent aussitôt.
-            </SheetDescription>
           </SheetHeader>
           <div className="p-4">
             <MovementForm
@@ -116,7 +121,7 @@ export function MovementRowActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer ce mouvement ?</AlertDialogTitle>
             <AlertDialogDescription>
-              {label}. Les soldes et les analyses seront recalculés sans lui, Rien ne le restaure : il faudra
+              {label}. Les soldes et les analyses seront recalculés sans lui. Rien ne le restaure : il faudra
               le redéclarer.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -42,9 +42,17 @@ new-york). Quatre principes gouvernent le reste :
   travail est un objet à part, les lectures vivent sur le fond de page. Ce qui demande
   seulement de l'attention (une alerte d'activité) la rejoint sous son propre libellé, sans
   ouvrir une seconde carte. Un chiffre qui mène à son détail est cliquable en entier.
-- **Sur téléphone, un nom passe avant ce qui le qualifie** : la date ou le jugement d'une
-  ligne passent dessous plutôt que de le couper, et un contrôle segmenté prend une ligne
-  entière plutôt que de défiler hors de vue.
+- **Une liste qu'on remplit par salves garde sa saisie à côté d'elle** : sur un écran
+  large, le panneau se range à droite, sans voile, et la page se resserre. Chaque ligne
+  envoyée se lit dans la liste restée cliquable, corriger une ligne prend la même place, et
+  le bouton qui l'a ouvert passe à l'état enfoncé. Plus étroit, le panneau recouvre.
+- **Les filtres de dimension passent derrière « Filtres »**, et ce qui est en vigueur se lit
+  et se retire en pastilles. La recherche et le type restent à découvert : ce sont eux qui
+  retrouvent une ligne.
+- **Quand la place manque, un nom passe avant ce qui le qualifie** : la date ou le jugement
+  d'une ligne passent dessous plutôt que de le couper, et un contrôle segmenté prend une
+  ligne entière plutôt que de défiler hors de vue. La place se lit sur le conteneur, pas
+  sur l'écran : un panneau rangé resserre une table autant qu'une tablette.
 
 Les pièces vivent dans `components/composition.tsx`. Un écran pas encore refondu garde
 `StatTile` et `Section` jusqu'à son tour (#114).

@@ -4,7 +4,6 @@ import { CalendarIcon, HandCoinsIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { DateField } from '@/components/forms'
-import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -17,6 +16,7 @@ export interface OpenAdvance {
   label: string
   happenedOn: string
   debtor: string
+  /** The account that paid, which is where the refund is written. */
   account: string
   expense: number
   expected: number
@@ -25,14 +25,16 @@ export interface OpenAdvance {
 }
 
 /**
- * Advances still out there. A claim is work to do, so it lives at the top of
- * the ledger rather than in a filter: what is owed is stated, and the gesture
- * that closes it is right there.
+ * Advances still out there, as the lines of the screen's action card. A claim
+ * is work to do, so it lives at the top of the ledger rather than in a filter:
+ * who owes and how much leads the line, and the gesture that closes it is
+ * right there.
  *
  * "Remboursé" writes the income, it does not tick a box: the money really
  * landed on the account that paid, and a balance check would catch a claim
- * closed without it. The amount stays editable, because a refund arrives
- * partial as often as whole.
+ * closed without it. The line names that account, so the income is not
+ * declared a second time by hand. The amount stays editable, because a refund
+ * arrives partial as often as whole.
  */
 export function OutstandingAdvances({
   advances,
@@ -45,7 +47,7 @@ export function OutstandingAdvances({
   back: string
 }) {
   return (
-    <Rows>
+    <>
       {advances.map((advance) => (
         // Keyed on what is left: after a partial refund the row remounts, so
         // the amount field states the new remainder instead of the figure that
@@ -57,7 +59,7 @@ export function OutstandingAdvances({
           back={back}
         />
       ))}
-    </Rows>
+    </>
   )
 }
 
@@ -66,13 +68,18 @@ function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: str
   const partial = advance.expected < advance.expense
 
   return (
-    <div className="flex flex-wrap items-center gap-2 py-2.5">
-      <div className="min-w-0">
-        <p className="truncate text-[13px] font-medium">{advance.label}</p>
-        <p className="text-[11px] text-faint">
-          avancé le {frDate(advance.happenedOn)} · {advance.debtor} doit {eur(advance.expected, 2)}
-          {partial && ` sur ${eur(advance.expense, 2)}`}
-          {advance.refunded > 0 && ` · ${eur(advance.refunded, 2)} déjà revenus`}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="truncate text-[13.5px] font-medium">
+          {advance.debtor} doit <span className="tabular">{eur(advance.remaining, 2)}</span>
+        </p>
+        <p className="text-[12px] text-faint">
+          {advance.label} · {eur(advance.expense, 2)} le {frDate(advance.happenedOn)}
+          {/* The share expected only says something new once part of it came
+              back: before that it is the figure the line leads with. */}
+          {partial && advance.refunded > 0 && `, ${eur(advance.expected, 2)} attendus`}
+          {advance.refunded > 0 && `, ${eur(advance.refunded, 2)} déjà revenus`} · revient sur{' '}
+          {advance.account}
         </p>
       </div>
 
