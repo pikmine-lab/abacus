@@ -107,10 +107,18 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 
 ## Le panneau de saisie
 
-- **Un panneau latéral** (`EntrySheet`) déclenché par un bouton `+ …` en haut à droite. La
-  liste reste visible derrière ; le panneau **reste ouvert après un envoi réussi** et les
-  champs se vident, parce que déclarer se fait par salves. Un accusé discret confirme
-  (`successLabel`).
+- **Un panneau latéral** (`EntrySheet`) déclenché par un bouton `+ …` en haut à droite. Le
+  panneau **reste ouvert après un envoi réussi** et les champs se vident, parce que
+  déclarer se fait par salves. Un accusé discret confirme (`successLabel`). Par défaut il
+  recouvre la page, la liste visible derrière.
+- **Un écran enveloppé dans `EntryDock` range le panneau à côté de la liste** à partir de
+  1280 px (Mouvements) : non modal, sans voile, un clic ou un focus dans la liste ne le
+  ferme pas, et la page lui laisse sa largeur. Déclarer et corriger une ligne y partagent
+  une seule place, ouvrir l'un ferme l'autre ; `useEntryPanel` donne à chaque panneau son
+  état, et hors d'un dock il se comporte comme partout ailleurs. Ce qu'il resserre (la
+  table, l'en-tête qui porte des actions) lit sa largeur en container query (`@container`),
+  jamais en breakpoint d'écran : la largeur de l'écran ne change pas quand le panneau
+  s'ouvre.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais étalées
   dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne doivent pas
   concurrencer ses chiffres. Vaut pour les mouvements (corriger, supprimer), les engagements
@@ -136,11 +144,13 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   celle qu'on a oubliée. Chaque ligne dit ce qui est dû et porte le geste qui la referme,
   montant modifiable, parce qu'un remboursement arrive partiel aussi souvent qu'entier.
   « Remboursé » **écrit le revenu** sur le compte qui a payé : cocher un drapeau laisserait
-  le solde calculé et le pointage mentir. Renoncer au reste est l'autre geste, dans le menu
-  de la ligne, et il ne dit pas la même chose.
+  le solde calculé et le pointage mentir. La ligne nomme ce compte (« revient sur … »),
+  pour que le revenu ne soit pas déclaré une seconde fois à la main. Renoncer au reste est
+  l'autre geste, dans le menu de la ligne, et il ne dit pas la même chose.
 - **Ce qui est dû a sa colonne**, à côté du montant, pas la ligne de la note : deux faits
   différents ne partagent pas une place. Elle n'apparaît que si la sélection porte une
-  créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien.
+  créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien. Quand la
+  table se resserre, la colonne cède sa place et ce qui est dû passe sous le montant.
 - **Un fantôme se coche, et se relit sous son montant.** Un mouvement qui a bien touché le
   compte sans rien dire des flux se marque d'une case, pas d'un bloc dépliable : c'est un
   attribut, il n'y a rien à saisir derrière. La liste le garde, seul endroit où il se lit et

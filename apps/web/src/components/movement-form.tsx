@@ -1,5 +1,6 @@
 'use client'
 
+import { MinusIcon, PlusIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { type CardChoice, CardSelect, debitDayFor } from '@/components/card-forms'
@@ -254,10 +255,11 @@ export function MovementForm({
           <button
             type="button"
             onClick={() => setMonthOpen((v) => !v)}
-            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
             aria-expanded={monthOpen}
           >
-            {monthOpen ? '− Rattacher à un autre mois' : '+ Rattacher à un autre mois'}
+            {monthOpen ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
+            Rattacher à un autre mois
           </button>
           {/* Closing the block detaches the movement: the field stops being
               submitted, and the action reads an absent month as "none". The
@@ -376,10 +378,11 @@ export function MovementForm({
           <button
             type="button"
             onClick={() => setAdvanceOpen((v) => !v)}
-            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
             aria-expanded={advanceOpen}
           >
-            {advanceOpen ? '− Avance pour quelqu’un' : '+ Avance pour quelqu’un (à rembourser)'}
+            {advanceOpen ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
+            {advanceOpen ? 'Avance pour quelqu’un' : 'Avance pour quelqu’un (à rembourser)'}
           </button>
           {advanceOpen && (
             <div className="mt-2 flex flex-col gap-3">
