@@ -16,6 +16,8 @@ ne pas redécider ailleurs ce qui y est écrit.
 **`DESIGN.md` est la référence de l'interface.** À lire avant toute modification d'UI :
 palette, règles de graphes et principes d'écran y sont tranchés, pas ici.
 **`apps/web/AGENTS.md`** porte les règles de code du front, et se lit avant d'y toucher.
+**Un écran se compose avec la skill Impeccable** : `PRODUCT.md` lui donne la direction du
+produit, et chaque écran a son brief dans `apps/web/.impeccable/surfaces/`.
 
 ## Les principes qui gouvernent ce dépôt
 
@@ -72,11 +74,13 @@ a été mis à jour.
 |---|---|
 | Un invariant du modèle : ce qu'une donnée garantit, ce qu'un calcul ne doit jamais regarder | En commentaire de la migration qui pose la contrainte |
 | Une règle de geste : ce qui se déclare, se corrige, se refuse, et pourquoi | En commentaire du service de `packages/core` qui la porte, là où les deux interfaces la lisent |
+| La direction du produit : à qui il parle, ce qu'il cherche | `PRODUCT.md` |
 | Une règle d'apparence : couleur, densité, forme d'un graphe, ton des textes | `DESIGN.md` |
-| Une règle de code front : piège React/Next, usage du système de composants, forme d'un écran | `apps/web/AGENTS.md` |
+| La composition d'un écran : sa direction, sa hiérarchie, son premier écran | Son brief, `apps/web/.impeccable/surfaces/` |
+| Une règle de code front : piège React/Next, usage du système de composants, ce qu'un écran doit dire | `apps/web/AGENTS.md` |
 | Le récit : ce qui a été mesuré, ce qui a été écarté, ce qui a causé quoi | L'issue |
 
-Trois conséquences, qui valent pour les cinq lignes :
+Trois conséquences, qui valent pour toutes les lignes :
 
 - **Rien ici ne porte de date ni de numéro d'issue en guise d'histoire.** Ces fichiers
   décrivent l'état actuel, au présent. Une décision qui en corrige une autre la
@@ -128,6 +132,10 @@ sienne à sa création (`.config/wt.toml`). Pour éprouver le flux OAuth avec un
 le serveur MCP se lance sur cette adresse : `MCP_ALLOWED_HOSTS=<hôte de MCP_URL>
 NODE_OPTIONS=--use-system-ca portless <branche>-mcp.abacus node --env-file=apps/web/.env.local
 apps/mcp/src/main.ts` (l'option CA lui fait lire les clés du web derrière le HTTPS local).
+
+Impeccable s'installe par machine, avec son détecteur de défauts de design :
+`npx impeccable install --scope=project`. Sa copie locale n'est pas versionnée ; sa
+configuration partagée (`apps/web/.impeccable/config.json`) et les briefs d'écran le sont.
 
 **Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
 toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.

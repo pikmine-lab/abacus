@@ -22,6 +22,19 @@ next-env.d.ts
 # INFISICAL_PROJECT_ID instead.
 .infisical.json
 
+# Impeccable is installed per machine (`npx impeccable install --scope=project`):
+# its skill copy and review agents are regenerated there, and its state is
+# local. Only the shared part is versioned: .impeccable/config.json and the
+# surface briefs.
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
+**/.impeccable/config.local.json
+**/.impeccable/hook.cache.json
+**/.impeccable/mocks/
+**/.impeccable/review/
+**/.impeccable/build/
+**/.impeccable/live/
+
 # Local noise
 *.log
 .DS_Store
