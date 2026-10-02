@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!vendors", "!node_modules", "!**/.next", "!**/next-env.d.ts", "!pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!vendors",
+      "!node_modules",
+      "!**/.next",
+      "!**/next-env.d.ts",
+      "!pnpm-lock.yaml",
+      "!.claude/skills/impeccable"
+    ]
   },
   "formatter": {
     "enabled": true,

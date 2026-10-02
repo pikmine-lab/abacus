@@ -4,6 +4,8 @@ node_modules
 **/node_modules
 **/.next
 .git
+# Agent tooling, the Impeccable detector binary among it: nothing a build reads.
+.claude
 vendors
 provision/.env
 **/.env*

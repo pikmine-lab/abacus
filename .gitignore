@@ -22,12 +22,11 @@ next-env.d.ts
 # INFISICAL_PROJECT_ID instead.
 .infisical.json
 
-# Impeccable is installed per machine (`npx impeccable install --scope=project`):
-# its skill copy and review agents are regenerated there, and its state is
-# local. Only the shared part is versioned: .impeccable/config.json and the
-# surface briefs.
-.claude/skills/impeccable/
-.claude/agents/impeccable-*.md
+# Impeccable is installed once per project, and what its install writes is
+# versioned: the skill copy, its review agents, and the hook in
+# .claude/settings.json. What stays out belongs to a machine or a session: the
+# hook consent and cache, and the mockups, review captures, builds and live
+# sessions a design session leaves behind.
 **/.impeccable/config.local.json
 **/.impeccable/hook.cache.json
 **/.impeccable/mocks/
