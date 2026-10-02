@@ -21,7 +21,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -31,8 +30,11 @@ import { UserMenu } from '@/components/user-menu'
 
 /**
  * Grouped by the question asked, not by entity: "what happened", "what is
- * committed", "what I own". A view that does not exist yet still appears,
- * disabled and labelled, because a visible roadmap beats a surprise.
+ * committed", "what I own". The groups are separated by a hairline and not
+ * named: each entry already names its screen, and a group label read before
+ * every list says nothing the entries do not. A view that does not exist yet
+ * still appears, disabled and labelled, because a visible roadmap beats a
+ * surprise.
  */
 const GROUPS = [
   {
@@ -85,9 +87,12 @@ export function AppSidebar({ userName }: { userName: string }) {
       </SidebarHeader>
 
       <SidebarContent>
-        {GROUPS.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+        {GROUPS.map((group, index) => (
+          <SidebarGroup
+            key={group.label}
+            aria-label={group.label}
+            className={index > 0 ? 'border-t border-sidebar-border' : undefined}
+          >
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => (

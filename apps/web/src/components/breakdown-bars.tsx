@@ -61,7 +61,7 @@ export const UNSET_LABEL: Record<BreakdownDimension, string> = {
  * it. Same origin and same scale, so the lengths stay comparable.
  */
 const row = (indent?: boolean) =>
-  `group grid grid-cols-[92px_1fr_78px] items-center gap-2 sm:grid-cols-[132px_1fr_90px] sm:gap-3 ${
+  `group grid grid-cols-[140px_1fr_70px] items-center gap-2 sm:grid-cols-[132px_1fr_90px] sm:gap-3 ${
     indent ? 'py-0.5' : 'py-1.5'
   }`
 

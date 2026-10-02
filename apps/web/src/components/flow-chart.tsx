@@ -37,10 +37,19 @@ function monthLabelLong(iso: string): string {
 export function FlowChart({
   rows,
   currentMonth,
+  selectedMonth,
+  legend = 'top',
 }: {
   rows: MonthFlow[]
   /** "YYYY-MM" of the running month: its bars are a partial count, not a total. */
   currentMonth?: string
+  /** "YYYY-MM" of the month the page is scoped to, washed so the eye finds it. */
+  selectedMonth?: string
+  /**
+   * `axis` names the two sides of the zero line ("entré", "sorti") instead of a
+   * legend: the position already says which is which, the words confirm it.
+   */
+  legend?: 'top' | 'axis'
 }) {
   const router = useRouter()
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -82,20 +91,22 @@ export function FlowChart({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-4 text-[11.5px] text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm" style={{ background: 'var(--good)' }} />
-          Revenus
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-          Dépenses (net)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)', opacity: 0.32 }} />
-          Remboursé
-        </span>
-      </div>
+      {legend === 'top' && (
+        <div className="flex items-center gap-4 text-[11.5px] text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: 'var(--good)' }} />
+            Revenus
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)' }} />
+            Dépenses (net)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)', opacity: 0.32 }} />
+            Remboursé
+          </span>
+        </div>
+      )}
 
       <div ref={wrapRef} className="relative" style={{ minHeight: H }} onPointerLeave={() => setHover(null)}>
         {/* Nothing is drawn before the container has been measured: a guessed
@@ -125,6 +136,21 @@ export function FlowChart({
                 <line x1="0" y1="0" x2="0" y2="5" stroke="var(--chart-1)" strokeWidth="2.4" />
               </pattern>
             </defs>
+            {/* The page's own month, washed under everything: the grid, the zero line
+                and the flag of the running month stay readable on top of it. */}
+            {rows.map((r, i) =>
+              r.month.slice(0, 7) === selectedMonth ? (
+                <rect
+                  key="selected"
+                  x={centerOf(i) - step / 2 + 2}
+                  y={M.t}
+                  width={step - 4}
+                  height={H - M.t - M.b}
+                  rx={6}
+                  fill="var(--secondary)"
+                />
+              ) : null,
+            )}
             {ticks.map((v) => (
               <g key={v}>
                 <line
@@ -163,7 +189,25 @@ export function FlowChart({
                 </text>
               </g>
             ))}
-            <line x1={M.l} x2={width - M.r} y1={mid} y2={mid} stroke="var(--border)" />
+            {/* Without a legend the zero line is what names the two sides, so it
+                stays readable across the washed month. */}
+            <line
+              x1={M.l}
+              x2={width - M.r}
+              y1={mid}
+              y2={mid}
+              stroke={legend === 'axis' ? 'var(--input)' : 'var(--border)'}
+            />
+            {legend === 'axis' && (
+              <g fontSize={10.5} fill="var(--faint)" textAnchor="end">
+                <text x={M.l - 7} y={mid - 5}>
+                  entré
+                </text>
+                <text x={M.l - 7} y={mid + 13}>
+                  sorti
+                </text>
+              </g>
+            )}
             {partialIndex >= 0 && (
               <g>
                 <line
@@ -202,6 +246,7 @@ export function FlowChart({
               const incomeH = r.income * scale
               const on = hover === i
               const ref = r.month.slice(0, 7)
+              const selected = ref === selectedMonth
               return (
                 // Each month is a real control: reachable by Tab, activated by
                 // Enter or Space, and named for a screen reader. A <button> is not
@@ -275,7 +320,7 @@ export function FlowChart({
                       textAnchor="middle"
                       className="font-mono"
                       fontSize={10.5}
-                      fill={on ? 'var(--muted-foreground)' : 'var(--faint)'}
+                      fill={selected ? 'var(--foreground)' : on ? 'var(--muted-foreground)' : 'var(--faint)'}
                     >
                       {monthLabel(r.month)}
                     </text>
@@ -294,19 +339,32 @@ export function FlowChart({
             <p className="text-[11px] text-faint">{monthLabelLong(rows[hover].month)}</p>
             <p className="flex items-center gap-2 py-px text-xs">
               <span className="size-2 rounded-sm" style={{ background: 'var(--good)' }} />
-              <span className="text-muted-foreground">Revenus</span>
+              <span className="text-muted-foreground">{legend === 'axis' ? 'Entré' : 'Revenus'}</span>
               <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(rows[hover].income)}</span>
             </p>
             <p className="flex items-center gap-2 py-px text-xs">
               <span className="size-2 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-              <span className="text-muted-foreground">Dépenses</span>
+              <span className="text-muted-foreground">{legend === 'axis' ? 'Sorti' : 'Dépenses'}</span>
               <span className="ml-auto pl-3 font-mono font-semibold tabular">
                 {eur(rows[hover].expenseNet)}
               </span>
             </p>
-            {rows[hover].expenseGross !== rows[hover].expenseNet && (
-              <p className="text-[11px] text-faint">brut {eur(rows[hover].expenseGross)}</p>
-            )}
+            {rows[hover].expenseGross !== rows[hover].expenseNet &&
+              (legend === 'axis' ? (
+                // Without a legend, the pale part of the bar is named here, where it is pointed at.
+                <p className="flex items-center gap-2 py-px text-xs">
+                  <span
+                    className="size-2 rounded-sm"
+                    style={{ background: 'var(--chart-1)', opacity: 0.32 }}
+                  />
+                  <span className="text-muted-foreground">Remboursé</span>
+                  <span className="ml-auto pl-3 font-mono font-semibold tabular">
+                    {eur(rows[hover].expenseGross - rows[hover].expenseNet)}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-faint">brut {eur(rows[hover].expenseGross)}</p>
+              ))}
             <p className="mt-1 flex items-center gap-2 border-t border-border pt-1 text-xs">
               <span className="text-muted-foreground">Épargné</span>
               <span className="ml-auto pl-3 font-mono font-semibold tabular">
