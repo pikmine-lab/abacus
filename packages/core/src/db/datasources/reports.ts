@@ -29,6 +29,80 @@ function notGhost(tx: Executor) {
   return tx`and m.ghost = false`
 }
 
+/**
+ * Every movement a flow analysis reads, as the CTE `flow`: the side it counts
+ * on (`side`: income, expense, or null for a refund and a transfer), what of
+ * it came back as linked refunds (`refunded`), and the share of it that counts
+ * on that side (`scale`). A figure is `amount * scale` on the income side, and
+ * `amount * scale` gross or `(amount - refunded) * scale` net on the expense
+ * side. Each figure is computed per window, `window_start`: the whole period,
+ * or each month when `byMonth`.
+ *
+ * A business activity is read by its net, the way a salary is read net of its
+ * contributions. What its regime makes it pay (its expenses filed in a rule's
+ * settlement category, the very payments its statement reads) is no expense
+ * of its own: within a window those payments come off the activity's income,
+ * each income keeping its share of what remains. When they exceed what it
+ * received, the activity made a loss there: its incomes count for nothing,
+ * and its payments count as expenses for what exceeds, each for its share.
+ * Either way the net of the window does not move, and everything else the
+ * activity spends stays an expense. A loss is a window's: a month that paid
+ * the charges of the month before reads as a loss on its own, and as no loss
+ * once read with it.
+ *
+ * Reading what the activity pays its owner as its income would be the other
+ * way to get a net, and it is wrong: an expense of the activity would then
+ * count without the money that paid it.
+ */
+function ledger(tx: Executor, userId: string, from: string, to: string, reading: Reading, byMonth = false) {
+  const windowStart = !byMonth
+    ? tx`${from}::date`
+    : reading === 'accrual'
+      ? tx`m.counted_in_month`
+      : tx`date_trunc('month', m.happened_on)::date`
+  return tx`
+    counted as (
+      select m.kind, m.amount, m.activity_id, m.category_id, m.source_actor_id, m.target_actor_id,
+             m.refunds_movement_id,
+             ${windowStart} as window_start,
+             coalesce(r.total, 0) as refunded,
+             m.kind = 'expense' and exists (
+               select 1 from levy l
+               where l.activity_id = m.activity_id and l.settlement_category_id = m.category_id
+             ) as settles
+      from movement m
+      left join lateral (
+        select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
+      ) r on true
+      where m.user_id = ${userId}
+        ${notGhost(tx)}
+        ${inPeriod(tx, from, to, reading)}
+    ),
+    activity_net as (
+      select window_start, activity_id,
+             sum(amount) filter (where kind = 'income' and refunds_movement_id is null) as received,
+             sum(amount - refunded) filter (where settles) as charged
+      from counted
+      where activity_id is not null
+      group by window_start, activity_id
+    ),
+    flow as (
+      select c.*,
+             case when c.kind = 'income' and c.refunds_movement_id is null then 'income'
+                  when c.kind = 'expense' then 'expense' end as side,
+             case
+               when c.kind = 'income'
+                 then 1 - coalesce(least(coalesce(a.charged, 0), a.received) / a.received, 0)
+               when c.settles
+                 then coalesce(greatest(a.charged - coalesce(a.received, 0), 0) / nullif(a.charged, 0), 0)
+               else 1
+             end as scale
+      from counted c
+      left join activity_net a on a.window_start = c.window_start and a.activity_id = c.activity_id
+    )
+  `
+}
+
 export interface BalancePoint {
   day: string
   accountId: string
@@ -112,7 +186,11 @@ export interface BreakdownRow {
    */
   key: string | null
   label: string | null
-  /** What actually left the accounts. */
+  /**
+   * What actually left the accounts. On the income side, what came in: no
+   * refund is ever linked to an income, so both readings are the same amount
+   * there.
+   */
   gross: string
   /** Gross minus linked refunds actually received. */
   net: string
@@ -129,6 +207,13 @@ export interface BreakdownRow {
  * excluded outright: a refund is an advance coming back, not money earned, and
  * counting it as income would double-count what `net` already removed from the
  * expense side.
+ *
+ * A business activity's incomes count net of its charges, and its charges
+ * count only for a loss (see `ledger`). By actor or category the rows are its
+ * clients and the categories of its incomes, and a charge belongs to none of
+ * them: that is why each income keeps its share of what remains rather than
+ * one of them bearing the charge. A movement whose share is nothing makes no
+ * row and is not counted.
  *
  * Ranked by net, because that is what the period actually cost: ordering by
  * gross would put a line above another it ends up below once the refund is
@@ -161,32 +246,29 @@ export async function spendingBreakdown(
     categoryGroup: { join: entity, key: tx`g.group_label`, label: tx`g.group_label` },
   }[groupBy]
   return await tx<BreakdownRow[]>`
+    with ${ledger(tx, userId, from, to, reading)}
     select ${dimension.key} as key,
            ${dimension.label} as label,
-           sum(m.amount)::numeric(14,2) as gross,
-           sum(m.amount - coalesce(r.total, 0))::numeric(14,2) as net,
+           sum(m.amount * m.scale)::numeric(14,2) as gross,
+           sum((m.amount - m.refunded) * m.scale)::numeric(14,2) as net,
            count(*) as count
-    from movement m
+    from flow m
     ${dimension.join}
-    left join lateral (
-      select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
-    ) r on true
-    where m.user_id = ${userId}
-      and m.kind = ${kind}
-      ${notGhost(tx)}
-      ${inPeriod(tx, from, to, reading)}
-      ${kind === 'income' ? tx`and m.refunds_movement_id is null` : tx``}
+    where m.side = ${kind} and m.scale > 0
     group by 1, 2
     order by net desc, gross desc
   `
 }
 
 export interface FlowTotals {
-  /** Expenses as they left the accounts. */
+  /** Expenses as they left the accounts, a business activity's charges only for a loss. */
   expenseGross: string
   /** Expenses minus linked refunds received. */
   expenseNet: string
-  /** Money earned: refunds excluded, internal transfers excluded by kind. */
+  /**
+   * Money earned: refunds excluded, internal transfers excluded by kind, and
+   * a business activity's income net of its charges.
+   */
   income: string
   expenseCount: string
   incomeCount: string
@@ -204,19 +286,14 @@ export async function flowTotals(
   reading: Reading = 'cash',
 ): Promise<FlowTotals> {
   const [row] = await tx<FlowTotals[]>`
+    with ${ledger(tx, userId, from, to, reading)}
     select
-      coalesce(sum(m.amount) filter (where m.kind = 'expense'), 0)::numeric(14,2) as expense_gross,
-      coalesce(sum(m.amount - coalesce(r.total, 0)) filter (where m.kind = 'expense'), 0)::numeric(14,2) as expense_net,
-      coalesce(sum(m.amount) filter (where m.kind = 'income' and m.refunds_movement_id is null), 0)::numeric(14,2) as income,
-      count(*) filter (where m.kind = 'expense') as expense_count,
-      count(*) filter (where m.kind = 'income' and m.refunds_movement_id is null) as income_count
-    from movement m
-    left join lateral (
-      select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
-    ) r on true
-    where m.user_id = ${userId}
-      ${notGhost(tx)}
-      ${inPeriod(tx, from, to, reading)}
+      coalesce(sum(amount * scale) filter (where side = 'expense'), 0)::numeric(14,2) as expense_gross,
+      coalesce(sum((amount - refunded) * scale) filter (where side = 'expense'), 0)::numeric(14,2) as expense_net,
+      coalesce(sum(amount * scale) filter (where side = 'income'), 0)::numeric(14,2) as income,
+      count(*) filter (where side = 'expense' and scale > 0) as expense_count,
+      count(*) filter (where side = 'income' and scale > 0) as income_count
+    from flow
   `
   return row!
 }
@@ -233,6 +310,10 @@ export interface MonthlyFlow {
  * Month-by-month flows over a window, with empty months present at zero: a
  * trend with holes in it reads as a drop, so the series is generated from the
  * calendar rather than from the data.
+ *
+ * Each month is a window of its own for a business activity's net (see
+ * `ledger`): a month that only paid charges shows a loss that the total of a
+ * longer period, reading them against what they pay for, does not.
  */
 export async function monthlyFlows(
   tx: Executor,
@@ -241,23 +322,17 @@ export async function monthlyFlows(
   to: string,
   reading: Reading = 'cash',
 ): Promise<MonthlyFlow[]> {
-  const month = reading === 'accrual' ? tx`m.counted_in_month` : tx`date_trunc('month', m.happened_on)::date`
   return await tx<MonthlyFlow[]>`
     with months as (
       select generate_series(date_trunc('month', ${from}::date), date_trunc('month', ${to}::date), interval '1 month')::date as month
     ),
+    ${ledger(tx, userId, from, to, reading, true)},
     flows as (
-      select ${month} as month,
-             sum(m.amount) filter (where m.kind = 'expense') as expense_gross,
-             sum(m.amount - coalesce(r.total, 0)) filter (where m.kind = 'expense') as expense_net,
-             sum(m.amount) filter (where m.kind = 'income' and m.refunds_movement_id is null) as income
-      from movement m
-      left join lateral (
-        select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
-      ) r on true
-      where m.user_id = ${userId}
-        ${notGhost(tx)}
-        ${inPeriod(tx, from, to, reading)}
+      select window_start as month,
+             sum(amount * scale) filter (where side = 'expense') as expense_gross,
+             sum((amount - refunded) * scale) filter (where side = 'expense') as expense_net,
+             sum(amount * scale) filter (where side = 'income') as income
+      from flow
       group by 1
     )
     select ms.month,

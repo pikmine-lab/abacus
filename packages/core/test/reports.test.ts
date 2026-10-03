@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
-import { createCategory } from '../src/services/catalog.ts'
+import { createActivity, createCategory } from '../src/services/catalog.ts'
+import { createLevy } from '../src/services/levies.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import {
   firstDeclaredDay,
@@ -225,4 +226,318 @@ test('the first declared day is null until something is declared', async () => {
     targetActorId: shop.id,
   })
   assert.equal(await firstDeclaredDay(user), '2026-02-14')
+})
+
+/**
+ * A business activity whose contributions settle in their own category, the
+ * account it lives on, a personal account, and the agency the contributions
+ * are paid to.
+ */
+async function freelance(user: string) {
+  const personal = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const business = await createAccount({ userId: user, name: 'Business', behavior: 'payment' })
+  const activity = await createActivity(user, {
+    name: 'Freelance',
+    kind: 'business',
+    startedOn: '2026-01-01',
+    accountIds: [business.id],
+  })
+  const contributions = await createCategory(user, 'Contributions')
+  await createLevy(user, {
+    activityId: activity.id,
+    name: 'Contributions',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 25,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+    settlementCategoryId: contributions.id,
+  })
+  const agency = await createActor(user, { name: 'Agency' })
+  const employer = await createActor(user, { name: 'Employer' })
+  return { personal, business, activity, contributions, agency, employer }
+}
+
+test("a business activity's income reads net of its regime's charges, which leave the expenses", async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency, employer } = await freelance(user)
+  const client = await createActor(user, { name: 'Client' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const equipment = await createCategory(user, 'Equipment')
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-01',
+    amount: 2000,
+    sourceActorId: employer.id,
+    targetAccountId: personal.id,
+  })
+  // The activity receives 100, pays 25 of contributions, buys a 30 computer
+  // and pays its owner 45.
+  await declareMovement(user, {
+    happenedOn: '2026-06-03',
+    amount: 100,
+    sourceActorId: client.id,
+    targetAccountId: business.id,
+    activityId: activity.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-12',
+    amount: 30,
+    sourceAccountId: business.id,
+    targetActorId: shop.id,
+    categoryId: equipment.id,
+    activityId: activity.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-20',
+    amount: 45,
+    sourceAccountId: business.id,
+    targetAccountId: personal.id,
+  })
+
+  const totals = await flowTotals(user, '2026-06-01', '2026-06-30')
+  assert.equal(totals.income, '2075.00')
+  // The computer stays an expense; the contributions do not.
+  assert.equal(totals.expenseGross, '30.00')
+  assert.equal(totals.expenseNet, '30.00')
+  assert.equal(totals.expenseCount, '1')
+  assert.equal(totals.incomeCount, '2')
+  // What the accounts took is unchanged: 2000 + 100 - 25 - 30.
+  assert.equal(Number(totals.income) - Number(totals.expenseNet), 2045)
+
+  const [june] = await monthlyFlows(user, '2026-06-01', '2026-06-30')
+  assert.equal(june!.income, '2075.00')
+  assert.equal(june!.expenseGross, '30.00')
+  assert.equal(june!.expenseNet, '30.00')
+
+  const spent = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'category')
+  assert.deepEqual(
+    spent.map((r) => r.label),
+    ['Equipment'],
+  )
+  const earned = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'activity', 'income')
+  assert.deepEqual(
+    [...earned],
+    [
+      { key: null, label: null, gross: '2000.00', net: '2000.00', count: '1' },
+      { key: activity.id, label: 'Freelance', gross: '75.00', net: '75.00', count: '1' },
+    ],
+  )
+})
+
+test("an activity's charges come off its incomes pro rata when the ranking is by actor or category", async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency, employer } = await freelance(user)
+  const first = await createActor(user, { name: 'First client' })
+  const second = await createActor(user, { name: 'Second client' })
+  const salary = await createCategory(user, 'Salary')
+  const fees = await createCategory(user, 'Fees')
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-01',
+    amount: 2000,
+    sourceActorId: employer.id,
+    targetAccountId: personal.id,
+    categoryId: salary.id,
+  })
+  for (const [client, amount] of [
+    [first, 60],
+    [second, 40],
+  ] as const)
+    await declareMovement(user, {
+      happenedOn: '2026-06-05',
+      amount,
+      sourceActorId: client.id,
+      targetAccountId: business.id,
+      categoryId: fees.id,
+      activityId: activity.id,
+    })
+  await declareMovement(user, {
+    happenedOn: '2026-06-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+  })
+
+  // A quarter of what came in went to the charges, so each client keeps
+  // three quarters of what they paid.
+  const byActor = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'actor', 'income')
+  assert.deepEqual(
+    [...byActor],
+    [
+      { key: employer.id, label: 'Employer', gross: '2000.00', net: '2000.00', count: '1' },
+      { key: first.id, label: 'First client', gross: '45.00', net: '45.00', count: '1' },
+      { key: second.id, label: 'Second client', gross: '30.00', net: '30.00', count: '1' },
+    ],
+  )
+  const byCategory = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'category', 'income')
+  assert.deepEqual(
+    [...byCategory],
+    [
+      { key: salary.id, label: 'Salary', gross: '2000.00', net: '2000.00', count: '1' },
+      { key: fees.id, label: 'Fees', gross: '75.00', net: '75.00', count: '2' },
+    ],
+  )
+  const totals = await flowTotals(user, '2026-06-01', '2026-06-30')
+  assert.equal(totals.income, '2075.00')
+})
+
+test('charges paid in a window that received nothing are a loss, read as expenses', async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency, employer } = await freelance(user)
+  const client = await createActor(user, { name: 'Client' })
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-05',
+    amount: 100,
+    sourceActorId: client.id,
+    targetAccountId: business.id,
+    activityId: activity.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-07-01',
+    amount: 2000,
+    sourceActorId: employer.id,
+    targetAccountId: personal.id,
+  })
+  // June's contributions, paid in July and attached to June.
+  await declareMovement(user, {
+    happenedOn: '2026-07-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+    accrualMonth: '2026-06',
+  })
+
+  const july = await flowTotals(user, '2026-07-01', '2026-07-31')
+  assert.equal(july.income, '2000.00')
+  assert.equal(july.expenseGross, '25.00')
+  assert.equal(july.expenseNet, '25.00')
+  assert.equal(july.expenseCount, '1')
+  const earned = await spendingBreakdown(user, '2026-07-01', '2026-07-31', 'activity', 'income')
+  assert.deepEqual([...earned], [{ key: null, label: null, gross: '2000.00', net: '2000.00', count: '1' }])
+  const spent = await spendingBreakdown(user, '2026-07-01', '2026-07-31', 'category')
+  assert.deepEqual(
+    [...spent],
+    [{ key: contributions.id, label: 'Contributions', gross: '25.00', net: '25.00', count: '1' }],
+  )
+
+  // Read over both months, the charges come off what they were paid for.
+  const both = await flowTotals(user, '2026-06-01', '2026-07-31')
+  assert.equal(both.income, '2075.00')
+  assert.equal(both.expenseGross, '0.00')
+
+  // Read by attached month, the charges land on the receipts they pay for.
+  const juneAccrual = await flowTotals(user, '2026-06-01', '2026-06-30', 'accrual')
+  assert.equal(juneAccrual.income, '75.00')
+  const julyAccrual = await flowTotals(user, '2026-07-01', '2026-07-31', 'accrual')
+  assert.equal(julyAccrual.income, '2000.00')
+})
+
+test('charges beyond what came in are a loss for what exceeds, shared by the payments', async () => {
+  const user = await seedUser()
+  const { business, activity, contributions, agency } = await freelance(user)
+  const client = await createActor(user, { name: 'Client' })
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-03',
+    amount: 100,
+    sourceActorId: client.id,
+    targetAccountId: business.id,
+    activityId: activity.id,
+  })
+  for (const amount of [90, 60])
+    await declareMovement(user, {
+      happenedOn: '2026-06-10',
+      amount,
+      sourceAccountId: business.id,
+      targetActorId: agency.id,
+      categoryId: contributions.id,
+      activityId: activity.id,
+    })
+
+  const totals = await flowTotals(user, '2026-06-01', '2026-06-30')
+  assert.equal(totals.income, '0.00')
+  assert.equal(totals.incomeCount, '0')
+  assert.equal(totals.expenseNet, '50.00')
+  assert.equal(totals.expenseCount, '2')
+  const earned = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'activity', 'income')
+  assert.deepEqual([...earned], [])
+  const spent = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'actor')
+  assert.deepEqual(
+    [...spent],
+    [{ key: agency.id, label: 'Agency', gross: '50.00', net: '50.00', count: '2' }],
+  )
+})
+
+test("only a settlement of the activity's own rules changes side, net of what came back", async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency } = await freelance(user)
+  const client = await createActor(user, { name: 'Client' })
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-03',
+    amount: 100,
+    sourceActorId: client.id,
+    targetAccountId: business.id,
+    activityId: activity.id,
+  })
+  // Filed in the same category outside the activity: no rule settles it.
+  await declareMovement(user, {
+    happenedOn: '2026-06-04',
+    amount: 10,
+    sourceAccountId: personal.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: null,
+  })
+  // A ghost says nothing about the flows, settlement or not.
+  await declareMovement(user, {
+    happenedOn: '2026-06-05',
+    amount: 50,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+    ghost: true,
+  })
+  // Overpaid by 5, which the agency sent back.
+  const overpaid = await declareMovement(user, {
+    happenedOn: '2026-06-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+    expectedRefundFromActorId: agency.id,
+    expectedRefundAmount: 5,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-20',
+    amount: 5,
+    sourceActorId: agency.id,
+    targetAccountId: business.id,
+    refundsMovementId: overpaid.id,
+  })
+
+  const totals = await flowTotals(user, '2026-06-01', '2026-06-30')
+  assert.equal(totals.income, '80.00')
+  assert.equal(totals.expenseGross, '10.00')
+  assert.equal(totals.expenseNet, '10.00')
+  // 100 - 10 - 25 + 5, as before the charges changed side.
+  assert.equal(Number(totals.income) - Number(totals.expenseNet), 70)
 })
