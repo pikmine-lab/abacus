@@ -19,7 +19,7 @@ import { cn, frMonthLong } from '@/lib/utils'
  * every intermediate component is how a field ends up showing someone else's
  * message.
  */
-const FieldErrors = createContext<Record<string, string> | undefined>(undefined)
+export const FieldErrors = createContext<Record<string, string> | undefined>(undefined)
 
 export function Field({
   label,

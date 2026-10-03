@@ -416,10 +416,19 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   d'autorisation et du dernier usage. La révocation est dans le menu de la ligne, derrière
   une confirmation.
 
-### Consentement
+### Connexion et consentement
 
-- **Hors de la coquille de l'app**, comme la connexion : une carte seule, puisqu'on y arrive
-  depuis un client, pas depuis la navigation.
+- **Hors de la coquille de l'app** : une carte seule (`Door`), puisqu'on y arrive par un
+  lien ou depuis un client, pas depuis la navigation.
+- **Créer un compte est un lien sous le formulaire**, pas un onglet du même poids : on se
+  connecte à chaque visite, on crée son compte une fois.
+- **Ouverte par une autorisation, la connexion nomme l'IA qui attend**, avec son domaine.
+  Elle le lit par le point d'entrée « prelogin » de Better Auth, qui ne répond que pour une
+  demande qu'il a signée et qui n'a pas expiré : un lien fabriqué ne fait nommer personne.
+- **L'abaque ne porte jamais seul un état** (`AbacusGate`) : ce qu'il compte, le formulaire
+  le dit aussi (champ en erreur, bouton occupé, message de refus), et il reste caché des
+  technologies d'assistance. Un contrôle de la carte le pilote en CSS (`data-gate`), sans
+  remonter d'état jusqu'à lui.
 - **Le nom d'un client ne s'affiche jamais seul**, toujours avec son domaine : un client à
   document de métadonnées choisit son nom, pas l'hôte de son URL.
 - **La destination du retour se voit**, avec un avertissement quand c'est une boucle locale
