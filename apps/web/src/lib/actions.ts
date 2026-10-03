@@ -110,7 +110,7 @@ import {
   deleteMovement,
   refundAdvance,
 } from '@abacus/core/services/movements'
-import { setReadingPreference } from '@abacus/core/services/preferences'
+import { setRankingViewPreference, setReadingPreference } from '@abacus/core/services/preferences'
 import {
   applyRegime,
   previewRegime,
@@ -1482,6 +1482,20 @@ export async function setReadingPreferenceAction(reading: string): Promise<strin
   }
   ;(await cookies()).delete(READING_COOKIE)
   refreshAll()
+  return null
+}
+
+/** Settles how the Analyse screen draws its ranking. A display only: no figure moves. */
+export async function setRankingViewPreferenceAction(view: string): Promise<string | null> {
+  const userId = await requireUserId()
+  if (view !== 'strip' && view !== 'bars') return 'Affichage inconnu.'
+  try {
+    await setRankingViewPreference(userId, view)
+  } catch (e) {
+    return frError(e)
+  }
+  revalidatePath('/analysis')
+  revalidatePath('/settings')
   return null
 }
 

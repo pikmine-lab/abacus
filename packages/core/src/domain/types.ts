@@ -76,10 +76,17 @@ export type MovementKind = 'transfer' | 'expense' | 'income'
  */
 export type Reading = 'cash' | 'accrual'
 
+/**
+ * How the Analyse screen draws its ranking: one bar cut into shares with the
+ * list underneath, or one bar per line. A display only, it moves no figure.
+ */
+export type RankingView = 'strip' | 'bars'
+
 /** What a person settled once, and every session then opens in. */
 export interface UserPreference {
   userId: string
   reading: Reading
+  rankingView: RankingView
 }
 
 export interface Movement {

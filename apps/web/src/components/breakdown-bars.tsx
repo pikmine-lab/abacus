@@ -60,10 +60,63 @@ export const UNSET_LABEL: Record<BreakdownDimension, string> = {
  * the mass keeps the full stroke, what composes it reads as one block under
  * it. Same origin and same scale, so the lengths stay comparable.
  */
-const row = (indent?: boolean) =>
-  `group grid grid-cols-[140px_1fr_70px] items-center gap-2 sm:grid-cols-[132px_1fr_90px] sm:gap-3 ${
-    indent ? 'py-0.5' : 'py-1.5'
-  }`
+const row = (size: Size, indent?: boolean) =>
+  `group grid items-center ${SIZES[size].grid} ${SIZES[size].pad[indent ? 1 : 0]}`
+
+/**
+ * `compact` is the summary the overview sets beside its donut. `lead` is the
+ * ranking a screen is opened for (Analyse), the block that dominates it:
+ * taller rows, a wider label column, masses in full ink and a thicker stroke.
+ * `share` is the list under a strip (`ShareRanking`): the strip draws the
+ * magnitudes, so the rows carry each one's share of the total in words instead
+ * of a bar. Each pair is [mass, what an unfolded mass is made of].
+ */
+type Size = 'compact' | 'lead' | 'share'
+const SIZES: Record<
+  Size,
+  { grid: string; pad: string[]; text: string[]; ink: string[]; track: string[]; bar: string[] }
+> = {
+  compact: {
+    grid: 'grid-cols-[140px_1fr_70px] gap-2 sm:grid-cols-[132px_1fr_90px] sm:gap-3',
+    pad: ['py-1.5', 'py-0.5'],
+    text: ['text-[12.5px]', 'text-[12.5px]'],
+    ink: [
+      'text-muted-foreground group-hover:text-foreground',
+      'text-muted-foreground group-hover:text-foreground',
+    ],
+    track: ['h-4', 'h-3'],
+    bar: ['h-3', 'h-1.5'],
+  },
+  lead: {
+    grid: 'grid-cols-[8.5rem_1fr_5.5rem] gap-2.5 sm:grid-cols-[13rem_1fr_7rem] sm:gap-4',
+    pad: ['py-2', 'py-1'],
+    text: ['text-[13.5px]', 'text-[12.5px]'],
+    ink: ['text-foreground', 'text-muted-foreground group-hover:text-foreground'],
+    track: ['h-5', 'h-3'],
+    bar: ['h-4', 'h-2'],
+  },
+  share: {
+    grid: 'grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_4.5rem_7rem] sm:gap-4',
+    pad: ['py-2', 'py-1'],
+    text: ['text-[13.5px]', 'text-[12.5px]'],
+    ink: ['text-foreground', 'text-muted-foreground group-hover:text-foreground'],
+    track: ['', ''],
+    bar: ['', ''],
+  },
+}
+
+/**
+ * The row the pointer or the focus is on, and the category when it is one of
+ * an unfolded group, for whatever draws the same rows elsewhere to light it.
+ * Ids are the row keys, `none` for the unset one.
+ */
+export interface Mark {
+  row: string
+  part?: string
+}
+
+/** What a row does to tell a strip drawn from the same rows that it is pointed at. */
+type Marking = Partial<Record<'onPointerEnter' | 'onFocus' | 'onBlur', () => void>>
 
 /** A row being hovered, and where the pointer is while it is. */
 interface Hovered {
@@ -81,6 +134,8 @@ export function BreakdownBars({
   period,
   emptyLabel = 'Rien sur cette période.',
   max: maxRows,
+  size = 'compact',
+  onMark,
 }: {
   rows: BreakdownItem[]
   dimension: BreakdownDimension
@@ -90,6 +145,8 @@ export function BreakdownBars({
   period: Period
   emptyLabel?: string
   max?: number
+  size?: Size
+  onMark?: (mark: Mark | null) => void
 }) {
   const [hovered, setHovered] = useState<Hovered | null>(null)
 
@@ -101,6 +158,7 @@ export function BreakdownBars({
   // its neighbour is measured against the biggest one. The scale is the gross,
   // which is the longest a bar ever gets.
   const peak = Math.max(...shown.map((r) => r.gross), 1)
+  const total = rows.reduce((sum, r) => sum + r.net, 0)
 
   // The card follows the pointer rather than sitting under the row: a bar
   // spans the width of the page, so anchoring it to the row would put the
@@ -110,12 +168,25 @@ export function BreakdownBars({
     if (e.pointerType !== 'mouse') return
     setHovered({ item, label, x: e.clientX, y: e.clientY })
   }
-  const release = () => setHovered(null)
+  const release = () => {
+    setHovered(null)
+    onMark?.(null)
+  }
+  // Pointer and keyboard alike: a row reached by Tab lights up as one pointed at.
+  const marking = (mark: Mark): Marking =>
+    onMark
+      ? {
+          onPointerEnter: () => onMark(mark),
+          onFocus: () => onMark(mark),
+          onBlur: () => onMark(null),
+        }
+      : {}
 
   return (
     <div className="flex flex-col">
       {shown.map((item) => {
         const label = item.label ?? UNSET_LABEL[dimension]
+        const id = item.key ?? 'none'
         return item.categories ? (
           // What says "these belong to that" is distance, not a box: the
           // categories sit tight under their group (4px apart) and the next
@@ -129,11 +200,12 @@ export function BreakdownBars({
           // sticks out of it.
           <details key={item.key ?? 'none'} className="fold group/mass -mx-2 px-2">
             <summary
-              className={`${row()} cursor-pointer list-none rounded-md hover:bg-secondary/40 [&::-webkit-details-marker]:hidden`}
+              className={`${row(size)} cursor-pointer list-none rounded-md hover:bg-secondary/40 [&::-webkit-details-marker]:hidden`}
               onPointerMove={track(item, label)}
               onPointerLeave={release}
+              {...marking({ row: id })}
             >
-              <Cells row={item} label={label} peak={peak} chevron />
+              <Cells row={item} label={label} peak={peak} total={total} size={size} chevron />
             </summary>
             <div className="relative pb-4">
               {/* Drawn, not bordered: a border would shift the grid and the
@@ -149,11 +221,14 @@ export function BreakdownBars({
                   label={child.label ?? UNSET_LABEL.category}
                   dimension="category"
                   peak={peak}
+                  total={total}
+                  size={size}
                   from={from}
                   period={period}
                   indent
                   onHover={track}
                   onLeave={release}
+                  marking={marking({ row: id, part: child.key ?? 'none' })}
                 />
               ))}
             </div>
@@ -165,10 +240,13 @@ export function BreakdownBars({
             label={label}
             dimension={dimension}
             peak={peak}
+            total={total}
+            size={size}
             from={from}
             period={period}
             onHover={track}
             onLeave={release}
+            marking={marking({ row: id })}
           />
         )
       })}
@@ -177,7 +255,7 @@ export function BreakdownBars({
           + {rows.length - maxRows} autre{rows.length - maxRows > 1 ? 's' : ''} sous Analyse
         </p>
       )}
-      {hovered && <HoverCard {...hovered} />}
+      {hovered && <HoverCard {...hovered} size={size} />}
     </div>
   )
 }
@@ -192,8 +270,11 @@ const CARD_HEIGHT = 96
  * the chart tooltips, and it never sits under the cursor, which would make it
  * flicker as the pointer chases it.
  */
-function HoverCard({ item, label, x, y }: Hovered) {
+function HoverCard({ item, label, x, y, size }: Hovered & { size: Size }) {
   const refund = Math.round((item.gross - item.net) * 100) / 100
+  // Under a strip the row already gives its name, share and net: the card
+  // keeps only what the row cannot hold.
+  const bare = size === 'share'
   const flipX = typeof window !== 'undefined' && x + CARD_WIDTH + 20 > window.innerWidth
   const flipY = typeof window !== 'undefined' && y + CARD_HEIGHT + 24 > window.innerHeight
   return (
@@ -205,11 +286,15 @@ function HoverCard({ item, label, x, y }: Hovered) {
       }}
       role="tooltip"
     >
-      <p className="truncate text-[11px] text-faint">{label}</p>
-      <p className="flex items-baseline gap-2 py-px text-xs">
-        <span className="text-muted-foreground">{refund > 0 ? 'Net' : 'Dépensé'}</span>
-        <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(item.net)}</span>
-      </p>
+      {!bare && (
+        <>
+          <p className="truncate text-[11px] text-faint">{label}</p>
+          <p className="flex items-baseline gap-2 py-px text-xs">
+            <span className="text-muted-foreground">{refund > 0 ? 'Net' : 'Dépensé'}</span>
+            <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(item.net)}</span>
+          </p>
+        </>
+      )}
       {refund > 0 && (
         <>
           <p className="flex items-baseline gap-2 py-px text-xs">
@@ -222,7 +307,13 @@ function HoverCard({ item, label, x, y }: Hovered) {
           </p>
         </>
       )}
-      <p className="mt-1 border-t border-border pt-1 text-[10.5px] text-faint">
+      <p
+        className={
+          bare && refund <= 0
+            ? 'text-[10.5px] text-faint'
+            : 'mt-1 border-t border-border pt-1 text-[10.5px] text-faint'
+        }
+      >
         {item.count} mouvement{item.count > 1 ? 's' : ''}
         {item.categories
           ? ` · ${item.categories.length} catégorie${item.categories.length > 1 ? 's' : ''}`
@@ -242,17 +333,23 @@ function Cells({
   label,
   dimension,
   peak,
+  total,
+  size,
   from,
   period,
   chevron,
   indent,
   onHover,
   onLeave,
+  marking,
 }: {
   row: BreakdownItem
   label: string
   dimension?: BreakdownDimension
   peak: number
+  /** The net of the whole ranking, which a share is a part of. */
+  total: number
+  size: Size
   from?: string
   period?: Period
   chevron?: boolean
@@ -260,7 +357,11 @@ function Cells({
   indent?: boolean
   onHover?: (item: BreakdownItem, label: string) => (e: PointerEvent) => void
   onLeave?: () => void
+  /** Handlers that tell a strip drawn from the same rows which one is pointed at. */
+  marking?: Marking
 }) {
+  const level = indent ? 1 : 0
+  const { text, ink, track, bar } = SIZES[size]
   const netPart = (item.net / peak) * 100
   const refundPart = ((item.gross - item.net) / peak) * 100
   const inner = (
@@ -269,31 +370,35 @@ function Cells({
         {chevron && (
           <ChevronRightIcon className="size-3 shrink-0 text-faint transition-transform group-open/mass:rotate-90" />
         )}
-        <span className="truncate text-[12.5px] text-muted-foreground group-hover:text-foreground">
-          {label}
+        <span className={`truncate ${text[level]} ${ink[level]}`}>{label}</span>
+      </span>
+      {size === 'share' ? (
+        <span className={`text-right font-mono ${text[level]} text-faint tabular`}>
+          {share(item.net, total)}
         </span>
-      </span>
-      <span className={`flex items-center gap-[2px] ${indent ? 'h-3' : 'h-4'}`}>
-        <span
-          className={`min-w-0.5 rounded-sm ${indent ? 'h-1.5' : 'h-3'}`}
-          style={{ width: `${netPart}%`, background: 'var(--chart-1)' }}
-        />
-        {refundPart > 0.5 && (
+      ) : (
+        <span className={`flex items-center gap-[2px] ${track[level]}`}>
           <span
-            className={`rounded-sm ${indent ? 'h-1.5' : 'h-3'}`}
-            style={{ width: `${refundPart}%`, background: 'var(--chart-1)', opacity: 0.32 }}
+            className={`min-w-0.5 rounded-sm ${bar[level]}`}
+            style={{ width: `${netPart}%`, background: 'var(--chart-1)' }}
           />
-        )}
-      </span>
-      <span className="text-right font-mono text-[12.5px] font-semibold tabular">{eur(item.net)}</span>
+          {refundPart > 0.5 && (
+            <span
+              className={`rounded-sm ${bar[level]}`}
+              style={{ width: `${refundPart}%`, background: 'var(--chart-1)', opacity: 0.32 }}
+            />
+          )}
+        </span>
+      )}
+      <span className={`text-right font-mono ${text[level]} font-semibold tabular`}>{eur(item.net)}</span>
     </>
   )
 
   if (chevron) return inner
   // A row of the ranking carries its own bleed; a row inside a fold does not,
   // the fold having it already and clipping anything that sticks out.
-  const layout = `${row(indent)} ${indent ? '' : '-mx-2 px-2'}`
-  const hover = { onPointerMove: onHover?.(item, label), onPointerLeave: onLeave }
+  const layout = `${row(size, indent)} ${indent ? '' : '-mx-2 px-2'}`
+  const hover = { onPointerMove: onHover?.(item, label), onPointerLeave: onLeave, ...marking }
   return item.key && from && period && dimension ? (
     <Link
       href={`/movements?${dimension}=${item.key}&${periodParams(period)}&from=${from}`}
@@ -307,4 +412,11 @@ function Cells({
       {inner}
     </div>
   )
+}
+
+/** A part of a whole in whole percents; a sliver is said to be one, not zero. */
+export function share(part: number, total: number): string {
+  if (total <= 0) return '–'
+  const pct = (part / total) * 100
+  return pct > 0 && pct < 1 ? '< 1 %' : `${Math.round(pct)} %`
 }

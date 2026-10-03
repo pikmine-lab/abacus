@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { readingPreference, setReadingPreference } from '../src/services/preferences.ts'
+import {
+  rankingViewPreference,
+  readingPreference,
+  setRankingViewPreference,
+  setReadingPreference,
+} from '../src/services/preferences.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -31,4 +36,23 @@ test('a reading belongs to the person who settled it', async () => {
 
   assert.equal(await readingPreference(accrual), 'accrual')
   assert.equal(await readingPreference(untouched), 'cash')
+})
+
+test('the ranking opens as a strip until someone settles otherwise', async () => {
+  const user = await seedUser()
+
+  assert.equal(await rankingViewPreference(user), 'strip')
+  await setRankingViewPreference(user, 'bars')
+  assert.equal(await rankingViewPreference(user), 'bars')
+})
+
+test('settling one preference leaves the other as it was', async () => {
+  const user = await seedUser()
+
+  await setReadingPreference(user, 'accrual')
+  await setRankingViewPreference(user, 'bars')
+  assert.equal(await readingPreference(user), 'accrual')
+
+  await setReadingPreference(user, 'cash')
+  assert.equal(await rankingViewPreference(user), 'bars')
 })
