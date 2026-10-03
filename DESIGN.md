@@ -188,7 +188,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   en un reste estompé. Le survol relie l'arc à sa ligne.
 - **Un classement se lit en ruban ou en barres, au choix de la personne** (Réglages, rien
   dans l'URL : c'est une façon de lire, pas un cadrage). Le ruban pose la période en une
-  barre découpée en parts, cinq et un reste comme le donut, séparées de 2 px ; il porte
+  barre découpée en parts, vingt puis un reste, séparées de 2 px (tout cuivre, rien ne le
+  borne aux cinq teintes du donut) ; il porte
   l'écran, donc il monte à 44 px quand une barre de graphe s'arrête à 24. Les noms se
   posent sous les parts assez larges, dès qu'il y en a deux (un seul répéterait la première
   ligne de la liste), et la liste dessous donne chaque part en %. Une ligne

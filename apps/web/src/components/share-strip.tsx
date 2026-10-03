@@ -16,17 +16,18 @@ import { cn, eur } from '@/lib/utils'
 /*
  * The whole period in one bar: each line takes the length of its share, so
  * what weighs half of the spending is seen to be half before any number is
- * read. Five lines and a rest, like the donut: past that a slice is too thin
- * to name. Every slice is copper and told from its neighbour by a 2px gap,
- * the rest stays neutral; names sit under the slices wide enough to hold them,
- * and the list underneath carries every line with its share.
+ * read. Twenty lines and a rest: unlike the donut, no closed set of tints caps
+ * the count, and a slice too thin to name still shows its weight. Every slice
+ * is copper and told from its neighbour by a 2px gap, the rest stays neutral;
+ * names sit under the slices wide enough to hold them, and the list underneath
+ * carries every line with its share.
  *
  * The list and the strip are one reading: a row pointed at in the list lights
  * its slice, and a category of an unfolded group lights its own part inside
  * the group's slice, where it sits among the group's categories.
  */
 
-const SHOWN = 5
+const SHOWN = 20
 /** Under this width a slice carries no name under it: the list names it. */
 const LABEL_MIN = 84
 
