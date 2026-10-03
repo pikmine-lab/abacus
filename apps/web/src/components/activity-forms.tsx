@@ -1,28 +1,23 @@
 'use client'
 
 import type { Activity, ActivityKind, DeductibleExpenses, RevenueBasis } from '@abacus/core/domain'
-import { ArchiveIcon, ArchiveRestoreIcon, ListChecksIcon, PencilIcon } from 'lucide-react'
-import { useActionState, useEffect, useState } from 'react'
+import { ArchiveIcon, ArchiveRestoreIcon } from 'lucide-react'
+import { useActionState, useState } from 'react'
 import { CurrencySelect } from '@/components/currency-select'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { Rows } from '@/components/page-shell'
-import { RowMenu } from '@/components/row-menu'
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  EntryRow,
+  Fiche,
+  FicheSection,
+  ListEmpty,
+  ListPane,
+  type Selection,
+  selectionOf,
+} from '@/components/master-detail'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   closeActivityAction,
@@ -31,7 +26,8 @@ import {
   reopenActivityAction,
   setActivityExceptionsAction,
 } from '@/lib/actions'
-import { cn, frDate } from '@/lib/utils'
+import { entryHref } from '@/lib/entry-href'
+import { frDate } from '@/lib/utils'
 
 export interface Option {
   id: string
@@ -278,16 +274,66 @@ export function ActivityForm({
 }
 
 /**
- * One activity, read before it is acted on: its kind as a badge, its regime
- * and its dates on the line under the name. The gestures live in the menu.
+ * The activities, read before they are acted on: the regime and the dates
+ * under the name, the kind at the end. A closed one stays in the list, faint:
+ * it is still corrected and reopened from its sheet.
  */
-function ActivityRow({
+export function ActivityList({
+  activities,
+  listHref,
+  selection,
+  tools,
+}: {
+  activities: Activity[]
+  listHref: string
+  selection: Selection
+  tools?: React.ReactNode
+}) {
+  return (
+    <ListPane tools={tools}>
+      {activities.length === 0 ? (
+        <ListEmpty>Aucune activité. Tout est considéré comme perso.</ListEmpty>
+      ) : (
+        activities.map((activity) => (
+          <EntryRow
+            key={activity.id}
+            href={entryHref(listHref, activity.id)}
+            selected={selectionOf(selection, activity.id)}
+            muted={activity.closedOn !== null}
+            title={activity.name}
+            detail={
+              [
+                activity.jurisdiction,
+                activity.regimeLabel,
+                activity.startedOn && `depuis le ${frDate(activity.startedOn)}`,
+                activity.closedOn && `close le ${frDate(activity.closedOn)}`,
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
+            // Only the exception trails: the regime under the name already says
+            // an activity is a business one, and the room goes to it.
+            trailing={activity.kind === 'personal' ? KIND_LABEL.personal : undefined}
+          />
+        ))
+      )}
+    </ListPane>
+  )
+}
+
+/**
+ * One activity's sheet: what it is, corrected in the form it was declared
+ * with, then the exceptions to its deductibility policy, then closing it or
+ * reopening it. A business activity leads to the page of its regime.
+ */
+export function ActivityFiche({
   activity,
   categories,
   accounts,
   attached,
   exceptions,
   today,
+  back,
 }: {
   activity: Activity
   categories: Option[]
@@ -297,194 +343,90 @@ function ActivityRow({
   /** The categories that go against its deductibility policy. */
   exceptions: string[]
   today: string
+  back: { href: string; label: string }
 }) {
-  const [editing, setEditing] = useState(false)
-  const [closing, setClosing] = useState(false)
-  const [reopening, setReopening] = useState(false)
-  const [excepting, setExcepting] = useState(false)
   const [reopenState, reopen, reopenPending] = useActionState(reopenActivityAction, {})
-  useEffect(() => {
-    if (reopenState.ok) setReopening(false)
-  }, [reopenState.ok])
-
   const closed = activity.closedOn !== null
   const business = activity.kind === 'business'
-  const detail = [
-    activity.jurisdiction,
-    activity.regimeLabel,
-    activity.startedOn && `depuis le ${frDate(activity.startedOn)}`,
-    activity.closedOn && `close le ${frDate(activity.closedOn)}`,
-  ]
-    .filter(Boolean)
-    .join(' · ')
 
   return (
-    <>
-      <div className={cn('flex items-center gap-3 py-2', closed && 'text-faint')}>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[12.5px]">{activity.name}</span>
-            <Badge variant="outline" className="px-1.5 text-[10.5px] font-normal text-muted-foreground">
-              {KIND_LABEL[activity.kind]}
-            </Badge>
-          </div>
-          {detail && <span className="truncate text-[11px] text-faint">{detail}</span>}
-        </div>
-        <RowMenu label={activity.name}>
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <PencilIcon />
-            Modifier
-          </DropdownMenuItem>
-          {business && (
-            <DropdownMenuItem onSelect={() => setExcepting(true)}>
-              <ListChecksIcon />
-              Exceptions de catégories
-            </DropdownMenuItem>
-          )}
-          {closed ? (
-            <DropdownMenuItem onSelect={() => setReopening(true)}>
-              <ArchiveRestoreIcon />
-              Réouvrir
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem variant="destructive" onSelect={() => setClosing(true)}>
-              <ArchiveIcon />
-              Clore
-            </DropdownMenuItem>
-          )}
-        </RowMenu>
-      </div>
+    <Fiche
+      title={activity.name}
+      badge={
+        <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">
+          {KIND_LABEL[activity.kind]}
+        </Badge>
+      }
+      link={
+        business ? { href: `/settings/activities/${activity.id}?from=settings`, label: 'Régime' } : undefined
+      }
+      back={back}
+    >
+      <p className="mb-4 text-[12px] text-faint">
+        Ce qui est déjà classé sous cette activité y reste. Le type et le fait générateur ne changent plus dès
+        qu’une règle ou une facture existe.
+      </p>
+      <ActivityForm activity={activity} categories={categories} accounts={accounts} attached={attached} />
 
-      {/* Corrected in the same panel it was declared in, as everything else is. */}
-      <Sheet open={editing} onOpenChange={setEditing}>
-        <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="text-[15px]">{activity.name}</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Ce qui est déjà classé sous cette activité y reste. Le type et le fait générateur ne changent
-              plus dès qu’une règle ou une facture existe.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="p-4">
-            <ActivityForm
-              activity={activity}
-              categories={categories}
-              accounts={accounts}
-              attached={attached}
-              onSuccess={() => setEditing(false)}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <Dialog open={excepting} onOpenChange={setExcepting}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Exceptions de {activity.name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              {activity.deductibleExpenses === 'all'
-                ? 'Toute charge de l’activité est déductible, sauf celles cochées ici.'
-                : 'Aucune charge de l’activité n’est déductible, sauf celles cochées ici.'}
-            </DialogDescription>
-          </DialogHeader>
+      {business && (
+        <FicheSection label="Exceptions de catégories">
           {categories.length === 0 ? (
             <p className="text-[12px] text-faint">Aucune catégorie à excepter.</p>
           ) : (
-            <ActionForm
-              action={setActivityExceptionsAction}
-              onSuccess={() => setExcepting(false)}
-              successLabel="Exceptions enregistrées"
-            >
+            <ActionForm action={setActivityExceptionsAction} successLabel="Exceptions enregistrées">
               <input type="hidden" name="activityId" value={activity.id} />
+              <p className="text-[12px] text-faint">
+                {activity.deductibleExpenses === 'all'
+                  ? 'Toute charge de l’activité est déductible, sauf celles cochées ici.'
+                  : 'Aucune charge de l’activité n’est déductible, sauf celles cochées ici.'}
+              </p>
               <ExceptionList
                 categories={categories}
                 policy={activity.deductibleExpenses}
                 checked={exceptions}
               />
-              <SubmitButton className="self-start">Enregistrer</SubmitButton>
+              <SubmitButton variant="outline" className="self-start">
+                Enregistrer
+              </SubmitButton>
             </ActionForm>
           )}
-        </DialogContent>
-      </Dialog>
+        </FicheSection>
+      )}
 
-      {/* The last day matters here: a regime ends on a date, not on the day
-          the panel happens to be opened. */}
-      <Dialog open={closing} onOpenChange={setClosing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Clore « {activity.name} »</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Aucun mouvement ne s’y déclare après ce jour. L’historique reste entier, et un nouveau régime
-              est une nouvelle activité.
-            </DialogDescription>
-          </DialogHeader>
-          <ActionForm action={closeActivityAction} onSuccess={() => setClosing(false)}>
+      {closed ? (
+        <FicheSection label="Réouvrir">
+          <p className="text-[12px] text-faint">
+            L’activité accepte de nouveau des mouvements. Son historique ne change pas.
+          </p>
+          <form action={reopen} className="flex flex-col gap-2">
             <input type="hidden" name="activityId" value={activity.id} />
-            <Field label="Dernier jour" name="closedOn">
+            <Button type="submit" variant="outline" disabled={reopenPending} className="self-start">
+              <ArchiveRestoreIcon />
+              {reopenPending ? '…' : 'Réouvrir'}
+            </Button>
+            {reopenState.error && <p className="text-xs text-destructive">{reopenState.error}</p>}
+          </form>
+        </FicheSection>
+      ) : (
+        // The last day matters here: a regime ends on a date, not on the day
+        // the sheet happens to be opened.
+        <FicheSection label="Clore">
+          <p className="text-[12px] text-faint">
+            Aucun mouvement ne s’y déclare après ce jour. L’historique reste entier, et un nouveau régime est
+            une nouvelle activité.
+          </p>
+          <ActionForm action={closeActivityAction} className="flex-row flex-wrap items-end gap-2">
+            <input type="hidden" name="activityId" value={activity.id} />
+            <Field label="Dernier jour" name="closedOn" className="w-44">
               <DateField name="closedOn" defaultValue={today} />
             </Field>
-            <SubmitButton variant="destructive" className="self-start">
+            <SubmitButton variant="destructive">
+              <ArchiveIcon />
               Clore
             </SubmitButton>
           </ActionForm>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={reopening} onOpenChange={setReopening}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Réouvrir « {activity.name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              L’activité accepte de nouveau des mouvements. Son historique ne change pas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {reopenState.error && <p className="text-xs text-destructive">{reopenState.error}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <form action={reopen}>
-              <input type="hidden" name="activityId" value={activity.id} />
-              <Button type="submit" disabled={reopenPending}>
-                {reopenPending ? '…' : 'Réouvrir'}
-              </Button>
-            </form>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  )
-}
-
-export function ActivityRows({
-  activities,
-  categories,
-  accounts,
-  links,
-  exceptions,
-  today,
-}: {
-  activities: Activity[]
-  categories: Option[]
-  /** The user's open accounts, offered to every row. */
-  accounts: Option[]
-  /** Every account link of the user, keyed on the fly by activity. */
-  links: { activityId: string; accountId: string }[]
-  /** Every exception of the user, keyed on the fly by activity. */
-  exceptions: { activityId: string; categoryId: string }[]
-  today: string
-}) {
-  return (
-    <Rows>
-      {activities.map((activity) => (
-        <ActivityRow
-          key={activity.id}
-          activity={activity}
-          categories={categories}
-          accounts={accounts}
-          attached={links.filter((l) => l.activityId === activity.id).map((l) => l.accountId)}
-          exceptions={exceptions.filter((e) => e.activityId === activity.id).map((e) => e.categoryId)}
-          today={today}
-        />
-      ))}
-    </Rows>
+        </FicheSection>
+      )}
+    </Fiche>
   )
 }

@@ -25,7 +25,7 @@ c'est précisément là que les écarts s'accumulent.
 Ces fichiers nous appartiennent (modèle shadcn) ; les divergences volontaires avec le
 registre sont locales et motivées, en commentaire, sur place.
 
-Deux contrôles ne se prennent pas dans le catalogue tel quel :
+Trois contrôles ne se prennent pas dans le catalogue tel quel :
 
 - **Une devise se choisit dans un combobox recherchable** (`CurrencySelect`), jamais dans
   un Select brut : ~180 codes n'ont ni vue d'ensemble ni tri utile (le problème du
@@ -40,6 +40,11 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   mois est à un clic et une autre année à deux. Même forme que `DateField` (déclencheur +
   popover), parce que c'est la même chose d'un cran plus grossier ; `react-day-picker`
   s'arrête au jour, d'où la grille composée sur `Popover`.
+- **Un libellé libre qui se réutilise propose ceux qui existent** (`SuggestField`) : le
+  groupe d'une catégorie retapé à la main dérive en quasi-doublons (« Loisir »,
+  « loisirs »), chacun devenant son propre groupe. Le champ reste libre, les valeurs en
+  usage s'ouvrent dessous ; focalisé alors qu'il est rempli, il propose toutes les autres,
+  pour déplacer l'entrée. Jamais une `datalist` native, qui ignore le thème.
 
 ## Formulaires, actions et URL
 
@@ -80,7 +85,9 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Un retour repasse par l'historique.** Les liens qui traversent les pages se taguent
   `?from=<clé>` ; `BackLink` lit ce tag et affiche un retour nommé dans le header, par
   `router.back()`, donc la période et les filtres de la page quittée sont retrouvés intacts.
-  Il ne retombe sur la route nue que sans historique (lien collé).
+  Il ne retombe sur la route nue que sans historique (lien collé). Une page qui appartient à
+  une autre (le régime d'une activité, sous sa fiche dans Réglages) nomme ce parent quand
+  aucun tag ne l'accompagne (`PageHeader parent`) : elle n'est jamais un cul-de-sac.
 - **L'état de la barre latérale est lu côté serveur** dans le cookie `sidebar_state`, pour
   que le premier rendu ait déjà la bonne largeur.
 - **Le mois compté se résout en trois endroits, dans cet ordre** : le paramètre d'URL, le
@@ -126,9 +133,16 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais étalées
   dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne doivent pas
   concurrencer ses chiffres. Vaut pour les mouvements (corriger, supprimer), les engagements
-  (changer le montant, résilier), les comptes (pointer, modifier, clore) et les entrées du
-  référentiel (renommer). Ce qui reste dans la ligne n'est pas une action mais un attribut :
-  le jugement d'un abonnement se change d'un geste pendant la revue « que couper ? ».
+  (changer le montant, résilier) et les comptes (pointer, modifier, clore). Ce qui reste
+  dans la ligne n'est pas une action mais un attribut : le jugement d'un abonnement se
+  change d'un geste pendant la revue « que couper ? ».
+- **Un écran où l'on vient régler une entrée, pas lire des chiffres, fait l'inverse**
+  (Réglages, le régime d'une activité) : une partie à la fois, sa liste dans un volet qui
+  défile seul, et la fiche de l'entrée choisie à côté, qui porte ses champs et tous ses
+  gestes, le destructif en dernier (`MasterDetail`). La ligne ne porte que ce qui la
+  distingue des autres ; une liste qui grossit ne rallonge jamais la page. La partie et
+  l'entrée vivent dans l'URL, et ces liens internes ne gardent pas `?from=` : le retour
+  nommé reculerait d'un pas au lieu de ramener d'où l'on vient.
 - **Corriger est aussi accessible que saisir** : la correction s'ouvre dans le même panneau
   que la déclaration, la suppression derrière une confirmation. Une correction ne touche
   jamais les liens d'origine (échéance, pointage) : le panneau le dit quand la ligne en
@@ -227,15 +241,18 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
 
 ### Comptes, pointages et référentiel
 
-- **Le référentiel se corrige dans ses listes.** Réglages montre les catégories, les
-  activités et les acteurs en lignes, chacune avec son menu `⋯` ; les acteurs, seuls à
-  grossir, portent un champ de recherche. Renommer ne demande rien de plus : ce qui est
-  classé sous une entrée la désigne par identifiant, jamais par son nom.
-- **Un doublon d'acteur se répare dans sa ligne** : « Ajouter un alias » pour qu'un nom cesse
-  de créer un doublon, « Fusionner dans… » pour absorber celui qui existe déjà. La ligne
-  montre les alias qu'elle porte (« aussi Macdo, McDo »), et le panneau de fusion annonce
-  qu'il réécrit des mouvements déjà déclarés : c'est le seul geste qui le fait, et la
-  contrepartie de créer un acteur dès qu'un nom saisi ne résout pas.
+- **Le référentiel se corrige dans sa fiche.** Réglages montre les catégories (sous leur
+  groupe quand l'ordre est par groupe), les activités et les acteurs en liste + fiche ;
+  catégories et acteurs se cherchent, alias compris. Une activité indépendante mène à la
+  page de son régime, organisée de la même façon (règles, paramètres, seuils). Renommer ne
+  demande rien de plus : ce qui est classé sous une entrée la désigne par identifiant,
+  jamais par son nom.
+- **Un doublon d'acteur se répare dans sa fiche** : un alias pour qu'un nom cesse de créer
+  un doublon, « Fusionner dans… » pour absorber celui qui existe déjà. La ligne montre les
+  alias qu'elle porte (« aussi Macdo, McDo »), celui qu'une recherche a trouvé en premier,
+  et la fiche annonce que la fusion réécrit des mouvements déjà déclarés : c'est le seul
+  geste qui le fait, et la contrepartie de créer un acteur dès qu'un nom saisi ne résout
+  pas.
 - **Un pointage se corrige comme il se déclare** : « Pointages », dans le menu du compte,
   ouvre l'historique (lu, calculé, écart, soldé ou non), et chaque ligne se corrige ou se
   supprime. Corriger un pointage, c'est le refaire : le panneau le dit, et dit ce que devient

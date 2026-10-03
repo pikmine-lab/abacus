@@ -5,8 +5,16 @@ import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { type LevyDraft, LevyForm, type Option } from '@/components/levy-form'
+import {
+  EntryRow,
+  Fiche,
+  FicheSection,
+  ListEmpty,
+  ListPane,
+  type Selection,
+  selectionOf,
+} from '@/components/master-detail'
 import { EmptyLine, Rows } from '@/components/page-shell'
-import { RowMenu } from '@/components/row-menu'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -18,8 +26,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
@@ -33,6 +39,7 @@ import {
   removeThresholdAction,
   setInputAction,
 } from '@/lib/actions'
+import { entryHref } from '@/lib/entry-href'
 import {
   LEVY_EFFECT_LABEL,
   LEVY_KIND_LABEL,
@@ -40,15 +47,15 @@ import {
   LEVY_PERIOD_LABEL,
   LEVY_PERIOD_REF_LABEL,
   LEVY_STATUS_BADGE,
+  thresholdValue,
 } from '@/lib/levy-words'
 import { eur, frDate } from '@/lib/utils'
 
 /**
  * The rules of an activity as lists that can be repaired: what it owes, the
- * figures its rules read, the thresholds it is watched against. A rule is
- * first something to read (what it takes, from when, on which source), so its
- * gestures live in the row's menu, and the panels behind them say what each
- * one does to the history.
+ * figures its rules read, the thresholds it is watched against. Each is a list
+ * beside the sheet of the entry picked from it, and each gesture in a sheet
+ * says what it does to the history.
  */
 
 export interface ModifierEntry {
@@ -108,24 +115,99 @@ function validity(levy: LevyEntry): string {
     : `depuis le ${frDate(levy.validFrom)}`
 }
 
-function LevyRow({
+/**
+ * The rules, read by what they take: the amount at the end of the row, the
+ * kind and the period under the name, and a review date gone by in red.
+ */
+export function LevyList({
+  levies,
+  listHref,
+  selection,
+  today,
+}: {
+  levies: LevyEntry[]
+  listHref: string
+  selection: Selection
+  today: string
+}) {
+  return (
+    <ListPane>
+      {levies.length === 0 ? (
+        <ListEmpty>Aucune règle. Sans elles, les charges de l’activité ne se calculent pas.</ListEmpty>
+      ) : (
+        levies.map((levy) => {
+          const stale = levy.reviewOn !== null && levy.reviewOn <= today
+          return (
+            <EntryRow
+              key={levy.id}
+              href={entryHref(listHref, levy.id)}
+              selected={selectionOf(selection, levy.id)}
+              muted={levy.validTo !== null && levy.validTo < today}
+              title={levy.name}
+              detail={
+                <>
+                  {LEVY_KIND_LABEL[levy.kind]} · {LEVY_PERIOD_LABEL[levy.period]}
+                  {stale && <span className="text-destructive"> · à revérifier</span>}
+                </>
+              }
+              trailing={<span className="font-mono tabular">{amountSummary(levy)}</span>}
+            />
+          )
+        })
+      )}
+    </ListPane>
+  )
+}
+
+/** One fact of a sheet that reads before it is acted on: its name, then its value. */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="text-faint">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </>
+  )
+}
+
+function Facts({ children }: { children: React.ReactNode }) {
+  return <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2 text-[12.5px]">{children}</dl>
+}
+
+/** The address a source lives at, without the scheme: enough to recognise it. */
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+/**
+ * A rule's sheet. A rule is first something to read (what it takes, from
+ * when, on which source), so the sheet states it before offering anything;
+ * correcting and replacing it open the full form in a panel, because a rule
+ * has seven blocks of fields. Its modifiers, closing and deleting follow.
+ */
+export function LevyFiche({
   levy,
   activityId,
   categories,
   levies,
   today,
+  back,
 }: {
   levy: LevyEntry
   activityId: string
   categories: Option[]
+  /** The other rules of the activity, which this one may read. */
   levies: Option[]
   today: string
+  back: { href: string; label: string }
 }) {
   const [editing, setEditing] = useState(false)
   const [superseding, setSuperseding] = useState(false)
-  const [closing, setClosing] = useState(false)
+  const [addingModifier, setAddingModifier] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [modifiers, setModifiers] = useState(false)
   const [deleteState, remove, deletePending] = useActionState(deleteLevyAction, {})
 
   useEffect(() => {
@@ -166,119 +248,130 @@ function LevyRow({
   )
 
   return (
-    <>
-      <div className="flex items-center gap-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex items-center gap-2">
-            <span className="truncate text-[12.5px]">{levy.name}</span>
-            {badge && (
-              <Badge variant={badge.variant} className="text-[10.5px]">
-                {badge.label}
-              </Badge>
-            )}
-          </span>
-          <span className="truncate text-[11px] text-faint">
-            {LEVY_KIND_LABEL[levy.kind]} · {LEVY_PERIOD_LABEL[levy.period]} · {validity(levy)}
-            {levy.verifiedOn && ` · vérifiée le ${frDate(levy.verifiedOn)}`}
-            {levy.reviewOn && (
-              <span className={stale ? 'text-destructive' : undefined}>
-                {' · à revérifier le '}
-                {frDate(levy.reviewOn)}
-              </span>
-            )}
-          </span>
-        </div>
-        <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular">
-          {amountSummary(levy)}
-        </span>
-        <RowMenu label={levy.name}>
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <PencilIcon />
-            Modifier
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setSuperseding(true)}>
-            <SquarePenIcon />
-            Remplacer à une date
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setModifiers(true)}>
-            <SlidersHorizontalIcon />
-            Modificateurs
-            {levy.modifiers.length > 0 && (
-              <span className="ml-auto text-[11px] text-faint">{levy.modifiers.length}</span>
-            )}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setClosing(true)}>
-            <CalendarClockIcon />
-            Clore
-          </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
-            <XIcon />
-            Supprimer
-          </DropdownMenuItem>
-        </RowMenu>
+    <Fiche
+      title={levy.name}
+      badge={
+        badge && (
+          <Badge variant={badge.variant} className="text-[11px]">
+            {badge.label}
+          </Badge>
+        )
+      }
+      back={back}
+    >
+      <Facts>
+        <Fact label="Montant">
+          <span className="font-mono tabular">{amountSummary(levy)}</span>
+        </Fact>
+        <Fact label="Nature">{LEVY_KIND_LABEL[levy.kind]}</Fact>
+        <Fact label="Période">{LEVY_PERIOD_LABEL[levy.period]}</Fact>
+        <Fact label="Validité">{validity(levy)}</Fact>
+        {levy.sourceUrl && (
+          <Fact label="Source">
+            <a
+              href={levy.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-border underline-offset-2 hover:text-primary hover:decoration-primary"
+            >
+              {sourceHost(levy.sourceUrl)}
+            </a>
+          </Fact>
+        )}
+        {levy.verifiedOn && <Fact label="Vérifiée le">{frDate(levy.verifiedOn)}</Fact>}
+        {levy.reviewOn && (
+          <Fact label="À revérifier le">
+            <span className={stale ? 'text-destructive' : undefined}>{frDate(levy.reviewOn)}</span>
+          </Fact>
+        )}
+        {levy.note && <Fact label="Note">{levy.note}</Fact>}
+      </Facts>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => setEditing(true)}>
+          <PencilIcon />
+          Modifier
+        </Button>
+        <Button variant="outline" onClick={() => setSuperseding(true)}>
+          <SquarePenIcon />
+          Remplacer à une date
+        </Button>
       </div>
-
       {panel(levy.name, 'edit', editing, setEditing)}
       {panel(`Remplacer « ${levy.name} »`, 'supersede', superseding, setSuperseding)}
 
-      <Sheet open={modifiers} onOpenChange={setModifiers}>
-        <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="text-[15px]">Modificateurs de {levy.name}</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Ce qui change la règle pour un temps. L’éligibilité est ce que tu affirmes : l’app rappelle la
-              condition, elle ne la vérifie pas.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="flex flex-col gap-4 p-4">
-            <ModifierList activityId={activityId} modifiers={levy.modifiers} />
-            <ModifierForm activityId={activityId} levyId={levy.id} today={today} />
-          </div>
-        </SheetContent>
-      </Sheet>
+      <FicheSection label="Modificateurs">
+        <p className="text-[12px] text-faint">
+          Ce qui change la règle pour un temps. L’éligibilité est ce que tu affirmes : l’app rappelle la
+          condition, elle ne la vérifie pas.
+        </p>
+        <ModifierList activityId={activityId} modifiers={levy.modifiers} />
+        <Button variant="outline" className="self-start" onClick={() => setAddingModifier(true)}>
+          <SlidersHorizontalIcon />
+          Ajouter un modificateur
+        </Button>
+        <Sheet open={addingModifier} onOpenChange={setAddingModifier}>
+          <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+            <SheetHeader className="border-b border-border">
+              <SheetTitle className="text-[15px]">Modificateur de {levy.name}</SheetTitle>
+            </SheetHeader>
+            <div className="p-4">
+              <ModifierForm activityId={activityId} levyId={levy.id} today={today} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </FicheSection>
 
-      <Dialog open={closing} onOpenChange={setClosing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Clore « {levy.name} »</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              La règle ne s’applique plus après ce jour. Les périodes qu’elle couvrait gardent leurs chiffres.
-            </DialogDescription>
-          </DialogHeader>
-          <ActionForm action={closeLevyAction} onSuccess={() => setClosing(false)} successLabel="Règle close">
-            <input type="hidden" name="activityId" value={activityId} />
-            <input type="hidden" name="levyId" value={levy.id} />
-            <Field label="Dernier jour d’application" name="validTo">
-              <DateField name="validTo" defaultValue={levy.validTo ?? today} />
-            </Field>
-            <SubmitButton className="self-start">Clore</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
+      <FicheSection label="Clore">
+        <p className="text-[12px] text-faint">
+          La règle ne s’applique plus après ce jour. Les périodes qu’elle couvrait gardent leurs chiffres.
+        </p>
+        <ActionForm
+          action={closeLevyAction}
+          className="flex-row flex-wrap items-end gap-2"
+          successLabel="Règle close"
+        >
+          <input type="hidden" name="activityId" value={activityId} />
+          <input type="hidden" name="levyId" value={levy.id} />
+          <Field label="Dernier jour d’application" name="validTo" className="w-52">
+            <DateField name="validTo" defaultValue={levy.validTo ?? today} />
+          </Field>
+          <SubmitButton variant="outline">
+            <CalendarClockIcon />
+            Clore
+          </SubmitButton>
+        </ActionForm>
+      </FicheSection>
 
-      <AlertDialog open={deleting} onOpenChange={setDeleting}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer « {levy.name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              La règle disparaît, avec ses modificateurs. Si un règlement a déjà été déclaré dans sa
-              catégorie, elle fait partie de l’histoire : clos-la plutôt.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteState.error && <p className="text-xs text-destructive">{deleteState.error}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <form action={remove}>
-              <input type="hidden" name="activityId" value={activityId} />
-              <input type="hidden" name="levyId" value={levy.id} />
-              <Button type="submit" variant="destructive" disabled={deletePending}>
-                {deletePending ? '…' : 'Supprimer'}
-              </Button>
-            </form>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+      <FicheSection label="Supprimer">
+        <p className="text-[12px] text-faint">
+          La règle disparaît, avec ses modificateurs. Si un règlement a déjà été déclaré dans sa catégorie,
+          elle fait partie de l’histoire : clos-la plutôt.
+        </p>
+        <Button variant="destructive" className="self-start" onClick={() => setDeleting(true)}>
+          <XIcon />
+          Supprimer
+        </Button>
+        <AlertDialog open={deleting} onOpenChange={setDeleting}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer « {levy.name} » ?</AlertDialogTitle>
+              <AlertDialogDescription>La règle disparaît, avec ses modificateurs.</AlertDialogDescription>
+            </AlertDialogHeader>
+            {deleteState.error && <p className="text-xs text-destructive">{deleteState.error}</p>}
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <form action={remove}>
+                <input type="hidden" name="activityId" value={activityId} />
+                <input type="hidden" name="levyId" value={levy.id} />
+                <Button type="submit" variant="destructive" disabled={deletePending}>
+                  {deletePending ? '…' : 'Supprimer'}
+                </Button>
+              </form>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </FicheSection>
+    </Fiche>
   )
 }
 
@@ -432,34 +525,6 @@ function ModifierForm({ activityId, levyId, today }: { activityId: string; levyI
   )
 }
 
-export function LevyRows({
-  activityId,
-  levies,
-  categories,
-  today,
-}: {
-  activityId: string
-  levies: LevyEntry[]
-  categories: Option[]
-  today: string
-}) {
-  return (
-    <Rows>
-      {levies.map((levy) => (
-        <LevyRow
-          key={levy.id}
-          levy={levy}
-          activityId={activityId}
-          categories={categories}
-          today={today}
-          // A rule reads the other rules of its activity, never itself.
-          levies={levies.filter((other) => other.id !== levy.id).map((o) => ({ id: o.id, name: o.name }))}
-        />
-      ))}
-    </Rows>
-  )
-}
-
 /** The panel behind the "+ Règle" button: the seven blocks, on a blank rule. */
 export function NewLevyForm({
   activityId,
@@ -475,42 +540,110 @@ export function NewLevyForm({
   return <LevyForm activityId={activityId} categories={categories} levies={levies} today={today} />
 }
 
-export function InputRows({ activityId, inputs }: { activityId: string; inputs: InputEntry[] }) {
+/** The stated figures: the name a rule reads, the date it holds from, its value. */
+export function InputList({
+  inputs,
+  listHref,
+  selection,
+}: {
+  inputs: InputEntry[]
+  listHref: string
+  selection: Selection
+}) {
+  return (
+    <ListPane>
+      {inputs.length === 0 ? (
+        <ListEmpty>Aucun paramètre saisi.</ListEmpty>
+      ) : (
+        inputs.map((input) => (
+          <EntryRow
+            key={input.id}
+            href={entryHref(listHref, input.id)}
+            selected={selectionOf(selection, input.id)}
+            title={<span className="font-mono">{input.name}</span>}
+            detail={`à partir du ${frDate(input.validFrom)}`}
+            trailing={<span className="font-mono tabular">{figure(input.value)}</span>}
+          />
+        ))
+      )}
+    </ListPane>
+  )
+}
+
+function figure(value: string): string {
+  return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 4 })
+}
+
+/**
+ * A stated figure's sheet. A figure that changes is stated again from a new
+ * date rather than corrected, so the sheet reads it and offers only to take
+ * it back.
+ */
+export function InputFiche({
+  input,
+  activityId,
+  back,
+}: {
+  input: InputEntry
+  activityId: string
+  back: { href: string; label: string }
+}) {
   const [state, remove, pending] = useActionState(removeInputAction, {})
   return (
-    <>
-      <Rows>
-        {inputs.map((input) => (
-          <div key={input.id} className="flex items-center gap-3 py-2">
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate font-mono text-[12.5px]">{input.name}</span>
-              <span className="truncate text-[11px] text-faint">
-                à partir du {frDate(input.validFrom)}
-                {input.note && ` · ${input.note}`}
-              </span>
-            </div>
-            <span className="shrink-0 font-mono text-[12.5px] tabular">
-              {Number(input.value).toLocaleString('fr-FR', { maximumFractionDigits: 4 })}
-            </span>
-            <form action={remove}>
-              <input type="hidden" name="activityId" value={activityId} />
-              <input type="hidden" name="inputId" value={input.id} />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="icon"
-                disabled={pending}
-                className="size-7 shrink-0 text-faint hover:text-destructive"
-                aria-label={`Retirer ${input.name}`}
-              >
-                <XIcon className="size-3.5" />
-              </Button>
-            </form>
-          </div>
-        ))}
-      </Rows>
-      {state.error && <p className="text-xs text-destructive">{state.error}</p>}
-    </>
+    <Fiche title={input.name} back={back}>
+      <Facts>
+        <Fact label="Valeur">
+          <span className="font-mono tabular">{figure(input.value)}</span>
+        </Fact>
+        <Fact label="À partir du">{frDate(input.validFrom)}</Fact>
+        {input.note && <Fact label="Note">{input.note}</Fact>}
+      </Facts>
+      <FicheSection label="Retirer">
+        <form action={remove} className="flex flex-col gap-2">
+          <input type="hidden" name="activityId" value={activityId} />
+          <input type="hidden" name="inputId" value={input.id} />
+          <Button type="submit" variant="destructive" disabled={pending} className="self-start">
+            <XIcon />
+            {pending ? '…' : `Retirer ${input.name}`}
+          </Button>
+          {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+        </form>
+      </FicheSection>
+    </Fiche>
+  )
+}
+
+/** A blank sheet for a stated figure: the name a rule will read, from when, how much. */
+export function NewInputFiche({
+  activityId,
+  today,
+  back,
+}: {
+  activityId: string
+  today: string
+  back: { href: string; label: string }
+}) {
+  return (
+    <Fiche title="Nouveau paramètre" back={back}>
+      <ActionForm action={setInputAction} successLabel="Paramètre saisi">
+        <input type="hidden" name="activityId" value={activityId} />
+        <Field label="Nom" name="name">
+          <Input name="name" placeholder="contribution_base" className="font-mono" autoComplete="off" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="À partir du" name="validFrom">
+            <DateField name="validFrom" defaultValue={today} />
+          </Field>
+          <Field label="Valeur" name="value">
+            <AmountInput name="value" />
+          </Field>
+        </div>
+        <Field label="Note">
+          <Input name="note" placeholder="d’où vient le chiffre" />
+        </Field>
+        <SubmitButton className="self-start">Ajouter</SubmitButton>
+      </ActionForm>
+    </Fiche>
   )
 }
 
@@ -590,26 +723,57 @@ function ThresholdFields({ threshold, today }: { threshold?: ThresholdEntry; tod
   )
 }
 
-export function NewThresholdForm({ activityId, today }: { activityId: string; today: string }) {
+/** The thresholds, read by what they watch and the value they are set at. */
+export function ThresholdList({
+  thresholds,
+  listHref,
+  selection,
+}: {
+  thresholds: ThresholdEntry[]
+  listHref: string
+  selection: Selection
+}) {
   return (
-    <ActionForm action={createThresholdAction} successLabel="Seuil créé">
-      <input type="hidden" name="activityId" value={activityId} />
-      <ThresholdFields today={today} />
-      <SubmitButton className="self-start">Créer le seuil</SubmitButton>
-    </ActionForm>
+    <ListPane>
+      {thresholds.length === 0 ? (
+        <ListEmpty>Aucun seuil surveillé.</ListEmpty>
+      ) : (
+        thresholds.map((threshold) => (
+          <EntryRow
+            key={threshold.id}
+            href={entryHref(listHref, threshold.id)}
+            selected={selectionOf(selection, threshold.id)}
+            title={threshold.label}
+            detail={`${LEVY_MEASURE_LABEL[threshold.measure]} sur ${LEVY_PERIOD_REF_LABEL[threshold.periodRef]}`}
+            trailing={
+              <span className="font-mono tabular">
+                {threshold.comparison === 'lte' ? '≤ ' : '≥ '}
+                {thresholdValue(threshold.measure, threshold.value)}
+              </span>
+            }
+          />
+        ))
+      )}
+    </ListPane>
   )
 }
 
-function ThresholdRow({
-  activityId,
+/**
+ * A threshold's sheet: its own fields, corrected in place, and taking it
+ * back. What changes beyond it is a sentence the user wrote, so the form is
+ * the reading.
+ */
+export function ThresholdFiche({
   threshold,
+  activityId,
   today,
+  back,
 }: {
-  activityId: string
   threshold: ThresholdEntry
+  activityId: string
   today: string
+  back: { href: string; label: string }
 }) {
-  const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [state, remove, pending] = useActionState(removeThresholdAction, {})
 
@@ -618,117 +782,64 @@ function ThresholdRow({
   }, [state.ok])
 
   return (
-    <>
-      <div className="flex items-center gap-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[12.5px]">{threshold.label}</span>
-          <span className="truncate text-[11px] text-faint">
-            {LEVY_MEASURE_LABEL[threshold.measure]} sur {LEVY_PERIOD_REF_LABEL[threshold.periodRef]} ·{' '}
-            {threshold.consequence}
-          </span>
-        </div>
-        <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular">
-          {threshold.comparison === 'lte' ? '≤ ' : '≥ '}
-          {Number(threshold.value).toLocaleString('fr-FR')}
-        </span>
-        <RowMenu label={threshold.label}>
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <PencilIcon />
-            Modifier
-          </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
-            <XIcon />
-            Retirer
-          </DropdownMenuItem>
-        </RowMenu>
-      </div>
+    <Fiche title={threshold.label} back={back}>
+      <ActionForm action={editThresholdAction} successLabel="Seuil corrigé">
+        <input type="hidden" name="activityId" value={activityId} />
+        <input type="hidden" name="thresholdId" value={threshold.id} />
+        <ThresholdFields threshold={threshold} today={today} />
+        <SubmitButton className="self-start">Enregistrer</SubmitButton>
+      </ActionForm>
 
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">{threshold.label}</DialogTitle>
-          </DialogHeader>
-          <ActionForm
-            action={editThresholdAction}
-            onSuccess={() => setEditing(false)}
-            successLabel="Seuil corrigé"
-          >
-            <input type="hidden" name="activityId" value={activityId} />
-            <input type="hidden" name="thresholdId" value={threshold.id} />
-            <ThresholdFields threshold={threshold} today={today} />
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={removing} onOpenChange={setRemoving}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Retirer « {threshold.label} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Le seuil cesse d’être surveillé. Rien d’autre ne change : un seuil alerte, il ne bascule aucun
-              régime.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {state.error && <p className="text-xs text-destructive">{state.error}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <form action={remove}>
-              <input type="hidden" name="activityId" value={activityId} />
-              <input type="hidden" name="thresholdId" value={threshold.id} />
-              <Button type="submit" variant="destructive" disabled={pending}>
-                {pending ? '…' : 'Retirer'}
-              </Button>
-            </form>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+      <FicheSection label="Retirer">
+        <p className="text-[12px] text-faint">
+          Le seuil cesse d’être surveillé. Rien d’autre ne change : un seuil alerte, il ne bascule aucun
+          régime.
+        </p>
+        <Button variant="destructive" className="self-start" onClick={() => setRemoving(true)}>
+          <XIcon />
+          Retirer
+        </Button>
+        <AlertDialog open={removing} onOpenChange={setRemoving}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Retirer « {threshold.label} » ?</AlertDialogTitle>
+              <AlertDialogDescription>Le seuil cesse d’être surveillé.</AlertDialogDescription>
+            </AlertDialogHeader>
+            {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <form action={remove}>
+                <input type="hidden" name="activityId" value={activityId} />
+                <input type="hidden" name="thresholdId" value={threshold.id} />
+                <Button type="submit" variant="destructive" disabled={pending}>
+                  {pending ? '…' : 'Retirer'}
+                </Button>
+              </form>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </FicheSection>
+    </Fiche>
   )
 }
 
-export function ThresholdRows({
+/** A blank sheet for a threshold: a measure, a value, and the sentence that says what changes beyond. */
+export function NewThresholdFiche({
   activityId,
-  thresholds,
   today,
+  back,
 }: {
   activityId: string
-  thresholds: ThresholdEntry[]
   today: string
+  back: { href: string; label: string }
 }) {
   return (
-    <Rows>
-      {thresholds.map((threshold) => (
-        <ThresholdRow key={threshold.id} activityId={activityId} threshold={threshold} today={today} />
-      ))}
-    </Rows>
-  )
-}
-
-/** A stated figure, added from the section's own row. */
-export function NewInputForm({ activityId, today }: { activityId: string; today: string }) {
-  return (
-    <ActionForm
-      action={setInputAction}
-      className="flex-row flex-wrap items-end gap-2"
-      successLabel="Paramètre saisi"
-    >
-      <input type="hidden" name="activityId" value={activityId} />
-      <Field label="Nom" name="name" className="w-44">
-        <Input name="name" placeholder="contribution_base" className="h-8 font-mono text-[12.5px]" />
-      </Field>
-      <Field label="À partir du" name="validFrom" className="w-40">
-        <DateField name="validFrom" defaultValue={today} />
-      </Field>
-      <Field label="Valeur" name="value" className="w-28">
-        <AmountInput name="value" className="h-8" />
-      </Field>
-      <Field label="Note" className="w-40">
-        <Input name="note" placeholder="d’où vient le chiffre" className="h-8 text-[12.5px]" />
-      </Field>
-      <SubmitButton variant="outline" size="sm">
-        Ajouter
-      </SubmitButton>
-    </ActionForm>
+    <Fiche title="Nouveau seuil" back={back}>
+      <ActionForm action={createThresholdAction} successLabel="Seuil créé">
+        <input type="hidden" name="activityId" value={activityId} />
+        <ThresholdFields today={today} />
+        <SubmitButton className="self-start">Créer le seuil</SubmitButton>
+      </ActionForm>
+    </Fiche>
   )
 }

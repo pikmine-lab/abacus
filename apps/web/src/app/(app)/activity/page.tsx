@@ -165,7 +165,7 @@ export default async function ActivityPage({
         <PageBody>
           <EmptyLine>
             Aucune activité indépendante déclarée. Dans{' '}
-            <Link href="/settings?from=activity" className="text-primary hover:underline">
+            <Link href="/settings?part=activities&from=activity" className="text-primary hover:underline">
               Réglages
             </Link>
             , passe une activité en « indépendante » pour lui donner son exercice, ses factures et ses règles.
@@ -211,7 +211,7 @@ export default async function ActivityPage({
             {
               title: 'Ses comptes',
               why: 'Les comptes sur lesquels elle vit font sa trésorerie, donc ce qu’elle peut te verser.',
-              href: '/settings?from=activity',
+              href: `/settings?part=activities&entry=${activity.id}&from=activity`,
               cta: 'Réglages',
               done: false,
             },

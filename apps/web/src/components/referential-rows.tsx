@@ -1,11 +1,23 @@
 'use client'
 
 import type { ReattachableCount } from '@abacus/core/services/actors'
-import { CombineIcon, Link2Icon, PencilIcon, TagIcon } from 'lucide-react'
+import { Link2Icon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
-import { Rows } from '@/components/page-shell'
-import { RowMenu } from '@/components/row-menu'
+import {
+  EntryRow,
+  Fiche,
+  FicheSection,
+  fold,
+  GroupHeading,
+  ListEmpty,
+  ListPane,
+  ListSearch,
+  type Selection,
+  selectionOf,
+} from '@/components/master-detail'
+import { SuggestField } from '@/components/suggest-field'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -16,18 +28,18 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import {
   type ActorFormState,
   addAliasAction,
   countReattachableAction,
+  createActorAction,
+  createCategoryAction,
   editActorAction,
   editCategoryAction,
   mergeActorsAction,
   reattachActorHistoryAction,
 } from '@/lib/actions'
+import { entryHref } from '@/lib/entry-href'
 import { frDateLong } from '@/lib/utils'
 
 /**
@@ -36,89 +48,128 @@ import { frDateLong } from '@/lib/utils'
  * under it stays filed under it, under its new name.
  */
 
-/** The readable part of a row, with its menu at the far end. */
-function EntryLine({
-  title,
-  detail,
-  trailing,
-  children,
-}: {
-  title: string
-  detail?: string
-  /**
-   * One attribute of the entry, read at the end of its own line: a second
-   * line under the name would lengthen the list without adding a fact.
-   */
-  trailing?: string
-  /** The row's menu items. */
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-3 py-2">
-      {/* Takes the row's width so the menu sits at its far end. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[12.5px]">{title}</span>
-        {detail && <span className="truncate text-[11px] text-faint">{detail}</span>}
-      </div>
-      {trailing && <span className="max-w-[45%] truncate text-[11.5px] text-faint">{trailing}</span>}
-      <RowMenu label={title}>{children}</RowMenu>
-    </div>
-  )
+interface Back {
+  href: string
+  label: string
 }
 
-function EditItem({ onSelect }: { onSelect: () => void }) {
-  return (
-    <DropdownMenuItem onSelect={onSelect}>
-      <PencilIcon />
-      Modifier
-    </DropdownMenuItem>
-  )
-}
-
-function CategoryRow({ category }: { category: { id: string; name: string; groupLabel: string | null } }) {
-  const [editing, setEditing] = useState(false)
+/** The part of a name a search matched, in full ink; the rest as it was. */
+function Matched({ text, term }: { text: string; term: string }) {
+  const at = term ? fold(text).indexOf(term) : -1
+  // Folding keeps the length of the Latin letters a name is made of; a name
+  // where it does not is shown without the mark rather than marked off by one.
+  if (at < 0 || fold(text).length !== text.length) return <>{text}</>
   return (
     <>
-      <EntryLine title={category.name} trailing={category.groupLabel ?? undefined}>
-        <EditItem onSelect={() => setEditing(true)} />
-      </EntryLine>
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">{category.name}</DialogTitle>
-          </DialogHeader>
-          <ActionForm
-            action={editCategoryAction}
-            onSuccess={() => setEditing(false)}
-            successLabel="Catégorie corrigée"
-          >
-            <input type="hidden" name="categoryId" value={category.id} />
-            <TextField name="name" label="Nom" defaultValue={category.name} />
-            <TextField
-              name="group"
-              label="Groupe (optionnel)"
-              defaultValue={category.groupLabel ?? ''}
-              placeholder="Vie courante"
-            />
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
+      {text.slice(0, at)}
+      <mark className="bg-transparent font-medium text-foreground">{text.slice(at, at + term.length)}</mark>
+      {text.slice(at + term.length)}
     </>
   )
 }
 
-export function CategoryRows({
+export interface CategoryEntry {
+  id: string
+  name: string
+  groupLabel: string | null
+}
+
+/**
+ * The categories, read under their group when the list is ordered by group,
+ * the group then trailing each row when ordered by name. The search reads both,
+ * so typing a group's name brings the whole group.
+ */
+export function CategoryList({
   categories,
+  grouped,
+  listHref,
+  selection,
+  tools,
 }: {
-  categories: { id: string; name: string; groupLabel: string | null }[]
+  /** Already in the order the URL asked for. */
+  categories: CategoryEntry[]
+  grouped: boolean
+  listHref: string
+  selection: Selection
+  /** The order control, beside the search. */
+  tools?: React.ReactNode
 }) {
+  const [search, setSearch] = useState('')
+  const term = fold(search.trim())
+  const shown = term
+    ? categories.filter((c) => fold(c.name).includes(term) || fold(c.groupLabel ?? '').includes(term))
+    : categories
+  const sections: { label: string | null; rows: CategoryEntry[] }[] = []
+  for (const category of shown) {
+    const last = sections.at(-1)
+    if (grouped && last && last.label === category.groupLabel) last.rows.push(category)
+    else if (grouped || !last) sections.push({ label: category.groupLabel, rows: [category] })
+    else last.rows.push(category)
+  }
+
   return (
-    <Rows>
-      {categories.map((category) => (
-        <CategoryRow key={category.id} category={category} />
-      ))}
-    </Rows>
+    <ListPane
+      search={<ListSearch value={search} onChange={setSearch} label="Chercher une catégorie ou un groupe" />}
+      tools={tools}
+    >
+      {categories.length === 0 ? (
+        <ListEmpty>Aucune catégorie. Sans elles, l’analyse par catégorie reste vide.</ListEmpty>
+      ) : shown.length === 0 ? (
+        <ListEmpty>Aucune catégorie ne porte ce nom.</ListEmpty>
+      ) : (
+        sections.map((section) => (
+          <div key={section.label ?? ''} className="flex flex-col not-first:mt-4">
+            {grouped && <GroupHeading label={section.label ?? 'Sans groupe'} count={section.rows.length} />}
+            {section.rows.map((category) => (
+              <EntryRow
+                key={category.id}
+                href={entryHref(listHref, category.id)}
+                selected={selectionOf(selection, category.id)}
+                title={<Matched text={category.name} term={term} />}
+                trailing={grouped ? undefined : category.groupLabel}
+              />
+            ))}
+          </div>
+        ))
+      )}
+    </ListPane>
+  )
+}
+
+/**
+ * A category's sheet: its name and its group, the same two fields to declare
+ * one. The group proposes those already in use, so a group is reused rather
+ * than retyped into a near-duplicate.
+ */
+export function CategoryFiche({
+  category,
+  groups,
+  back,
+}: {
+  /** Absent for a blank sheet, declaring a new category. */
+  category?: CategoryEntry
+  groups: string[]
+  back: Back
+}) {
+  const editing = category !== undefined
+  return (
+    <Fiche title={editing ? category.name : 'Nouvelle catégorie'} back={back}>
+      <ActionForm
+        action={editing ? editCategoryAction : createCategoryAction}
+        successLabel={editing ? 'Catégorie corrigée' : 'Catégorie créée'}
+      >
+        {editing && <input type="hidden" name="categoryId" value={category.id} />}
+        <TextField name="name" label="Nom" defaultValue={category?.name ?? ''} />
+        <SuggestField
+          name="group"
+          label="Groupe (optionnel)"
+          defaultValue={category?.groupLabel ?? ''}
+          suggestions={groups}
+          placeholder="Vie courante"
+        />
+        <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Ajouter'}</SubmitButton>
+      </ActionForm>
+    </Fiche>
   )
 }
 
@@ -134,185 +185,238 @@ export interface ActorEntry {
   invoiceWithholdingRate: string | null
 }
 
-function percent(rate: string): string {
-  return `${Number(rate).toLocaleString('fr-FR')} %`
+/**
+ * The actors, the one list that keeps growing: entry creates one as soon as a
+ * typed name matches nothing. The search reads the aliases too, and a row
+ * found through one shows which.
+ */
+export function ActorList({
+  actors,
+  activities,
+  listHref,
+  selection,
+  tools,
+}: {
+  actors: ActorEntry[]
+  activities: { id: string; name: string }[]
+  listHref: string
+  selection: Selection
+  tools?: React.ReactNode
+}) {
+  const [search, setSearch] = useState('')
+  const term = fold(search.trim())
+  const shown = term
+    ? actors.filter(
+        (a) => fold(a.name).includes(term) || a.aliases.some((alias) => fold(alias).includes(term)),
+      )
+    : actors
+
+  return (
+    <ListPane
+      search={<ListSearch value={search} onChange={setSearch} label="Chercher un acteur ou un alias" />}
+      tools={tools}
+    >
+      {actors.length === 0 ? (
+        <ListEmpty>Aucun acteur. Le premier mouvement déclaré en crée un.</ListEmpty>
+      ) : shown.length === 0 ? (
+        <ListEmpty>Aucun acteur ne porte ce nom.</ListEmpty>
+      ) : (
+        shown.map((actor) => {
+          // The alias the search went through comes first, marked.
+          const aliases = term
+            ? [...actor.aliases].sort(
+                (a, b) => Number(fold(b).includes(term)) - Number(fold(a).includes(term)),
+              )
+            : actor.aliases
+          return (
+            <EntryRow
+              key={actor.id}
+              href={entryHref(listHref, actor.id)}
+              selected={selectionOf(selection, actor.id)}
+              title={<Matched text={actor.name} term={term} />}
+              detail={
+                aliases.length > 0 && (
+                  <>
+                    aussi{' '}
+                    {aliases.map((alias, i) => (
+                      <span key={alias}>
+                        {i > 0 && ', '}
+                        <Matched text={alias} term={term} />
+                      </span>
+                    ))}
+                  </>
+                )
+              }
+              trailing={activities.find((a) => a.id === actor.activityId)?.name}
+            />
+          )
+        })
+      )}
+    </ListPane>
+  )
+}
+
+/** A blank sheet: an actor is a name first, the rest is corrected afterwards. */
+export function NewActorFiche({ back }: { back: Back }) {
+  return (
+    <Fiche title="Nouvel acteur" back={back}>
+      <ActionForm action={createActorAction} successLabel="Acteur créé">
+        <TextField name="name" label="Nom" />
+        <SubmitButton className="self-start">Ajouter</SubmitButton>
+      </ActionForm>
+    </Fiche>
+  )
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n > 1 ? many : one}`
 }
 
 /**
- * An actor carries more than a name: the aliases that resolve to it, and the
- * duplicates it can absorb. Entry creates an actor as soon as a typed name
- * matches nothing, so this screen has to be able to undo that.
+ * An actor carries more than a name: the aliases that resolve to it, the
+ * history it can take along to its activity, and the duplicates it can be
+ * merged into. Entry creates an actor as soon as a typed name matches nothing,
+ * so this sheet has to be able to undo that.
  */
-function ActorRow({
+export function ActorFiche({
   actor,
   activities,
   others,
+  listHref,
+  back,
 }: {
   actor: ActorEntry
   activities: { id: string; name: string }[]
   /** The actors this one can be merged into. */
   others: { id: string; name: string }[]
+  listHref: string
+  back: Back
 }) {
-  const [editing, setEditing] = useState(false)
-  const [aliasing, setAliasing] = useState(false)
-  const [merging, setMerging] = useState(false)
-  // The activity the actor had when its correction opened: a changed one
-  // leaves movements behind, and the reattachment then names it as former.
-  const activityBefore = useRef<string | null>(null)
+  const router = useRouter()
+  // The activity the actor had when the sheet opened: a changed one leaves
+  // movements behind, and the reattachment then names it as former.
+  const activityBefore = useRef(actor.activityId)
   const [leftBehind, setLeftBehind] = useState(0)
   const [reattaching, setReattaching] = useState<{ previousActivityId: string | null } | null>(null)
   const closeReattach = useCallback(() => setReattaching(null), [])
   const activityName = activities.find((a) => a.id === actor.activityId)?.name
-  const detail =
-    [
-      actor.aliases.length > 0 ? `aussi ${actor.aliases.join(', ')}` : null,
-      activityName,
-      actor.invoiceVatRate !== null ? `TVA ${percent(actor.invoiceVatRate)}` : null,
-      actor.invoiceWithholdingRate !== null ? `retenue ${percent(actor.invoiceWithholdingRate)}` : null,
-      actor.note,
-    ]
-      .filter(Boolean)
-      .join(' · ') || undefined
 
   return (
-    <>
-      <EntryLine title={actor.name} detail={detail}>
-        <EditItem
-          onSelect={() => {
-            activityBefore.current = actor.activityId
-            setLeftBehind(0)
-            setEditing(true)
-          }}
-        />
-        <DropdownMenuItem onSelect={() => setAliasing(true)}>
-          <TagIcon />
-          Ajouter un alias
-        </DropdownMenuItem>
-        {activityName && (
-          <DropdownMenuItem onSelect={() => setReattaching({ previousActivityId: null })}>
-            <Link2Icon />
-            Rattacher l’historique à l’activité
-          </DropdownMenuItem>
-        )}
-        {others.length > 0 && (
-          <DropdownMenuItem variant="destructive" onSelect={() => setMerging(true)}>
-            <CombineIcon />
-            Fusionner dans…
-          </DropdownMenuItem>
-        )}
-      </EntryLine>
-
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">{actor.name}</DialogTitle>
-          </DialogHeader>
-          <ActionForm
-            action={editActorAction}
-            // Stays open when a changed activity left movements behind: the
-            // acknowledgement points at the gesture that takes them along.
-            onSuccess={(state: ActorFormState) =>
-              state.leftBehind ? setLeftBehind(state.leftBehind) : setEditing(false)
-            }
-            successLabel="Acteur corrigé"
+    <Fiche title={actor.name} back={back}>
+      <ActionForm
+        action={editActorAction}
+        // A changed activity that left movements behind is acknowledged here,
+        // pointing at the gesture that takes them along.
+        onSuccess={(state: ActorFormState) => setLeftBehind(state.leftBehind ?? 0)}
+        successLabel="Acteur corrigé"
+      >
+        <input type="hidden" name="actorId" value={actor.id} />
+        <TextField name="name" label="Nom" defaultValue={actor.name} />
+        <Field label="Activité">
+          <FormSelect
+            name="activityId"
+            noneLabel="(perso)"
+            defaultValue={actor.activityId ?? ''}
+            options={activities.map((a) => ({ value: a.id, label: a.name }))}
+          />
+        </Field>
+        <TextField name="note" label="Note (optionnelle)" defaultValue={actor.note ?? ''} />
+        {/* What this client does to an invoice: defaults a new invoice
+            copies, which is why they belong to the payer, not the activity. */}
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            name="invoiceVatRate"
+            label="TVA par défaut (%)"
+            inputMode="decimal"
+            defaultValue={actor.invoiceVatRate ?? ''}
+          />
+          <TextField
+            name="invoiceWithholdingRate"
+            label="Retenue par défaut (%)"
+            inputMode="decimal"
+            defaultValue={actor.invoiceWithholdingRate ?? ''}
+          />
+        </div>
+        <SubmitButton className="self-start">Enregistrer</SubmitButton>
+      </ActionForm>
+      {leftBehind > 0 && activityName && (
+        <p className="mt-3 text-[12px] text-faint">
+          {plural(
+            leftBehind,
+            'mouvement déjà déclaré ne suit pas',
+            'mouvements déjà déclarés ne suivent pas',
+          )}{' '}
+          :{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={() => setReattaching({ previousActivityId: activityBefore.current })}
           >
-            <input type="hidden" name="actorId" value={actor.id} />
-            <TextField name="name" label="Nom" defaultValue={actor.name} />
-            <Field label="Activité">
-              <FormSelect
-                name="activityId"
-                noneLabel="(perso)"
-                defaultValue={actor.activityId ?? ''}
-                options={activities.map((a) => ({ value: a.id, label: a.name }))}
-              />
-            </Field>
-            <TextField name="note" label="Note (optionnelle)" defaultValue={actor.note ?? ''} />
-            {/* What this client does to an invoice: defaults a new invoice
-                copies, which is why they belong to the payer, not the activity. */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Facturation</span>
-              <div className="grid grid-cols-2 gap-3">
-                <TextField
-                  name="invoiceVatRate"
-                  label="TVA par défaut (%)"
-                  inputMode="decimal"
-                  defaultValue={actor.invoiceVatRate ?? ''}
-                />
-                <TextField
-                  name="invoiceWithholdingRate"
-                  label="Retenue par défaut (%)"
-                  inputMode="decimal"
-                  defaultValue={actor.invoiceWithholdingRate ?? ''}
-                />
-              </div>
-            </div>
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
-          </ActionForm>
-          {leftBehind > 0 && (
-            <p className="text-[12px] text-faint">
-              {plural(
-                leftBehind,
-                'mouvement déjà déclaré ne suit pas',
-                'mouvements déjà déclarés ne suivent pas',
-              )}{' '}
-              :{' '}
-              <button
-                type="button"
-                className="underline underline-offset-2 hover:text-foreground"
-                onClick={() => {
-                  setEditing(false)
-                  setReattaching({ previousActivityId: activityBefore.current })
-                }}
-              >
-                rattacher l’historique
-              </button>{' '}
-              les reprend, maintenant ou plus tard depuis le menu de la ligne.
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {activityName && (
-        <ReattachDialog
-          actor={actor}
-          activityName={activityName}
-          previousActivityId={reattaching?.previousActivityId ?? null}
-          open={reattaching !== null}
-          onClose={closeReattach}
-        />
+            rattacher l’historique
+          </button>{' '}
+          les reprend, maintenant ou plus tard.
+        </p>
       )}
 
-      <Dialog open={aliasing} onOpenChange={setAliasing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Alias de {actor.name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Un nom de plus qui désigne cet acteur. Saisi tel quel dans un mouvement, il ne crée plus de
-              doublon.
-            </DialogDescription>
-          </DialogHeader>
-          <ActionForm
-            action={addAliasAction}
-            onSuccess={() => setAliasing(false)}
-            successLabel="Alias ajouté"
-          >
-            <input type="hidden" name="actorId" value={actor.id} />
-            <TextField name="alias" label="Alias" placeholder="Macdo" />
-            <SubmitButton className="self-start">Ajouter</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
+      <FicheSection label="Alias">
+        {actor.aliases.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5">
+            {actor.aliases.map((alias) => (
+              <li key={alias} className="rounded-md border border-border px-2 py-0.5 text-[12.5px]">
+                {alias}
+              </li>
+            ))}
+          </ul>
+        )}
+        <ActionForm
+          action={addAliasAction}
+          className="flex-row flex-wrap items-end gap-2"
+          successLabel="Alias ajouté"
+        >
+          <input type="hidden" name="actorId" value={actor.id} />
+          <div className="min-w-48 flex-1">
+            <TextField name="alias" label="Nouvel alias" placeholder="Macdo" />
+          </div>
+          <SubmitButton variant="outline">Ajouter</SubmitButton>
+        </ActionForm>
+      </FicheSection>
 
-      <Dialog open={merging} onOpenChange={setMerging}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">Fusionner {actor.name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Tout ce qui est déclaré sous « {actor.name} » bascule sur l’acteur choisi, et « {actor.name} »
-              devient un de ses alias. C’est le seul geste ici qui réécrit des mouvements déjà déclarés.
-            </DialogDescription>
-          </DialogHeader>
-          <ActionForm action={mergeActorsAction} onSuccess={() => setMerging(false)}>
+      {activityName && (
+        <FicheSection label="Historique">
+          <Button
+            variant="outline"
+            className="self-start"
+            onClick={() => setReattaching({ previousActivityId: null })}
+          >
+            <Link2Icon />
+            Rattacher l’historique à {activityName}
+          </Button>
+          <ReattachDialog
+            actor={actor}
+            activityName={activityName}
+            previousActivityId={reattaching?.previousActivityId ?? null}
+            open={reattaching !== null}
+            onClose={closeReattach}
+          />
+        </FicheSection>
+      )}
+
+      {others.length > 0 && (
+        <FicheSection label="Fusionner">
+          <p className="text-[12px] text-faint">
+            Tout ce qui est déclaré sous « {actor.name} » bascule sur l’acteur choisi, et « {actor.name} »
+            devient un de ses alias. C’est le seul geste ici qui réécrit des mouvements déjà déclarés.
+          </p>
+          <ActionForm
+            // The actor merged away no longer exists: the sheet follows the one
+            // kept. Navigated from the action itself, not on success: the
+            // refreshed page has already unmounted this sheet by then.
+            action={async (prev, formData) => {
+              const state = await mergeActorsAction(prev, formData)
+              if (state.ok) router.push(entryHref(listHref, String(formData.get('keepId'))))
+              return state
+            }}
+          >
             <input type="hidden" name="actorId" value={actor.id} />
             <Field label="Fusionner dans" name="keepId">
               <FormSelect
@@ -326,14 +430,10 @@ function ActorRow({
               Fusionner
             </SubmitButton>
           </ActionForm>
-        </DialogContent>
-      </Dialog>
-    </>
+        </FicheSection>
+      )}
+    </Fiche>
   )
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n > 1 ? many : one}`
 }
 
 /**
@@ -409,53 +509,5 @@ function ReattachDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
-}
-
-/** Beyond this, the list stops being readable and the search field takes over. */
-const SHOWN = 60
-
-export function ActorRows({
-  actors,
-  activities,
-}: {
-  actors: ActorEntry[]
-  activities: { id: string; name: string }[]
-}) {
-  const [search, setSearch] = useState('')
-  const term = search.trim().toLowerCase()
-  const matches = (actor: ActorEntry) =>
-    actor.name.toLowerCase().includes(term) || actor.aliases.some((a) => a.toLowerCase().includes(term))
-  const matching = term ? actors.filter(matches) : actors
-  const shown = matching.slice(0, SHOWN)
-
-  return (
-    <>
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Chercher un acteur"
-        className="h-8 w-56 text-[13px]"
-        aria-label="Chercher un acteur"
-      />
-      <Rows>
-        {shown.map((actor) => (
-          <ActorRow
-            key={actor.id}
-            actor={actor}
-            activities={activities}
-            others={actors
-              .filter((other) => other.id !== actor.id)
-              .map((other) => ({ id: other.id, name: other.name }))}
-          />
-        ))}
-      </Rows>
-      {matching.length > shown.length && (
-        <p className="text-[11.5px] text-faint">
-          {matching.length - shown.length} autres : affine la recherche pour les atteindre.
-        </p>
-      )}
-      {matching.length === 0 && <p className="text-[11.5px] text-faint">Aucun acteur ne porte ce nom.</p>}
-    </>
   )
 }

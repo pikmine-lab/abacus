@@ -13,10 +13,13 @@ import { cn } from '@/lib/utils'
 export function PageHeader({
   title,
   description,
+  parent,
   children,
 }: {
   title: string
   description?: string
+  /** The page this one belongs under, named when no jump brought the reader here. */
+  parent?: { label: string; href: string }
   /** Primary actions, right-aligned: at most one filled button. */
   children?: React.ReactNode
 }) {
@@ -26,7 +29,7 @@ export function PageHeader({
           mobile the sidebar is a sheet, which needs a trigger in the header. */}
       <SidebarTrigger className="-ml-1 text-muted-foreground sm:hidden" />
       <Separator orientation="vertical" className="mr-1 !h-4 sm:hidden" />
-      <BackLink />
+      <BackLink parent={parent} />
       <div className="min-w-0">
         <h1 className="truncate text-[15px] leading-tight font-semibold">{title}</h1>
         {description && <p className="truncate text-[11.5px] text-faint">{description}</p>}
