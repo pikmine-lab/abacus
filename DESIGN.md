@@ -16,8 +16,8 @@ new-york). Quatre principes gouvernent le reste :
 2. **Une chose domine.** Ce qui répond à la question de l'écran se lit en premier et en
    grand, un chiffre le plus souvent, la liste quand l'écran s'ouvre pour elle ; le reste
    lui est subordonné. Sauf sur un écran où l'on vient régler une chose précise (Réglages,
-   le régime d'une activité) : rien n'y domine, c'est le chemin vers chaque partie qui
-   l'organise.
+   le régime d'une activité, brancher une IA) : rien n'y domine, c'est le chemin vers chaque
+   partie qui l'organise.
 3. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la saisie vit
    dans un panneau latéral qu'on ouvre, jamais dans la moitié d'un écran de lecture.
 4. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, tout détail sait
@@ -44,6 +44,11 @@ new-york). Quatre principes gouvernent le reste :
 - **Un bloc se nomme d'un mot** (`Block`) : « Soldes », « Dépenses », « À venir ». Un
   qualificatif court s'ajoute seulement quand il change le sens du contenu (« rattachement »).
   Le chemin vers le détail est une flèche au bout du nom.
+- **Un chemin numéroté se nomme par ses pas** : quand le titre de la page dit déjà où il
+  mène, aucun mot de bloc ne le répète, et chaque pas est un intertitre derrière son
+  marqueur cerclé. Un filet relie un marqueur au suivant pour que les pas se lisent comme
+  un seul chemin : le long de la ligne des titres quand ils sont côte à côte, dans la
+  colonne des marqueurs quand ils s'empilent.
 - **Deux lectures d'une même chose vivent sous un seul nom**, côte à côte : groupes et
   catégories de dépenses.
 - **Ce qui attend une action est la seule carte de l'écran** (`ActionCard`) : une liste de
@@ -69,6 +74,9 @@ new-york). Quatre principes gouvernent le reste :
   mots vivent une seule fois, dans la carte de ce qui est à pointer, et la date exacte dans
   l'infobulle du rail, au survol, au focus ou au toucher. L'échelle se pose une fois, dans
   l'en-tête de la liste, au-dessus de sa colonne, et le tri au-dessus des montants.
+- **Une liste posée sous une bande en colonnes en reprend le partage** : ses colonnes de
+  bout de ligne s'alignent sur la séparation de la bande, et la page n'a qu'une colonne de
+  droite. Quand la bande s'empile, la liste retrouve ses propres colonnes.
 - **Un écran où l'on vient régler une entrée se lit en liste et fiche** (`MasterDetail`).
   Une partie à la fois, en onglets sous l'en-tête, qui collent avec lui, s'écrivent dans
   l'URL et portent leur nombre ; l'onglet ouvert a son trait cuivre. La liste vit dans son

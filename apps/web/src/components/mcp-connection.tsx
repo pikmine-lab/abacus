@@ -5,6 +5,7 @@ import { CheckIcon, CopyIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 
 /**
  * Two steps: add the server, then authorize in the browser. There is no
@@ -59,25 +60,52 @@ function CodeBlock({ text }: { text: string }) {
   )
 }
 
-/** The circled marker of a guided path, same as the first-run steps. */
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+/**
+ * One step of the path, its circled marker the same as the first-run steps.
+ * A hairline runs from a step to the next one, so the two read as a single
+ * path: down the marker column when the steps stack, along the title row when
+ * they sit side by side, across the gap up to the next marker.
+ */
+function Step({
+  n,
+  title,
+  leadsOn,
+  children,
+}: {
+  n: number
+  title: string
+  /** Draws the hairline toward the step after this one. */
+  leadsOn?: boolean
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex gap-3">
-      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/50 text-[11px] font-semibold text-primary tabular">
+    // content-start: side by side, the shorter step is stretched to the taller
+    // one's height, and its rows must not share out the extra space.
+    <li className="grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] content-start gap-x-3">
+      <span className="flex size-6 items-center justify-center rounded-full border border-primary/50 text-[11px] font-semibold text-primary tabular">
         {n}
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-        <p className="text-[13px] font-semibold tracking-tight">{title}</p>
+      <div className="flex min-w-0 items-center gap-3">
+        <h2 className="text-[13px] font-semibold tracking-tight">{title}</h2>
+        {leadsOn && <span aria-hidden className="-mr-12 hidden h-px flex-1 bg-border @3xl:block" />}
+      </div>
+      {leadsOn && <span aria-hidden className="mt-1.5 w-px justify-self-center bg-border @3xl:hidden" />}
+      <div className={cn('col-start-2 flex min-w-0 flex-col gap-2.5 pt-2.5', leadsOn && 'pb-7 @3xl:pb-0')}>
         {children}
       </div>
-    </div>
+    </li>
   )
 }
 
+/**
+ * The address in the form each client takes it, then the authorization the
+ * client opens. Side by side, the steps split the width two thirds to one,
+ * the split the applications list below lines its dates up on.
+ */
 export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
   return (
-    <div className="flex min-w-0 max-w-2xl flex-col gap-6">
-      <Step n={1} title="Ajoute le serveur">
+    <ol className="grid min-w-0 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @3xl:gap-x-12">
+      <Step n={1} title="Ajoute le serveur" leadsOn>
         {mcpUrl ? (
           <Tabs defaultValue="claude-app" className="min-w-0 gap-2.5">
             <TabsList className="h-7" aria-label="Client à brancher">
@@ -137,6 +165,6 @@ export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
           Ton IA ouvre abacus dans le navigateur : connecte-toi, puis autorise.
         </p>
       </Step>
-    </div>
+    </ol>
   )
 }

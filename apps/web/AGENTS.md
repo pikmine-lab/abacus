@@ -412,7 +412,7 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   consentement que le client ouvre lui-même.
 - **Le bloc de code s'enroule, il ne défile pas**, et la commande se coupe sur ses propres
   arguments : une commande à moitié copiée coûte plus cher qu'une commande longue.
-- **Applications autorisées** liste ce qui a reçu l'accès, nom et domaine, avec la date
+- **Applications** liste ce qui a reçu l'accès, nom et domaine, avec la date
   d'autorisation et du dernier usage. La révocation est dans le menu de la ligne, derrière
   une confirmation.
 

@@ -221,7 +221,7 @@ Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, pr
 2025 et 2026-07-28). Il s'autorise par OAuth, sans clé : le client ajoute l'URL, ouvre
 abacus dans le navigateur, l'utilisateur se connecte et consent, et le client reçoit un
 jeton d'accès de dix minutes lié à cette URL exacte, renouvelé par son jeton de
-rafraîchissement. La révocation se fait depuis **Applications autorisées**, sur l'écran
+rafraîchissement. La révocation se fait depuis la liste **Applications** de l'écran
 **Brancher une IA** (menu du compte), qui donne aussi ce que chaque client attend : c'est
 la source à jour, ne pas recopier de commande ici.
 
