@@ -14,7 +14,7 @@ import {
   sortByName,
   sortCategories,
 } from '@abacus/core/services/catalog'
-import { readingPreference } from '@abacus/core/services/preferences'
+import { rankingViewPreference, readingPreference } from '@abacus/core/services/preferences'
 import { listJurisdictions } from '@abacus/core/services/regimes'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -22,6 +22,7 @@ import { ActivityRows } from '@/components/activity-forms'
 import { NewActivitySheet } from '@/components/activity-wizard'
 import { ActionForm, SubmitButton } from '@/components/forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
+import { RankingViewPreference } from '@/components/ranking-view-preference'
 import { ReadingPreference } from '@/components/reading-preference'
 import { ActorRows, CategoryRows } from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
@@ -46,15 +47,17 @@ export default async function SettingsPage({
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, exceptions, links, accounts, actors, reading] = await Promise.all([
-    listCategories(userId),
-    listActivities(userId),
-    listCategoryExceptions(userId),
-    listActivityAccounts(userId),
-    listAccounts(userId),
-    listActorsWithAliases(userId),
-    readingPreference(userId),
-  ])
+  const [categories, activities, exceptions, links, accounts, actors, reading, rankingView] =
+    await Promise.all([
+      listCategories(userId),
+      listActivities(userId),
+      listCategoryExceptions(userId),
+      listActivityAccounts(userId),
+      listAccounts(userId),
+      listActorsWithAliases(userId),
+      readingPreference(userId),
+      rankingViewPreference(userId),
+    ])
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }))
   // A closed account holds nothing an activity could still count on, so it is
   // not offered; one already attached before its closure keeps its link.
@@ -70,6 +73,13 @@ export default async function SettingsPage({
           description="la lecture dans laquelle chaque session s’ouvre : le jour où l’argent a bougé, ou le mois concerné."
         >
           <ReadingPreference value={reading} />
+        </Section>
+
+        <Section
+          title="Classement"
+          description="comment l’Analyse dessine où part l’argent : un ruban de parts, ou une barre par ligne."
+        >
+          <RankingViewPreference value={rankingView} />
         </Section>
 
         <Section

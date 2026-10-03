@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { eur } from '@/lib/utils'
 
@@ -14,7 +14,9 @@ import { eur } from '@/lib/utils'
  * linked refund. Solid + translucent = gross.
  *
  * Clicking a month scopes the whole page to it: the chart is a way into the
- * detail, not a picture of it.
+ * detail, not a picture of it. Only the period changes: what else the page is
+ * framed on (a direction, a dimension) stays, so the click compares months
+ * rather than starting over.
  */
 
 export interface MonthFlow {
@@ -23,6 +25,9 @@ export interface MonthFlow {
   expenseGross: number
   expenseNet: number
 }
+
+/** Width of the "en cours" flag over the running month. */
+const FLAG_WIDTH = 54
 
 function monthLabel(iso: string): string {
   const [y, m] = iso.split('-').map(Number)
@@ -39,6 +44,7 @@ export function FlowChart({
   currentMonth,
   selectedMonth,
   legend = 'top',
+  height = 220,
 }: {
   rows: MonthFlow[]
   /** "YYYY-MM" of the running month: its bars are a partial count, not a total. */
@@ -50,8 +56,10 @@ export function FlowChart({
    * legend: the position already says which is which, the words confirm it.
    */
   legend?: 'top' | 'axis'
+  height?: number
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [hover, setHover] = useState<number | null>(null)
@@ -69,23 +77,46 @@ export function FlowChart({
   if (rows.length === 0)
     return <p className="py-6 text-[13px] text-faint">Rien à comparer sur cette période.</p>
 
-  const H = 220
-  const M = { t: 10, r: 8, b: 22, l: 46 }
-  const peak = Math.max(...rows.map((r) => Math.max(r.income, r.expenseGross)), 1)
+  const H = height
+  // The running month is still being filled: it is drawn hatched behind a flag
+  // rather than side by side with finished months as if it were comparable.
+  const partialIndex = currentMonth ? rows.findIndex((r) => r.month.slice(0, 7) === currentMonth) : -1
+  const side = { b: 22, l: 46 }
+  // The flag sits in the running month's slot when it fits there. On a narrow
+  // frame it would cover the month before, often the washed one, so it moves
+  // above the plot with its left edge on the dashed line: the top margin makes
+  // room for it, and the right margin grows just enough for it to end inside
+  // the frame instead of being pushed back over that month.
+  const flagAbove = partialIndex >= 0 && (width - side.l - 8) / rows.length < FLAG_WIDTH + 2
+  const right =
+    flagAbove && partialIndex > 0
+      ? Math.max(
+          8,
+          Math.ceil(width - side.l - ((width - side.l - FLAG_WIDTH - 2) * rows.length) / partialIndex),
+        )
+      : 8
+  const M = { t: flagAbove ? 24 : 10, r: right, ...side }
   const step = (width - M.l - M.r) / rows.length
+  const peak = Math.max(...rows.map((r) => Math.max(r.income, r.expenseGross)), 1)
   const barWidth = Math.min(24, Math.max(6, step * 0.42))
   const mid = M.t + (H - M.t - M.b) / 2
   const scale = (H - M.t - M.b) / 2 / peak
   const centerOf = (i: number) => M.l + step * (i + 0.5)
 
   const tickStep = Math.max(500, Math.ceil(peak / 2 / 500) * 500)
+  // A short band has no room for amounts beside « entré » and « sorti »: the
+  // grid lines stay, the amounts are read in the tooltip.
+  const tickLabels = H >= 180
   const ticks: number[] = []
   for (let v = tickStep; v <= peak; v += tickStep) ticks.push(v)
 
-  // The running month is still being filled: it is drawn hatched behind a flag
-  // rather than side by side with finished months as if it were comparable.
-  const partialIndex = currentMonth ? rows.findIndex((r) => r.month.slice(0, 7) === currentMonth) : -1
   const everyLabel = Math.max(1, Math.ceil(rows.length / (width < 520 ? 6 : 12)))
+  const scopeTo = (ref: string) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('period', 'month')
+    params.set('ref', ref)
+    router.push(`?${params}`, { scroll: false })
+  }
   const tooltipLeft =
     hover === null ? 0 : Math.min(Math.max(centerOf(hover) - 90, 0), Math.max(0, width - 190))
 
@@ -167,26 +198,30 @@ export function FlowChart({
                   y2={mid + v * scale}
                   stroke="var(--grid)"
                 />
-                <text
-                  x={M.l - 7}
-                  y={mid - v * scale + 3.5}
-                  textAnchor="end"
-                  className="font-mono"
-                  fontSize={10.5}
-                  fill="var(--faint)"
-                >
-                  {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
-                </text>
-                <text
-                  x={M.l - 7}
-                  y={mid + v * scale + 3.5}
-                  textAnchor="end"
-                  className="font-mono"
-                  fontSize={10.5}
-                  fill="var(--faint)"
-                >
-                  {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
-                </text>
+                {tickLabels && (
+                  <>
+                    <text
+                      x={M.l - 7}
+                      y={mid - v * scale + 3.5}
+                      textAnchor="end"
+                      className="font-mono"
+                      fontSize={10.5}
+                      fill="var(--faint)"
+                    >
+                      {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                    </text>
+                    <text
+                      x={M.l - 7}
+                      y={mid + v * scale + 3.5}
+                      textAnchor="end"
+                      className="font-mono"
+                      fontSize={10.5}
+                      fill="var(--faint)"
+                    >
+                      {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                    </text>
+                  </>
+                )}
               </g>
             ))}
             {/* Without a legend the zero line is what names the two sides, so it
@@ -213,23 +248,31 @@ export function FlowChart({
                 <line
                   x1={centerOf(partialIndex) - step / 2}
                   x2={centerOf(partialIndex) - step / 2}
-                  y1={M.t}
+                  y1={flagAbove ? 18 : M.t}
                   y2={H - M.b}
                   stroke="var(--faint)"
                   strokeDasharray="2 3"
                 />
                 <rect
-                  x={Math.min(centerOf(partialIndex) - step / 2 + 1, width - M.r - 56)}
-                  y={M.t}
-                  width={54}
+                  x={
+                    flagAbove
+                      ? centerOf(partialIndex) - step / 2
+                      : Math.min(centerOf(partialIndex) - step / 2 + 1, width - M.r - FLAG_WIDTH - 2)
+                  }
+                  y={flagAbove ? 4 : M.t}
+                  width={FLAG_WIDTH}
                   height={14}
                   rx={3}
                   fill="var(--secondary)"
                   stroke="var(--border)"
                 />
                 <text
-                  x={Math.min(centerOf(partialIndex) - step / 2 + 6, width - M.r - 51)}
-                  y={M.t + 10}
+                  x={
+                    flagAbove
+                      ? centerOf(partialIndex) - step / 2 + 5
+                      : Math.min(centerOf(partialIndex) - step / 2 + 6, width - M.r - FLAG_WIDTH + 3)
+                  }
+                  y={(flagAbove ? 4 : M.t) + 10}
                   fontSize={9.5}
                   fill="var(--muted-foreground)"
                 >
@@ -259,11 +302,11 @@ export function FlowChart({
                   aria-label={`${monthLabelLong(r.month)} : ${eur(r.income)} de revenus, ${eur(r.expenseNet)} de dépenses`}
                   onPointerEnter={() => setHover(i)}
                   onFocus={() => setHover(i)}
-                  onClick={() => router.push(`?period=month&ref=${ref}`, { scroll: false })}
+                  onClick={() => scopeTo(ref)}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter' && e.key !== ' ') return
                     e.preventDefault()
-                    router.push(`?period=month&ref=${ref}`, { scroll: false })
+                    scopeTo(ref)
                   }}
                   className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
                 >

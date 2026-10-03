@@ -1,5 +1,6 @@
 import { ArrowUpRightIcon } from 'lucide-react'
 import Link from 'next/link'
+import { Children } from 'react'
 import { type Delta, DeltaLine } from '@/components/stats'
 import { cn } from '@/lib/utils'
 
@@ -72,8 +73,10 @@ function Amount({ value, decimals = 0, per }: { value: number; decimals?: number
 
 /**
  * A figure named by one word. `hero` is the one figure that dominates the
- * screen: exactly one per screen. A note appears only when it changes what the
- * figure means (a method, a missing declaration, a gross amount).
+ * screen: exactly one per screen. `compact` is for a screen where no figure
+ * dominates because a list does: the figures frame it and must not outweigh
+ * it. A note appears only when it changes what the figure means (a method, a
+ * missing declaration, a gross amount).
  */
 export function Figure({
   label,
@@ -85,6 +88,7 @@ export function Figure({
   note,
   href,
   hero,
+  compact,
 }: {
   label: string
   qualifier?: string
@@ -97,6 +101,7 @@ export function Figure({
   /** Makes the whole figure the way into the page that owns its detail. */
   href?: string
   hero?: boolean
+  compact?: boolean
 }) {
   const body = (
     <>
@@ -115,7 +120,9 @@ export function Figure({
           'font-semibold whitespace-nowrap tabular leading-none',
           hero
             ? 'mt-3 mb-3 text-[52px] tracking-[-0.035em] sm:text-[76px]'
-            : 'mt-2.5 mb-2 text-[30px] tracking-[-0.03em] sm:text-[40px]',
+            : compact
+              ? 'mt-2 mb-1.5 text-[22px] tracking-[-0.025em] sm:text-[28px]'
+              : 'mt-2.5 mb-2 text-[30px] tracking-[-0.03em] sm:text-[40px]',
         )}
       >
         <Amount value={value} decimals={decimals} per={per} />
@@ -140,10 +147,33 @@ export function Figure({
   )
 }
 
-/** Figures side by side, separated by hairlines rather than boxed; stacked on a phone. */
-export function FigureRow({ children }: { children: React.ReactNode }) {
+/**
+ * Figures side by side, separated by hairlines rather than boxed; stacked on a
+ * phone. A compact row holds three or four compact figures and pairs them on
+ * a phone instead of stacking them, so the list they frame starts within the
+ * first screen; an odd last figure takes the whole line.
+ */
+export function FigureRow({ compact, children }: { compact?: boolean; children: React.ReactNode }) {
+  if (!compact)
+    return (
+      <div className="grid grid-cols-1 divide-y divide-border border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0 [&>*]:py-4 sm:[&>*]:px-6 sm:[&>*:first-child]:pl-0">
+        {children}
+      </div>
+    )
+  // The hairlines are the gaps of the grid showing the rule colour behind
+  // figures painted with the page ground: one rule for both directions, where
+  // dividers would need a different set per layout.
+  // toArray, not count: a figure left out by a condition is a `false` child,
+  // which count still counts.
+  const count = Children.toArray(children).length
   return (
-    <div className="grid grid-cols-1 divide-y divide-border border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0 [&>*]:py-4 sm:[&>*]:px-6 sm:[&>*:first-child]:pl-0">
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-px border-y border-border bg-border [&>*]:bg-background [&>*]:py-3 [&>*]:pr-4 [&>*]:pl-4 max-sm:[&>*:nth-child(odd)]:pl-0 sm:[&>*]:px-6 sm:[&>*:first-child]:pl-0',
+        count === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3',
+        count % 2 === 1 && 'max-sm:[&>*:last-child]:col-span-2',
+      )}
+    >
       {children}
     </div>
   )

@@ -91,6 +91,10 @@ Deux contrôles ne se prennent pas dans le catalogue tel quel :
   toujours écrit en clair, jamais retiré sur la valeur par défaut, sinon l'écran
   repasserait au cookie. Seule la page Réglages écrit la préférence, et l'écrire efface le
   cookie.
+- **Une préférence d'affichage se lit dans le profil, et nulle part ailleurs.** Le dessin du
+  classement de l'Analyse (ruban ou barres) n'a ni paramètre d'URL ni cookie, contrairement
+  au mois compté : il ne change aucun chiffre, il n'y a donc rien à partager ni à basculer le
+  temps d'une visite. Seule la page Réglages l'écrit, et le MCP par `manage_preferences`.
 - **Ce qui s'exécute avant le rendu vit dans `src/proxy.ts`** (`middleware.ts` est le nom
   d'avant). Next y masque ses propres en-têtes RSC, pour empêcher qu'une navigation
   réponde autrement qu'un chargement de page : distinguer les deux, quand c'est

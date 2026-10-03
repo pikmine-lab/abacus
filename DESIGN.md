@@ -13,8 +13,9 @@ new-york). Quatre principes gouvernent le reste :
 1. **Une vue répond à une question.** Le nom d'un écran est la question qu'il traite, pas
    l'entité qu'il liste : « Abonnements » mélangeait un salaire et un crédit, il est devenu
    *Dépenses récurrentes* et *Revenus récurrents*.
-2. **Un chiffre domine.** Ce qui répond à la question de l'écran se lit en premier et en
-   grand ; le reste lui est subordonné.
+2. **Une chose domine.** Ce qui répond à la question de l'écran se lit en premier et en
+   grand, un chiffre le plus souvent, la liste quand l'écran s'ouvre pour elle ; le reste
+   lui est subordonné.
 3. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la saisie vit
    dans un panneau latéral qu'on ouvre, jamais dans la moitié d'un écran de lecture.
 4. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, tout détail sait
@@ -27,12 +28,17 @@ new-york). Quatre principes gouvernent le reste :
   document pour les technologies d'assistance ; à l'écran, la navigation le dit déjà. Un
   écran sans période garde son titre (`PageHeader`).
 - **Le chiffre qui domine est posé à côté de ce qui l'explique** : le patrimoine à côté du
-  graphe des soldes. Un seul par écran (`Figure hero`).
+  graphe des soldes. Un seul par écran (`Figure hero`), aucun sur un écran ouvert pour une
+  liste : la liste prend alors le traitement dominant, et ses chiffres passent avant le
+  graphe qui les étale dans le temps.
 - **Les autres chiffres forment une rangée séparée par des filets** (`FigureRow`) : un mot
   pour les nommer, la valeur, l'écart signé contre une fenêtre nommée (la période du titre
   quand c'est elle). Une note n'apparaît que si elle change ce que le chiffre veut dire : une
   méthode (« placements au dernier cours »), une déclaration qui manque, un brut. Pas de
-  sparkline : l'historique se lit dans le graphe de l'écran.
+  sparkline : l'historique se lit dans le graphe de l'écran. Sous une liste dominante, la
+  rangée se resserre (`Figure compact`, `FigureRow compact`) et range ses chiffres deux par
+  deux sur téléphone, un dernier impair prenant la ligne. Un chiffre qui répète la première
+  ligne de la liste en dessous n'est pas un chiffre.
 - **Un bloc se nomme d'un mot** (`Block`) : « Soldes », « Dépenses », « À venir ». Un
   qualificatif court s'ajoute seulement quand il change le sens du contenu (« rattachement »).
   Le chemin vers le détail est une flèche au bout du nom.
@@ -118,8 +124,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 6. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout écart, position
    de part et d'autre de zéro sur les flux, libellé sur tout badge.
 7. **Pas de couleur par catégorie** : une barre se nomme par son libellé et se mesure par
-   sa longueur, toutes les barres sont cuivre. Seul l'arc d'un donut prend une teinte, par
-   groupe, sur un jeu fermé de cinq plus un reste.
+   sa longueur, toutes les barres et toutes les parts d'un ruban sont cuivre. Seul l'arc
+   d'un donut prend une teinte, par groupe, sur un jeu fermé de cinq plus un reste.
 8. **Le thème sombre est le seul** : la palette est mesurée contre `#14171f`.
 
 ## Graphes
@@ -127,13 +133,17 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 - **Les contrôles qui cadrent un écran sont en haut et écrivent dans l'URL** : une vue
   cadrée se partage, se recharge et se défait au bouton retour. Dans l'en-tête quand
   l'écran se lit sur une période, sinon dans une rangée sous lui.
-- **Un contrôle de période se pose là où porte sa portée.** Quand seul un graphe a une
-  période (Placements, où le reste est instantané), ses durées se posent sur lui. Un écran
-  ne porte jamais deux périodes.
+- **Un contrôle se pose là où porte sa portée.** Quand seul un graphe a une période
+  (Placements, où le reste est instantané), ses durées se posent sur lui ; quand le sens
+  (Dépenses | Revenus) et la dimension ne cadrent que le classement, ils se posent sur son
+  en-tête, le sens tenant lieu de nom du bloc. Un écran ne porte jamais deux périodes.
 - **Une fenêtre peut différer de la période de l'écran quand la forme l'exige** (douze mois
-  pour un graphe mensuel) ; ses mois sur l'axe la nomment.
+  pour un graphe mensuel) ; ses mois sur l'axe la nomment. Sur un mois seul, le graphe de
+  flux montre le bloc de douze mois qui le contient, les blocs comptés à rebours depuis le
+  mois courant : un clic dans le graphe déplace le lavis, jamais le graphe.
 - **Une fenêtre par défaut ne montre pas du vide** : celle d'un portefeuille part de la
-  première opération quand elle a moins d'un an.
+  première opération quand elle a moins d'un an, celle d'un graphe de flux laisse de côté
+  les mois d'avant la première déclaration.
 - **Deux lectures d'une même série, nommées par l'onglet actif** : un portefeuille se lit
   en valorisation contre les apports, ou en écart entre les deux.
 - **Une horizontale de référence se trace en plein et se nomme** ; le pointillé veut dire
@@ -146,10 +156,14 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   qu'on circule ; un chargement de page repart de la préférence de Réglages, seul endroit où
   elle s'écrit. Il ne touche que les flux : un bloc de soldes rappelle « date réelle » quand
   l'autre lecture est choisie, et un chiffre ou un graphe de flux porte « rattachement »
-  quand c'est elle.
+  quand c'est elle. Une fenêtre glissante lue ainsi nomme aussi, une fois, au-dessus du
+  graphe, les mois entiers qu'elle couvre (« rattachement, juil. 2026 → oct. 2026 ») : le
+  titre de période n'est alors pas ce qui a été répondu.
 - **Le futur se voit** : au-delà d'aujourd'hui, une courbe passe en pointillés, son aire
   s'arrête, son point de fin se creuse, un drapeau « projection » marque la frontière. Un
-  mois en cours est hachuré derrière un drapeau « en cours ».
+  mois en cours est hachuré derrière un drapeau « en cours » ; quand sa colonne est trop
+  étroite pour lui, le drapeau passe au-dessus du tracé, accroché au pointillé, jamais sur
+  le mois d'avant.
 - **Le mois de l'écran est lavé** dans un graphe mensuel, pour que l'œil le trouve.
 - **Brut et net ensemble** : la part pleine est le net, la part translucide accolée (2 px
   d'écart) ce qui est revenu en remboursement.
@@ -162,7 +176,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   directs en fin de ligne avec anticollision. **Une légende dès deux séries, sauf quand la
   position les nomme** : le graphe des flux dit « entré » et « sorti » de part et d'autre
   de zéro, et son infobulle nomme la part remboursée. Les bascules de séries d'un graphe sont sa légende. Un mois du graphe de flux est
-  un vrai contrôle (rôle, tabulation, Entrée/Espace) qui cadre l'écran dessus.
+  un vrai contrôle (rôle, tabulation, Entrée/Espace) qui recadre la période de l'écran
+  dessus, et elle seule : ce qui cadre l'écran par ailleurs (sens, dimension) reste.
 - **Une infobulle suit le curseur**, jamais un `title` de navigateur ; elle se retourne au
   bord, ne passe pas sous la main, et ne répète pas ce que la ligne montre.
 - **Le label de fin est mesuré, pas estimé** : la marge est taillée sur sa largeur réelle,
@@ -171,6 +186,15 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   mieux garnis, sans plafond.
 - **Le donut répond par masses** : une part par groupe ; au-delà de cinq, la queue fusionne
   en un reste estompé. Le survol relie l'arc à sa ligne.
+- **Un classement se lit en ruban ou en barres, au choix de la personne** (Réglages, rien
+  dans l'URL : c'est une façon de lire, pas un cadrage). Le ruban pose la période en une
+  barre découpée en parts, cinq et un reste comme le donut, séparées de 2 px ; il porte
+  l'écran, donc il monte à 44 px quand une barre de graphe s'arrête à 24. Les noms se
+  posent sous les parts assez larges, dès qu'il y en a deux (un seul répéterait la première
+  ligne de la liste), et la liste dessous donne chaque part en %. Une ligne
+  pointée dans la liste allume sa part, et une catégorie d'un groupe déplié allume la sienne
+  dans la part du groupe, à sa place dans l'ordre de la liste. Les barres donnent une barre
+  par ligne (`lead` : lignes plus hautes, libellés plus larges, masses en encre pleine).
 - **Marques** : lignes 2 px, points de fin r4 avec anneau du fond, barres ≤ 24 px à bout
   arrondi, grille en filet discret, ticks au format français (`13,5k`).
 

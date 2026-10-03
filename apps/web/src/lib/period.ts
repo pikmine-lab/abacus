@@ -254,23 +254,20 @@ const SHORT_MONTHS = [
 ]
 
 /**
- * The period as the chosen reading actually read it, named. Under cash it is
- * the period's own label. Under accrual two things change and both have to
- * show: the reading is named, because the same month has two legitimate
- * totals; and a rolling window is renamed after the whole months it covers,
- * because an attachment holds a month and nothing finer, so "90 derniers
- * jours" is not what was answered.
+ * What a flow figure says about its reading, when it has to say anything.
+ * Under cash, nothing: the period in the title is what was read. Under accrual
+ * the reading is named, because the same month has two legitimate totals; and
+ * a rolling window also names the whole months it covers, because an
+ * attachment holds a month and nothing finer, so "90 derniers jours" is not
+ * what was answered.
  */
-export function readingLabel(period: Period, reading: Reading): string {
-  if (reading === 'cash') return period.label
-  const covered = monthsCovered(period)
-  // A label already carrying a remark ("août (en cours)") takes this one in the
-  // same parenthesis: two of them in a row read as a stutter.
-  return covered.endsWith(')') ? `${covered.slice(0, -1)}, rattachement)` : `${covered} (rattachement)`
+export function readingQualifier(period: Period, reading: Reading): string | undefined {
+  if (reading === 'cash') return undefined
+  if (period.preset === 'month' || period.preset === 'year' || period.preset === 'all') return 'rattachement'
+  return `rattachement, ${monthsCovered(period)}`
 }
 
 function monthsCovered(period: Period): string {
-  if (period.preset === 'month' || period.preset === 'year' || period.preset === 'all') return period.label
   const from = shortMonth(period.from)
   const to = shortMonth(period.to)
   return from === to ? from : `${from} → ${to}`
@@ -279,13 +276,4 @@ function monthsCovered(period: Period): string {
 function shortMonth(iso: string): string {
   const [y, m] = iso.split('-').map(Number)
   return `${SHORT_MONTHS[m! - 1]} ${y}`
-}
-
-/** Number of months the period spans, for "≈ x €/mois" readings. */
-export function monthsInPeriod(period: Period): number {
-  if (period.preset === 'month') return 1
-  if (period.preset === 'year') return 12
-  const [fy, fm] = period.from.split('-').map(Number)
-  const [ty, tm] = period.to.split('-').map(Number)
-  return Math.max(1, (ty! - fy!) * 12 + (tm! - fm!) + 1)
 }

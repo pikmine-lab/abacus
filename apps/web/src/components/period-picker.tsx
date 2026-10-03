@@ -86,13 +86,3 @@ export function PresetTabs({ period }: { period: Period }) {
     </Tabs>
   )
 }
-
-/** The period control of a filter row: the name with its arrows, then the presets. */
-export function PeriodPicker({ period }: { period: Period }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <PeriodStepper period={period} />
-      <PresetTabs period={period} />
-    </div>
-  )
-}
