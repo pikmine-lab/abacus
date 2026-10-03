@@ -737,7 +737,6 @@ export function NewActivitySheet({
     <EntrySheet
       label="Activité"
       title="Nouvelle activité"
-      variant="outline"
       description="Une sphère économique : indépendante avec son régime, ou personnelle pour l’analyse seule."
     >
       <ActivityWizard

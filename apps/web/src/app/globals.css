@@ -129,6 +129,11 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+  /* A pane that scrolls on its own keeps a scrollbar drawn in the palette. */
+  .pane-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+  }
   /*
    * A fold opens instead of jumping open. `interpolate-size` is what allows a
    * height to animate towards `auto`, and `allow-discrete` carries the

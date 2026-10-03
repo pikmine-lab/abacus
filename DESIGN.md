@@ -15,7 +15,9 @@ new-york). Quatre principes gouvernent le reste :
    *Dépenses récurrentes* et *Revenus récurrents*.
 2. **Une chose domine.** Ce qui répond à la question de l'écran se lit en premier et en
    grand, un chiffre le plus souvent, la liste quand l'écran s'ouvre pour elle ; le reste
-   lui est subordonné.
+   lui est subordonné. Sauf sur un écran où l'on vient régler une chose précise (Réglages,
+   le régime d'une activité) : rien n'y domine, c'est le chemin vers chaque partie qui
+   l'organise.
 3. **Consulter et déclarer sont deux gestes.** La consultation occupe la page ; la saisie vit
    dans un panneau latéral qu'on ouvre, jamais dans la moitié d'un écran de lecture.
 4. **Rien n'est un cul-de-sac.** Tout chiffre agrégé mène à son détail, tout détail sait
@@ -56,7 +58,8 @@ new-york). Quatre principes gouvernent le reste :
   et se retire en pastilles. La recherche et le type restent à découvert : ce sont eux qui
   retrouvent une ligne.
 - **Quand la place manque, un nom passe avant ce qui le qualifie** : la date ou le jugement
-  d'une ligne passent dessous plutôt que de le couper, et un contrôle segmenté prend une
+  d'une ligne passent dessous plutôt que de le couper, un nom prend une deuxième ligne avant
+  qu'un attribut en bout de ligne le tronque, et un contrôle segmenté prend une
   ligne entière plutôt que de défiler hors de vue. La place se lit sur le conteneur, pas
   sur l'écran : un panneau rangé resserre une table autant qu'une tablette.
 - **Un fait que porte chaque ligne se dessine dans une colonne alignée** plutôt que de
@@ -66,6 +69,22 @@ new-york). Quatre principes gouvernent le reste :
   mots vivent une seule fois, dans la carte de ce qui est à pointer, et la date exacte dans
   l'infobulle du rail, au survol, au focus ou au toucher. L'échelle se pose une fois, dans
   l'en-tête de la liste, au-dessus de sa colonne, et le tri au-dessus des montants.
+- **Un écran où l'on vient régler une entrée se lit en liste et fiche** (`MasterDetail`).
+  Une partie à la fois, en onglets sous l'en-tête, qui collent avec lui, s'écrivent dans
+  l'URL et portent leur nombre ; l'onglet ouvert a son trait cuivre. La liste vit dans son
+  propre volet, recherche et tri en tête, et défile à hauteur d'écran : aucune liste ne
+  rallonge la page. À côté, la fiche de l'entrée choisie, sur le fond de page sans voile ni
+  glissement : son nom en titre, ses champs préremplis et Enregistrer, puis chacun de ses
+  autres gestes sous un mot et un filet, le destructif en dernier. Déclarer prend la même
+  place que corriger : le « + » de l'en-tête ouvre une fiche vierge et reste enfoncé tant
+  qu'elle s'affiche. Sans entrée dans l'URL, un écran large montre la fiche de la première.
+  Sur un conteneur étroit, la liste seule, puis la fiche à sa place, avec un retour nommé
+  vers la partie.
+- **La ligne choisie est lavée** (`--secondary`) **et à l'encre pleine**, rien d'autre : pas
+  de filet coloré sur son bord. Elle ne porte que ce qui la distingue des autres : un
+  attribut en bout de ligne n'apparaît que s'il départage les lignes et que la structure ne
+  le dit pas déjà (le type d'une activité seulement quand elle est personnelle, le groupe
+  d'une catégorie seulement quand la liste n'est pas rangée par groupe).
 
 Les pièces vivent dans `components/composition.tsx`. Un écran pas encore refondu garde
 `StatTile` et `Section` jusqu'à son tour (#114).
@@ -127,6 +146,9 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
    sa longueur, toutes les barres et toutes les parts d'un ruban sont cuivre. Seul l'arc
    d'un donut prend une teinte, par groupe, sur un jeu fermé de cinq plus un reste.
 8. **Le thème sombre est le seul** : la palette est mesurée contre `#14171f`.
+9. **Une valeur saisie est à l'encre principale**, l'indication d'un champ vide à l'encre
+   secondaire : 13,9:1 contre 6,4:1 sur le fond du champ (`#1a1e27`). Une valeur ne se
+   confond jamais avec une indication.
 
 ## Graphes
 
@@ -229,7 +251,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 - En-tête collant ; la rangée de filtres, quand l'écran en a une, colle juste dessous.
 - Argent : `font-mono` + `tabular-nums` (`.tabular`) dans toute colonne de chiffres ; Geist
   pour l'interface et les chiffres de composition, Geist Mono pour les montants alignés et
-  les axes.
+  les axes. Un compte (le nombre d'un onglet, d'un intertitre de groupe) n'est pas un
+  montant : Geist en chiffres tabulaires, estompé.
 - Un besoin d'interface passe par le système de composants, jamais par un élément natif du
   navigateur (`apps/web/AGENTS.md`).
 
@@ -245,7 +268,10 @@ Le texte est le dernier recours : un écran qui doit s'expliquer est mal découp
 
 1. **Ce qui peut être montré n'est pas écrit.** Une structure se lit d'un coup d'œil (pas
    numérotés, pastilles, ✓ / ✗, bloc de code), une phrase demande d'être lue. Un exemple
-   vaut mieux qu'une description de ce que l'application sait faire.
+   vaut mieux qu'une description de ce que l'application sait faire : une préférence montre
+   sur un cas ce qu'elle change (le loyer payé d'avance, compté en septembre ou en octobre ;
+   le classement en miniature, ruban ou barres, avec les marques de l'Analyse), et le cas
+   suit le choix.
 2. **Un mot nomme un bloc ou un chiffre** ; un libellé fait deux à cinq mots ; une
    explication tient en une phrase. Au-delà, c'est le découpage qu'il faut revoir.
 3. **Le fait le plus utile d'abord, et une seule fois.** Deux formulations du même fait sur

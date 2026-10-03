@@ -18,22 +18,35 @@ import { rankingViewPreference, readingPreference } from '@abacus/core/services/
 import { listJurisdictions } from '@abacus/core/services/regimes'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { ActivityRows } from '@/components/activity-forms'
+import { ActivityFiche, ActivityList } from '@/components/activity-forms'
 import { NewActivitySheet } from '@/components/activity-wizard'
-import { ActionForm, SubmitButton } from '@/components/forms'
-import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
+import { MasterDetail, NewEntryLink, type Part, PartTabs } from '@/components/master-detail'
+import { PageHeader } from '@/components/page-shell'
 import { RankingViewPreference } from '@/components/ranking-view-preference'
 import { ReadingPreference } from '@/components/reading-preference'
-import { ActorRows, CategoryRows } from '@/components/referential-rows'
+import {
+  ActorFiche,
+  ActorList,
+  CategoryFiche,
+  CategoryList,
+  NewActorFiche,
+} from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
-import { Input } from '@/components/ui/input'
-import { createActorAction, createCategoryAction } from '@/lib/actions'
+import { entryHref } from '@/lib/entry-href'
 import { sorter } from '@/lib/sort'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Réglages' }
 
+const PARTS = ['categories', 'activities', 'actors', 'preferences'] as const
+type PartKey = (typeof PARTS)[number]
+
+/**
+ * How the application is set, and the vocabulary it files with. Nothing
+ * dominates here: one comes to set one precise thing, so the screen shows one
+ * part at a time, its list beside the sheet of the entry picked from it.
+ */
 export default async function SettingsPage({
   searchParams,
 }: {
@@ -43,6 +56,8 @@ export default async function SettingsPage({
   if (!session) redirect('/login')
   const userId = session.user.id
   const params = await searchParams
+  // A part the URL does not name, or names wrong, falls back to the first.
+  const part: PartKey = PARTS.find((p) => p === params.part) ?? 'categories'
   const categorySort = sorter('categories', CATEGORY_SORTS, DEFAULT_CATEGORY_SORT, params)
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
@@ -63,105 +78,182 @@ export default async function SettingsPage({
   // not offered; one already attached before its closure keeps its link.
   const accountOptions = accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))
 
-  return (
-    <>
-      <PageHeader title="Réglages" description="tes préférences et ton vocabulaire" />
+  /**
+   * The URL of a part, keeping the orders the lists were given. The origin a
+   * jump came from is not kept: once the screen is walked on its own, a named
+   * return to it would go back one step, not to it.
+   */
+  const partHref = (key: PartKey) => {
+    const query = new URLSearchParams({ part: key })
+    for (const sort of [categorySort, activitySort, actorSort]) {
+      const value = params[sort.param]
+      if (value) query.set(sort.param, value)
+    }
+    return `/settings?${query}`
+  }
+  const listHref = partHref(part)
+  const PART_LABEL: Record<PartKey, string> = {
+    categories: 'Catégories',
+    activities: 'Activités',
+    actors: 'Acteurs',
+    preferences: 'Préférences',
+  }
+  const back = { href: listHref, label: PART_LABEL[part] }
+  const parts: Part[] = [
+    {
+      key: 'categories',
+      label: PART_LABEL.categories,
+      count: categories.length,
+      href: partHref('categories'),
+    },
+    {
+      key: 'activities',
+      label: PART_LABEL.activities,
+      count: activities.length,
+      href: partHref('activities'),
+    },
+    { key: 'actors', label: PART_LABEL.actors, count: actors.length, href: partHref('actors') },
+    { key: 'preferences', label: PART_LABEL.preferences, href: partHref('preferences') },
+  ]
 
-      <PageBody>
-        <Section
-          title="Mois compté"
-          description="la lecture dans laquelle chaque session s’ouvre : le jour où l’argent a bougé, ou le mois concerné."
-        >
-          <ReadingPreference value={reading} />
-        </Section>
+  // The entry the URL designates, or `new` for a blank sheet. One that
+  // designates nothing (deleted, merged away, mistyped) is no designation: a
+  // wide screen then shows the first entry, a narrow one the list.
+  const designate = <T extends { id: string }>(entries: T[]) => {
+    const found = entries.find((entry) => entry.id === params.entry)
+    const blank = params.entry === 'new'
+    return { found, blank, designated: found !== undefined || blank }
+  }
 
-        <Section
-          title="Classement"
-          description="comment l’Analyse dessine où part l’argent : un ruban de parts, ou une barre par ligne."
-        >
-          <RankingViewPreference value={rankingView} />
-        </Section>
+  let header: React.ReactNode = null
+  let body: React.ReactNode
 
-        <Section
-          title="Catégories"
-          description="la nature d’un mouvement : « Courses », « Loyer », « Salaire ». À plat, groupe optionnel."
-          action={
-            categories.length > 1 && (
-              <SortMenu
-                sorter={categorySort}
-                options={[
-                  { field: 'group', label: 'Groupe' },
-                  { field: 'name', label: 'Nom' },
-                ]}
-              />
-            )
-          }
-        >
-          {categories.length === 0 ? (
-            <EmptyLine>Aucune catégorie. Sans elles, l’analyse par catégorie reste vide.</EmptyLine>
-          ) : (
-            <CategoryRows categories={sortCategories(categories, categorySort.current)} />
-          )}
-          <ActionForm action={createCategoryAction} className="flex-row gap-2" successLabel="Catégorie créée">
-            <Input name="name" required placeholder="Nouvelle catégorie" className="h-8 w-48 text-[13px]" />
-            <Input name="group" placeholder="Groupe (optionnel)" className="h-8 w-40 text-[13px]" />
-            <SubmitButton variant="outline" size="sm">
-              Ajouter
-            </SubmitButton>
-          </ActionForm>
-        </Section>
-
-        <Section
-          title="Activités"
-          description="la sphère économique : héritée de l’acteur, puis du compte quand il n’en sert qu’une ; surchargeable par mouvement."
-          action={
-            <div className="flex items-center gap-2">
-              {activities.length > 1 && (
+  if (part === 'categories') {
+    const sorted = sortCategories(categories, categorySort.current)
+    const { found, blank, designated } = designate(sorted)
+    // With nothing declared yet, the blank sheet is the one worth showing.
+    const shown = blank || sorted.length === 0 ? undefined : (found ?? sorted[0])
+    const groups = [
+      ...new Set(categories.map((c) => c.groupLabel).filter((g): g is string => g !== null)),
+    ].sort((a, b) => a.localeCompare(b, 'fr'))
+    header = <NewEntryLink href={entryHref(listHref, 'new')} label="Catégorie" pressed={blank} />
+    body = (
+      <MasterDetail
+        designated={designated}
+        list={
+          <CategoryList
+            categories={sorted}
+            grouped={categorySort.current.field === 'group'}
+            listHref={listHref}
+            selection={{ id: shown?.id ?? null, designated }}
+            tools={
+              categories.length > 1 && (
+                <SortMenu
+                  sorter={categorySort}
+                  options={[
+                    { field: 'group', label: 'Groupe' },
+                    { field: 'name', label: 'Nom' },
+                  ]}
+                />
+              )
+            }
+          />
+        }
+        fiche={<CategoryFiche key={shown?.id ?? 'new'} category={shown} groups={groups} back={back} />}
+      />
+    )
+  } else if (part === 'activities') {
+    const sorted = sortByName(activities, activitySort.current)
+    const { found, designated } = designate(sorted)
+    const shown = found ?? sorted[0]
+    header = (
+      <NewActivitySheet
+        jurisdictions={listJurisdictions()}
+        categories={categoryOptions}
+        accounts={accountOptions}
+        today={today()}
+      />
+    )
+    body = (
+      <MasterDetail
+        designated={designated}
+        list={
+          <ActivityList
+            activities={sorted}
+            listHref={listHref}
+            selection={{ id: shown?.id ?? null, designated }}
+            tools={
+              activities.length > 1 && (
                 <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
-              )}
-              <NewActivitySheet
-                jurisdictions={listJurisdictions()}
-                categories={categoryOptions}
-                accounts={accountOptions}
-                today={today()}
-              />
-            </div>
-          }
-        >
-          {activities.length === 0 ? (
-            <EmptyLine>Aucune activité. Tout est considéré comme perso.</EmptyLine>
-          ) : (
-            <ActivityRows
-              activities={sortByName(activities, activitySort.current)}
+              )
+            }
+          />
+        }
+        fiche={
+          shown && (
+            <ActivityFiche
+              key={shown.id}
+              activity={shown}
               categories={categoryOptions}
               accounts={accountOptions}
-              links={links}
-              exceptions={exceptions}
+              attached={links.filter((l) => l.activityId === shown.id).map((l) => l.accountId)}
+              exceptions={exceptions.filter((e) => e.activityId === shown.id).map((e) => e.categoryId)}
               today={today()}
+              back={back}
             />
-          )}
-        </Section>
-
-        <Section
-          title="Acteurs"
-          description={`${actors.length} contreparties connues · créées automatiquement à la première déclaration`}
-          action={
-            actors.length > 1 && <SortMenu sorter={actorSort} options={[{ field: 'name', label: 'Nom' }]} />
-          }
-        >
-          {actors.length === 0 ? (
-            <EmptyLine>Aucun acteur. Le premier mouvement déclaré en crée un.</EmptyLine>
+          )
+        }
+      />
+    )
+  } else if (part === 'actors') {
+    const sorted = sortByName(actors, actorSort.current)
+    const { found, blank, designated } = designate(sorted)
+    const shown = blank || sorted.length === 0 ? undefined : (found ?? sorted[0])
+    header = <NewEntryLink href={entryHref(listHref, 'new')} label="Acteur" pressed={blank} />
+    body = (
+      <MasterDetail
+        designated={designated}
+        list={
+          <ActorList
+            actors={sorted}
+            activities={activities}
+            listHref={listHref}
+            selection={{ id: shown?.id ?? null, designated }}
+            tools={
+              actors.length > 1 && <SortMenu sorter={actorSort} options={[{ field: 'name', label: 'Nom' }]} />
+            }
+          />
+        }
+        fiche={
+          shown ? (
+            <ActorFiche
+              key={shown.id}
+              actor={shown}
+              activities={activities}
+              others={actors.filter((a) => a.id !== shown.id).map((a) => ({ id: a.id, name: a.name }))}
+              listHref={listHref}
+              back={back}
+            />
           ) : (
-            <ActorRows actors={sortByName(actors, actorSort.current)} activities={activities} />
-          )}
-          <ActionForm action={createActorAction} className="flex-row gap-2" successLabel="Acteur créé">
-            <Input name="name" required placeholder="Nouvel acteur" className="h-8 w-48 text-[13px]" />
-            <SubmitButton variant="outline" size="sm">
-              Ajouter
-            </SubmitButton>
-          </ActionForm>
-        </Section>
-      </PageBody>
+            <NewActorFiche back={back} />
+          )
+        }
+      />
+    )
+  } else {
+    body = (
+      <div className="flex max-w-3xl flex-col px-4 py-4 sm:px-6">
+        <ReadingPreference value={reading} />
+        <RankingViewPreference value={rankingView} />
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <PageHeader title="Réglages">{header}</PageHeader>
+      <PartTabs parts={parts} current={part} label="Parties des réglages" />
+      <main>{body}</main>
     </>
   )
 }

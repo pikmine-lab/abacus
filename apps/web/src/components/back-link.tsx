@@ -1,6 +1,7 @@
 'use client'
 
 import { ArrowLeftIcon } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 /**
@@ -21,12 +22,26 @@ const ORIGINS: Record<string, { label: string; href: string }> = {
   income: { label: 'Revenus récurrents', href: '/recurring-income' },
   accounts: { label: 'Comptes', href: '/accounts' },
   investments: { label: 'Placements', href: '/investments' },
+  settings: { label: 'Réglages', href: '/settings?part=activities' },
 }
 
-export function BackLink() {
+/** The look every return shares, whether it pops history or follows a link. */
+const RETURN =
+  'flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground'
+
+export function BackLink({ parent }: { parent?: { label: string; href: string } }) {
   const router = useRouter()
   const origin = ORIGINS[useSearchParams().get('from') ?? '']
-  if (!origin) return null
+  // A page that belongs under another one (an activity's regime under its
+  // activity) names that parent when no jump brought the reader here, or once
+  // the page has been walked on its own: it is never a dead end.
+  if (!origin)
+    return parent ? (
+      <Link href={parent.href} className={RETURN}>
+        <ArrowLeftIcon className="size-3.5" />
+        <span className="hidden sm:inline">{parent.label}</span>
+      </Link>
+    ) : null
 
   return (
     <button
@@ -35,7 +50,7 @@ export function BackLink() {
         if (window.history.length > 1) router.back()
         else router.push(origin.href)
       }}
-      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+      className={RETURN}
     >
       <ArrowLeftIcon className="size-3.5" />
       <span className="hidden sm:inline">{origin.label}</span>
