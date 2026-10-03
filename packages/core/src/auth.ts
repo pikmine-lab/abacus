@@ -68,6 +68,11 @@ export const auth = betterAuth({
       // expires. Ten minutes bounds that delay; the client renews silently
       // with its refresh token, which revocation does delete.
       accessTokenExpiresIn: 600,
+      // Lets the sign-in page name the AI client an authorization is waiting
+      // for, before anyone is signed in. Better Auth answers only with the
+      // client's public fields, and only for a request it signed itself that
+      // has not expired.
+      allowPublicClientPrelogin: true,
       extensions: [{ clientDiscovery: preregisteredClientDiscovery(PREREGISTERED_CLIENTS) }],
       schema: {
         oauthClient: { modelName: 'auth_oauth_client' },

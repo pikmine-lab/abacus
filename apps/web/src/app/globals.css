@@ -154,4 +154,60 @@
   .fold[open]::details-content {
     block-size: auto;
   }
+  /*
+   * A bead of the abacus at the door (AbacusGate). A state only says where the
+   * bead stands, how big it is and what it is filled with; one transition
+   * carries every change, so a bead that turns back mid-way leaves from where
+   * it is. Parked, it is an outline smaller and dimmer than a block: an abacus
+   * waiting to be counted, not a finished glyph. A pending bead travels
+   * slowly: it is waiting on the server, not on a key.
+   */
+  .gate-bead {
+    transform-box: fill-box;
+    transform-origin: center;
+    transform: translateX(var(--shift)) scale(var(--scale));
+    transition:
+      transform 450ms cubic-bezier(0.16, 1, 0.3, 1),
+      fill 300ms ease-out,
+      stroke 300ms ease-out,
+      stroke-opacity 300ms ease-out;
+  }
+  .gate-bead[data-state="idle"] {
+    --shift: var(--start);
+    --scale: 0.69;
+    fill: var(--card);
+    stroke: var(--faint);
+    stroke-opacity: 0.6;
+  }
+  .gate-bead[data-state="pending"] {
+    --shift: calc(var(--start) / 2);
+    --scale: 0.85;
+    fill: var(--card);
+    stroke: var(--primary);
+    transition-duration: 900ms;
+  }
+  .gate-bead[data-state="counted"] {
+    --shift: 0px;
+    --scale: 1;
+    fill: var(--primary);
+    stroke: var(--primary);
+  }
+  /* At consent, pointing at an enabled Refuser shows what refusing leaves: an
+     empty mark, kept once the refusal is sent, and shown too when the request
+     has expired under the answer. */
+  [data-gate]:has(
+    [data-answer="refuse"]:is(:hover:not(:disabled), :focus-visible, [data-chosen]),
+    [data-expired]
+  ) .gate-bead {
+    --shift: var(--start);
+    --scale: 0.69;
+    fill: var(--card);
+    stroke: var(--faint);
+    stroke-opacity: 0.6;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gate-bead {
+      transition-property: fill, stroke, stroke-opacity;
+    }
+  }
 }

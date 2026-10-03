@@ -243,8 +243,9 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 ## Conteneurs et densité
 
 - **La carte n'est pas le conteneur par défaut.** Elle sert un objet réellement
-  détachable : ce qui attend une action, le bloc de connexion. Le reste vit sur le fond de
-  page, séparé par des **filets** et l'**espacement**.
+  détachable : ce qui attend une action, la porte de l'application (connexion,
+  consentement), seule carte sur la page nue. Le reste vit sur le fond de page, séparé par
+  des **filets** et l'**espacement**.
 - **Une carte bancaire se dessine comme l'objet qu'elle est**, au format 1,586. Sa face est
   tirée de son identifiant (fond sombre désaturé, motif de filets), donc stable et distincte
   sans rien stocker. Elle porte nom, compte débité, expiration et mode de débit, jamais de
@@ -284,8 +285,23 @@ Le texte est le dernier recours : un écran qui doit s'expliquer est mal découp
 
 ## Identité
 
-Marque **abaque** : trois tiges, une perle active par tige, décalées pour qu'on lise un
-compte et non un motif. Les tiges héritent de `currentColor`, les perles portent le cuivre :
-c'est ce qui la rend reconnaissable à 16 px. Deux exemplaires à garder synchronisés :
-`components/logo.tsx` et `app/icon.svg` (sur son propre fond). Wordmark `abacus` +
-underscore en cuivre.
+Marque **abaque** : une grille de trois rangs de places, des points pour les places vides, des
+blocs cuivre pour ce qui est compté, poussés à droite, un, deux, trois. Un boulier lu comme un
+afficheur : un compte, et un petit histogramme. Les points héritent de `currentColor`, les blocs
+portent le cuivre : c'est ce qui la rend reconnaissable à 16 px. Wordmark `abacus` + underscore
+en cuivre.
+
+**À la porte de l'application, la marque compte l'entrée** (connexion, consentement), sa grille
+tirée sur toute la largeur de la carte. Chaque rang est un pas : tant qu'il n'est pas compté,
+ses blocs sont de petits contours estompés garés au bout gauche ; compté, ils traversent la
+grille jusqu'au bout droit et se remplissent de cuivre, et les trois rangs comptés finissent
+comme le logo. Un rang qui attend la réponse du serveur s'arrête lentement à mi-chemin, cerclé
+de cuivre. C'est le seul mouvement de ces écrans : un glissement amorti sans rebond, autour de
+450 ms ; sous `prefers-reduced-motion`, les blocs changent d'état sans voyager. Au
+consentement, la marque est complète, puisque la personne est entrée : pointer ou focaliser
+Refuser la vide, et elle reste vide une fois le refus envoyé. Une demande expirée la montre
+vide.
+
+Trois exemplaires partagent la même grille, à garder synchronisés : `components/logo.tsx`,
+`app/icon.svg` (agrandi pour 16 px, sur son propre fond) et `components/abacus-gate.tsx`, la
+version large de la porte, dont les blocs comptés sont exactement ceux du logo.

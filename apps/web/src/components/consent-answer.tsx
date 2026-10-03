@@ -10,33 +10,49 @@ import { authClient } from '@/lib/auth-client'
  * the client plugin attaches the signed query of this page. Either way the
  * browser then goes back to the client, with a code or with access_denied,
  * and the plugin follows that redirect.
+ *
+ * `data-answer` lets the abacus above preview each answer (globals.css):
+ * pointing at Refuser empties it, and a refusal sent keeps it empty, as does
+ * an answer the server turned down (`data-expired`).
  */
-export function ConsentAnswer() {
-  const [busy, setBusy] = useState(false)
+export function ConsentAnswer({ className }: { className?: string }) {
+  const [chosen, setChosen] = useState<'accept' | 'refuse' | null>(null)
   const [failed, setFailed] = useState(false)
 
   async function answer(accept: boolean) {
-    setBusy(true)
+    setChosen(accept ? 'accept' : 'refuse')
     setFailed(false)
     const { error } = await authClient.$fetch('/oauth2/consent', { method: 'POST', body: { accept } })
     if (error) {
-      setBusy(false)
+      setChosen(null)
       setFailed(true)
     }
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={className} data-expired={failed ? '' : undefined}>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" disabled={busy} onClick={() => answer(false)}>
+        <Button
+          variant="outline"
+          data-answer="refuse"
+          data-chosen={chosen === 'refuse' ? '' : undefined}
+          disabled={chosen !== null}
+          aria-busy={chosen === 'refuse'}
+          onClick={() => answer(false)}
+        >
           Refuser
         </Button>
-        <Button disabled={busy} onClick={() => answer(true)}>
-          {busy ? '…' : 'Autoriser'}
+        <Button
+          data-answer="accept"
+          disabled={chosen !== null}
+          aria-busy={chosen === 'accept'}
+          onClick={() => answer(true)}
+        >
+          Autoriser
         </Button>
       </div>
       {failed && (
-        <p aria-live="polite" className="text-[12px] text-destructive">
+        <p aria-live="polite" className="mt-2 text-right text-[12px] text-destructive">
           Demande expirée : relance la connexion depuis ton IA.
         </p>
       )}

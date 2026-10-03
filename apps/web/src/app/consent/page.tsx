@@ -3,13 +3,19 @@ import { clientDomain } from '@abacus/core/authorizations'
 import { TriangleAlertIcon } from 'lucide-react'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import type { BeadState } from '@/components/abacus-gate'
 import { ConsentAnswer } from '@/components/consent-answer'
-import { Logo } from '@/components/logo'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Door } from '@/components/door'
+import { oauthQuery } from '@/lib/oauth-query'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Autoriser une IA' }
+
+// Whoever reaches consent is signed in: the abacus is complete, the way the
+// sign-in left it. An expired request has nothing left to count.
+const IN: BeadState[] = ['counted', 'counted', 'counted']
+const EMPTY: BeadState[] = ['idle', 'idle', 'idle']
 
 /**
  * Where the authorization code is sent. A loopback address or an app scheme
@@ -31,32 +37,12 @@ function redirectTarget(uri: string | null): { label: string; local: boolean } |
   }
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="flex min-h-dvh items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <Logo className="size-7 text-faint" />
-          <p className="font-mono text-[15px] font-semibold">
-            abacus<span className="text-primary">_</span>
-          </p>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">{children}</CardContent>
-      </Card>
-    </main>
-  )
-}
-
 export default async function ConsentPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const params = await searchParams
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, v)
-  }
+  const query = oauthQuery(await searchParams)
 
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect(`/login?${query}`)
@@ -75,11 +61,10 @@ export default async function ConsentPage({
 
   if (!clientId || !client) {
     return (
-      <Shell>
-        <p className="text-[13px] text-muted-foreground">
-          Cette demande d’autorisation a expiré. Relance la connexion depuis ton IA.
-        </p>
-      </Shell>
+      <Door beads={EMPTY}>
+        <h1 className="mt-6 text-[17px] font-semibold tracking-tight">Demande expirée</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">Relance la connexion depuis ton IA.</p>
+      </Door>
     )
   }
 
@@ -87,25 +72,24 @@ export default async function ConsentPage({
   const target = redirectTarget(query.get('redirect_uri'))
 
   return (
-    <Shell>
-      <div className="flex flex-col gap-1">
-        <p className="text-[15px] font-semibold tracking-tight">
-          {client.client_name ?? clientId} veut accéder à ton compte
-        </p>
-        {domain && <p className="font-mono text-[12px] text-faint">{domain}</p>}
-      </div>
+    <Door beads={IN}>
+      <h1 className="mt-6 text-[17px] font-semibold tracking-tight text-balance">
+        {client.client_name ?? clientId} veut accéder à ton compte
+      </h1>
+      {domain && <p className="mt-1 font-mono text-[12px] text-faint">{domain}</p>}
 
-      <p className="text-[13px] text-muted-foreground">
-        Il pourra consulter et déclarer tout ce que tu vois ici, au nom de {session.user.email}.
+      <p className="mt-4 text-[13px] text-muted-foreground">
+        Il pourra consulter et déclarer tout ce que tu vois ici, au nom de{' '}
+        <span className="text-foreground">{session.user.email}</span>.
       </p>
 
       {target && (
-        <div className="flex flex-col gap-1 text-[12px]">
+        <div className="mt-4 border-t pt-4 text-[12px]">
           <p className="text-faint">
             retour vers <span className="font-mono text-muted-foreground">{target.label}</span>
           </p>
           {target.local && (
-            <p className="flex items-start gap-1.5 text-primary">
+            <p className="mt-1.5 flex items-start gap-1.5 text-primary">
               <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
               Un programme de cet ordinateur recevra l’accès. Autorise seulement si tu viens de lancer la
               connexion.
@@ -114,7 +98,7 @@ export default async function ConsentPage({
         </div>
       )}
 
-      <ConsentAnswer />
-    </Shell>
+      <ConsentAnswer className="mt-6" />
+    </Door>
   )
 }
