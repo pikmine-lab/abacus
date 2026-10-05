@@ -9,9 +9,9 @@
 # the queue until it times out, so every required job stays free of an event
 # filter. Only deploy is held back, by the ref guard it already had.
 #
-# The deploy job is separate on purpose: environment secrets are only handed to
-# the job that declares the environment, so the Dokploy token (instance-wide,
-# not scoped to one project) never shares a process with the Docker actions.
+# The deploy job is separate on purpose: it is the only job granted an OIDC
+# token, so what it reads from the vault (the Dokploy token, the application
+# secrets) never shares a process with the Docker actions.
 #
 # Actions are pinned by commit rather than by tag: a tag is a moving target its
 # owner can repoint (see the tj-actions/changed-files leak, 2025).
@@ -126,11 +126,12 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Holds the Dokploy and application secrets. Restricted to main in the
-    # repository settings: a workflow on any other branch cannot read them.
-    environment: production
+    # No GitHub secret: the provisioner trades the job's OIDC token for vault
+    # access (provision/src/vault.ts). The vault only honours a token signed for
+    # main, so no `environment:` here: it would change the token's subject.
     permissions:
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -140,10 +141,9 @@ jobs:
       # directly), so nothing is installed in the job that holds the token.
       - name: Reconcile Dokploy against the repository
         env:
-          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-          DOKPLOY_AUTH_TOKEN: ${{ secrets.DOKPLOY_AUTH_TOKEN }}
-          DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          # A repository variable, not a secret: the vault honours it only with
+          # a token GitHub signed for main of this repository.
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
         run: |
           export IMAGE_TAG="sha-$(echo "$GITHUB_SHA" | cut -c1-7)"
           node provision/src/provision.ts

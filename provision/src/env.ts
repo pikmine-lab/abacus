@@ -1,7 +1,7 @@
 /**
- * Loads provision/.env for local runs; CI passes everything through the job
- * environment instead. The repository is public, so anything naming a machine
- * (DOKPLOY_URL first of all) stays out of it.
+ * Loads provision/.env for local runs; in CI the secrets come from the vault
+ * (vault.ts) and IMAGE_TAG from the job. The repository is public, so anything
+ * naming a machine (DOKPLOY_URL first of all) stays out of it.
  */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -12,7 +12,7 @@ if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE)
 
 export function required(name: string): string {
   const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is not set (provision/.env locally, an environment secret in CI).`)
+  if (!value) throw new Error(`${name} is not set (provision/.env locally, the vault or the job in CI).`)
   return value
 }
 

@@ -200,9 +200,16 @@ l'écart sans agir (variables dans `provision/.env` local, jamais commité).
   domaines `abacus.payangar.dev` (web) et `abacus-mcp.payangar.dev` (MCP), TLS Let's
   Encrypt via Traefik. Base et rôle `abacus` sur le Postgres partagé du socle (création
   one-shot en SSH, hors provisionneur).
-- Secrets : environnement GitHub `production` restreint à `main` (`DOKPLOY_URL`,
-  `DOKPLOY_AUTH_TOKEN`, `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`) ; copies locales dans
-  `~/.config/abacus/`. Dépôt public : aucun secret, aucune topologie serveur ici.
+- Secrets : dans le vault Infisical du socle, aucun dans GitHub. Le job `deploy` échange
+  son jeton OIDC contre un accès au vault (`provision/src/vault.ts`) sous l'identité
+  partagée des CI d'applications, dont l'id est la variable de dépôt
+  `INFISICAL_IDENTITY_ID` ; cette identité n'accepte qu'un jeton signé pour `main`, donc
+  le job ne déclare pas d'`environment`. Il lit `DOKPLOY_URL` et `DOKPLOY_TOKEN` (commun
+  aux applications, utilisateur Dokploy limité à leurs projets) dans le projet `ci`,
+  dossier `/apps`, puis `DATABASE_URL` et `BETTER_AUTH_SECRET` dans le projet `abacus`.
+  Une variable qui n'est pas secrète reste dans le provisionneur (`SPEC`). En local, les
+  mêmes variables viennent de `provision/.env`. Dépôt public : aucun secret, aucune
+  topologie serveur ici.
 - Variables runtime des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
   (obligatoire en production, sinon crash à la première requête), `PORT` (MCP), `MCP_URL`
   (web : l'endpoint MCP donné à l'utilisateur, écrit par le provisionneur depuis `SPEC`).

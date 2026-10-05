@@ -4,8 +4,10 @@
  *   node provision/src/provision.ts --dry-run   # show the gap, change nothing
  *   node provision/src/provision.ts             # apply
  *
- * Inputs (provision/.env locally, environment secrets in CI):
- *   DOKPLOY_URL, DOKPLOY_AUTH_TOKEN, DATABASE_URL, BETTER_AUTH_SECRET,
+ * Inputs:
+ *   DOKPLOY_URL, DOKPLOY_AUTH_TOKEN, DATABASE_URL, BETTER_AUTH_SECRET:
+ *     provision/.env locally, the vault in CI (vault.ts, through the job's
+ *     OIDC token and INFISICAL_IDENTITY_ID);
  *   IMAGE_TAG (immutable sha-… tag produced by the build job).
  *
  * Safe to re-run: every step reads the current state first and acts only on a
@@ -18,6 +20,7 @@ import { join, resolve } from 'node:path'
 import { type ComposeRef, compose, domains, findEnvironment, type Project, projects } from './dokploy.ts'
 import { required } from './env.ts'
 import { SPEC } from './specs.ts'
+import { loadCiSecrets } from './vault.ts'
 
 const ROOT = resolve(import.meta.dirname, '..', '..')
 const DRY_RUN = process.argv.slice(2).includes('--dry-run')
@@ -167,6 +170,8 @@ async function ensureCompose(refs: ComposeRef[], environmentId: string) {
 
   same(`compose ${SPEC.service} (${status}, ${imageTag})`)
 }
+
+await loadCiSecrets()
 
 console.log(DRY_RUN ? 'Plan (nothing will be changed)' : 'Provisioning')
 console.log(`\n${SPEC.project}`)
