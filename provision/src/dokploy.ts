@@ -21,24 +21,32 @@ import { optional, required } from './env.ts'
 
 const TOKEN_FILE = join(homedir(), '.config', 'dokploy', 'token')
 
-/** Public repository: the control-plane address never appears in it. */
-const BASE = required('DOKPLOY_URL').replace(/\/+$/, '')
+// Resolved on the first call, not at import: in CI both come from the vault,
+// read after this module is loaded.
+let credentials: { base: string; token: string } | undefined
 
-const TOKEN = (() => {
-  const fromEnv = optional('DOKPLOY_AUTH_TOKEN')
-  if (fromEnv) return fromEnv
-  try {
-    return readFileSync(TOKEN_FILE, 'utf8').trim()
-  } catch {
-    throw new Error(`No Dokploy token. Set DOKPLOY_AUTH_TOKEN or write it to ${TOKEN_FILE}`)
+function connection(): { base: string; token: string } {
+  if (credentials) return credentials
+  // Public repository: the control-plane address never appears in it.
+  const base = required('DOKPLOY_URL').replace(/\/+$/, '')
+  let token = optional('DOKPLOY_AUTH_TOKEN')
+  if (!token) {
+    try {
+      token = readFileSync(TOKEN_FILE, 'utf8').trim()
+    } catch {
+      throw new Error(`No Dokploy token. Set DOKPLOY_AUTH_TOKEN or write it to ${TOKEN_FILE}`)
+    }
   }
-})()
+  credentials = { base, token }
+  return credentials
+}
 
 type Params = Record<string, string | number | boolean | string[] | undefined>
 
 async function request<T>(method: 'GET' | 'POST', procedure: string, payload: Params = {}): Promise<T> {
-  const url = new URL(`${BASE}/api/${procedure}`)
-  const init: RequestInit = { method, headers: { 'x-api-key': TOKEN } }
+  const { base, token } = connection()
+  const url = new URL(`${base}/api/${procedure}`)
+  const init: RequestInit = { method, headers: { 'x-api-key': token } }
 
   if (method === 'GET') {
     for (const [k, v] of Object.entries(payload)) {
