@@ -226,16 +226,14 @@ export default async function AnalysisPage({
               <ShareRanking
                 rows={rows}
                 dimension={groupBy}
-                period={period}
-                from="analysis"
+                link={{ from: 'analysis', period, kind }}
                 emptyLabel={emptyLabel}
               />
             ) : (
               <BreakdownBars
                 rows={rows}
                 dimension={groupBy}
-                from="analysis"
-                period={period}
+                link={{ from: 'analysis', period, kind }}
                 size="lead"
                 emptyLabel={emptyLabel}
               />

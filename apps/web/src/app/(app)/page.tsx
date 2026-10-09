@@ -404,8 +404,7 @@ export default async function OverviewPage({
               <BreakdownBars
                 rows={amounts(breakdown)}
                 dimension="category"
-                from="overview"
-                period={period}
+                link={{ from: 'overview', period, kind: 'expense' }}
                 max={6}
                 emptyLabel="Aucune dépense déclarée sur cette période."
               />

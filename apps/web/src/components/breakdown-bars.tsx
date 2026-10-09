@@ -1,10 +1,11 @@
 'use client'
 
+import type { FlowKind } from '@abacus/core/services/reports'
 import { ChevronRightIcon } from 'lucide-react'
 import Link from 'next/link'
 import { type PointerEvent, useState } from 'react'
 import { type Period, periodParams } from '@/lib/period'
-import { eur } from '@/lib/utils'
+import { eur, NONE } from '@/lib/utils'
 
 /**
  * Ranked magnitudes: one bar per category, actor, activity or category group.
@@ -19,9 +20,12 @@ import { eur } from '@/lib/utils'
  * out along with what a bar cannot say, the number of movements.
  *
  * A row links to the movements that make it, on the window it was computed
- * over: the ledger would otherwise open on a window of its own, and no longer
- * add up to the amount clicked. The reading needs no carrying, it follows from
- * screen to screen on its own (lib/reading.ts).
+ * over and on its side of the ledger: the ledger would otherwise open on a
+ * window of its own, or mix in the incomes of an actor ranked for what it was
+ * paid, and no longer add up to the amount clicked. The reading needs no
+ * carrying, it follows from screen to screen on its own (lib/reading.ts). The
+ * unset row links too, to what carries no category or no activity: those are
+ * the movements left to sort out.
  *
  * A group is the exception: it is a label written on categories, not an entity
  * movements can be filtered by, so its row unfolds into the categories it
@@ -49,6 +53,30 @@ export const UNSET_LABEL: Record<BreakdownDimension, string> = {
   actor: 'Sans acteur',
   activity: 'Hors activité',
   categoryGroup: 'Sans groupe',
+}
+
+/** What a row needs to name the movements it counts. */
+export interface RowLink {
+  /** Origin key, so the movements page can offer the way back. */
+  from: string
+  /** The window the rows were computed over, which the movements open on. */
+  period: Period
+  /** The side of the ledger ranked, which the movements are filtered on. */
+  kind: FlowKind
+}
+
+/**
+ * The movements a row counts, or nothing when no filter can select them: a
+ * group has no entity behind it, and a row without an actor cannot exist, every
+ * expense going to one and every income coming from one.
+ */
+export function movementsHref(
+  dimension: BreakdownDimension,
+  key: string | null,
+  link: RowLink,
+): string | null {
+  if (dimension === 'categoryGroup' || (key === null && dimension === 'actor')) return null
+  return `/movements?${dimension}=${key ?? NONE}&type=${link.kind}&${periodParams(link.period)}&from=${link.from}`
 }
 
 /**
@@ -130,8 +158,7 @@ export function BreakdownBars({
   rows,
   /** The dimension ranked here; a group unfolds, the others link. */
   dimension,
-  from,
-  period,
+  link,
   emptyLabel = 'Rien sur cette période.',
   max: maxRows,
   size = 'compact',
@@ -139,10 +166,7 @@ export function BreakdownBars({
 }: {
   rows: BreakdownItem[]
   dimension: BreakdownDimension
-  /** Origin key, so the movements page can offer the way back. */
-  from: string
-  /** The window the rows were computed over, which the movements open on. */
-  period: Period
+  link: RowLink
   emptyLabel?: string
   max?: number
   size?: Size
@@ -219,12 +243,10 @@ export function BreakdownBars({
                   key={child.key ?? 'none'}
                   row={child}
                   label={child.label ?? UNSET_LABEL.category}
-                  dimension="category"
+                  href={movementsHref('category', child.key, link)}
                   peak={peak}
                   total={total}
                   size={size}
-                  from={from}
-                  period={period}
                   indent
                   onHover={track}
                   onLeave={release}
@@ -238,12 +260,10 @@ export function BreakdownBars({
             key={item.key ?? 'none'}
             row={item}
             label={label}
-            dimension={dimension}
+            href={movementsHref(dimension, item.key, link)}
             peak={peak}
             total={total}
             size={size}
-            from={from}
-            period={period}
             onHover={track}
             onLeave={release}
             marking={marking({ row: id })}
@@ -331,12 +351,10 @@ function HoverCard({ item, label, x, y, size }: Hovered & { size: Size }) {
 function Cells({
   row: item,
   label,
-  dimension,
+  href,
   peak,
   total,
   size,
-  from,
-  period,
   chevron,
   indent,
   onHover,
@@ -345,13 +363,12 @@ function Cells({
 }: {
   row: BreakdownItem
   label: string
-  dimension?: BreakdownDimension
+  /** The movements the row counts, when a filter can select them. */
+  href?: string | null
   peak: number
   /** The net of the whole ranking, which a share is a part of. */
   total: number
   size: Size
-  from?: string
-  period?: Period
   chevron?: boolean
   /** An unfolded row: only its label steps in, so the bars keep one origin. */
   indent?: boolean
@@ -399,12 +416,8 @@ function Cells({
   // the fold having it already and clipping anything that sticks out.
   const layout = `${row(size, indent)} ${indent ? '' : '-mx-2 px-2'}`
   const hover = { onPointerMove: onHover?.(item, label), onPointerLeave: onLeave, ...marking }
-  return item.key && from && period && dimension ? (
-    <Link
-      href={`/movements?${dimension}=${item.key}&${periodParams(period)}&from=${from}`}
-      className={`${layout} rounded-md hover:bg-secondary/40`}
-      {...hover}
-    >
+  return href ? (
+    <Link href={href} className={`${layout} rounded-md hover:bg-secondary/40`} {...hover}>
       {inner}
     </Link>
   ) : (

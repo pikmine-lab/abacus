@@ -234,7 +234,10 @@ export const GUIDANCE: Record<string, string> = {
   withholding_exceeds_total: 'The withholding cannot exceed what the invoice asks for (base + VAT).',
 }
 
-/** Optional text fields where the AI clears a value by passing "none". */
+/**
+ * Optional text fields where the AI says "no value" by passing "none": a
+ * correction clears the field, a filter selects what carries none.
+ */
 export function clearable(value: string | undefined): string | null | undefined {
   return value === undefined ? undefined : value.toLowerCase() === 'none' ? null : value
 }

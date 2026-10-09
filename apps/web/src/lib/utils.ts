@@ -105,3 +105,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export function idParam(value: string | undefined): string | undefined {
   return value && UUID.test(value) ? value : undefined
 }
+
+/**
+ * The filter value asking for what carries nothing on a dimension (no
+ * category, no activity), where an id would name one.
+ */
+export const NONE = 'none'

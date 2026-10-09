@@ -353,3 +353,69 @@ test('a movement can be deleted unless a refund points at it', async () => {
   await deleteMovement(user, advance.id)
   assert.equal((await listMovements(user)).length, 0)
 })
+
+test('filters on what carries no category or no activity', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const groceries = await createCategory(user, 'Groceries')
+  const freelance = await createActivity(user, { name: 'Freelance' })
+
+  const categorised = await declareMovement(user, {
+    happenedOn: '2026-01-05',
+    amount: 30,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    categoryId: groceries.id,
+    activityId: freelance.id,
+  })
+  const bare = await declareMovement(user, {
+    happenedOn: '2026-01-06',
+    amount: 12,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+  })
+  const bareIncome = await declareMovement(user, {
+    happenedOn: '2026-01-07',
+    amount: 100,
+    sourceActorId: shop.id,
+    targetAccountId: checking.id,
+  })
+  const transfer = await declareMovement(user, {
+    happenedOn: '2026-01-08',
+    amount: 200,
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+  })
+  const friend = await createActor(user, { name: 'Friend' })
+  const advance = await declareMovement(user, {
+    happenedOn: '2026-01-09',
+    amount: 40,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    categoryId: groceries.id,
+    expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 40,
+  })
+  const refund = await declareMovement(user, {
+    happenedOn: '2026-01-10',
+    amount: 40,
+    sourceActorId: friend.id,
+    targetAccountId: checking.id,
+    refundsMovementId: advance.id,
+  })
+
+  const ids = (movements: { id: string }[]) => movements.map((m) => m.id).sort()
+
+  // A transfer can carry no category, and a refund's is its advance's: neither
+  // is one left to categorise.
+  assert.deepEqual(ids(await listMovements(user, { categoryId: null })), ids([bare, bareIncome]))
+  assert.deepEqual(ids(await listMovements(user, { categoryId: null, kind: 'expense' })), [bare.id])
+  assert.deepEqual(ids(await listMovements(user, { categoryId: groceries.id })), ids([categorised, advance]))
+  assert.deepEqual(
+    ids(await listMovements(user, { activityId: null })),
+    ids([bare, bareIncome, transfer, advance, refund]),
+  )
+  assert.equal((await listMovements(user)).length, 6)
+})
