@@ -1,7 +1,7 @@
 'use client'
 
 import type { PeriodUnit } from '@abacus/core/domain'
-import { CalendarIcon, CoinsIcon, SkipForwardIcon } from 'lucide-react'
+import { CalendarIcon, ChevronRightIcon, CoinsIcon, SkipForwardIcon } from 'lucide-react'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { FoldSection } from '@/components/fold-section'
@@ -13,6 +13,14 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import { confirmOccurrenceAction, skipOccurrenceAction } from '@/lib/actions'
 import { eur, frDate, frMonthLong, money } from '@/lib/utils'
 
@@ -69,11 +77,18 @@ export interface PendingItem {
 export function PendingOccurrences({
   items,
   back,
+  aheadInPanel,
 }: {
   /** Oldest first, as the service lists them. */
   items: PendingItem[]
   /** Where a failed action comes back to, with its message. */
   back: string
+  /**
+   * The ones still ahead open in a side panel rather than unfold in place:
+   * inside a card set beside the page's figure, unfolding them would push the
+   * whole page down for what is only a possibility.
+   */
+  aheadInPanel?: boolean
 }) {
   const oldest = new Map<string, string>()
   for (const item of items) if (!oldest.has(item.commitmentId)) oldest.set(item.commitmentId, item.dueOn)
@@ -93,7 +108,34 @@ export function PendingOccurrences({
   return (
     <>
       {due.length > 0 && <Rows>{due.map(row)}</Rows>}
-      {ahead.length > 0 && (
+      {ahead.length > 0 && aheadInPanel && (
+        <Sheet>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-1.5 self-start py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=open]:text-primary"
+            >
+              À venir
+              <span className="text-faint tabular">{ahead.length}</span>
+              <ChevronRightIcon className="size-3.5 text-faint" />
+            </button>
+          </SheetTrigger>
+          {/* Wide enough for an amount, the date that opens ahead, Confirmer and
+              the menu on one line. */}
+          <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-lg">
+            <SheetHeader className="border-b border-border">
+              <SheetTitle className="text-[15px]">À venir</SheetTitle>
+              <SheetDescription className="text-[12px]">
+                Ce qui est déjà parti avant sa date se confirme ici, à la date réelle.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="px-4">
+              <Rows className="border-t-0">{ahead.map(row)}</Rows>
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
+      {ahead.length > 0 && !aheadInPanel && (
         <FoldSection title="À venir" description="se confirme en avance, à la date réelle">
           <Rows>{ahead.map(row)}</Rows>
         </FoldSection>
@@ -130,21 +172,27 @@ function PendingRow({
   return (
     <div className="flex flex-col gap-2 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0">
+        {/* The words wrap before the form drops under them: the gesture stays
+            on the line of the name it confirms. */}
+        <div className="min-w-0 flex-1 basis-56">
           <p className="text-[13px] font-medium">{item.label}</p>
           <p className="text-[11px] text-faint">
             {item.periodUnit !== 'week' && `${frMonthLong(item.dueOn)} · `}attendu le {frDate(item.dueOn)} ·{' '}
             {placement
               ? `versement de ${inCurrency(item.amount)} de ${item.account} vers ${placement.targetAccount} · achète ${placement.asset}`
-              : `${item.incoming ? 'entrée' : 'prélèvement'} de ${inCurrency(item.amount)} sur ${item.account}`}
+              : // The amount is in the field beside it, ready to be corrected; a
+                // row waiting on an older one has no field, so it says it here.
+                `${item.incoming ? 'entrée' : 'prélèvement'}${after ? ` de ${inCurrency(item.amount)}` : ''} sur ${item.account}`}
           </p>
         </div>
 
         {after && <p className="ml-auto text-[11.5px] text-faint">après l’échéance du {frDate(after)}</p>}
 
         {after === null && (
-          <>
-            <form action={confirmOccurrenceAction} className="ml-auto flex flex-wrap items-center gap-2">
+          // The menu stays beside the form, which wraps on its own: left to
+          // the row, it would fall alone onto a line once the date opens.
+          <div className="ml-auto flex items-center gap-2">
+            <form action={confirmOccurrenceAction} className="flex flex-wrap items-center justify-end gap-2">
               <input type="hidden" name="commitmentId" value={item.commitmentId} />
               <input type="hidden" name="back" value={back} />
               <AmountInput
@@ -236,7 +284,7 @@ function PendingRow({
                 </form>
               </DropdownMenuItem>
             </RowMenu>
-          </>
+          </div>
         )}
       </div>
     </div>
