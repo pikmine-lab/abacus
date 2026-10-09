@@ -181,14 +181,18 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
 - **Les dépenses récurrentes se lisent par compte.** Abonnements et financements en cours
   vivent ensemble, une section par compte débité : une mensualité pèse sur un compte autant
   qu'un abonnement, et l'en-tête dit ce que le compte doit couvrir par mois. Dans un compte,
-  un repli par carte et un pour les prélèvements, chacun avec son total, ouverts par défaut,
-  même quand le compte n'est payé que d'une façon : le repli est un geste de lecture, il ne
-  dépend pas du nombre de groupes. Dans un repli, les abonnements puis les financements,
-  chacun sous son intitulé, qui porte son total mensuel et son menu de tri : le menu des
-  abonnements vit avec les abonnements, celui des financements avec les financements, et
-  chacun pilote sa sorte dans tous les replis, comme sur Comptes. L'en-tête du compte ne
-  porte que ce qu'il doit couvrir. La ligne ne répète pas la carte que son repli nomme. Ce
-  qui est terminé, résilié ou soldé, ferme la page avec sa date.
+  les abonnements puis les financements, chacun sous son intitulé, qui porte son total
+  mensuel et son menu de tri ; le total s'efface quand le compte ne porte qu'une sorte,
+  puisque l'en-tête le dit déjà. Le menu des abonnements vit avec les abonnements, celui
+  des financements avec les financements, et chacun pilote sa sorte dans tous les comptes,
+  comme sur Comptes. Chaque sorte se replie dans son compte, ouverte par défaut ; le
+  compte, lui, ne se replie pas. Les trois niveaux (compte, sorte, ligne) se distinguent
+  par leur graisse, jamais par leur seule place. Le filet sous le compte est celui qui
+  sépare les lignes, comme sous l'en-tête d'un tableau : plus clair, il se lirait comme le
+  trait d'un rail. Ce qui paie une ligne est un attribut de la ligne : la carte s'y
+  nomme, un prélèvement ne dit rien. Sa prochaine échéance se lit sur le rail, la date
+  exacte dans son infobulle. Ce qui est terminé, résilié ou soldé, ferme la page dans un
+  repli fermé, chaque ligne avec sa date.
 - **La périodicité est une seule question** : « chaque mois », « toutes les 2 semaines »,
   « tous les 3 mois », plutôt qu'une unité et un multiple à combiner de tête. La liste couvre
   les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste garde le
@@ -216,7 +220,8 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   porte le geste, parce que le service règle toujours la plus ancienne : une plus récente dit
   ce qu'elle attend. Celles qui n'ont pas atteint leur date sont dans un repli « À venir »,
   fermé : ce n'est pas du travail à faire mais une possibilité, pour le prélèvement ou le
-  salaire qui tombe avant son mois. La date s'y ouvre d'office, une confirmation en avance
+  salaire qui tombe avant son mois. Dans une carte posée à côté du chiffre de l'écran,
+  « À venir » ouvre un panneau plutôt qu'un repli, qui pousserait toute la page. La date s'y ouvre d'office, une confirmation en avance
   étant presque toujours à une autre date que celle attendue ; le mouvement compte dans le
   mois de l'échéance quelle que soit sa date. L'accueil et les tuiles ne comptent que ce qui
   a atteint sa date.

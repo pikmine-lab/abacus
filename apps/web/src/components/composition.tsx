@@ -73,9 +73,8 @@ function Amount({ value, decimals = 0, per }: { value: number; decimals?: number
 
 /**
  * A figure named by one word. `hero` is the one figure that dominates the
- * screen: exactly one per screen. `compact` is for a screen where no figure
- * dominates because a list does: the figures frame it and must not outweigh
- * it. A note appears only when it changes what the figure means (a method, a
+ * screen: exactly one per screen. `compact` is for figures that must not
+ * outweigh what dominates: a list, or the hero figure they break into parts. A note appears only when it changes what the figure means (a method, a
  * missing declaration, a gross amount).
  */
 export function Figure({
@@ -185,11 +184,34 @@ export function FigureRow({ compact, children }: { compact?: boolean; children: 
  * live on the page ground. What only asks for attention (an alert) joins it
  * under its own quiet label rather than opening a second card.
  */
-export function ActionCard({ label, children }: { label: string; children: React.ReactNode }) {
+export function ActionCard({
+  label,
+  scrolls,
+  children,
+}: {
+  label: string
+  /** Held to the height the screen gives it, it scrolls within, under its name. */
+  scrolls?: boolean
+  children: React.ReactNode
+}) {
   return (
-    <section aria-label={label} className="rounded-xl border border-border bg-card px-4 pt-3 pb-1 sm:px-5">
-      <h2 className="text-[13px] font-medium text-muted-foreground">{label}</h2>
-      <div className="mt-1 flex flex-col divide-y divide-border">{children}</div>
+    <section
+      aria-label={label}
+      className={cn(
+        'rounded-xl border border-border bg-card px-4 pb-1 sm:px-5',
+        scrolls && 'pane-scroll min-h-0 overflow-y-auto',
+      )}
+    >
+      {/* Sticky only in its own scroll: elsewhere it would ride the page's under its header. */}
+      <h2
+        className={cn(
+          'pt-3 pb-1 text-[13px] font-medium text-muted-foreground',
+          scrolls && 'sticky top-0 z-10 bg-card',
+        )}
+      >
+        {label}
+      </h2>
+      <div className="flex flex-col divide-y divide-border">{children}</div>
     </section>
   )
 }

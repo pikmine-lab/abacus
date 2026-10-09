@@ -37,9 +37,10 @@ new-york). Quatre principes gouvernent le reste :
   pour les nommer, la valeur, l'écart signé contre une fenêtre nommée (la période du titre
   quand c'est elle). Une note n'apparaît que si elle change ce que le chiffre veut dire : une
   méthode (« placements au dernier cours »), une déclaration qui manque, un brut. Pas de
-  sparkline : l'historique se lit dans le graphe de l'écran. Sous une liste dominante, la
-  rangée se resserre (`Figure compact`, `FigureRow compact`) et range ses chiffres deux par
-  deux sur téléphone, un dernier impair prenant la ligne. Un chiffre qui répète la première
+  sparkline : l'historique se lit dans le graphe de l'écran. Sous une liste dominante, ou
+  sous le chiffre dominant dont elle donne les parts, la rangée se resserre
+  (`Figure compact`, `FigureRow compact`) et range ses chiffres deux par deux sur
+  téléphone, un dernier impair prenant la ligne. Un chiffre qui répète la première
   ligne de la liste en dessous n'est pas un chiffre.
 - **Un bloc se nomme d'un mot** (`Block`) : « Soldes », « Dépenses », « À venir ». Un
   qualificatif court s'ajoute seulement quand il change le sens du contenu (« rattachement »).
@@ -62,18 +63,22 @@ new-york). Quatre principes gouvernent le reste :
 - **Les filtres de dimension passent derrière « Filtres »**, et ce qui est en vigueur se lit
   et se retire en pastilles. La recherche et le type restent à découvert : ce sont eux qui
   retrouvent une ligne.
-- **Quand la place manque, un nom passe avant ce qui le qualifie** : la date ou le jugement
-  d'une ligne passent dessous plutôt que de le couper, un nom prend une deuxième ligne avant
-  qu'un attribut en bout de ligne le tronque, et un contrôle segmenté prend une
+- **Quand la place manque, un nom passe avant ce qui le qualifie** : la date, le rail ou le
+  jugement d'une ligne passent dessous plutôt que de le couper, un nom prend une deuxième
+  ligne avant qu'un attribut en bout de ligne le tronque, et un contrôle segmenté prend une
   ligne entière plutôt que de défiler hors de vue. La place se lit sur le conteneur, pas
   sur l'écran : un panneau rangé resserre une table autant qu'une tablette.
-- **Un fait que porte chaque ligne se dessine dans une colonne alignée** plutôt que de
-  s'écrire ligne après ligne : le pointage d'un compte est un rail des 90 derniers jours,
-  à la même échelle sur toutes les lignes, un point par pointage, le dernier plein, un
-  repère à 45 jours. Un écart ouvert change la forme du point autant que sa couleur. Les
-  mots vivent une seule fois, dans la carte de ce qui est à pointer, et la date exacte dans
-  l'infobulle du rail, au survol, au focus ou au toucher. L'échelle se pose une fois, dans
-  l'en-tête de la liste, au-dessus de sa colonne, et le tri au-dessus des montants.
+- **Un fait daté que porte chaque ligne se dessine sur un rail** plutôt que de s'écrire
+  ligne après ligne : une colonne alignée, à la même échelle sur toutes les lignes de
+  l'écran, dont l'échelle se pose une fois, dans l'en-tête de la liste, au-dessus de sa
+  colonne, et le tri au-dessus des montants. Les mots vivent une seule fois, dans la carte de ce qui attend une action, et la
+  date exacte dans l'infobulle du rail, au survol, au focus ou au toucher. Le pointage d'un
+  compte regarde les 90 derniers jours : un point par pointage, le dernier plein, un repère
+  à 45 jours, et un écart ouvert change la forme du point autant que sa couleur. L'échéance
+  d'une dépense récurrente regarde les 30 prochains jours : la prochaine pleine, les
+  suivantes plus petites, le passage du mois en trait ; ce qui attend sa confirmation est
+  cuivre, dans une marge sans échelle à gauche d'aujourd'hui, et ce qui tombe au-delà
+  s'épingle creux au bord droit.
 - **Une liste posée sous une bande en colonnes en reprend le partage** : ses colonnes de
   bout de ligne s'alignent sur la séparation de la bande, et la page n'a qu'une colonne de
   droite. Quand la bande s'empile, la liste retrouve ses propres colonnes.
@@ -138,7 +143,7 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 | Grille de graphe | `#1c212c` | `--grid` | : |
 
 1. **Accent unique, réservé à l'actif** : sélection, focus, bouton primaire, ce qui attend
-   une action, badge « à résilier ». Jamais décoratif.
+   une action, le jugement « à résilier », en badge comme en sélecteur. Jamais décoratif.
 2. **Le cuivre a deux pas** : `--primary` `#e2a04c` est une encre d'interface (contrainte
    WCAG), `--chart-1` `#c58229` la marque de graphe (bande de luminance L 0,48–0,67).
 3. **Six séries**, validées en toutes paires sur `#14171f` : `#c58229` cuivre · `#3987e5`

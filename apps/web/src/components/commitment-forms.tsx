@@ -17,6 +17,7 @@ import {
   editCommitmentAction,
   setJudgmentAction,
 } from '@/lib/actions'
+import { cn } from '@/lib/utils'
 
 export interface Option {
   id: string
@@ -421,7 +422,15 @@ export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; 
           })
         }
       >
-        <SelectTrigger size="sm" className="h-7 rounded-full px-2.5 text-[11px]" aria-label="Jugement">
+        {/* "À résilier" carries the accent: it is the one judgment that asks for a gesture. */}
+        <SelectTrigger
+          size="sm"
+          className={cn(
+            'h-7 rounded-full px-2.5 text-[11px]',
+            judgment === 'to_cancel' && 'border-primary/60 text-primary',
+          )}
+          aria-label="Jugement"
+        >
           <SelectValue placeholder="à juger" />
         </SelectTrigger>
         <SelectContent>
