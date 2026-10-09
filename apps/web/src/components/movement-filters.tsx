@@ -10,6 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toggle } from '@/components/ui/toggle'
+import { NONE } from '@/lib/utils'
+import { UNSET_LABEL } from './breakdown-bars'
 
 interface Option {
   id: string
@@ -78,19 +80,36 @@ export function MovementFilters({
   const set = (key: string) => (value: string) =>
     push((p) => (value === ALL ? p.delete(key) : p.set(key, value)))
 
+  // A category or an activity can also be absent, which is a selection of its
+  // own: what is left to categorise, what belongs to no activity. Named as the
+  // ranking of the analysis names it, since that is where one comes from. An
+  // actor never is: every expense goes to one and every income comes from one.
   const dimensions = [
     { key: 'account', name: 'Compte', all: 'Tous les comptes', options: accounts },
-    { key: 'category', name: 'Catégorie', all: 'Toutes catégories', options: categories },
+    {
+      key: 'category',
+      name: 'Catégorie',
+      all: 'Toutes catégories',
+      options: categories,
+      none: UNSET_LABEL.category,
+    },
     { key: 'actor', name: 'Acteur', all: 'Tous les acteurs', options: actors },
-    { key: 'activity', name: 'Activité', all: 'Toutes activités', options: activities },
-  ].filter((d) => d.options.length > 0)
+    {
+      key: 'activity',
+      name: 'Activité',
+      all: 'Toutes activités',
+      options: activities,
+      none: UNSET_LABEL.activity,
+    },
+  ].filter((d) => d.options.length > 0 || (d.none && searchParams.get(d.key) === NONE))
 
   // A value the options do not contain (stale link, deleted entity) would
   // render an empty trigger and a nameless chip; the server ignores it, so do
   // the controls.
   const chosen = dimensions.flatMap((d) => {
-    const option = d.options.find((o) => o.id === searchParams.get(d.key))
-    return option ? [{ key: d.key, label: `${d.name} : ${option.name}`, name: option.name }] : []
+    const raw = searchParams.get(d.key)
+    const name = d.none && raw === NONE ? d.none : d.options.find((o) => o.id === raw)?.name
+    return name ? [{ key: d.key, label: `${d.name} : ${name}`, name }] : []
   })
   const advancesOnly = searchParams.get('advances') === '1'
   if (advancesOnly) chosen.push({ key: 'advances', label: 'Avances en attente', name: 'Avances en attente' })
@@ -138,7 +157,8 @@ export function MovementFilters({
           <PopoverContent align="start" className="flex w-64 flex-col gap-3 p-3">
             {dimensions.map((d) => {
               const raw = searchParams.get(d.key)
-              const value = raw && d.options.some((o) => o.id === raw) ? raw : ALL
+              const value =
+                raw && ((d.none && raw === NONE) || d.options.some((o) => o.id === raw)) ? raw : ALL
               return (
                 <div key={d.key} className="flex flex-col gap-1.5">
                   <Label
@@ -153,6 +173,7 @@ export function MovementFilters({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={ALL}>{d.all}</SelectItem>
+                      {d.none && <SelectItem value={NONE}>{d.none}</SelectItem>}
                       {d.options.map((o) => (
                         <SelectItem key={o.id} value={o.id}>
                           {o.name}

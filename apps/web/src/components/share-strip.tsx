@@ -7,10 +7,11 @@ import {
   type BreakdownDimension,
   type BreakdownItem,
   type Mark,
+  movementsHref,
+  type RowLink,
   share,
   UNSET_LABEL,
 } from '@/components/breakdown-bars'
-import { type Period, periodParams } from '@/lib/period'
 import { cn, eur } from '@/lib/utils'
 
 /*
@@ -49,25 +50,22 @@ interface Hovered {
 export function ShareRanking({
   rows,
   dimension,
-  period,
-  from,
+  link,
   emptyLabel,
 }: {
   rows: BreakdownItem[]
   dimension: BreakdownDimension
-  period: Period
-  from: string
+  link: RowLink
   emptyLabel: string
 }) {
   const [mark, setMark] = useState<Mark | null>(null)
   return (
     <>
-      <ShareStrip rows={rows} dimension={dimension} period={period} from={from} mark={mark} />
+      <ShareStrip rows={rows} dimension={dimension} link={link} mark={mark} />
       <BreakdownBars
         rows={rows}
         dimension={dimension}
-        from={from}
-        period={period}
+        link={link}
         size="share"
         emptyLabel={emptyLabel}
         onMark={setMark}
@@ -79,14 +77,12 @@ export function ShareRanking({
 function ShareStrip({
   rows,
   dimension,
-  period,
-  from,
+  link,
   mark,
 }: {
   rows: BreakdownItem[]
   dimension: BreakdownDimension
-  period: Period
-  from: string
+  link: RowLink
   mark: Mark | null
 }) {
   const router = useRouter()
@@ -141,10 +137,7 @@ function ShareStrip({
   const part = !hovered && mark?.part && marked === mark.row ? partOf(slices, mark) : null
 
   const room = width - (slices.length - 1) * 2
-  const hrefOf = (s: Slice) =>
-    s.item?.key && dimension !== 'categoryGroup'
-      ? `/movements?${dimension}=${s.item.key}&${periodParams(period)}&from=${from}`
-      : null
+  const hrefOf = (s: Slice) => (s.item ? movementsHref(dimension, s.item.key, link) : null)
   const track = (slice: Slice) => (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return
     setHovered({ slice, x: e.clientX, y: e.clientY })

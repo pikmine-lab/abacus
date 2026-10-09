@@ -92,8 +92,16 @@ export interface MovementFilters {
   kind?: MovementKind
   accountId?: string
   actorId?: string
-  categoryId?: string
-  activityId?: string
+  /**
+   * `null` selects the expenses and incomes carrying no category, the ones
+   * left to categorise. A transfer never carries one (the schema refuses it),
+   * so it is not missing one either; nor is a refund, the advance it brings
+   * back carrying the category, and the analysis leaving refunds out of every
+   * row the selection must add up to.
+   */
+  categoryId?: string | null
+  /** `null` selects what belongs to no activity, transfers included. */
+  activityId?: string | null
   commitmentId?: string
   /** What a card paid, or was credited back. */
   cardId?: string
@@ -162,8 +170,14 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.kind ? tx`and m.kind = ${f.kind}` : tx``}
     ${f.accountId ? tx`and (m.source_account_id = ${f.accountId} or m.target_account_id = ${f.accountId})` : tx``}
     ${f.actorId ? tx`and (m.source_actor_id = ${f.actorId} or m.target_actor_id = ${f.actorId})` : tx``}
-    ${f.categoryId ? tx`and m.category_id = ${f.categoryId}` : tx``}
-    ${f.activityId ? tx`and m.activity_id = ${f.activityId}` : tx``}
+    ${
+      f.categoryId === null
+        ? tx`and m.category_id is null and m.kind <> 'transfer' and m.refunds_movement_id is null`
+        : f.categoryId
+          ? tx`and m.category_id = ${f.categoryId}`
+          : tx``
+    }
+    ${f.activityId === null ? tx`and m.activity_id is null` : f.activityId ? tx`and m.activity_id = ${f.activityId}` : tx``}
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
     ${f.cardId ? tx`and m.card_id = ${f.cardId}` : tx``}
     ${

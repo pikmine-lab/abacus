@@ -302,8 +302,16 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         kind: z.enum(['expense', 'income', 'transfer']).optional(),
         account: z.string().optional().describe('Account name'),
         actor: z.string().optional().describe('Actor name'),
-        category: z.string().optional(),
-        activity: z.string().optional(),
+        category: z
+          .string()
+          .optional()
+          .describe(
+            'Category name, or "none" for the expenses and incomes carrying no category: the ones left to categorise, the "(none)" row of analyze_flows. A transfer never carries a category and a refund takes the one of its advance, so "none" leaves both out',
+          ),
+        activity: z
+          .string()
+          .optional()
+          .describe('Activity name, or "none" for what belongs to no activity, transfers included'),
         card: z.string().optional().describe('Card name: what it paid, or was credited back'),
         limit: z.number().int().min(1).max(500).optional().describe('Default 100'),
         sortBy: z
@@ -319,6 +327,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         // Absent, the window selects the way the user counts: asking for
         // August must return the August their screens show.
         const reading = f.reading ?? (await readingPreference(userId))
+        const category = clearable(f.category)
+        const activity = clearable(f.activity)
         const movements = await listMovements(userId, {
           from: f.from,
           to: f.to,
@@ -326,8 +336,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           kind: f.kind,
           accountId: f.account ? (await requireAccountByName(userId, f.account)).id : undefined,
           actorId: f.actor ? (await requireActorByName(userId, f.actor)).actor.id : undefined,
-          categoryId: f.category ? (await requireCategoryByName(userId, f.category)).id : undefined,
-          activityId: f.activity ? (await requireActivityByName(userId, f.activity)).id : undefined,
+          categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
+          activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           cardId: f.card ? (await requireCardByName(userId, f.card)).id : undefined,
           limit: f.limit,
           sort,

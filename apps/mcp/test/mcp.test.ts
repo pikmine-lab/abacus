@@ -986,6 +986,58 @@ test('spending reads back by category group through the MCP surface', async () =
   ])
 })
 
+test('the uncategorised row of an analysis drills into its movements', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Commerce' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 60,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Commerce',
+        category: 'Courses',
+      },
+      { date: '2026-08-03', amount: 25, type: 'expense', account: 'Courant', actor: 'Commerce' },
+      { date: '2026-08-04', amount: 200, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
+    ],
+  })
+
+  const byCategory = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+  })
+  assert.deepEqual((byCategory.json() as { rows: unknown[] }).rows, [
+    { category: 'Courses', gross: 60, net: 60, movements: 1 },
+    { category: '(none)', gross: 25, net: 25, movements: 1 },
+  ])
+
+  // "none" selects what is left to categorise: the transfer carries no
+  // category either, but it never could, so it is not part of that row.
+  const uncategorised = rows<{ amount: number }>(
+    await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', category: 'none' }),
+    'movements',
+  )
+  assert.deepEqual(
+    uncategorised.map((m) => m.amount),
+    [25],
+  )
+  // No activity is a plain absence, transfers included.
+  assert.equal(
+    rows(
+      await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', activity: 'none' }),
+      'movements',
+    ).length,
+    3,
+  )
+})
+
 test('incomes read back by who paid them through the MCP surface', async () => {
   const user = await seedUser()
   const client = await clientFor(user)

@@ -31,7 +31,7 @@ import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
 import { resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
 import { sorter } from '@/lib/sort'
-import { eur, frDate, frMonth, idParam, money } from '@/lib/utils'
+import { eur, frDate, frMonth, idParam, money, NONE } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +70,10 @@ export default async function MovementsPage({
   ])
   const known = (id: string | undefined, among: { id: string }[]) =>
     id && among.some((entry) => entry.id === id) ? id : undefined
+  // `none` asks for what carries no value on that dimension, the way out of
+  // the unset row of a ranking.
+  const knownOrNone = (raw: string | undefined, among: { id: string }[]) =>
+    raw === NONE ? null : known(idParam(raw), among)
 
   // The order is part of the framing, like the period and the filters, and it
   // is settled in SQL: the list is cut at `limit`, so ordering what came back
@@ -83,9 +87,9 @@ export default async function MovementsPage({
     reading,
     kind: KINDS.includes(params.type as MovementKind) ? (params.type as MovementKind) : undefined,
     accountId: known(idParam(params.account), accounts),
-    categoryId: known(idParam(params.category), categories),
+    categoryId: knownOrNone(params.category, categories),
     actorId: known(idParam(params.actor), actors),
-    activityId: known(idParam(params.activity), activities),
+    activityId: knownOrNone(params.activity, activities),
     search: params.q,
     advancesOnly: params.advances === '1',
     sort: sort.current,
