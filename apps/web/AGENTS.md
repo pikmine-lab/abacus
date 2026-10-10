@@ -101,7 +101,20 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
 - **Une préférence d'affichage se lit dans le profil, et nulle part ailleurs.** Le dessin du
   classement de l'Analyse (ruban ou barres) n'a ni paramètre d'URL ni cookie, contrairement
   au mois compté : il ne change aucun chiffre, il n'y a donc rien à partager ni à basculer le
-  temps d'une visite. Seule la page Réglages l'écrit, et le MCP par `manage_preferences`.
+  temps d'une visite. Seule la page Réglages l'écrit, et le MCP par `manage_preferences`. La
+  carte n'est pas un dessin du classement mais une autre lecture qu'on ouvre le temps d'une
+  visite : elle vit dans l'URL (`view`), avec son premier niveau (`split`), l'endroit où elle
+  regarde (`at`) et le bloc choisi (`focus`). Changer de lecture ou de sens les relâche.
+- **Une adresse réécrite sans navigation passe par `history.replaceState(null, …)`.** Avec
+  l'état d'historique de Next en premier argument, Next prend l'appel pour le sien, ne met
+  pas son routeur à jour, et le retour arrière ramène l'ancienne adresse. Et un retour arrière
+  restaure le rendu serveur de la première visite : un composant qui tient son état dans
+  l'adresse le relit dans `window.location` à son montage, pas dans ses props.
+- **Une infobulle ne s'accroche pas à un onglet, mais à ce qu'il contient.** Le déclencheur
+  Radix et l'onglet écrivent tous deux `data-state`, et celui de l'infobulle efface l'onglet
+  actif.
+- **Un cadre qui se redessine a sa hauteur en CSS, pas après mesure.** Une hauteur provisoire
+  raccourcit la page le temps d'un rendu, et le navigateur remonte le défilement avec elle.
 - **Ce qui s'exécute avant le rendu vit dans `src/proxy.ts`** (`middleware.ts` est le nom
   d'avant). Next y masque ses propres en-têtes RSC, pour empêcher qu'une navigation
   réponde autrement qu'un chargement de page : distinguer les deux, quand c'est
