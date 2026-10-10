@@ -41,7 +41,7 @@ import {
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import { natureOf } from '../domain/nature.ts'
 import { today } from '../domain/period.ts'
-import type { SortChoice, SortFields } from '../domain/sort.ts'
+import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type {
   Account,
   Asset,
@@ -443,9 +443,9 @@ export async function setManualPrice(
  * totalled here rather than in each interface: a reader adding up lines by hand
  * (a person or an AI) gets it wrong.
  */
-export interface PositionMass {
+export interface PositionMass<P extends Position = Position> {
   nature: AssetNature
-  positions: Position[]
+  positions: P[]
   /** Every position with a price, cash excluded: a mass is what is held. */
   value: string
   costBasis: string
@@ -494,8 +494,8 @@ export interface PortfolioAccount {
  * (which mass weighs the most), and it puts an unpriced mass last on its own.
  * Positions keep the order they came in, which is alphabetical.
  */
-export function byNature(held: Position[]): PositionMass[] {
-  const masses = new Map<AssetNature, Position[]>()
+export function byNature<P extends Position>(held: P[]): PositionMass<P>[] {
+  const masses = new Map<AssetNature, P[]>()
   for (const position of held) {
     const group = masses.get(position.nature)
     if (group) group.push(position)
@@ -551,6 +551,47 @@ export async function portfolio(
         totalReturn: held.length === priced.length ? (value - net).toFixed(2) : null,
       }
     }),
+  )
+}
+
+/** A position and the account it is held on, for a reading that spans accounts. */
+export interface HeldPosition extends Position {
+  accountId: string
+  accountName: string
+}
+
+/**
+ * Every account's holdings by nature: the split of the whole portfolio, which is
+ * what it is read for first, where the split of each account answered the same
+ * question once per account. A fund held on two accounts stays two lines, each
+ * with its own average cost: an average cost is the history of one account's
+ * purchases, and merging two would state one that no account carries.
+ */
+export function holdingsByNature(
+  held: PortfolioAccount[],
+  sort: SortChoice<PositionSortField> = DEFAULT_POSITION_SORT,
+): PositionMass<HeldPosition>[] {
+  const lines = held.flatMap(({ account, positions }) =>
+    positions.map((position) => ({ ...position, accountId: account.id, accountName: account.name })),
+  )
+  return byNature(sortPositions(lines, sort))
+}
+
+/**
+ * The same order as the SQL one, for lines gathered from several accounts: each
+ * account's list arrives ordered, their concatenation does not.
+ */
+export function sortPositions<P extends Position>(items: P[], sort: SortChoice<PositionSortField>): P[] {
+  // Named first, then ranked: the sort is stable, so the name closes every
+  // order, as it does in SQL, and two lines worth the same never swap.
+  return sortBy(
+    sortBy(items, (p) => p.assetName, 'asc'),
+    (p) => {
+      if (sort.field === 'name') return p.assetName
+      const key = p[sort.field]
+      return key === null ? null : Number(key)
+    },
+    sort.direction,
   )
 }
 

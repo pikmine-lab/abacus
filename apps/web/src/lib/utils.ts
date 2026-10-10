@@ -35,6 +35,13 @@ export function eurSigned(value: number, decimals = 0): string {
   return `${sign}${eur(Math.abs(value), decimals)}`
 }
 
+/** A part of a whole in whole percents; a sliver is said to be one, not zero. */
+export function share(part: number, total: number): string {
+  if (total <= 0) return '–'
+  const pct = (part / total) * 100
+  return pct > 0 && pct < 1 ? '< 1 %' : `${Math.round(pct)} %`
+}
+
 export function frDate(iso: string): string {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y!.slice(2)}`

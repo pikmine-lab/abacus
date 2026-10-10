@@ -4,6 +4,7 @@ import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount, listAccounts } from '../src/services/accounts.ts'
 import {
   declareAsset,
+  holdingsByNature,
   listAssets,
   portfolio,
   positions,
@@ -430,6 +431,62 @@ test('positions gather into masses, each carrying its own total, biggest first',
   assert.equal(
     held.masses.reduce((sum, m) => sum + m.positions.length, 0),
     held.positions.length,
+  )
+})
+
+test('the masses of the whole portfolio span accounts, each line keeping its own', async () => {
+  const user = await seedUser()
+  const pea = await createAccount({ userId: user, name: 'PEA', behavior: 'investment' })
+  const cto = await createAccount({ userId: user, name: 'Compte-titres', behavior: 'investment' })
+  const fund = await declareAsset(user, { name: 'Fonds maison', nature: 'fund' })
+  const other = await declareAsset(user, { name: 'Autre fonds', nature: 'fund' })
+  const shares = await declareAsset(user, { name: 'Parts non cotées', nature: 'equity' })
+  const buy = (accountId: string, assetId: string, quantity: number, amount: number) => ({
+    accountId,
+    assetId,
+    type: 'buy' as const,
+    quantity,
+    amount,
+    operatedOn: '2026-01-05',
+  })
+  await recordOperations(user, [
+    buy(pea.id, fund.id, 10, 1000),
+    buy(cto.id, fund.id, 4, 600),
+    buy(cto.id, other.id, 1, 100),
+    buy(pea.id, shares.id, 5, 500),
+  ])
+  await setManualPrice(user, fund.id, 150, '2026-08-20')
+  await setManualPrice(user, other.id, 120, '2026-08-20')
+  await setManualPrice(user, shares.id, 80, '2026-08-20')
+
+  const masses = holdingsByNature(await portfolio(user), { field: 'value', direction: 'desc' })
+  // One fund mass for both accounts, its total theirs together.
+  assert.deepEqual(
+    masses.map((m) => [m.nature, m.value, m.gain]),
+    [
+      ['fund', '2220.00', '520.00'],
+      ['equity', '400.00', '-100.00'],
+    ],
+  )
+  // The fund held on two accounts stays two lines, each with the average cost
+  // of its own purchases, ranked across accounts.
+  assert.deepEqual(
+    masses[0]?.positions.map((p) => [p.assetName, p.accountName, p.averageCost, p.value]),
+    [
+      ['Fonds maison', 'PEA', '100.00000000', '1500.00'],
+      ['Fonds maison', 'Compte-titres', '150.00000000', '600.00'],
+      ['Autre fonds', 'Compte-titres', '100.00000000', '120.00'],
+    ],
+  )
+  // Reversed, the lines turn over inside their mass; the masses keep their rank.
+  const reversed = holdingsByNature(await portfolio(user), { field: 'value', direction: 'asc' })
+  assert.deepEqual(
+    reversed.map((m) => m.nature),
+    ['fund', 'equity'],
+  )
+  assert.deepEqual(
+    reversed[0]?.positions.map((p) => p.value),
+    ['120.00', '600.00', '1500.00'],
   )
 })
 

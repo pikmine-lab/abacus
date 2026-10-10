@@ -9,10 +9,9 @@ import {
   type Mark,
   movementsHref,
   type RowLink,
-  share,
   UNSET_LABEL,
 } from '@/components/breakdown-bars'
-import { cn, eur } from '@/lib/utils'
+import { cn, eur, share } from '@/lib/utils'
 
 /*
  * The whole period in one bar: each line takes the length of its share, so

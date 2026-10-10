@@ -61,11 +61,31 @@ export function Block({
   )
 }
 
-/** "47 652" and "€": the number carries the figure, the unit stays quiet beside it. */
-function Amount({ value, decimals = 0, per }: { value: number; decimals?: number; per?: string }) {
+/**
+ * "47 652" and "€": the number carries the figure, the unit stays quiet beside
+ * it. A signed figure (a gain) carries its sign, which says the direction
+ * where colour alone would not; an unknown one is a dash, never a zero.
+ */
+function Amount({
+  value,
+  decimals = 0,
+  per,
+  signed,
+}: {
+  value: number | null
+  decimals?: number
+  per?: string
+  signed?: boolean
+}) {
+  if (value === null) return <span className="text-muted-foreground">—</span>
+  const sign = signed ? (value > 0 ? '+' : value < 0 ? '−' : '') : ''
   return (
     <>
-      {value.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
+      {sign}
+      {(signed ? Math.abs(value) : value).toLocaleString('fr-FR', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      })}
       <span className="ml-1 text-[0.5em] font-medium tracking-normal text-muted-foreground">€{per}</span>
     </>
   )
@@ -83,6 +103,7 @@ export function Figure({
   value,
   decimals,
   per,
+  signed,
   delta,
   note,
   href,
@@ -91,10 +112,13 @@ export function Figure({
 }: {
   label: string
   qualifier?: string
-  value: number
+  /** Null when it cannot be computed: the figure is a dash and its note says why. */
+  value: number | null
   decimals?: number
   /** Unit suffix after the euro sign, e.g. "/mois". */
   per?: string
+  /** A gain or a loss: written with its sign. */
+  signed?: boolean
   delta?: Delta
   note?: React.ReactNode
   /** Makes the whole figure the way into the page that owns its detail. */
@@ -124,7 +148,7 @@ export function Figure({
               : 'mt-2.5 mb-2 text-[30px] tracking-[-0.03em] sm:text-[40px]',
         )}
       >
-        <Amount value={value} decimals={decimals} per={per} />
+        <Amount value={value} decimals={decimals} per={per} signed={signed} />
       </p>
       {delta && <DeltaLine delta={delta} />}
       {note && <p className="text-[11.5px] text-faint">{note}</p>}
@@ -146,6 +170,9 @@ export function Figure({
   )
 }
 
+/** At most three cells complete a line of four, and they are interchangeable. */
+const BLANKS = ['blank-1', 'blank-2', 'blank-3']
+
 /**
  * Figures side by side, separated by hairlines rather than boxed; stacked on a
  * phone. A compact row holds three or four compact figures and pairs them on
@@ -164,16 +191,32 @@ export function FigureRow({ compact, children }: { compact?: boolean; children: 
   // dividers would need a different set per layout.
   // toArray, not count: a figure left out by a condition is a `false` child,
   // which count still counts.
-  const count = Children.toArray(children).length
+  const items = Children.toArray(children)
+  const count = items.length
+  // One or two figures share the line, past four they wrap by four. A wrapped last
+  // line is completed with blank cells: a missing cell would show the rule
+  // colour the hairlines are drawn with as a filled block.
+  const columns = count <= 2 ? Math.max(count, 1) : count === 3 ? 3 : 4
+  const blanks = (columns - (count % columns)) % columns
   return (
     <div
       className={cn(
-        'grid grid-cols-2 gap-px border-y border-border bg-border [&>*]:bg-background [&>*]:py-3 [&>*]:pr-4 [&>*]:pl-4 max-sm:[&>*:nth-child(odd)]:pl-0 sm:[&>*]:px-6 sm:[&>*:first-child]:pl-0',
-        count === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3',
-        count % 2 === 1 && 'max-sm:[&>*:last-child]:col-span-2',
+        'grid grid-cols-2 gap-px border-y border-border bg-border [&>*]:bg-background [&>*]:py-3 [&>*]:pr-4 [&>*]:pl-4 max-sm:[&>*:nth-child(odd)]:pl-0 sm:[&>*]:px-6 sm:[&>*:nth-child(4n+1)]:pl-0',
+        columns === 1
+          ? 'sm:grid-cols-1'
+          : columns === 2
+            ? 'sm:grid-cols-2'
+            : columns === 3
+              ? 'sm:grid-cols-3'
+              : 'sm:grid-cols-4',
+        // The last figure, not the last cell: blanks are gone on a phone.
+        count % 2 === 1 && 'max-sm:[&>:nth-last-child(1_of_:not([aria-hidden]))]:col-span-2',
       )}
     >
-      {children}
+      {items}
+      {BLANKS.slice(0, blanks).map((key) => (
+        <div key={key} aria-hidden className="max-sm:hidden" />
+      ))}
     </div>
   )
 }

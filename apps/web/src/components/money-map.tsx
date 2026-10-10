@@ -16,10 +16,9 @@ import {
   useRef,
   useState,
 } from 'react'
-import { share } from '@/components/breakdown-bars'
 import { Button } from '@/components/ui/button'
 import { drawn, FOCUS_PARAM, type MapNode, VIEW_PARAM } from '@/lib/money-map'
-import { eur, frDate } from '@/lib/utils'
+import { eur, frDate, share } from '@/lib/utils'
 
 /*
  * The period as a map: every block as large as the net it weighs, nested from

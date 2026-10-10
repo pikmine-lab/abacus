@@ -5,7 +5,7 @@ import { ChevronRightIcon } from 'lucide-react'
 import Link from 'next/link'
 import { type PointerEvent, useState } from 'react'
 import { type Period, periodParams } from '@/lib/period'
-import { eur, NONE } from '@/lib/utils'
+import { eur, NONE, share } from '@/lib/utils'
 
 /**
  * Ranked magnitudes: one bar per category, actor, activity or category group.
@@ -425,11 +425,4 @@ function Cells({
       {inner}
     </div>
   )
-}
-
-/** A part of a whole in whole percents; a sliver is said to be one, not zero. */
-export function share(part: number, total: number): string {
-  if (total <= 0) return '–'
-  const pct = (part / total) * 100
-  return pct > 0 && pct < 1 ? '< 1 %' : `${Math.round(pct)} %`
 }
