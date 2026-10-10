@@ -110,7 +110,7 @@ Trois conséquences, qui valent pour toutes les lignes :
 - Migrations : `migrations/*.sql`, forward-only, runner `nr migrate` (advisory lock,
   une transaction). `0001` = schéma Better Auth généré, `0002` = domaine.
 - Monorepo pnpm : `packages/core` (domaine + services + datasources), `apps/web` (Next.js),
-  `apps/mcp` (serveur MCP).
+  `apps/mcp` (serveur MCP), `packages/data-seed` (jeu de démo local, hors des images).
 
 ## Développement local
 
@@ -121,8 +121,23 @@ créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de prod e
 ```sh
 nr db:up         # démarre la base (port local 5544)
 nr migrate:dev   # applique les migrations dessus
-nr db:reset      # base vierge (détruit le volume)
+nr data:seed     # réécrit le compte de démo dans la base qu'ouvre l'app
+nr db:reset      # base neuve, migrée et semée (détruit le volume, bases des worktrees comprises)
 ```
+
+**Un compte de démo remplit chaque écran** : `demo@abacus.local`, mot de passe
+`demo-abacus`, locaux et jetables. `packages/data-seed` le réécrit en entier à chaque
+lancement, par les services de `packages/core` : il n'écrit rien que les deux interfaces ne
+pourraient écrire. Son historique couvre un an et se termine le jour même ; seules les dates
+bougent, les noms et les montants sont fixes. Il tourne à la création de chaque worktree,
+après les migrations, et `nr data:seed` le relance sur la base que lit
+`apps/web/.env.local`. Ce qui est saisi à la main sur ce compte disparaît à la relance, les
+autres comptes de la base ne sont pas touchés, et une base qui n'est pas locale est refusée.
+
+**Une fonctionnalité qui ajoute de quoi déclarer enrichit le jeu de démo dans la même PR**,
+sinon son écran reste vide en local. Les noms y sont inventés (aucune banque, aucun client,
+aucun montant réel) ; une donnée publique, un instrument coté ou un régime du catalogue,
+s'y utilise telle quelle.
 
 L'app web se lance avec `pnpm --filter @abacus/web dev` et lit `apps/web/.env.local`
 (non commité) : `DATABASE_URL` vers la base Docker, `BETTER_AUTH_SECRET` quelconque,
