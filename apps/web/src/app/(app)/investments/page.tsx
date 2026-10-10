@@ -1,5 +1,4 @@
 import { auth } from '@abacus/core/auth'
-import type { Position } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActivities } from '@abacus/core/services/catalog'
@@ -16,11 +15,11 @@ import {
   DEFAULT_OPERATION_SORT,
   DEFAULT_POSITION_SORT,
   firstOperationOn,
+  holdingsByNature,
   listAssets,
   listOperations,
   OPERATION_SORTS,
   POSITION_SORTS,
-  type PositionMass,
   portfolio,
   refreshQuotes,
   valuation,
@@ -28,30 +27,30 @@ import {
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { useTranslations } from 'next-intl'
 import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { CommitmentRow } from '@/components/commitment-blocks'
-import { EntrySheet } from '@/components/entry-sheet'
+import { ActionCard, Block, Figure, FigureRow } from '@/components/composition'
+import { EntryDock } from '@/components/entry-dock'
+import { EntryMenu, EntrySheet } from '@/components/entry-sheet'
+import { BAND } from '@/components/expense-list'
 import { FoldSection } from '@/components/fold-section'
 import {
   type AssetEntry,
-  AssetMenu,
   AssetRows,
   FollowForm,
   OperationForm,
   OperationRows,
 } from '@/components/investment-forms'
 import { InvestmentPlanForm, type PlacementOptions } from '@/components/investment-plan-forms'
-import { MassFold } from '@/components/mass-fold'
-import { EmptyLine, PageBody, PageHeader, RowArrow, Rows, Section } from '@/components/page-shell'
+import { MassFocus } from '@/components/mass-strip'
+import { EmptyLine, PageBody, PageHeader, Rows } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
-import { SortColumn, SortMenu } from '@/components/sort'
-import { StatRow, StatTile } from '@/components/stats'
+import { PositionList } from '@/components/position-list'
+import { SortMenu } from '@/components/sort'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
-import { type Format, useFormat } from '@/lib/format'
 import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
 
@@ -62,99 +61,10 @@ export async function generateMetadata() {
   return { title: t('title') }
 }
 
+const PATH = '/investments'
+
 /** How much of the journal the page shows at once. */
 const OPERATION_PAGE = 30
-
-/**
- * When the price was made, to the minute. Euronext is 15 minutes delayed at
- * best, imposed by its licence, so freshness cannot be gained: it is declared
- * instead, and a number without its hour would be read as "now".
- */
-function priceStamp(
-  at: Date | null,
-  manual: boolean,
-  format: Format,
-  enteredOn: (day: string) => string,
-): string | null {
-  if (!at) return null
-  const day = at.toLocaleDateString(format.locale, { day: '2-digit', month: '2-digit' })
-  if (manual) return enteredOn(day)
-  // Bare day and hour: it sits under the name, beside the Cours column, so the
-  // word "cours" would only cost the room the hour needs.
-  return `${day} ${at.toLocaleTimeString(format.locale, { hour: '2-digit', minute: '2-digit' })}`
-}
-
-/**
- * One holding: what it is, how much of it, what it is worth. The average cost
- * and the hour of its price ride under the name, so the two numbers one comes
- * for (its value, what it made) are the ones that always fit.
- */
-function PositionRow({ position }: { position: Position }) {
-  const t = useTranslations('investments')
-  const format = useFormat()
-  const stamp = priceStamp(position.pricedAt, position.manualPrice, format, (day) =>
-    t('page.manualStamp', { day }),
-  )
-  const gain = position.gain === null ? null : Number(position.gain)
-  return (
-    <div className="group flex items-center gap-3 py-2">
-      <Link
-        href={`/investments/${position.assetId}?from=investments`}
-        className="flex min-w-0 flex-1 flex-col gap-0.5"
-      >
-        <span className="truncate text-[12.5px] group-hover:text-primary">{position.assetName}</span>
-        <span className="truncate text-[11px] text-faint">
-          {t('words.averageCost', { amount: format.eur(position.averageCost, 2) })}
-          {` · ${stamp ?? t('page.noPrice')}`}
-        </span>
-      </Link>
-      <span className="tabular w-14 text-right text-[12.5px]">{format.number(position.quantity, 8)}</span>
-      <span className="tabular w-[4.5rem] text-right text-[12.5px] text-muted-foreground">
-        {position.price === null ? '—' : format.eur(position.price, 2)}
-      </span>
-      <span className="tabular w-[5.5rem] text-right text-[12.5px]">
-        {position.value === null ? '—' : format.eur(position.value, 2)}
-      </span>
-      <span className={`tabular w-[5.5rem] text-right text-[12.5px] ${gainInk(gain)}`}>
-        {/* The arrow carries the direction; color reinforces it. */}
-        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${format.eurSigned(gain, 2)}`}
-      </span>
-      <RowArrow />
-      <AssetMenu id={position.assetId} name={position.assetName} />
-    </div>
-  )
-}
-
-function gainInk(gain: number | null): string {
-  return gain === null ? 'text-faint' : gain >= 0 ? 'text-good' : 'text-destructive'
-}
-
-/**
- * A mass's own numbers, in the columns its lines use: the two that add up.
- * Quantities do not (three shares and two coins are not five of anything) and
- * neither does a price, so those two columns stay empty rather than answer
- * something false.
- */
-function MassFigures({ mass }: { mass: PositionMass }) {
-  const format = useFormat()
-  const gain = mass.gain === null ? null : Number(mass.gain)
-  // Nothing here has a price: a zero would read as "this mass is worth
-  // nothing", where the header's note says what is actually the case.
-  const blind = mass.unpriced === mass.positions.length
-  return (
-    <>
-      <span className="w-14" />
-      <span className="w-[4.5rem]" />
-      <span className="tabular w-[5.5rem] text-right text-[12.5px] font-semibold">
-        {blind ? '—' : format.eur(mass.value, 2)}
-      </span>
-      <span className={`tabular w-[5.5rem] text-right text-[12.5px] font-semibold ${gainInk(gain)}`}>
-        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${format.eurSigned(gain, 2)}`}
-      </span>
-      <span className="w-11" />
-    </>
-  )
-}
 
 export default async function InvestmentsPage({
   searchParams,
@@ -174,7 +84,8 @@ export default async function InvestmentsPage({
 
   const now = today()
   const params = await searchParams
-  const reading = params.chart === 'performance' ? 'performance' : 'value'
+  // The chart opens on what the placements made: their worth is the figure beside it.
+  const reading = params.chart === 'value' ? 'value' : 'performance'
   // Three lists on the page, three orders: each writes its own parameter, so
   // ranking the holdings never reshuffles the journal under them.
   const positionSort = sorter('positions', POSITION_SORTS, DEFAULT_POSITION_SORT, params)
@@ -214,6 +125,10 @@ export default async function InvestmentsPage({
   const totalReturn = complete ? held.reduce((sum, h) => sum + Number(h.totalReturn), 0) : null
   const contributions = held.reduce((sum, h) => sum + Number(h.netContributions), 0)
   const unrealized = value - cash - costBasis
+  // The split is read across accounts; a line names its account only when
+  // more than one holds something, since otherwise every line would say the same.
+  const masses = holdingsByNature(held, positionSort.current)
+  const holdingAccounts = held.filter((h) => h.positions.length > 0).length
 
   // Followed, not held: an asset with no position is one being watched. That is
   // the whole mechanism, and it needs no flag of its own.
@@ -250,26 +165,47 @@ export default async function InvestmentsPage({
     activities: placementOptions.activities,
   }
 
+  // The two rarer entries, declared once: written out beside the frequent one
+  // on a wide screen, gathered behind one menu on a phone, where the header
+  // has room for a single named button.
+  const followEntry = {
+    label: t('page.follow.title'),
+    title: t('page.follow.title'),
+    description: t('page.follow.description'),
+    content: <FollowForm />,
+  }
+  const planEntry = {
+    label: t('page.plan.label'),
+    title: t('page.plan.title'),
+    description: t('page.plan.description'),
+    content: <InvestmentPlanForm options={placementOptions} today={now} />,
+  }
   const entry = (
     <>
-      <EntrySheet
-        label={t('page.follow.label')}
-        title={t('page.follow.title')}
-        description={t('page.follow.description')}
-        variant="outline"
-      >
-        <FollowForm />
-      </EntrySheet>
-      <EntrySheet
-        label={t('page.plan.label')}
-        title={t('page.plan.title')}
-        description={t('page.plan.description')}
-        variant="outline"
-      >
-        <InvestmentPlanForm options={placementOptions} today={now} />
-      </EntrySheet>
+      <div className="contents max-sm:hidden">
+        <EntrySheet
+          label={t('page.follow.label')}
+          title={followEntry.title}
+          description={followEntry.description}
+          variant="outline"
+        >
+          {followEntry.content}
+        </EntrySheet>
+        <EntrySheet
+          label={planEntry.label}
+          title={planEntry.title}
+          description={planEntry.description}
+          variant="outline"
+        >
+          {planEntry.content}
+        </EntrySheet>
+      </div>
+      <div className="contents sm:hidden">
+        <EntryMenu label={t('page.otherEntries')} entries={[followEntry, planEntry]} />
+      </div>
       <EntrySheet
         label={t('page.operation.label')}
+        short={t('page.operation.short')}
         title={t('page.operation.title')}
         description={t('page.operation.description')}
       >
@@ -283,12 +219,13 @@ export default async function InvestmentsPage({
   )
 
   return (
-    <>
-      <PageHeader title={t('title')} description={t('page.description')}>
-        {investmentAccounts.length > 0 && entry}
-      </PageHeader>
+    // Operations are declared in bursts: the panel docks beside the page, so
+    // each one sent lands in a journal that stays readable next to it.
+    <EntryDock>
+      <PageHeader title={t('title')}>{investmentAccounts.length > 0 && entry}</PageHeader>
 
-      <PageBody>
+      {/* One container for the band and the list, so the list's figures line up under its split. */}
+      <PageBody className="@container gap-10">
         {investmentAccounts.length === 0 ? (
           <EmptyLine>
             {t.rich('page.noAccount', {
@@ -300,133 +237,101 @@ export default async function InvestmentsPage({
             })}
           </EmptyLine>
         ) : firstOperation === null && assets.length === 0 && plans.length === 0 ? (
-          // One line, and the two panels the header already carries: a title, a
+          // One line, and the panels the header already carries: a title, a
           // description and a sentence all saying "nothing yet" said it thrice.
           <EmptyLine>{t('page.firstBuy')}</EmptyLine>
         ) : (
           <>
-            <StatRow>
-              <StatTile
-                hero
-                label={t('words.value')}
-                value={format.eur(value)}
-                hint={unpriced > 0 ? t('page.valueHintUnpriced', { count: unpriced }) : t('page.valueHint')}
-                delta={positionCount > 0 ? { value: unrealized, label: t('page.unrealized') } : undefined}
-              />
-              <StatTile
-                label={t('words.performance')}
-                value={totalReturn === null ? '—' : format.eurSigned(totalReturn)}
-                // The method is the number: what it includes, and what it is
-                // measured against. Naming the contributions is what makes it
-                // checkable by hand.
-                hint={
-                  totalReturn === null
-                    ? t('page.performanceMissing')
-                    : t('page.performanceHint', { amount: format.eur(contributions) })
-                }
-              />
-              {/* Counted apart, never beside the committed costs: this money
-                  stays the user's, it only changes form. */}
-              {plans.length > 0 && (
-                <StatTile
-                  label={t('page.scheduled')}
-                  value={t('page.scheduledValue', { amount: format.eur(monthlyInvested, 2) })}
-                  hint={t('page.scheduledHint', {
-                    yearly: format.eur(monthlyInvested * 12),
-                    count: plans.length,
-                  })}
+            {/* The figure that dominates with what it rests on under it, beside
+                what waits on the user: the placements that fell. */}
+            <div className={BAND}>
+              <div className="flex min-w-0 flex-col gap-4">
+                <Figure
+                  hero
+                  label={t('words.value')}
+                  value={value}
+                  delta={positionCount > 0 ? { value: unrealized, label: t('page.unrealized') } : undefined}
+                  note={unpriced > 0 ? t('page.valueHintUnpriced', { count: unpriced }) : t('page.valueHint')}
                 />
+                <FigureRow compact>
+                  <Figure
+                    compact
+                    signed
+                    label={t('words.performance')}
+                    value={totalReturn}
+                    // The method is the number: what it includes, and what it is
+                    // measured against. Naming the contributions is what makes it
+                    // checkable by hand.
+                    note={
+                      totalReturn === null
+                        ? t('page.performanceMissing')
+                        : t('page.performanceHint', { amount: format.eur(contributions) })
+                    }
+                  />
+                  {/* Counted apart, never beside the committed costs: this money
+                      stays the user's, it only changes form. */}
+                  {plans.length > 0 && (
+                    <Figure
+                      compact
+                      label={t('page.scheduled')}
+                      value={monthlyInvested}
+                      per={t('page.perMonth')}
+                      note={t('page.scheduledYearly', { amount: format.eur(monthlyInvested * 12) })}
+                    />
+                  )}
+                </FigureRow>
+              </div>
+              {/* An occurrence waiting to be confirmed is work to do: it never
+                  waits behind the plans' fold. Beside the figure, the card never
+                  runs longer than it and scrolls within; stacked, it takes the
+                  room it needs. */}
+              {pendingPlacements.length > 0 && (
+                <div className="relative min-h-0">
+                  <div className="flex flex-col @4xl:absolute @4xl:inset-x-0 @4xl:top-0 @4xl:max-h-full">
+                    <ActionCard label={t('page.toConfirm')} scrolls>
+                      <PendingOccurrences
+                        back={PATH}
+                        aheadInPanel
+                        items={pendingPlacements.map((p) => ({
+                          commitmentId: p.commitment.id,
+                          label: p.commitment.label,
+                          dueOn: p.dueOn,
+                          periodUnit: p.commitment.periodUnit,
+                          ahead: p.ahead,
+                          amount: p.amount,
+                          currency: p.commitment.currency,
+                          incoming: false,
+                          account: accountNames.get(p.accountId) ?? '',
+                          placement: {
+                            targetAccount: accountNames.get(p.placement!.targetAccountId) ?? '',
+                            asset: assetNames.get(p.placement!.assetId) ?? '',
+                          },
+                        }))}
+                      />
+                    </ActionCard>
+                  </div>
+                </div>
               )}
-            </StatRow>
-
-            {/* Its own section, outside the fold below: an occurrence waiting
-                to be confirmed is work to do, and folding the plans away must
-                not take it out of sight. */}
-            {pendingPlacements.length > 0 && (
-              <Section title={t('page.pending.title')} description={t('page.pending.description')}>
-                <PendingOccurrences
-                  back="/investments"
-                  items={pendingPlacements.map((p) => ({
-                    commitmentId: p.commitment.id,
-                    label: p.commitment.label,
-                    dueOn: p.dueOn,
-                    periodUnit: p.commitment.periodUnit,
-                    ahead: p.ahead,
-                    amount: p.amount,
-                    currency: p.commitment.currency,
-                    incoming: false,
-                    account: accountNames.get(p.accountId) ?? '',
-                    placement: {
-                      targetAccount: accountNames.get(p.placement!.targetAccountId) ?? '',
-                      asset: assetNames.get(p.placement!.assetId) ?? '',
-                    },
-                  }))}
-                />
-              </Section>
-            )}
-
-            {plans.length > 0 && (
-              <FoldSection
-                title={t('page.plans.title')}
-                description={t('page.plans.description')}
-                action={
-                  plans.length > 1 && (
-                    <SortMenu
-                      sorter={planSort}
-                      options={[
-                        { field: 'monthly', label: t('page.plans.sorts.monthly') },
-                        { field: 'amount', label: t('page.plans.sorts.amount') },
-                        { field: 'next', label: t('page.plans.sorts.next') },
-                        { field: 'label', label: t('words.name') },
-                      ]}
-                    />
-                  )
-                }
-              >
-                <Rows>
-                  {sortCommitments(plans, planSort.current).map((plan) => (
-                    <CommitmentRow
-                      key={plan.id}
-                      commitment={plan}
-                      showJudgment={false}
-                      today={now}
-                      options={commitmentOptions}
-                      placement={{
-                        options: placementOptions,
-                        assetName: assetNames.get(plan.assetId ?? '') ?? '',
-                      }}
-                    />
-                  ))}
-                </Rows>
-              </FoldSection>
-            )}
+            </div>
 
             {series.some((p) => Number(p.holdings) > 0) && (
-              <Section
-                // The selected tab names the reading, so the title does not
-                // repeat it: "Performance" as a title, as an active tab and as
-                // a tile above said one thing three times.
-                title={t('page.evolution.title')}
-                description={
-                  reading === 'performance'
-                    ? t('page.evolution.performanceSince', { date: format.date(from) })
-                    : t('page.evolution.valueSince', { date: format.date(from) })
-                }
-                action={
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+              // The selected reading names the block: a title over a tab saying
+              // the same word said it twice.
+              <section aria-label={t('page.evolution.title')} className="flex min-w-0 flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <UrlTabs
+                    param="chart"
+                    fallback="performance"
+                    ariaLabel={t('page.evolution.readingLabel')}
+                    options={[
+                      { value: 'performance', label: t('words.performance') },
+                      { value: 'value', label: t('words.value') },
+                    ]}
+                  />
+                  <div className="ml-auto">
                     <WindowTabs />
-                    <UrlTabs
-                      param="chart"
-                      fallback="value"
-                      ariaLabel={t('page.evolution.readingLabel')}
-                      options={[
-                        { value: 'value', label: t('words.value') },
-                        { value: 'performance', label: t('words.performance') },
-                      ]}
-                    />
                   </div>
-                }
-              >
+                </div>
                 {reading === 'performance' ? (
                   // The contributions laid flat. Drawn this way the curve does
                   // not jump when money comes in (both series rise by the same
@@ -460,110 +365,87 @@ export default async function InvestmentsPage({
                     ariaLabel={t('page.evolution.valueAria')}
                   />
                 )}
-              </Section>
+              </section>
             )}
 
-            {held.map(({ account, positions, masses, cash: accountCash, value: accountValue }) => (
-              <Section
-                key={account.id}
-                title={account.name}
-                description={
-                  Number(accountCash) < 0
-                    ? t('page.accountToFund', {
-                        value: format.eur(accountValue, 2),
-                        cash: format.eur(-Number(accountCash), 2),
-                      })
-                    : t('page.accountCash', {
-                        value: format.eur(accountValue, 2),
-                        cash: format.eur(accountCash, 2),
-                      })
-                }
-              >
-                {positions.length === 0 ? (
-                  <EmptyLine>{t('page.noPosition')}</EmptyLine>
-                ) : (
-                  <div className="overflow-x-auto">
-                    {/* Five columns, not six: the average cost and the hour of
-                        the price ride under the name, so the two numbers being
-                        looked for (what it is worth, what it made) are the ones
-                        that always fit. */}
-                    <Rows className="min-w-[30rem]">
-                      <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
-                        <SortColumn
-                          sorter={positionSort}
-                          field="name"
-                          label={t('words.asset')}
-                          className="min-w-0 flex-1"
-                        />
-                        <SortColumn
-                          sorter={positionSort}
-                          field="quantity"
-                          label={t('words.quantity')}
-                          align="right"
-                          className="w-14 shrink-0"
-                        />
-                        <SortColumn
-                          sorter={positionSort}
-                          field="price"
-                          label={t('words.price')}
-                          align="right"
-                          className="w-[4.5rem] shrink-0"
-                        />
-                        <SortColumn
-                          sorter={positionSort}
-                          field="value"
-                          label={t('words.value')}
-                          align="right"
-                          className="w-[5.5rem] shrink-0"
-                        />
-                        <SortColumn
-                          sorter={positionSort}
-                          field="gain"
-                          label={t('page.gainColumn')}
-                          align="right"
-                          className="w-[5.5rem] shrink-0"
-                        />
-                        <span className="w-11" />
-                      </div>
-                      {/* A single mass carries no header: its total is the
-                          account's, which the section already states. */}
-                      {masses.length === 1
-                        ? positions.map((position) => (
-                            <PositionRow key={position.assetId} position={position} />
-                          ))
-                        : masses.map((mass) => (
-                            <MassFold
-                              key={mass.nature}
-                              label={t(`natures.${mass.nature}`)}
-                              note={
-                                mass.unpriced > 0
-                                  ? t('page.massUnpriced', { count: mass.unpriced })
-                                  : undefined
-                              }
-                              figures={<MassFigures mass={mass} />}
-                            >
-                              {mass.positions.map((position) => (
-                                <PositionRow key={position.assetId} position={position} />
-                              ))}
-                            </MassFold>
-                          ))}
-                    </Rows>
-                  </div>
-                )}
-              </Section>
-            ))}
+            {positionCount > 0 && (
+              <MassFocus>
+                <PositionList masses={masses} sorter={positionSort} showAccount={holdingAccounts > 1} />
+              </MassFocus>
+            )}
+
+            {/* The accounts keep what the masses cannot say: their own worth,
+                and the cash beside the holdings. */}
+            <Block label={t('page.accounts')}>
+              <FigureRow compact>
+                {held.map(({ account, positions, cash: accountCash, value: accountValue }) => (
+                  <Figure
+                    compact
+                    key={account.id}
+                    label={account.name}
+                    value={Number(accountValue)}
+                    note={
+                      Number(accountCash) < 0
+                        ? t('page.toFund', { cash: format.eur(-Number(accountCash), 2) })
+                        : positions.length === 0
+                          ? t('page.noPositionShort')
+                          : t('page.inCash', { cash: format.eur(accountCash, 2) })
+                    }
+                  />
+                ))}
+              </FigureRow>
+            </Block>
 
             {followed.length > 0 && (
-              <Section title={t('page.followed.title')} description={t('page.followed.description')}>
+              <Block label={t('page.followed.title')}>
                 <AssetRows assets={followed} />
-              </Section>
+              </Block>
             )}
 
-            <Section
-              title={t('words.operations')}
+            {/* Declared once and reread rarely: folded, so it does not push
+                down what the page is opened for. */}
+            {plans.length > 0 && (
+              <FoldSection
+                title={t('page.plans.title')}
+                description={t('page.plans.count', { count: plans.length })}
+                action={
+                  plans.length > 1 && (
+                    <SortMenu
+                      sorter={planSort}
+                      options={[
+                        { field: 'monthly', label: t('page.plans.sorts.monthly') },
+                        { field: 'amount', label: t('page.plans.sorts.amount') },
+                        { field: 'next', label: t('page.plans.sorts.next') },
+                        { field: 'label', label: t('words.name') },
+                      ]}
+                    />
+                  )
+                }
+              >
+                <Rows>
+                  {sortCommitments(plans, planSort.current).map((plan) => (
+                    <CommitmentRow
+                      key={plan.id}
+                      commitment={plan}
+                      showJudgment={false}
+                      today={now}
+                      options={commitmentOptions}
+                      placement={{
+                        options: placementOptions,
+                        assetName: assetNames.get(plan.assetId ?? '') ?? '',
+                      }}
+                    />
+                  ))}
+                </Rows>
+              </FoldSection>
+            )}
+
+            <Block
+              label={t('words.operations')}
+              className="gap-2"
               // What the slice holds depends on the order it was cut in, so it
               // is named rather than left to be assumed.
-              description={
+              qualifier={
                 operationSort.current.field === 'date' && operationSort.current.direction === 'desc'
                   ? t('page.latest', { count: OPERATION_PAGE })
                   : t('page.atMost', { count: OPERATION_PAGE })
@@ -588,10 +470,10 @@ export default async function InvestmentsPage({
                   accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
                 />
               )}
-            </Section>
+            </Block>
           </>
         )}
       </PageBody>
-    </>
+    </EntryDock>
   )
 }

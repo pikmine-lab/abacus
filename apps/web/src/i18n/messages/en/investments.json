@@ -49,7 +49,6 @@
     "averageCost": "Avg cost {amount}"
   },
   "page": {
-    "description": "what you hold, and what it is worth",
     "follow": {
       "label": "Watch",
       "title": "Watch an asset",
@@ -63,7 +62,8 @@
     "operation": {
       "label": "Declare an operation",
       "title": "Operation",
-      "description": "What happens inside the account. Funding the account or taking money out of it is a transfer, declared in movements."
+      "description": "What happens inside the account. Funding the account or taking money out of it is a transfer, declared in movements.",
+      "short": "Declare"
     },
     "noAccount": "No investment account. Create one in <link>Accounts</link>, then declare here what you hold in it.",
     "firstBuy": "Declare your first buy: the panel finds the ETF, share or crypto by its name, ISIN or provider.",
@@ -73,55 +73,50 @@
     "performanceMissing": "a price is missing: the figure would be understated",
     "performanceHint": "dividends and fees included, against {amount} of contributions",
     "scheduled": "Scheduled savings",
-    "scheduledValue": "{amount}/mo",
-    "scheduledHint": "{yearly} a year · {count, plural, one {# contribution} other {# contributions}}",
-    "pending": {
-      "title": "Due payments to confirm",
-      "description": "the transfer and the buy are recorded together, plus the quantity received"
-    },
     "plans": {
       "title": "Scheduled contributions",
-      "description": "what goes to an investment account on its own",
       "sorts": {
         "monthly": "Monthly savings",
         "amount": "Amount paid in",
         "next": "Next due date"
-      }
+      },
+      "count": "{count} running"
     },
     "evolution": {
       "title": "Over time",
-      "performanceSince": "value − contributions, since {date}",
-      "valueSince": "against contributions, since {date}",
       "readingLabel": "Chart reading",
       "performanceAria": "Investment performance against contributions",
       "valueAria": "Investment value and contributions"
     },
-    "accountToFund": "{value} · {cash} to fund",
-    "accountCash": "{value} · {cash} in cash",
-    "noPosition": "No positions: nothing has been bought in this account yet.",
     "gainColumn": "Gain/loss",
     "massUnpriced": "{count} without a price, not valued",
     "noPrice": "no known price",
     "manualStamp": "entered {day}",
     "followed": {
-      "title": "Watched",
-      "description": "not held yet"
+      "title": "Watched"
     },
     "latest": "the last {count}",
     "atMost": "{count} at most, in this order",
-    "noOperation": "Nothing declared yet."
+    "noOperation": "Nothing declared yet.",
+    "otherEntries": "Other entries",
+    "toConfirm": "To confirm",
+    "scheduledYearly": "{amount} a year",
+    "positions": "Positions",
+    "strip": "Split of positions",
+    "accounts": "Accounts",
+    "toFund": "{cash} to fund",
+    "inCash": "{cash} in cash",
+    "noPositionShort": "no position",
+    "perMonth": "/mo"
   },
   "detail": {
-    "againstCost": "against cost basis",
     "costBasis": "Cost basis",
     "costBasisHint": "Avg cost {amount}, order fees included",
-    "watchedLastPrice": "Watched, not held: last price {price}.",
-    "watchedNoPrice": "Watched, not held: no known price yet.",
+    "watchedNoPrice": "watched, not held; no known price",
     "sessions": "{count, plural, one {# known session} other {# known sessions}}",
     "priceAria": "{name} price",
-    "onThisAsset": "on this asset",
-    "noOperation": "No operations: this asset is watched, not held.",
-    "unrealizedNote": "Unrealized gain {gain}: value minus cost basis, excluding dividends received and fees paid, which went through the account’s cash."
+    "unrealized": "unrealized gain, dividends and fees excluded",
+    "watched": "watched, not held"
   },
   "search": {
     "otherVenuesOpen": "same fund, other listings",

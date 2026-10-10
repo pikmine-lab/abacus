@@ -377,13 +377,16 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   la voie sûre en premier (l'ISIN, affiché par la banque).
 - **Ce que l'application ne sait pas tenir reste visible et désactivé, avec son motif** :
   disparaître sans un mot se lirait « pas trouvé ».
-- **Les positions se lisent par masse.** Actions, fonds, crypto et ce qu'aucun marché ne cote ne
-  se lisent pas ensemble : la répartition est la première question posée à un compte, et la
-  reconstituer demandait de reconnaître chaque ligne à son nom. Chaque masse porte donc son total
-  et se déplie sur ses lignes, ouverte par défaut : le repli est un geste qu'on demande, pas un
-  péage. Un compte qui ne tient qu'une masse n'affiche pas d'en-tête, dont le total répéterait le
-  sien, et une masse dont aucune ligne n'a de cours affiche un tiret, jamais zéro. Les actifs
-  suivis se regroupent pareil, sans total : rien n'y est détenu.
+- **Les positions se lisent par masse, tous comptes confondus.** Actions, fonds, crypto et ce
+  qu'aucun marché ne cote ne se lisent pas ensemble : la répartition est la première question
+  posée à un portefeuille, et la reconstituer demandait de reconnaître chaque ligne à son nom,
+  compte après compte. Le ruban pèse les masses au-dessus de la liste ; chaque masse porte son
+  total et se déplie sur ses lignes, ouverte par défaut : le repli est un geste qu'on demande,
+  pas un péage. Une ligne nomme son compte dès que plusieurs comptes détiennent des positions.
+  Une masse d'une seule ligne n'affiche pas de totaux, qui répéteraient sa ligne, et une masse
+  dont aucune ligne n'a de cours affiche un tiret, jamais zéro. Ce que les masses ne disent pas
+  d'un compte, sa valeur et ses espèces, se lit dans la rangée « Comptes ». Les actifs suivis se
+  regroupent pareil, sans total : rien n'y est détenu.
 - **La nature d'un actif hors marché se demande à sa déclaration**, dans une liste déroulante
   comme les autres champs du panneau : elle ne concerne que ce qu'aucune source ne cote, donc
   elle ne pèse pas plus qu'un champ ordinaire. Un actif coté ne la demande pas, sa source la dit.
@@ -424,15 +427,16 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   et un actif, pas un acteur : sa place est là où l'actif se cherche déjà. Sa ligne dit vers
   quel compte il part et ce qu'il achète, les deux faits qu'aucun montant ne donne, et le
   panneau de correction est le sien (ni acteur, ni catégorie, ni date de fin). Ce qu'il engage
-  par mois se lit dans sa **propre tuile**, jamais additionné au coût mensuel engagé : cet
+  par mois se lit dans son **propre chiffre**, jamais additionné au coût mensuel engagé : cet
   argent reste celui de la personne, il change de forme.
 - **Ce qui se relit rarement se replie, le travail à faire jamais.** Les versements
   programmés se déclarent une fois et poussent vers le bas ce qu'on vient regarder : leur
   section se replie derrière son titre (`FoldSection`, le `<details>` natif des masses),
   s'ouvre fermée, et porte son ordre dans son en-tête comme les abonnements. Rien ne
   mémorise le repli et un rechargement le referme : c'est un geste de lecture, pas un
-  réglage. Les échéances à confirmer ont donc leur propre section, dépliée : une échéance
-  en attente est un travail à faire, et on ne déplie pas pour découvrir qu'on en a.
+  réglage. Les échéances à confirmer vivent donc dans la carte « À confirmer », à côté du
+  chiffre : une échéance en attente est un travail à faire, et on ne déplie pas pour
+  découvrir qu'on en a.
 - **Son échéance se confirme là aussi, et elle demande la quantité.** C'est la seule
   confirmation qui n'est pas un oui/non même quand le montant est juste : l'ordre s'exécute à
   un cours intraday, donc rien ne peut déduire les parts, et le bouton reste inerte tant

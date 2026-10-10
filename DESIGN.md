@@ -36,12 +36,17 @@ new-york). Quatre principes gouvernent le reste :
 - **Les autres chiffres forment une rangée séparée par des filets** (`FigureRow`) : un mot
   pour les nommer, la valeur, l'écart signé contre une fenêtre nommée (la période du titre
   quand c'est elle). Une note n'apparaît que si elle change ce que le chiffre veut dire : une
-  méthode (« placements au dernier cours »), une déclaration qui manque, un brut. Pas de
-  sparkline : l'historique se lit dans le graphe de l'écran. Sous une liste dominante, ou
-  sous le chiffre dominant dont elle donne les parts, la rangée se resserre
-  (`Figure compact`, `FigureRow compact`) et range ses chiffres deux par deux sur
-  téléphone, un dernier impair prenant la ligne. Un chiffre qui répète la première
-  ligne de la liste en dessous n'est pas un chiffre.
+  méthode (« placements au dernier cours »), une déclaration qui manque, un brut. Un gain
+  s'écrit avec son signe ; un chiffre qui ne se calcule pas est un tiret, jamais un zéro, et
+  sa note dit ce qui manque. Pas de sparkline : l'historique se lit dans le graphe de
+  l'écran. Sous une liste dominante, ou sous le chiffre dominant dont elle donne les parts,
+  la rangée se resserre (`Figure compact`, `FigureRow compact`), d'un chiffre à autant qu'il
+  en faut : quatre au plus par ligne, deux par deux sur téléphone, un dernier impair prenant
+  la ligne. Un chiffre qui répète la première ligne de la liste en dessous n'est pas un
+  chiffre.
+- **Un en-tête qui porte plusieurs entrées les nomme toutes sur un écran large.** Sur
+  téléphone, la plus fréquente garde un mot court (« + Déclarer ») et les autres se rangent
+  derrière un seul menu, où chacune est nommée en entier.
 - **Un bloc se nomme d'un mot** (`Block`) : « Soldes », « Dépenses », « À venir ». Un
   qualificatif court s'ajoute seulement quand il change le sens du contenu (« rattachement »).
   Le chemin vers le détail est une flèche au bout du nom.
@@ -239,15 +244,17 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   dans l'URL : c'est une façon de lire, pas un cadrage), **ou en carte**, une lecture
   qu'on ouvre pour une visite et qui s'écrit dans l'URL. Deux icônes au bout de l'en-tête
   du classement choisissent : le dessin du classement de la personne, et une carte. Un
-  onglet dessiné par une icône dit son nom dans une infobulle. Le ruban pose la période en une
-  barre découpée en parts, vingt puis un reste, séparées de 2 px (tout cuivre, rien ne le
-  borne aux cinq teintes du donut) ; il porte
-  l'écran, donc il monte à 44 px quand une barre de graphe s'arrête à 24. Les noms se
+  onglet dessiné par une icône dit son nom dans une infobulle. Le ruban pose un tout en une
+  barre découpée en parts, séparées de 2 px (tout cuivre, rien ne le borne aux cinq teintes
+  du donut) : la période d'un classement, vingt parts puis un reste, ou un portefeuille, une
+  part par masse ; il porte l'écran, donc il monte à 44 px quand une barre de graphe
+  s'arrête à 24. Les noms se
   posent sous les parts assez larges, dès qu'il y en a deux (un seul répéterait la première
   ligne de la liste), et la liste dessous donne chaque part en %. Une ligne
   pointée dans la liste allume sa part, et une catégorie d'un groupe déplié allume la sienne
-  dans la part du groupe, à sa place dans l'ordre de la liste. Les barres donnent une barre
-  par ligne (`lead` : lignes plus hautes, libellés plus larges, masses en encre pleine).
+  dans la part du groupe, à sa place dans l'ordre de la liste ; une part mène à son détail,
+  ses mouvements ou sa masse dans la liste. Les barres donnent une barre par ligne (`lead` :
+  lignes plus hautes, libellés plus larges, masses en encre pleine).
 - **La carte se lit comme une carte géographique** : des blocs aussi grands que ce qu'ils
   pèsent, emboîtés des masses aux mouvements, où l'on zoome à la molette ou au pincement
   et se déplace au glisser. Le détail vient avec le zoom : un bloc se nomme dès qu'il a la

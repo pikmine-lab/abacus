@@ -6,11 +6,12 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, PencilIcon, Trash2Icon } 
 import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { useEntryPanel } from '@/components/entry-dock'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { MassFold } from '@/components/mass-fold'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
-import { SortColumn } from '@/components/sort'
+import { SortColumn, SortMenu } from '@/components/sort'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -31,6 +32,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   correctOperationAction,
@@ -43,6 +45,7 @@ import {
 import { type Format, useFormat } from '@/lib/format'
 import { DECLARED_NATURES, NATURE_ORDER } from '@/lib/nature'
 import type { Sorter } from '@/lib/sort'
+import { cn } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -785,38 +788,82 @@ export interface OperationEntry {
   assetName: string | null
 }
 
+/*
+ * One set of columns for the journal's header and lines. Narrow, the date and
+ * the type pass under what the operation is about and the quantity under its
+ * amount, so the amount keeps its column and nothing scrolls sideways.
+ */
+const OPERATION_GRID =
+  'grid w-full grid-cols-[minmax(0,1fr)_auto_1.75rem] items-center gap-x-4 @2xl:grid-cols-[4.5rem_5.5rem_minmax(0,1fr)_6.5rem_7.5rem_1.75rem]'
+const OPERATION_WIDE = 'hidden @2xl:block'
+/**
+ * Under a band split in two (a figure beside its chart), the journal takes the
+ * band's split: when and what kind on the left half, the figures from the
+ * right half's edge, so the page keeps a single right-hand column.
+ */
+const OPERATION_SPLIT = '@4xl:grid-cols-[4.5rem_5.5rem_calc(50%_-_12.25rem)_6.5rem_minmax(0,1fr)_1.75rem]'
+
 /**
  * Declared operations, each correctable and deletable from its own menu. A
  * mistyped purchase amount is not cosmetic: it feeds the weighted average cost,
- * so it would misstate the holding for as long as it is held.
+ * so it would misstate the holding for as long as it is held. The correction
+ * opens in the entry panel's place, docked beside the journal on a screen that
+ * has a dock, so a burst of fixes reads its result in the list next to it.
  */
-function OperationRow({ operation, accounts }: { operation: OperationEntry; accounts: Option[] }) {
+function OperationRow({
+  operation,
+  accounts,
+  showAsset,
+  grid,
+}: {
+  operation: OperationEntry
+  accounts: Option[]
+  showAsset: boolean
+  grid: string
+}) {
   const t = useTranslations('investments')
   const format = useFormat()
-  const [editing, setEditing] = useState(false)
+  const editing = useEntryPanel()
   const [deleting, setDeleting] = useState(false)
   const trade = operation.type === 'buy' || operation.type === 'sell'
   const label = t(`operationTypes.${operation.type}`)
   const day = format.date(operation.operatedOn)
   const assetName = operation.assetName ?? t('forms.accountFee')
+  const amountText = amount(format, operation.amount, '€')
 
   return (
     <>
-      <div className="flex items-center gap-3 py-2">
-        <span className="tabular w-20 shrink-0 text-[11.5px] text-faint">{day}</span>
-        <span className="w-20 shrink-0 text-[12px] text-muted-foreground">{label}</span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px]">
-          {assetName}
-          {operation.note && <span className="text-faint"> · {operation.note}</span>}
+      <div className={cn(grid, 'py-2')}>
+        <span className={cn(OPERATION_WIDE, 'text-[11.5px] text-faint tabular')}>{day}</span>
+        <span className={cn(OPERATION_WIDE, 'text-[12px] text-muted-foreground')}>{label}</span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {/* Empty on an asset's own page without a note: narrow, the date then leads. */}
+          <span className={cn('truncate text-[13px]', !showAsset && !operation.note && '@max-2xl:hidden')}>
+            {showAsset && assetName}
+            {operation.note && (
+              <span className="text-faint">
+                {showAsset && ' · '}
+                {operation.note}
+              </span>
+            )}
+          </span>
+          {/* Narrow, when and what kind ride under the subject. */}
+          <span className="text-[11.5px] text-faint @2xl:hidden">
+            {day} · {label}
+          </span>
         </span>
         {/* Always there, empty on a dividend or a fee: a column that comes and
             goes by row has no header to hang a sort on. */}
-        <span className="tabular w-20 text-right text-[11.5px] text-faint">
-          {operation.quantity ? format.number(operation.quantity, 8) : ''}
+        <span className="flex flex-col items-end gap-0.5 @2xl:contents">
+          <span className="order-2 text-right font-mono text-[11.5px] text-faint tabular @2xl:order-none">
+            {operation.quantity ? format.number(operation.quantity, 8) : ''}
+          </span>
+          <span className="order-1 text-right font-mono text-[12.5px] tabular @2xl:order-none">
+            {amountText}
+          </span>
         </span>
-        <span className="tabular w-24 text-right text-[12.5px]">{amount(format, operation.amount, '€')}</span>
         <RowMenu label={t('forms.operationOn', { type: label, date: day })}>
-          <DropdownMenuItem onSelect={() => setEditing(true)}>
+          <DropdownMenuItem onSelect={() => editing.setOpen(true)}>
             <PencilIcon />
             {t('forms.edit')}
           </DropdownMenuItem>
@@ -827,52 +874,58 @@ function OperationRow({ operation, accounts }: { operation: OperationEntry; acco
         </RowMenu>
       </div>
 
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">
+      <Sheet {...editing.sheet}>
+        <SheetContent
+          {...editing.content}
+          className={cn('w-full gap-0 overflow-y-auto sm:max-w-md', editing.content.className)}
+          aria-describedby={undefined}
+        >
+          <SheetHeader className="border-b border-border">
+            <SheetTitle className="text-[15px]">
               {label} · {assetName}
-            </DialogTitle>
-          </DialogHeader>
-          <ActionForm
-            action={correctOperationAction}
-            onSuccess={() => setEditing(false)}
-            successLabel={t('forms.operationCorrected')}
-          >
-            <input type="hidden" name="operationId" value={operation.id} />
-            <input type="hidden" name="trade" value={String(trade)} />
-            {/* The type and the asset stay out: changing either would make it
-                another operation, which is a deletion and a new declaration. */}
-            <Field label={t('words.account')}>
-              <FormSelect
-                name="accountId"
-                defaultValue={operation.accountId}
-                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={t('words.date')} name="operatedOn">
-                <DateField name="operatedOn" defaultValue={operation.operatedOn} />
+            </SheetTitle>
+          </SheetHeader>
+          <div className="p-4">
+            <ActionForm
+              action={correctOperationAction}
+              onSuccess={() => editing.setOpen(false)}
+              successLabel={t('forms.operationCorrected')}
+            >
+              <input type="hidden" name="operationId" value={operation.id} />
+              <input type="hidden" name="trade" value={String(trade)} />
+              {/* The type and the asset stay out: changing either would make it
+                  another operation, which is a deletion and a new declaration. */}
+              <Field label={t('words.account')}>
+                <FormSelect
+                  name="accountId"
+                  defaultValue={operation.accountId}
+                  options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                />
               </Field>
-              {trade && (
-                <Field label={t('words.quantity')} name="quantity">
-                  <Input
-                    name="quantity"
-                    inputMode="decimal"
-                    defaultValue={operation.quantity ?? ''}
-                    autoComplete="off"
-                  />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t('words.date')} name="operatedOn">
+                  <DateField name="operatedOn" defaultValue={operation.operatedOn} />
                 </Field>
-              )}
-            </div>
-            <Field label={t('words.amount')} name="amount">
-              <AmountInput name="amount" defaultValue={operation.amount} />
-            </Field>
-            <TextField name="note" label={t('words.note')} defaultValue={operation.note ?? ''} />
-            <SubmitButton className="self-start">{t('words.save')}</SubmitButton>
-          </ActionForm>
-        </DialogContent>
-      </Dialog>
+                {trade && (
+                  <Field label={t('words.quantity')} name="quantity">
+                    <Input
+                      name="quantity"
+                      inputMode="decimal"
+                      defaultValue={operation.quantity ?? ''}
+                      autoComplete="off"
+                    />
+                  </Field>
+                )}
+              </div>
+              <Field label={t('words.amount')} name="amount">
+                <AmountInput name="amount" defaultValue={operation.amount} />
+              </Field>
+              <TextField name="note" label={t('words.note')} defaultValue={operation.note ?? ''} />
+              <SubmitButton className="self-start">{t('words.save')}</SubmitButton>
+            </ActionForm>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>
@@ -882,7 +935,7 @@ function OperationRow({ operation, accounts }: { operation: OperationEntry; acco
               {t('forms.deleteDescription', {
                 type: label,
                 date: day,
-                amount: amount(format, operation.amount, '€'),
+                amount: amountText,
                 account: operation.accountName,
               })}
             </AlertDialogDescription>
@@ -904,46 +957,65 @@ function OperationRow({ operation, accounts }: { operation: OperationEntry; acco
 const OPERATION_COLUMNS: {
   field: OperationSortField
   label: 'date' | 'type' | 'asset' | 'quantity' | 'amount'
-  width: string
 }[] = [
-  { field: 'date', label: 'date', width: 'w-20' },
-  { field: 'type', label: 'type', width: 'w-20' },
-  { field: 'asset', label: 'asset', width: 'min-w-0 flex-1' },
-  { field: 'quantity', label: 'quantity', width: 'w-20' },
-  { field: 'amount', label: 'amount', width: 'w-24' },
+  { field: 'date', label: 'date' },
+  { field: 'type', label: 'type' },
+  { field: 'asset', label: 'asset' },
+  { field: 'quantity', label: 'quantity' },
+  { field: 'amount', label: 'amount' },
 ]
 
 export function OperationRows({
   operations,
   accounts,
   sorter,
+  showAsset = true,
+  split = false,
 }: {
   operations: OperationEntry[]
   accounts: Option[]
   sorter: Sorter<OperationSortField>
+  /** Off on an asset's own page, where every line would repeat its name. */
+  showAsset?: boolean
+  /** Set right under a band split in two, whose split it takes. */
+  split?: boolean
 }) {
   const t = useTranslations('investments.words')
+  const columns = OPERATION_COLUMNS.filter((c) => showAsset || c.field !== 'asset')
+  const grid = cn(OPERATION_GRID, split && OPERATION_SPLIT)
   return (
-    <div className="overflow-x-auto">
-      <Rows className="min-w-[34rem]">
-        <div className="flex items-center gap-3 py-1.5 text-[11px] text-faint">
-          {OPERATION_COLUMNS.map((column) => (
-            <SortColumn
-              key={column.field}
-              sorter={sorter}
-              field={column.field}
-              label={t(column.label)}
-              align={column.field === 'quantity' || column.field === 'amount' ? 'right' : 'left'}
-              className={`${column.width} shrink-0`}
-            />
-          ))}
-          {/* The row menu's own width, so the header stops where the rows do. */}
-          <span className="w-8" />
-        </div>
-        {operations.map((operation) => (
-          <OperationRow key={operation.id} operation={operation} accounts={accounts} />
+    <div className="@container flex flex-col">
+      <div className={cn(grid, 'border-b border-border pb-2 text-[11px] text-faint')}>
+        {columns.map((column) => (
+          <SortColumn
+            key={column.field}
+            sorter={sorter}
+            field={column.field}
+            label={t(column.label)}
+            align={column.field === 'quantity' || column.field === 'amount' ? 'right' : 'left'}
+            className={cn(
+              'hidden @2xl:flex',
+              // The subject's column keeps its place when it carries no sort.
+              column.field === 'quantity' && !showAsset && '@2xl:col-start-4',
+            )}
+          />
         ))}
-      </Rows>
+        {/* Narrow, the columns are gone: the order is named instead. */}
+        <div className="col-span-3 justify-self-end @2xl:hidden">
+          <SortMenu sorter={sorter} options={columns.map((c) => ({ field: c.field, label: t(c.label) }))} />
+        </div>
+      </div>
+      <div className="flex flex-col divide-y divide-border/60 border-b border-border">
+        {operations.map((operation) => (
+          <OperationRow
+            key={operation.id}
+            operation={operation}
+            accounts={accounts}
+            showAsset={showAsset}
+            grid={grid}
+          />
+        ))}
+      </div>
     </div>
   )
 }

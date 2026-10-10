@@ -49,7 +49,6 @@
     "averageCost": "PRU {amount}"
   },
   "page": {
-    "description": "ce que tu détiens, et ce que ça vaut",
     "follow": {
       "label": "Suivre",
       "title": "Suivre un actif",
@@ -63,7 +62,8 @@
     "operation": {
       "label": "Déclarer une opération",
       "title": "Opération",
-      "description": "Ce qui se passe dans le compte. Alimenter le compte ou en sortir de l’argent est un virement, à déclarer dans les mouvements."
+      "description": "Ce qui se passe dans le compte. Alimenter le compte ou en sortir de l’argent est un virement, à déclarer dans les mouvements.",
+      "short": "Déclarer"
     },
     "noAccount": "Aucun compte d’investissement. Crée-le dans <link>Comptes</link>, puis déclare ici ce que tu y détiens.",
     "firstBuy": "Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son ISIN ou son fournisseur.",
@@ -73,55 +73,50 @@
     "performanceMissing": "un cours manque : le calcul serait sous-estimé",
     "performanceHint": "dividendes et frais compris, contre {amount} d’apports",
     "scheduled": "Épargne programmée",
-    "scheduledValue": "{amount}/mois",
-    "scheduledHint": "{yearly} par an · {count, plural, one {# versement} other {# versements}}",
-    "pending": {
-      "title": "Échéances à confirmer",
-      "description": "le virement et l’achat s’écrivent ensemble, la quantité reçue en plus"
-    },
     "plans": {
       "title": "Versements programmés",
-      "description": "ce qui part tout seul vers un compte d’investissement",
       "sorts": {
         "monthly": "Épargne mensuelle",
         "amount": "Montant versé",
         "next": "Prochaine échéance"
-      }
+      },
+      "count": "{count} en cours"
     },
     "evolution": {
       "title": "Évolution",
-      "performanceSince": "valorisation − apports, depuis le {date}",
-      "valueSince": "contre les apports, depuis le {date}",
       "readingLabel": "Lecture du graphe",
       "performanceAria": "Performance des placements contre les apports",
       "valueAria": "Valorisation des placements et apports"
     },
-    "accountToFund": "{value} · {cash} à alimenter",
-    "accountCash": "{value} · {cash} en espèces",
-    "noPosition": "Aucune position : rien n’a encore été acheté sur ce compte.",
     "gainColumn": "+/− value",
     "massUnpriced": "{count, plural, one {# sans cours, non valorisée} other {# sans cours, non valorisées}}",
     "noPrice": "aucun cours connu",
     "manualStamp": "saisi le {day}",
     "followed": {
-      "title": "Suivis",
-      "description": "pas encore détenus"
+      "title": "Suivis"
     },
     "latest": "les {count} dernières",
     "atMost": "{count} au plus, dans cet ordre",
-    "noOperation": "Rien de déclaré pour l’instant."
+    "noOperation": "Rien de déclaré pour l’instant.",
+    "otherEntries": "Autres déclarations",
+    "toConfirm": "À confirmer",
+    "scheduledYearly": "soit {amount} par an",
+    "positions": "Positions",
+    "strip": "Répartition des positions",
+    "accounts": "Comptes",
+    "toFund": "{cash} à alimenter",
+    "inCash": "{cash} en espèces",
+    "noPositionShort": "aucune position",
+    "perMonth": "/mois"
   },
   "detail": {
-    "againstCost": "contre le prix de revient",
     "costBasis": "Prix de revient",
     "costBasisHint": "PRU {amount}, frais d’ordre compris",
-    "watchedLastPrice": "Suivi, pas détenu : dernier cours {price}.",
-    "watchedNoPrice": "Suivi, pas détenu : aucun cours connu pour l’instant.",
+    "watchedNoPrice": "suivi, pas détenu ; aucun cours connu",
     "sessions": "{count} séances connues",
     "priceAria": "Cours de {name}",
-    "onThisAsset": "sur cet actif",
-    "noOperation": "Aucune opération : cet actif est suivi, pas détenu.",
-    "unrealizedNote": "Plus-value latente {gain} : valorisation moins prix de revient, hors dividendes reçus et frais payés, qui sont passés par les espèces du compte."
+    "unrealized": "de plus-value latente, hors dividendes et frais",
+    "watched": "suivi, pas détenu"
   },
   "search": {
     "otherVenuesOpen": "même fonds, autres cotations",
