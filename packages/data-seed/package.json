@@ -1,0 +1,8 @@
+{
+  "name": "@abacus/data-seed",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@abacus/core": "workspace:*"
+  }
+}

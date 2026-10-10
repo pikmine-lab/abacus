@@ -19,9 +19,9 @@ submodules = "git submodule update --init --recursive"
 deps = "ni --frozen-lockfile"
 
 [[pre-start]]
-# Cloning the dev database brings its data along, which this model needs: every
-# movement is entered by hand, so an empty database means no functional
-# validation. TEMPLATE requires no open connection to the source database.
+# Cloning the dev database brings along whatever was entered there by hand; the
+# demo account is rewritten afterwards anyway (see `seed` below). TEMPLATE
+# requires no open connection to the source database.
 # The compose file is resolved from the primary worktree: the dev database is a
 # shared resource owned by it, and a branch predating this file would not
 # carry the pinned project name.
@@ -70,6 +70,13 @@ sed -i \
 # column. Reading the URL from .env.local migrates the very database the app
 # opens; on an up-to-date database the runner applies nothing.
 migrate = "node --env-file=apps/web/.env.local packages/core/src/db/migrate.ts"
+
+[[pre-start]]
+# This model is entered by hand, so an empty account means no functional
+# validation. The demo account is rewritten with this branch's code, its
+# history ending today: a clone of data seeded weeks ago would show nothing in
+# the screens that read the last days.
+seed = "node --env-file=apps/web/.env.local packages/data-seed/src/main.ts"
 
 [post-start]
 # portless names the route instead of allocating a port, and `wt step tether`
