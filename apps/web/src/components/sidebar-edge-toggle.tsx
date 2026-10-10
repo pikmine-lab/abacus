@@ -1,6 +1,7 @@
 'use client'
 
 import { ChevronLeftIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 
@@ -13,9 +14,10 @@ import { cn } from '@/lib/utils'
  * own trigger instead.
  */
 export function SidebarEdgeToggle() {
+  const t = useTranslations('shell')
   const { state, toggleSidebar } = useSidebar()
   const collapsed = state === 'collapsed'
-  const label = collapsed ? 'Déplier la navigation' : 'Replier la navigation'
+  const label = collapsed ? t('expandNavigation') : t('collapseNavigation')
   return (
     <button
       type="button"

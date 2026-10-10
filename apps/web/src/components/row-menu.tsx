@@ -1,6 +1,7 @@
 'use client'
 
 import { EllipsisIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
@@ -10,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
  * with the numbers for attention.
  */
 export function RowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  const t = useTranslations('common.rowMenu')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -17,7 +19,7 @@ export function RowMenu({ label, children }: { label: string; children: React.Re
           variant="ghost"
           size="icon"
           className="size-7 shrink-0 text-faint hover:text-foreground"
-          aria-label={`Actions sur ${label}`}
+          aria-label={t('label', { name: label })}
         >
           <EllipsisIcon className="size-4" />
         </Button>

@@ -1,6 +1,6 @@
-import type { PeriodUnit } from '@abacus/core/domain'
 import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { CreditCardIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import type { CommitmentWithProgress } from '@/components/commitment-blocks'
 import { type CommitmentOptions, JudgmentSelect } from '@/components/commitment-forms'
 import { CommitmentRowActions } from '@/components/commitment-row-actions'
@@ -8,7 +8,8 @@ import { ExpenseFold, FoldChevron } from '@/components/expense-fold'
 import { ExpenseRail, ExpenseRailAxis, type RailMark } from '@/components/expense-rail'
 import type { ScheduleLine } from '@/components/financing-schedule-form'
 import { ProgressRing } from '@/components/progress-ring'
-import { cn, eur, frDate, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /*
  * The recurring expenses, set on one grid of columns so every list of the page
@@ -122,18 +123,14 @@ export function ExpenseKind({
 
 /** "−1 086,63 €/mois": a total of the page, read in the column of amounts. */
 function PerMonth({ value, className }: { value: number; className?: string }) {
+  const t = useTranslations('recurring')
+  const format = useFormat()
   return (
     <span className={cn('font-mono whitespace-nowrap tabular', className)}>
-      −{eur(value, 2)}
-      <span className="font-sans text-[11px] font-normal text-faint">/mois</span>
+      −{format.eur(value, 2)}
+      <span className="font-sans text-[11px] font-normal text-faint">{t('perMonth')}</span>
     </span>
   )
-}
-
-const RHYTHM: Record<PeriodUnit, [one: string, many: (n: number) => string]> = {
-  week: ['chaque semaine', (n) => `toutes les ${n} semaines`],
-  month: ['chaque mois', (n) => `tous les ${n} mois`],
-  year: ['chaque année', (n) => `tous les ${n} ans`],
 }
 
 /**
@@ -165,13 +162,15 @@ export function ExpenseRow({
   today: string
   options: CommitmentOptions
 }) {
+  const t = useTranslations('recurring')
+  const format = useFormat()
   const financing = c.kind === 'financing'
   const ring = financing && c.progress !== null
   const foreign = c.currency !== 'EUR'
   const monthly = c.periodUnit === 'month' && c.periodCount === 1
   // Amounts read in the billing currency; only the monthly hint converts.
   const inCurrency = (value: number, decimals = 0) =>
-    foreign ? money(value, c.currency, decimals) : eur(value, decimals)
+    foreign ? format.money(value, c.currency, decimals) : format.eur(value, decimals)
   const accountName = (id: string) => options.accounts.find((a) => a.id === id)?.name ?? ''
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
@@ -185,7 +184,6 @@ export function ExpenseRow({
     accountId: c.accountId,
     cardId: c.cardId ?? undefined,
   }
-  const [one, many] = RHYTHM[c.periodUnit]
   const attributes = [
     cardName && (
       <span key="card" className="inline-flex items-center gap-1">
@@ -195,26 +193,30 @@ export function ExpenseRow({
     ),
     (!monthly || foreign) && (
       <span key="rhythm">
-        {c.periodCount === 1 ? one : many(c.periodCount)}
-        {c.amountEur !== null && ` · ≈ ${eur(monthlyEquivalentEur(c), 2)}/mois`}
+        {t('rhythm', { unit: c.periodUnit, count: c.periodCount })}
+        {c.amountEur !== null &&
+          ` · ${t('monthlyApprox', { amount: format.eur(monthlyEquivalentEur(c), 2) })}`}
       </span>
     ),
     // A move already declared: the only place it shows before its date.
     c.nextAccountMove && (
       <span key="move">
-        passe sur {accountName(c.nextAccountMove.accountId)} le {frDate(c.nextAccountMove.effectiveOn)}
+        {t('movesTo', {
+          account: accountName(c.nextAccountMove.accountId),
+          date: format.date(c.nextAccountMove.effectiveOn),
+        })}
       </span>
     ),
     c.progress && (
       <span key="plan">
-        {c.progress.paidInstallments} sur {c.installmentsTotal} ·{' '}
-        <span className="whitespace-nowrap">
-          reste{' '}
-          <span className="font-mono text-muted-foreground tabular">
-            {inCurrency(c.progress.remainingDue)}
-          </span>
-        </span>{' '}
-        <span className="whitespace-nowrap">sur {inCurrency(Number(c.totalAmount))}</span>
+        {t.rich('list.progress', {
+          paid: c.progress.paidInstallments,
+          count: c.installmentsTotal ?? 0,
+          remaining: inCurrency(c.progress.remainingDue),
+          total: inCurrency(Number(c.totalAmount)),
+          keep: (chunks) => <span className="whitespace-nowrap">{chunks}</span>,
+          amount: (chunks) => <span className="font-mono text-muted-foreground tabular">{chunks}</span>,
+        })}
       </span>
     ),
   ].filter(Boolean)

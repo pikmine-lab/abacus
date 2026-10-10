@@ -20,7 +20,8 @@ export interface InstrumentHit {
   /** Accumulating or distributing, when the name says so. The other divider. */
   payout: 'accumulating' | 'distributing' | null
   kind: InstrumentKind
-  typeLabel: string
+  /** The provider's own word for the listing type, in English; null when it gives none. */
+  typeLabel: string | null
   venue: string | null
   /** Set when the search term was itself an ISIN: the one unambiguous id. */
   isin: string | null
@@ -283,7 +284,7 @@ async function groupIntoFunds(listings: YahooQuote[], isin: string | null): Prom
       // moment it is declared rather than at the next price read. Untyped stays
       // "security": quoted, nature not known yet.
       kind: kindOfYahooType(chosen.listing.quoteType) ?? ('security' as const),
-      typeLabel: chosen.listing.typeDisp ?? 'Titre',
+      typeLabel: chosen.listing.typeDisp ?? null,
       venue: chosen.listing.exchDisp ?? null,
       isin,
       price: chosen.price,

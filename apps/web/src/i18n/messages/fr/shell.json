@@ -1,0 +1,28 @@
+{
+  "description": "Gestion de finances personnelles, déclarative.",
+  "groups": {
+    "tracking": "Suivi",
+    "commitments": "Engagements",
+    "wealth": "Patrimoine"
+  },
+  "screens": {
+    "overview": "Vue d’ensemble",
+    "movements": "Mouvements",
+    "analysis": "Analyse",
+    "activity": "Activité",
+    "recurringExpenses": "Dépenses récurrentes",
+    "recurringIncome": "Revenus récurrents",
+    "accounts": "Comptes",
+    "investments": "Placements",
+    "settings": "Réglages",
+    "connectAi": "Brancher une IA"
+  },
+  "soon": "{screen} (arrive en V2)",
+  "signOut": "Se déconnecter",
+  "expandNavigation": "Déplier la navigation",
+  "collapseNavigation": "Replier la navigation",
+  "toggleNavigation": "Déplier ou replier la navigation",
+  "navigation": "Navigation",
+  "navigationDescription": "Les écrans de l’application.",
+  "close": "Fermer"
+}

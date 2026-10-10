@@ -110,7 +110,11 @@ import {
   deleteMovement,
   refundAdvance,
 } from '@abacus/core/services/movements'
-import { setRankingViewPreference, setReadingPreference } from '@abacus/core/services/preferences'
+import {
+  setLanguagePreference,
+  setRankingViewPreference,
+  setReadingPreference,
+} from '@abacus/core/services/preferences'
 import {
   applyRegime,
   previewRegime,
@@ -121,7 +125,9 @@ import {
 import { revalidatePath } from 'next/cache'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { FR } from '@/lib/fr-errors'
+import { getLocale, getTranslations } from 'next-intl/server'
+import { BROWSER_LANGUAGE, INTL_LOCALE, isLanguage } from '@/i18n/config'
+import type { Messages } from '@/i18n/messages/fr'
 import { parseReading, READING_COOKIE } from '@/lib/reading'
 
 export interface FormState {
@@ -145,26 +151,33 @@ interface FieldRule {
   kind?: FieldKind
 }
 
-function checkFields(formData: FormData, rules: FieldRule[]): Record<string, string> | null {
+async function checkFields(formData: FormData, rules: FieldRule[]): Promise<Record<string, string> | null> {
+  const n = await numbersOf(formData)
+  const t = await getTranslations('actions.fields')
   const errors: Record<string, string> = {}
   for (const { name, kind = 'text' } of rules) {
     const raw = str(formData, name)
     if (raw === '') {
-      errors[name] = 'À renseigner.'
+      errors[name] = t('required')
       continue
     }
     if (kind === 'amount') {
-      const value = num(formData, name)
-      if (!Number.isFinite(value)) errors[name] = 'Montant invalide.'
-      else if (value <= 0) errors[name] = 'Doit être supérieur à zéro.'
+      const value = n.num(name)
+      if (!Number.isFinite(value)) errors[name] = t('invalidAmount')
+      else if (value <= 0) errors[name] = t('positive')
     }
     if (kind === 'count') {
-      const value = num(formData, name)
-      if (!Number.isInteger(value) || value < 2) errors[name] = 'Au moins 2 échéances.'
+      const value = n.num(name)
+      if (!Number.isInteger(value) || value < 2) errors[name] = t('installmentCount')
     }
-    if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) errors[name] = 'Date invalide.'
+    if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) errors[name] = t('invalidDate')
   }
   return Object.keys(errors).length > 0 ? errors : null
+}
+
+/** The message of one field check written inline in an action rather than as a rule. */
+async function fieldError(key: keyof Messages['actions']['fields']): Promise<string> {
+  return (await getTranslations('actions.fields'))(key)
 }
 
 /**
@@ -185,19 +198,53 @@ async function requireUserId(): Promise<string> {
   return session.user.id
 }
 
-function frError(e: unknown): string {
-  if (e instanceof DomainError) return FR[e.code] ?? e.message
-  if ((e as { code?: string }).code === '23505') return 'Ce nom existe déjà.'
+/**
+ * What a refused gesture says to the person in front of the screen. The domain
+ * throws a code and an English sentence for the log; the `errors` catalog turns
+ * that code into a sentence in the language of the interface, once, for every
+ * action of the app.
+ *
+ * A code with no sentence there falls back to the domain's own message, which
+ * is readable but written for whoever reads the code: a gesture the interface
+ * offers deserves a sentence written for its user, and a test holds that line.
+ */
+async function refusal(e: unknown): Promise<string> {
+  const t = await getTranslations('errors')
+  if (e instanceof DomainError) {
+    const code = e.code as keyof Messages['errors']
+    return t.has(code) ? t(code) : e.message
+  }
+  if ((e as { code?: string }).code === '23505') return t('duplicateName')
   throw e
 }
 
-/** Amounts may arrive grouped ("2 000,50") from the formatted input. */
-function num(formData: FormData, key: string): number {
-  return Number(
-    String(formData.get(key) ?? '')
-      .replace(/[\s\u202f\u00a0]/g, '')
-      .replace(',', '.'),
-  )
+/**
+ * The numbers of a form, read in the language of the request. Amounts arrive
+ * as a machine value ("2000.5") from AmountInput; the plain decimal fields send
+ * what was typed, grouped and marked the way the language writes numbers
+ * ("2 000,50" in French, "2,000.50" in English). The separators come from Intl,
+ * so a language added later brings its own. Spaces are dropped whatever the
+ * language, and a typed point still reads as a decimal mark where the language
+ * marks decimals with a comma.
+ */
+interface Numbers {
+  /** A number as typed or posted; NaN when it is not one. */
+  parse(raw: string): number
+  num(key: string): number
+  /** An amount left empty is an absence, not a zero. */
+  optNum(key: string): number | undefined
+}
+
+async function numbersOf(formData: FormData): Promise<Numbers> {
+  const parts = new Intl.NumberFormat(INTL_LOCALE[await getLocale()]).formatToParts(1234.5)
+  const group = parts.find((part) => part.type === 'group')?.value ?? ''
+  const decimal = parts.find((part) => part.type === 'decimal')?.value ?? '.'
+  const parse = (raw: string) => {
+    const text = raw.replace(/[\s\u202f\u00a0]/g, '')
+    return Number((group ? text.replaceAll(group, '') : text).replace(decimal, '.'))
+  }
+  const num = (key: string) => parse(String(formData.get(key) ?? ''))
+  return { parse, num, optNum: (key) => (opt(formData, key) === undefined ? undefined : num(key)) }
 }
 
 function str(formData: FormData, key: string): string {
@@ -209,18 +256,15 @@ function opt(formData: FormData, key: string): string | undefined {
   return v === '' ? undefined : v
 }
 
-/** An amount left empty is an absence, not a zero. */
-function optNum(formData: FormData, key: string): number | undefined {
-  return opt(formData, key) === undefined ? undefined : num(formData, key)
-}
-
 /** Optional percentages: empty is "not stated", anything else stays within 0 and 100. */
-function checkRates(formData: FormData, names: string[]): Record<string, string> | null {
+async function checkRates(formData: FormData, names: string[]): Promise<Record<string, string> | null> {
+  const n = await numbersOf(formData)
+  const t = await getTranslations('actions.fields')
   const errors: Record<string, string> = {}
   for (const name of names) {
     if (opt(formData, name) === undefined) continue
-    const value = num(formData, name)
-    if (!(value >= 0 && value <= 100)) errors[name] = 'Entre 0 et 100.'
+    const value = n.num(name)
+    if (!(value >= 0 && value <= 100)) errors[name] = t('percentage')
   }
   return Object.keys(errors).length > 0 ? errors : null
 }
@@ -278,8 +322,9 @@ function movementRules(type: string): FieldRule[] {
 
 export async function declareMovementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const type = str(formData, 'type')
-  const invalid = checkFields(formData, movementRules(type))
+  const invalid = await checkFields(formData, movementRules(type))
   if (invalid) return { fields: invalid }
   try {
     const accountId = str(formData, 'accountId')
@@ -288,7 +333,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
     if (type === 'transfer') {
       endpoints = { sourceAccountId: accountId, targetAccountId: opt(formData, 'toAccountId') }
     } else {
-      if (!actorName) return { error: 'Indique la contrepartie (commerçant, client, organisme).' }
+      if (!actorName) return { error: (await getTranslations('actions.movement'))('counterpartyMissing') }
       const actorId = await actorIdFromName(userId, actorName)
       endpoints =
         type === 'expense'
@@ -299,9 +344,9 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
     const currency = opt(formData, 'currency')
     await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
-      amount: num(formData, 'amount'),
+      amount: n.num('amount'),
       currency,
-      eurAmount: currency && currency !== 'EUR' ? optNum(formData, 'eurAmount') : undefined,
+      eurAmount: currency && currency !== 'EUR' ? n.optNum('eurAmount') : undefined,
       ...endpoints,
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
@@ -312,17 +357,17 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       invoiceId: opt(formData, 'invoiceId'),
       // Rendered only on an expense of an activity that reclaims VAT, so an
       // absent field is the truth everywhere else.
-      vatAmount: optNum(formData, 'vatAmount'),
+      vatAmount: n.optNum('vatAmount'),
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : undefined,
-      expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : undefined,
+      expectedRefundAmount: expectedRefundFrom ? n.num('expectedRefundAmount') : undefined,
       refundedNow: expectedRefundFrom ? formData.get('refundedNow') !== null : undefined,
       // No card chosen: the account was debited directly.
       cardId: type === 'transfer' ? undefined : opt(formData, 'cardId'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -335,8 +380,9 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
  */
 export async function correctMovementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const type = str(formData, 'type')
-  const invalid = checkFields(formData, movementRules(type))
+  const invalid = await checkFields(formData, movementRules(type))
   if (invalid) return { fields: invalid }
   try {
     const accountId = str(formData, 'accountId')
@@ -350,7 +396,7 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
         targetActorId: null,
       }
     } else {
-      if (!actorName) return { error: 'Indique la contrepartie (commerçant, client, organisme).' }
+      if (!actorName) return { error: (await getTranslations('actions.movement'))('counterpartyMissing') }
       const actorId = await actorIdFromName(userId, actorName)
       endpoints =
         type === 'expense'
@@ -375,9 +421,9 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
     const currency = type === 'transfer' ? undefined : opt(formData, 'currency')
     await correctMovement(userId, str(formData, 'movementId'), {
       happenedOn: str(formData, 'date'),
-      amount: num(formData, 'amount'),
+      amount: n.num('amount'),
       currency,
-      eurAmount: currency && currency !== 'EUR' ? optNum(formData, 'eurAmount') : undefined,
+      eurAmount: currency && currency !== 'EUR' ? n.optNum('eurAmount') : undefined,
       ...endpoints,
       categoryId: opt(formData, 'categoryId') ?? null,
       activityId: opt(formData, 'activityId') ?? null,
@@ -391,15 +437,15 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       expectedRefundFromActorId: expectedRefundFrom
         ? await actorIdFromName(userId, expectedRefundFrom)
         : null,
-      expectedRefundAmount: expectedRefundFrom ? num(formData, 'expectedRefundAmount') : null,
+      expectedRefundAmount: expectedRefundFrom ? n.num('expectedRefundAmount') : null,
       // Same as the claim: an emptied (or unrendered) field clears the VAT
       // rather than keeping a figure the panel no longer shows.
-      vatAmount: optNum(formData, 'vatAmount') ?? null,
+      vatAmount: n.optNum('vatAmount') ?? null,
       // Same: no card chosen (or none offered) means debited directly.
       cardId: type === 'transfer' ? null : (opt(formData, 'cardId') ?? null),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -410,7 +456,7 @@ export async function deleteMovementAction(_prev: FormState, formData: FormData)
   try {
     await deleteMovement(userId, str(formData, 'movementId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -418,15 +464,16 @@ export async function deleteMovementAction(_prev: FormState, formData: FormData)
 
 export async function recordBalanceCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   // A real balance can legitimately be zero or negative, so only its shape is
   // checked here.
   const raw = str(formData, 'balance')
-  if (raw === '') return { fields: { balance: 'À renseigner.' } }
-  if (!Number.isFinite(num(formData, 'balance'))) return { fields: { balance: 'Montant invalide.' } }
+  if (raw === '') return { fields: { balance: await fieldError('required') } }
+  if (!Number.isFinite(n.num('balance'))) return { fields: { balance: await fieldError('invalidAmount') } }
   try {
-    await recordBalanceCheck(userId, str(formData, 'accountId'), num(formData, 'balance'))
+    await recordBalanceCheck(userId, str(formData, 'accountId'), n.num('balance'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -439,18 +486,19 @@ export async function recordBalanceCheckAction(_prev: FormState, formData: FormD
  */
 export async function correctBalanceCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const raw = str(formData, 'balance')
-  if (raw === '') return { fields: { balance: 'À renseigner.' } }
-  if (!Number.isFinite(num(formData, 'balance'))) return { fields: { balance: 'Montant invalide.' } }
-  const invalid = checkFields(formData, [{ name: 'checkedOn', kind: 'date' }])
+  if (raw === '') return { fields: { balance: await fieldError('required') } }
+  if (!Number.isFinite(n.num('balance'))) return { fields: { balance: await fieldError('invalidAmount') } }
+  const invalid = await checkFields(formData, [{ name: 'checkedOn', kind: 'date' }])
   if (invalid) return { fields: invalid }
   try {
     await correctBalanceCheck(userId, str(formData, 'checkId'), {
-      declaredBalance: num(formData, 'balance'),
+      declaredBalance: n.num('balance'),
       checkedOn: str(formData, 'checkedOn'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -464,7 +512,7 @@ export async function correctBalanceCheckAction(_prev: FormState, formData: Form
  */
 export async function settleCheckGapAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'actor' }])
+  const invalid = await checkFields(formData, [{ name: 'actor' }])
   if (invalid) return { fields: invalid }
   try {
     await createAdjustment(userId, str(formData, 'checkId'), {
@@ -474,7 +522,7 @@ export async function settleCheckGapAction(_prev: FormState, formData: FormData)
       ghost: formData.get('ghost') !== null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -485,7 +533,7 @@ export async function deleteBalanceCheckAction(_prev: FormState, formData: FormD
   try {
     await deleteBalanceCheck(userId, str(formData, 'checkId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -493,7 +541,8 @@ export async function deleteBalanceCheckAction(_prev: FormState, formData: FormD
 
 export async function createAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await createAccount({
@@ -501,11 +550,11 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
       name: str(formData, 'name'),
       behavior: str(formData, 'behavior') as 'payment' | 'savings' | 'investment',
       institution: opt(formData, 'institution') ?? null,
-      openingBalance: optNum(formData, 'openingBalance'),
+      openingBalance: n.optNum('openingBalance'),
       openedOn: opt(formData, 'openedOn') ?? null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -518,18 +567,19 @@ export async function createAccountAction(_prev: FormState, formData: FormData):
  */
 export async function editAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await editAccount(userId, str(formData, 'accountId'), {
       name: str(formData, 'name'),
       institution: opt(formData, 'institution') ?? null,
       behavior: str(formData, 'behavior') as AccountBehavior,
-      openingBalance: optNum(formData, 'openingBalance') ?? 0,
+      openingBalance: n.optNum('openingBalance') ?? 0,
       openedOn: opt(formData, 'openedOn'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -540,7 +590,7 @@ export async function reopenAccountAction(_prev: FormState, formData: FormData):
   try {
     await reopenAccount(userId, str(formData, 'accountId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -551,7 +601,7 @@ export async function closeAccountAction(_prev: FormState, formData: FormData): 
   try {
     await closeAccount(userId, str(formData, 'accountId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -562,10 +612,13 @@ export async function closeAccountAction(_prev: FormState, formData: FormData): 
  * card, since the service refuses one on an immediate card rather than
  * storing it and forgetting it.
  */
-function cardFields(formData: FormData): { fields?: Record<string, string>; input?: CardInput } {
+async function cardFields(
+  formData: FormData,
+): Promise<{ fields?: Record<string, string>; input?: CardInput }> {
+  const n = await numbersOf(formData)
   const debitMode = (str(formData, 'debitMode') || 'immediate') as DebitMode
   const deferred = debitMode === 'deferred'
-  const invalid = checkFields(formData, [
+  const invalid = await checkFields(formData, [
     { name: 'name' },
     { name: 'accountId' },
     { name: 'expiryMonth' },
@@ -579,9 +632,9 @@ function cardFields(formData: FormData): { fields?: Record<string, string>; inpu
       expiryMonth: str(formData, 'expiryMonth'),
       debitMode,
       ...(deferred && {
-        statementDay: num(formData, 'statementDay'),
+        statementDay: n.num('statementDay'),
         statementShift: (str(formData, 'statementShift') || 'none') as DayShift,
-        debitDay: num(formData, 'debitDay'),
+        debitDay: n.num('debitDay'),
         debitShift: (str(formData, 'debitShift') || 'none') as DayShift,
       }),
     },
@@ -590,12 +643,12 @@ function cardFields(formData: FormData): { fields?: Record<string, string>; inpu
 
 export async function createCardAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const { fields, input } = cardFields(formData)
+  const { fields, input } = await cardFields(formData)
   if (fields) return { fields }
   try {
     await createCard(userId, input!)
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -603,12 +656,12 @@ export async function createCardAction(_prev: FormState, formData: FormData): Pr
 
 export async function editCardAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const { fields, input } = cardFields(formData)
+  const { fields, input } = await cardFields(formData)
   if (fields) return { fields }
   try {
     await editCard(userId, str(formData, 'cardId'), input!)
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -617,12 +670,12 @@ export async function editCardAction(_prev: FormState, formData: FormData): Prom
 /** The bank debited a statement: the day it did, which moves every purchase of the cycle onto it. */
 export async function confirmStatementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'debitedOn', kind: 'date' }])
+  const invalid = await checkFields(formData, [{ name: 'debitedOn', kind: 'date' }])
   if (invalid) return { fields: invalid }
   try {
     await confirmStatement(userId, str(formData, 'statementId'), str(formData, 'debitedOn'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -634,7 +687,7 @@ export async function undoStatementAction(_prev: FormState, formData: FormData):
   try {
     await confirmStatement(userId, str(formData, 'statementId'), null)
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -645,7 +698,7 @@ export async function deleteCardAction(_prev: FormState, formData: FormData): Pr
   try {
     await deleteCard(userId, str(formData, 'cardId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -653,7 +706,8 @@ export async function deleteCardAction(_prev: FormState, formData: FormData): Pr
 
 export async function createSubscriptionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [
     { name: 'label' },
     { name: 'actor' },
     { name: 'accountId' },
@@ -662,14 +716,14 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
   ])
   if (invalid) return { fields: invalid }
   const every = period(formData)
-  if (!every) return { fields: { period: 'À renseigner.' } }
+  if (!every) return { fields: { period: await fieldError('required') } }
   try {
     await createSubscription(userId, {
       label: str(formData, 'label'),
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
       accountId: str(formData, 'accountId'),
       direction: str(formData, 'direction') === 'incoming' ? 'incoming' : 'outgoing',
-      amount: num(formData, 'amount'),
+      amount: n.num('amount'),
       currency: opt(formData, 'currency'),
       ...every,
       firstDueOn: str(formData, 'firstDueOn'),
@@ -680,7 +734,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       cardId: str(formData, 'direction') === 'incoming' ? undefined : opt(formData, 'cardId'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -692,6 +746,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
  */
 export async function createInvestmentPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const rules: FieldRule[] = [
     { name: 'label' },
     { name: 'accountId' },
@@ -702,23 +757,23 @@ export async function createInvestmentPlanAction(_prev: FormState, formData: For
   // Looked up on the spot, the asset arrives as its instrument reference and is
   // declared by this submit, exactly as in the operation panel.
   if (opt(formData, 'reference') === undefined) rules.push({ name: 'assetId' })
-  const invalid = checkFields(formData, rules)
+  const invalid = await checkFields(formData, rules)
   if (invalid) return { fields: invalid }
   const every = period(formData)
-  if (!every) return { fields: { period: 'À renseigner.' } }
+  if (!every) return { fields: { period: await fieldError('required') } }
   try {
     await createInvestmentPlan(userId, {
       label: str(formData, 'label'),
       accountId: str(formData, 'accountId'),
       targetAccountId: str(formData, 'targetAccountId'),
       assetId: (await assetIdFrom(userId, formData))!,
-      amount: num(formData, 'amount'),
+      amount: n.num('amount'),
       ...every,
       firstDueOn: str(formData, 'firstDueOn'),
       activityId: opt(formData, 'activityId'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -729,19 +784,20 @@ export async function createInvestmentPlanAction(_prev: FormState, formData: For
  * closed. Dates and amounts arrive as parallel lists in contractual order,
  * which is the order the rows were rendered in.
  */
-function scheduleFrom(formData: FormData): { dueOn: string; amount: number }[] | undefined {
+function scheduleFrom(formData: FormData, n: Numbers): { dueOn: string; amount: number }[] | undefined {
   const dates = formData.getAll('installmentDueOn').map(String)
   const amounts = formData.getAll('installmentAmount').map(String)
   if (dates.length === 0 || dates.length !== amounts.length) return undefined
   return dates.map((dueOn, index) => ({
     dueOn,
-    amount: Number(amounts[index]!.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.')),
+    amount: n.parse(amounts[index]!),
   }))
 }
 
 export async function createFinancingAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [
     { name: 'label' },
     { name: 'actor' },
     { name: 'accountId' },
@@ -751,26 +807,26 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
   ])
   if (invalid) return { fields: invalid }
   const every = period(formData)
-  if (!every) return { fields: { period: 'À renseigner.' } }
+  if (!every) return { fields: { period: await fieldError('required') } }
   try {
     await createFinancing(userId, {
       label: str(formData, 'label'),
       actorId: await actorIdFromName(userId, str(formData, 'actor')),
       accountId: str(formData, 'accountId'),
-      totalAmount: num(formData, 'totalAmount'),
-      installmentsTotal: num(formData, 'installmentsTotal'),
+      totalAmount: n.num('totalAmount'),
+      installmentsTotal: n.num('installmentsTotal'),
       currency: opt(formData, 'currency'),
       firstDueOn: str(formData, 'firstDueOn'),
       ...every,
       // Present only when the schedule editor was opened; otherwise the plan
       // is generated from the total.
-      installments: scheduleFrom(formData),
+      installments: scheduleFrom(formData, n),
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
       cardId: opt(formData, 'cardId'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -783,12 +839,12 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
  */
 export async function reviseScheduleAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const ids = formData.getAll('installmentId').map(String)
-  const lines = scheduleFrom(formData)
-  if (!lines)
-    return { error: 'Un financement garde au moins une échéance : clos-le plutôt que de vider son plan.' }
+  const lines = scheduleFrom(formData, n)
+  if (!lines) return { error: (await getTranslations('errors'))('schedule_empty') }
   if (lines.some((line) => !/^\d{4}-\d{2}-\d{2}$/.test(line.dueOn) || !(line.amount > 0)))
-    return { error: 'Chaque échéance a besoin d’une date et d’un montant supérieur à zéro.' }
+    return { error: (await getTranslations('actions.schedule'))('installmentIncomplete') }
   try {
     await reviseSchedule(
       userId,
@@ -796,7 +852,7 @@ export async function reviseScheduleAction(_prev: FormState, formData: FormData)
       lines.map((line, index) => ({ id: ids[index] || undefined, ...line })),
     )
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -804,21 +860,22 @@ export async function reviseScheduleAction(_prev: FormState, formData: FormData)
 
 export async function confirmOccurrenceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   try {
     await confirmNextOccurrence(userId, str(formData, 'commitmentId'), {
-      amount: opt(formData, 'amount') ? num(formData, 'amount') : undefined,
+      amount: opt(formData, 'amount') ? n.num('amount') : undefined,
       happenedOn: opt(formData, 'date'),
       // "It is the new normal": historises the change instead of treating it
       // as a one-off month.
       updateReference: formData.get('newAmount') !== null,
-      eurAmount: optNum(formData, 'eurAmount'),
+      eurAmount: n.optNum('eurAmount'),
       // A placement also buys: the quantity is required there, and the amount
       // invested only differs when the broker left a remainder in cash.
-      quantity: optNum(formData, 'quantity'),
-      investedAmount: optNum(formData, 'investedAmount'),
+      quantity: n.optNum('quantity'),
+      investedAmount: n.optNum('investedAmount'),
     })
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -828,7 +885,7 @@ export async function skipOccurrenceAction(formData: FormData): Promise<void> {
   try {
     await skipNextOccurrence(userId, str(formData, 'commitmentId'))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -843,7 +900,7 @@ export async function setJudgmentAction(commitmentId: string, judgment: Judgment
   try {
     await setJudgment(userId, commitmentId, judgment)
   } catch (e) {
-    return frError(e)
+    return refusal(e)
   }
   refreshAll()
   return null
@@ -859,7 +916,7 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
   // A placement pays nobody, so its panel shows no actor and asks for what it
   // buys instead: the two shapes are validated for what they each carry.
   const placement = formData.get('placement') !== null
-  const invalid = checkFields(
+  const invalid = await checkFields(
     formData,
     placement
       ? [{ name: 'label' }, { name: 'targetAccountId' }, { name: 'assetId' }]
@@ -867,7 +924,7 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
   )
   if (invalid) return { fields: invalid }
   const every = period(formData)
-  if (!every) return { fields: { period: 'À renseigner.' } }
+  if (!every) return { fields: { period: await fieldError('required') } }
   try {
     await editCommitment(userId, str(formData, 'commitmentId'), {
       label: str(formData, 'label'),
@@ -889,7 +946,7 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
       ...(formData.get('cardField') !== null && { cardId: opt(formData, 'cardId') ?? null }),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -905,7 +962,7 @@ export async function changeCommitmentAccountAction(
   formData: FormData,
 ): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'accountId' }, { name: 'effectiveOn', kind: 'date' }])
+  const invalid = await checkFields(formData, [{ name: 'accountId' }, { name: 'effectiveOn', kind: 'date' }])
   if (invalid) return { fields: invalid }
   try {
     await moveAccount(
@@ -915,7 +972,7 @@ export async function changeCommitmentAccountAction(
       str(formData, 'effectiveOn'),
     )
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -923,14 +980,15 @@ export async function changeCommitmentAccountAction(
 
 export async function changePriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'amount', kind: 'amount' }])
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [{ name: 'amount', kind: 'amount' }])
   if (invalid) return { fields: invalid }
   try {
-    await changeAmount(userId, str(formData, 'commitmentId'), num(formData, 'amount'), undefined, {
+    await changeAmount(userId, str(formData, 'commitmentId'), n.num('amount'), undefined, {
       currency: opt(formData, 'currency'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -941,7 +999,7 @@ export async function cancelCommitmentAction(_prev: FormState, formData: FormDat
   try {
     await cancelCommitment(userId, str(formData, 'commitmentId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -953,13 +1011,14 @@ export async function cancelCommitmentAction(_prev: FormState, formData: FormDat
  */
 export async function refundAdvanceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   try {
     await refundAdvance(userId, str(formData, 'movementId'), {
-      amount: opt(formData, 'amount') ? num(formData, 'amount') : undefined,
+      amount: opt(formData, 'amount') ? n.num('amount') : undefined,
       on: opt(formData, 'date'),
     })
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -969,7 +1028,7 @@ export async function closeAdvanceAction(formData: FormData): Promise<void> {
   try {
     await closeAdvance(userId, str(formData, 'movementId'))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -985,32 +1044,33 @@ const INVOICE_RULES: FieldRule[] = [
  * The figures as the panel sends them: a rate and its amount both, whichever
  * was typed, because an amount given is the truth and the rate only proposes.
  */
-function invoiceFigures(formData: FormData) {
+function invoiceFigures(formData: FormData, n: Numbers) {
   return {
     reference: opt(formData, 'reference'),
     issuedOn: str(formData, 'issuedOn'),
     dueOn: opt(formData, 'dueOn'),
-    baseAmount: num(formData, 'baseAmount'),
-    vatRate: optNum(formData, 'vatRate'),
-    vatAmount: optNum(formData, 'vatAmount'),
-    withholdingRate: optNum(formData, 'withholdingRate'),
-    withholdingAmount: optNum(formData, 'withholdingAmount'),
+    baseAmount: n.num('baseAmount'),
+    vatRate: n.optNum('vatRate'),
+    vatAmount: n.optNum('vatAmount'),
+    withholdingRate: n.optNum('withholdingRate'),
+    withholdingAmount: n.optNum('withholdingAmount'),
     note: opt(formData, 'note'),
   }
 }
 
 export async function declareInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'activityId' }, ...INVOICE_RULES])
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [{ name: 'activityId' }, ...INVOICE_RULES])
   if (invalid) return { fields: invalid }
   try {
     await declareInvoice(userId, {
       activityId: str(formData, 'activityId'),
       actorId: await actorIdFromName(userId, str(formData, 'client')),
-      ...invoiceFigures(formData),
+      ...invoiceFigures(formData, n),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1019,10 +1079,11 @@ export async function declareInvoiceAction(_prev: FormState, formData: FormData)
 /** Same panel as the declaration, so the invoice is rebuilt whole: an emptied field clears. */
 export async function correctInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, INVOICE_RULES)
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, INVOICE_RULES)
   if (invalid) return { fields: invalid }
   try {
-    const figures = invoiceFigures(formData)
+    const figures = invoiceFigures(formData, n)
     await correctInvoice(userId, str(formData, 'invoiceId'), {
       ...figures,
       actorId: await actorIdFromName(userId, str(formData, 'client')),
@@ -1031,7 +1092,7 @@ export async function correctInvoiceAction(_prev: FormState, formData: FormData)
       note: figures.note ?? null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1044,14 +1105,15 @@ export async function correctInvoiceAction(_prev: FormState, formData: FormData)
  */
 export async function settleInvoiceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   try {
     await settleInvoice(userId, str(formData, 'invoiceId'), {
-      amount: optNum(formData, 'amount'),
+      amount: n.optNum('amount'),
       date: opt(formData, 'date'),
       accountId: str(formData, 'accountId'),
     })
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -1061,18 +1123,18 @@ export async function remindInvoiceAction(formData: FormData): Promise<void> {
   try {
     await remindInvoice(userId, str(formData, 'invoiceId'))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
 
 /** The due date a row of the schedule names, as the service takes it. */
-function dueDateOf(formData: FormData): DueDateInput {
+function dueDateOf(formData: FormData, n: Numbers): DueDateInput {
   return {
     levyId: str(formData, 'levyId'),
     periodStart: str(formData, 'periodStart'),
     entry: str(formData, 'entry') === 'regularization' ? 'regularization' : 'period',
-    instalment: num(formData, 'instalment') || undefined,
+    instalment: n.num('instalment') || undefined,
   }
 }
 
@@ -1082,10 +1144,11 @@ function dueDateOf(formData: FormData): DueDateInput {
  */
 export async function confirmNilReturnAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   try {
-    await confirmNilReturn(userId, dueDateOf(formData))
+    await confirmNilReturn(userId, dueDateOf(formData, n))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -1093,10 +1156,11 @@ export async function confirmNilReturnAction(formData: FormData): Promise<void> 
 /** Takes back a return said filed at zero by mistake: the period is owed again. */
 export async function withdrawNilReturnAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   try {
-    await withdrawNilReturn(userId, dueDateOf(formData))
+    await withdrawNilReturn(userId, dueDateOf(formData, n))
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -1109,18 +1173,19 @@ export async function withdrawNilReturnAction(formData: FormData): Promise<void>
  */
 export async function confirmLevyPaymentAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const actor = str(formData, 'actor')
-  if (actor === '') errorRedirect(formData, 'Indique qui a été payé.')
+  if (actor === '') errorRedirect(formData, (await getTranslations('actions.levy'))('payeeMissing'))
   try {
     await confirmLevyPayment(userId, {
-      ...dueDateOf(formData),
-      amount: num(formData, 'amount'),
+      ...dueDateOf(formData, n),
+      amount: n.num('amount'),
       date: str(formData, 'date'),
       accountId: str(formData, 'accountId'),
       actorId: await actorIdFromName(userId, actor),
     })
   } catch (e) {
-    errorRedirect(formData, frError(e))
+    errorRedirect(formData, await refusal(e))
   }
   refreshAll()
 }
@@ -1130,7 +1195,7 @@ export async function cancelInvoiceAction(_prev: FormState, formData: FormData):
   try {
     await cancelInvoice(userId, str(formData, 'invoiceId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1138,12 +1203,12 @@ export async function cancelInvoiceAction(_prev: FormState, formData: FormData):
 
 export async function createCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await createCategory(userId, str(formData, 'name'), opt(formData, 'group'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1155,7 +1220,7 @@ export async function createCategoryAction(_prev: FormState, formData: FormData)
  */
 export async function editCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await editCategory(userId, str(formData, 'categoryId'), {
@@ -1163,7 +1228,7 @@ export async function editCategoryAction(_prev: FormState, formData: FormData): 
       groupLabel: opt(formData, 'group') ?? null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1175,7 +1240,7 @@ export async function editCategoryAction(_prev: FormState, formData: FormData): 
  * "no regime" is; a business one sends every field, so what is not filled is
  * cleared, not kept.
  */
-function activitySettings(formData: FormData) {
+function activitySettings(formData: FormData, n: Numbers) {
   const vatRegistered = formData.get('vatRegistered') !== null
   const kind = str(formData, 'kind') as ActivityKind
   return {
@@ -1184,11 +1249,11 @@ function activitySettings(formData: FormData) {
     // sent whole means an empty one detaches everything.
     accountIds: kind === 'business' ? formData.getAll('accountIds').map(String) : undefined,
     startedOn: opt(formData, 'startedOn') ?? null,
-    fiscalYearStartMonth: optNum(formData, 'fiscalYearStartMonth'),
-    fiscalYearStartDay: optNum(formData, 'fiscalYearStartDay'),
+    fiscalYearStartMonth: n.optNum('fiscalYearStartMonth'),
+    fiscalYearStartDay: n.optNum('fiscalYearStartDay'),
     revenueBasis: opt(formData, 'revenueBasis') as RevenueBasis | undefined,
     vatRegistered,
-    defaultVatRate: vatRegistered ? (optNum(formData, 'defaultVatRate') ?? null) : null,
+    defaultVatRate: vatRegistered ? (n.optNum('defaultVatRate') ?? null) : null,
     deductibleExpenses: opt(formData, 'deductibleExpenses') as DeductibleExpenses | undefined,
     regimeLabel: opt(formData, 'regimeLabel') ?? null,
     jurisdiction: opt(formData, 'jurisdiction') ?? null,
@@ -1196,27 +1261,32 @@ function activitySettings(formData: FormData) {
   }
 }
 
-function activityInvalid(formData: FormData): Record<string, string> | null {
-  const errors = { ...checkFields(formData, [{ name: 'name' }]), ...checkRates(formData, ['defaultVatRate']) }
-  const day = optNum(formData, 'fiscalYearStartDay')
+async function activityInvalid(formData: FormData): Promise<Record<string, string> | null> {
+  const n = await numbersOf(formData)
+  const errors = {
+    ...(await checkFields(formData, [{ name: 'name' }])),
+    ...(await checkRates(formData, ['defaultVatRate'])),
+  }
+  const day = n.optNum('fiscalYearStartDay')
   if (day !== undefined && !(Number.isInteger(day) && day >= 1 && day <= 31))
-    errors.fiscalYearStartDay = 'Entre 1 et 31.'
+    errors.fiscalYearStartDay = await fieldError('dayOfMonth')
   return Object.keys(errors).length > 0 ? errors : null
 }
 
 export async function createActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = activityInvalid(formData)
+  const n = await numbersOf(formData)
+  const invalid = await activityInvalid(formData)
   if (invalid) return { fields: invalid }
   try {
     const activity = await createActivity(userId, {
       name: str(formData, 'name'),
-      ...activitySettings(formData),
+      ...activitySettings(formData, n),
     })
     const exceptions = formData.getAll('exceptionCategoryIds').map(String)
     if (exceptions.length > 0) await setActivityCategoryExceptions(userId, activity.id, exceptions)
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1224,15 +1294,16 @@ export async function createActivityAction(_prev: FormState, formData: FormData)
 
 export async function editActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = activityInvalid(formData)
+  const n = await numbersOf(formData)
+  const invalid = await activityInvalid(formData)
   if (invalid) return { fields: invalid }
   try {
     await editActivity(userId, str(formData, 'activityId'), {
       name: str(formData, 'name'),
-      ...activitySettings(formData),
+      ...activitySettings(formData, n),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1240,12 +1311,12 @@ export async function editActivityAction(_prev: FormState, formData: FormData): 
 
 export async function closeActivityAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
+  const invalid = await checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
   if (invalid) return { fields: invalid }
   try {
     await closeActivity(userId, str(formData, 'activityId'), str(formData, 'closedOn'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1256,7 +1327,7 @@ export async function reopenActivityAction(_prev: FormState, formData: FormData)
   try {
     await reopenActivity(userId, str(formData, 'activityId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1272,7 +1343,7 @@ export async function setActivityExceptionsAction(_prev: FormState, formData: Fo
       formData.getAll('exceptionCategoryIds').map(String),
     )
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1292,7 +1363,7 @@ export async function regimeStepAction(
   try {
     return { step: questionnaire(jurisdictionId, answers) }
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
 }
 
@@ -1305,7 +1376,7 @@ export async function regimePreviewAction(
   try {
     return { preview: previewRegime(modelId, answers) }
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
 }
 
@@ -1331,7 +1402,7 @@ export async function createActivityFromRegimeAction(
   formData: FormData,
 ): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await applyRegime(userId, {
@@ -1342,7 +1413,7 @@ export async function createActivityFromRegimeAction(
       accountIds: formData.getAll('accountIds').map(String),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1360,9 +1431,10 @@ export interface ActorFormState extends FormState {
 
 export async function editActorAction(_prev: ActorFormState, formData: FormData): Promise<ActorFormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const invalid = {
-    ...checkFields(formData, [{ name: 'name' }]),
-    ...checkRates(formData, ['invoiceVatRate', 'invoiceWithholdingRate']),
+    ...(await checkFields(formData, [{ name: 'name' }])),
+    ...(await checkRates(formData, ['invoiceVatRate', 'invoiceWithholdingRate'])),
   }
   if (Object.keys(invalid).length > 0) return { fields: invalid }
   let leftBehind: number
@@ -1371,11 +1443,11 @@ export async function editActorAction(_prev: ActorFormState, formData: FormData)
       name: str(formData, 'name'),
       activityId: opt(formData, 'activityId') ?? null,
       note: opt(formData, 'note') ?? null,
-      invoiceVatRate: optNum(formData, 'invoiceVatRate') ?? null,
-      invoiceWithholdingRate: optNum(formData, 'invoiceWithholdingRate') ?? null,
+      invoiceVatRate: n.optNum('invoiceVatRate') ?? null,
+      invoiceWithholdingRate: n.optNum('invoiceWithholdingRate') ?? null,
     }))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true, leftBehind }
@@ -1410,7 +1482,7 @@ export async function reattachActorHistoryAction(_prev: FormState, formData: For
       previousActivityId: opt(formData, 'previousActivityId') ?? null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1423,12 +1495,12 @@ export async function reattachActorHistoryAction(_prev: FormState, formData: For
  */
 export async function addAliasAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'alias' }])
+  const invalid = await checkFields(formData, [{ name: 'alias' }])
   if (invalid) return { fields: invalid }
   try {
     await addAlias(userId, str(formData, 'actorId'), str(formData, 'alias'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1441,12 +1513,12 @@ export async function addAliasAction(_prev: FormState, formData: FormData): Prom
  */
 export async function mergeActorsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'keepId' }])
+  const invalid = await checkFields(formData, [{ name: 'keepId' }])
   if (invalid) return { fields: invalid }
   try {
     await mergeActors(userId, str(formData, 'keepId'), str(formData, 'actorId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1454,12 +1526,12 @@ export async function mergeActorsAction(_prev: FormState, formData: FormData): P
 
 export async function createActorAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await createActor(userId, { name: str(formData, 'name') })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1474,11 +1546,11 @@ export async function createActorAction(_prev: FormState, formData: FormData): P
 export async function setReadingPreferenceAction(reading: string): Promise<string | null> {
   const userId = await requireUserId()
   const value = parseReading(reading)
-  if (!value) return 'Lecture inconnue.'
+  if (!value) return (await getTranslations('actions.preferences'))('unknownReading')
   try {
     await setReadingPreference(userId, value)
   } catch (e) {
-    return frError(e)
+    return refusal(e)
   }
   ;(await cookies()).delete(READING_COOKIE)
   refreshAll()
@@ -1488,14 +1560,32 @@ export async function setReadingPreferenceAction(reading: string): Promise<strin
 /** Settles how the Analyse screen draws its ranking. A display only: no figure moves. */
 export async function setRankingViewPreferenceAction(view: string): Promise<string | null> {
   const userId = await requireUserId()
-  if (view !== 'strip' && view !== 'bars') return 'Affichage inconnu.'
+  if (view !== 'strip' && view !== 'bars')
+    return (await getTranslations('actions.preferences'))('unknownRankingView')
   try {
     await setRankingViewPreference(userId, view)
   } catch (e) {
-    return frError(e)
+    return refusal(e)
   }
   revalidatePath('/analysis')
   revalidatePath('/settings')
+  return null
+}
+
+/**
+ * Settles the language the interface speaks, or hands it back to the browser.
+ * Every screen is rewritten in it, so the whole tree is revalidated.
+ */
+export async function setLanguagePreferenceAction(language: string): Promise<string | null> {
+  const userId = await requireUserId()
+  if (language !== BROWSER_LANGUAGE && !isLanguage(language))
+    return (await getTranslations('actions.preferences'))('unknownLanguage')
+  try {
+    await setLanguagePreference(userId, language === BROWSER_LANGUAGE ? null : language)
+  } catch (e) {
+    return refusal(e)
+  }
+  revalidatePath('/', 'layout')
   return null
 }
 
@@ -1512,7 +1602,7 @@ export async function revokeAuthorizationAction(formData: FormData): Promise<voi
 export async function declareAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const source = opt(formData, 'source')
-  const invalid = checkFields(
+  const invalid = await checkFields(
     formData,
     source ? [{ name: 'name' }, { name: 'reference' }] : [{ name: 'name' }, { name: 'nature' }],
   )
@@ -1531,7 +1621,7 @@ export async function declareAssetAction(_prev: FormState, formData: FormData): 
       nature: source ? undefined : (str(formData, 'nature') as AssetNature),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1539,12 +1629,12 @@ export async function declareAssetAction(_prev: FormState, formData: FormData): 
 
 export async function renameAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'name' }])
+  const invalid = await checkFields(formData, [{ name: 'name' }])
   if (invalid) return { fields: invalid }
   try {
     await editAsset(userId, str(formData, 'assetId'), str(formData, 'name'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1586,6 +1676,7 @@ async function assetIdFrom(userId: string, formData: FormData): Promise<string |
  */
 export async function recordOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const type = str(formData, 'type') as 'buy' | 'sell' | 'dividend' | 'fee'
   const trade = type === 'buy' || type === 'sell'
   // A trade may be declared by its unit price instead of its total: that is what
@@ -1600,15 +1691,15 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
   // An asset looked up on the spot arrives as its instrument reference; a known
   // one as its id. Either satisfies "this operation is about an asset".
   if (type !== 'fee' && opt(formData, 'reference') === undefined) rules.push({ name: 'assetId' })
-  const invalid = checkFields(formData, rules)
+  const invalid = await checkFields(formData, rules)
   if (invalid) return { fields: invalid }
-  const quantity = trade ? num(formData, 'quantity') : undefined
+  const quantity = trade ? n.num('quantity') : undefined
 
   let assetId: string | undefined
   try {
     assetId = await assetIdFrom(userId, formData)
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   try {
     await recordOperations(userId, [
@@ -1619,14 +1710,14 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
         quantity,
         // One place turns a unit price into a total: the service, so both
         // interfaces round it the same way.
-        amount: unitPriced ? undefined : num(formData, 'amount'),
-        unitPrice: unitPriced ? num(formData, 'unitPrice') : undefined,
+        amount: unitPriced ? undefined : n.num('amount'),
+        unitPrice: unitPriced ? n.num('unitPrice') : undefined,
         operatedOn: str(formData, 'operatedOn'),
         note: opt(formData, 'note'),
       },
     ])
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1639,24 +1730,25 @@ export async function recordOperationAction(_prev: FormState, formData: FormData
  */
 export async function correctOperationAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const n = await numbersOf(formData)
   const trade = str(formData, 'trade') === 'true'
   const rules: FieldRule[] = [
     { name: 'operatedOn', kind: 'date' },
     { name: 'amount', kind: 'amount' },
   ]
   if (trade) rules.push({ name: 'quantity', kind: 'amount' })
-  const invalid = checkFields(formData, rules)
+  const invalid = await checkFields(formData, rules)
   if (invalid) return { fields: invalid }
   try {
     await correctOperation(userId, str(formData, 'operationId'), {
       accountId: opt(formData, 'accountId'),
-      quantity: trade ? num(formData, 'quantity') : undefined,
-      amount: num(formData, 'amount'),
+      quantity: trade ? n.num('quantity') : undefined,
+      amount: n.num('amount'),
       operatedOn: str(formData, 'operatedOn'),
       note: opt(formData, 'note') ?? null,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1667,7 +1759,7 @@ export async function deleteOperationAction(_prev: FormState, formData: FormData
   try {
     await deleteOperation(userId, str(formData, 'operationId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1676,15 +1768,16 @@ export async function deleteOperationAction(_prev: FormState, formData: FormData
 /** A price for what no source quotes: an SCPI revalued, a flat reappraised. */
 export async function setAssetPriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [
     { name: 'price', kind: 'amount' },
     { name: 'pricedOn', kind: 'date' },
   ])
   if (invalid) return { fields: invalid }
   try {
-    await setManualPrice(userId, str(formData, 'assetId'), num(formData, 'price'), str(formData, 'pricedOn'))
+    await setManualPrice(userId, str(formData, 'assetId'), n.num('price'), str(formData, 'pricedOn'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1696,7 +1789,7 @@ export async function stopFollowingAction(_prev: FormState, formData: FormData):
   try {
     await stopFollowing(userId, str(formData, 'assetId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshAll()
   return { ok: true }
@@ -1715,13 +1808,14 @@ function list(formData: FormData, key: string): string[] {
 }
 
 /** A cell of a table: empty means "no bound", never zero. */
-function cell(raw: string): number | null {
+function cell(n: Numbers, raw: string): number | null {
   if (raw === '') return null
-  return Number(raw.replace(/[\s  ]/g, '').replace(',', '.'))
+  return n.parse(raw)
 }
 
 function rows<T>(
   formData: FormData,
+  n: Numbers,
   keys: string[],
   build: (values: (number | null)[], index: number) => T,
 ): T[] {
@@ -1729,19 +1823,18 @@ function rows<T>(
   const height = Math.max(...columns.map((c) => c.length))
   return Array.from({ length: height }, (_, index) =>
     build(
-      columns.map((column) => cell(column[index] ?? '')),
+      columns.map((column) => cell(n, column[index] ?? '')),
       index,
     ),
   )
 }
 
-function abatementFrom(formData: FormData): unknown {
+function abatementFrom(formData: FormData, n: Numbers): unknown {
   const mode = str(formData, 'abatementMode')
-  if (mode === 'rate')
-    return { rate: num(formData, 'abatementRate'), minAmount: optNum(formData, 'abatementMinAmount') }
+  if (mode === 'rate') return { rate: n.num('abatementRate'), minAmount: n.optNum('abatementMinAmount') }
   if (mode === 'brackets')
     return {
-      brackets: rows(formData, ['abatementUpTo', 'abatementBracketRate'], ([upTo, rate]) => ({
+      brackets: rows(formData, n, ['abatementUpTo', 'abatementBracketRate'], ([upTo, rate]) => ({
         upTo,
         rate: rate ?? 0,
       })),
@@ -1750,7 +1843,7 @@ function abatementFrom(formData: FormData): unknown {
   return null
 }
 
-function creditsFrom(formData: FormData): unknown {
+function creditsFrom(formData: FormData, n: Numbers): unknown {
   const sources = list(formData, 'creditSource')
   const levies = list(formData, 'creditLevyId')
   const shares = list(formData, 'creditShare')
@@ -1759,20 +1852,21 @@ function creditsFrom(formData: FormData): unknown {
     .map((source, index) => ({
       source,
       levyId: levies[index] || undefined,
-      share: cell(shares[index] ?? '') ?? undefined,
+      share: cell(n, shares[index] ?? '') ?? undefined,
       periodRef: refs[index] || undefined,
     }))
     .filter((credit) => credit.source !== '')
   return credits.length > 0 ? credits : null
 }
 
-function dueFrom(formData: FormData): unknown {
+function dueFrom(formData: FormData, n: Numbers): unknown {
   const type = str(formData, 'dueType')
   if (type === 'fixed_dates')
     return {
       type,
       dates: rows(
         formData,
+        n,
         ['dueDateMonth', 'dueDateDay', 'dueDateYearOffset'],
         ([month, day, yearOffset]) => ({ month: month ?? 0, day: day ?? 0, yearOffset: yearOffset ?? 0 }),
       ),
@@ -1780,9 +1874,9 @@ function dueFrom(formData: FormData): unknown {
   if (type === 'after_period')
     return {
       type,
-      monthOffset: optNum(formData, 'dueMonthOffset'),
-      fromDay: optNum(formData, 'dueFromDay'),
-      toDay: num(formData, 'dueToDay'),
+      monthOffset: n.optNum('dueMonthOffset'),
+      fromDay: n.optNum('dueFromDay'),
+      toDay: n.num('dueToDay'),
     }
   return { type: 'end_of_next_month' }
 }
@@ -1798,7 +1892,7 @@ function skipPeriodsFrom(formData: FormData): unknown {
   return { [period]: indexes }
 }
 
-function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
+function levyFrom(formData: FormData, n: Numbers): Omit<NewLevy, 'activityId'> {
   const amountForm = str(formData, 'amountForm') as NewLevy['amountForm']
   const regularization = (opt(formData, 'regularization') ?? 'none') as NewLevy['regularization']
   return {
@@ -1816,24 +1910,29 @@ function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
     baseLevyId: opt(formData, 'baseLevyId') ?? null,
     baseInputName: opt(formData, 'baseInputName') ?? null,
     basePeriodRef: opt(formData, 'basePeriodRef') as NewLevy['basePeriodRef'],
-    baseCoefficient: optNum(formData, 'baseCoefficient') ?? null,
-    baseAbatement: abatementFrom(formData),
+    baseCoefficient: n.optNum('baseCoefficient') ?? null,
+    baseAbatement: abatementFrom(formData, n),
     baseAddBackLevyIds: list(formData, 'addBackLevyId').filter(Boolean),
-    baseFloor: optNum(formData, 'baseFloor') ?? null,
-    baseCap: optNum(formData, 'baseCap') ?? null,
-    baseCredits: creditsFrom(formData),
+    baseFloor: n.optNum('baseFloor') ?? null,
+    baseCap: n.optNum('baseCap') ?? null,
+    baseCredits: creditsFrom(formData, n),
     baseScale: opt(formData, 'baseScale') as NewLevy['baseScale'],
     amountForm,
-    rate: amountForm === 'rate' ? num(formData, 'rate') : null,
+    rate: amountForm === 'rate' ? n.num('rate') : null,
     brackets:
       amountForm === 'brackets'
         ? {
             mode: str(formData, 'bracketsMode'),
-            rows: rows(formData, ['bracketUpTo', 'bracketRate', 'bracketAmount'], ([upTo, rate, amount]) => ({
-              upTo,
-              rate: rate ?? undefined,
-              amount: amount ?? undefined,
-            })),
+            rows: rows(
+              formData,
+              n,
+              ['bracketUpTo', 'bracketRate', 'bracketAmount'],
+              ([upTo, rate, amount]) => ({
+                upTo,
+                rate: rate ?? undefined,
+                amount: amount ?? undefined,
+              }),
+            ),
           }
         : null,
     elective:
@@ -1841,29 +1940,30 @@ function levyFrom(formData: FormData): Omit<NewLevy, 'activityId'> {
         ? {
             rows: rows(
               formData,
+              n,
               ['electiveUpTo', 'electiveMinBase', 'electiveMaxBase'],
               ([upTo, minBase, maxBase]) => ({ upTo, minBase: minBase ?? 0, maxBase: maxBase ?? 0 }),
             ),
             inputName: str(formData, 'electiveInputName'),
-            rate: num(formData, 'electiveRate'),
+            rate: n.num('electiveRate'),
           }
         : null,
-    fixedAmount: amountForm === 'fixed' ? (optNum(formData, 'fixedAmount') ?? null) : null,
+    fixedAmount: amountForm === 'fixed' ? (n.optNum('fixedAmount') ?? null) : null,
     fixedInputName: amountForm === 'fixed' ? (opt(formData, 'fixedInputName') ?? null) : null,
-    fixedCredit: optNum(formData, 'fixedCredit') ?? null,
+    fixedCredit: n.optNum('fixedCredit') ?? null,
     creditInputName: opt(formData, 'creditInputName') ?? null,
     period: str(formData, 'period') as NewLevy['period'],
-    due: dueFrom(formData),
-    declarationLagMonths: optNum(formData, 'declarationLagMonths') ?? null,
-    firstDueAfterDays: optNum(formData, 'firstDueAfterDays') ?? null,
+    due: dueFrom(formData, n),
+    declarationLagMonths: n.optNum('declarationLagMonths') ?? null,
+    firstDueAfterDays: n.optNum('firstDueAfterDays') ?? null,
     skipPeriods: skipPeriodsFrom(formData),
     regularization,
     regularizationParams:
       regularization === 'none'
         ? null
         : {
-            settleMonthOffset: optNum(formData, 'settleMonthOffset'),
-            refundMonthOffset: optNum(formData, 'refundMonthOffset'),
+            settleMonthOffset: n.optNum('settleMonthOffset'),
+            refundMonthOffset: n.optNum('refundMonthOffset'),
           },
     settlementCategoryId: opt(formData, 'settlementCategoryId') ?? null,
     deductible: formData.get('deductible') !== null,
@@ -1899,13 +1999,14 @@ function refreshActivity(activityId: string) {
 
 export async function createLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, levyRules(formData))
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, levyRules(formData))
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
-    await createLevy(userId, { ...levyFrom(formData), activityId })
+    await createLevy(userId, { ...levyFrom(formData, n), activityId })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -1914,13 +2015,14 @@ export async function createLevyAction(_prev: FormState, formData: FormData): Pr
 /** Corrects a rule that was mistyped. A value that changed is a supersede. */
 export async function editLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, levyRules(formData))
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, levyRules(formData))
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
-    await editLevy(userId, str(formData, 'levyId'), levyFrom(formData))
+    await editLevy(userId, str(formData, 'levyId'), levyFrom(formData, n))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -1933,14 +2035,15 @@ export async function editLevyAction(_prev: FormState, formData: FormData): Prom
  */
 export async function supersedeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, levyRules(formData))
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, levyRules(formData))
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
-    const { validFrom, ...changes } = levyFrom(formData)
+    const { validFrom, ...changes } = levyFrom(formData, n)
     await supersedeLevy(userId, str(formData, 'levyId'), { ...changes, validFrom })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -1948,13 +2051,13 @@ export async function supersedeLevyAction(_prev: FormState, formData: FormData):
 
 export async function closeLevyAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'validTo', kind: 'date' }])
+  const invalid = await checkFields(formData, [{ name: 'validTo', kind: 'date' }])
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
     await closeLevy(userId, str(formData, 'levyId'), str(formData, 'validTo'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -1966,7 +2069,7 @@ export async function deleteLevyAction(_prev: FormState, formData: FormData): Pr
   try {
     await deleteLevy(userId, str(formData, 'levyId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -1974,7 +2077,8 @@ export async function deleteLevyAction(_prev: FormState, formData: FormData): Pr
 
 export async function addModifierAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [{ name: 'label' }, { name: 'effect' }])
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [{ name: 'label' }, { name: 'effect' }])
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   const duration = str(formData, 'durationKind')
@@ -1982,10 +2086,10 @@ export async function addModifierAction(_prev: FormState, formData: FormData): P
     await addModifier(userId, str(formData, 'levyId'), {
       label: str(formData, 'label'),
       effect: str(formData, 'effect') as ModifierEffect,
-      value: optNum(formData, 'value'),
+      value: n.optNum('value'),
       startsOn: opt(formData, 'startsOn'),
-      durationMonths: duration === 'months' ? optNum(formData, 'durationValue') : undefined,
-      durationPeriods: duration === 'periods' ? optNum(formData, 'durationValue') : undefined,
+      durationMonths: duration === 'months' ? n.optNum('durationValue') : undefined,
+      durationPeriods: duration === 'periods' ? n.optNum('durationValue') : undefined,
       endsOn: duration === 'endsOn' ? opt(formData, 'endsOn') : undefined,
       condition: opt(formData, 'condition'),
       sourceUrl: opt(formData, 'modifierSourceUrl'),
@@ -1993,7 +2097,7 @@ export async function addModifierAction(_prev: FormState, formData: FormData): P
       status: str(formData, 'modifierStatus') as LevyStatus,
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -2005,7 +2109,7 @@ export async function removeModifierAction(_prev: FormState, formData: FormData)
   try {
     await removeModifier(userId, str(formData, 'modifierId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -2013,7 +2117,8 @@ export async function removeModifierAction(_prev: FormState, formData: FormData)
 
 export async function setInputAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, [
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, [
     { name: 'name' },
     { name: 'validFrom', kind: 'date' },
     { name: 'value' },
@@ -2024,11 +2129,11 @@ export async function setInputAction(_prev: FormState, formData: FormData): Prom
     await setInput(userId, activityId, {
       name: str(formData, 'name'),
       validFrom: str(formData, 'validFrom'),
-      value: num(formData, 'value'),
+      value: n.num('value'),
       note: opt(formData, 'note'),
     })
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -2040,19 +2145,19 @@ export async function removeInputAction(_prev: FormState, formData: FormData): P
   try {
     await removeInput(userId, str(formData, 'inputId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
 }
 
-function thresholdFrom(formData: FormData) {
+function thresholdFrom(formData: FormData, n: Numbers) {
   return {
     label: str(formData, 'label'),
     measure: str(formData, 'measure') as ThresholdMeasure,
     periodRef: str(formData, 'periodRef') as PeriodRef,
     comparison: str(formData, 'comparison') === 'gte' ? ('gte' as const) : ('lte' as const),
-    value: num(formData, 'value'),
+    value: n.num('value'),
     consequence: str(formData, 'consequence'),
     sourceUrl: opt(formData, 'sourceUrl') ?? null,
     verifiedOn: opt(formData, 'verifiedOn') ?? null,
@@ -2069,13 +2174,14 @@ const THRESHOLD_RULES: FieldRule[] = [
 
 export async function createThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, THRESHOLD_RULES)
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, THRESHOLD_RULES)
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
-    await createThreshold(userId, activityId, thresholdFrom(formData))
+    await createThreshold(userId, activityId, thresholdFrom(formData, n))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -2083,13 +2189,14 @@ export async function createThresholdAction(_prev: FormState, formData: FormData
 
 export async function editThresholdAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const invalid = checkFields(formData, THRESHOLD_RULES)
+  const n = await numbersOf(formData)
+  const invalid = await checkFields(formData, THRESHOLD_RULES)
   if (invalid) return { fields: invalid }
   const activityId = str(formData, 'activityId')
   try {
-    await editThreshold(userId, str(formData, 'thresholdId'), thresholdFrom(formData))
+    await editThreshold(userId, str(formData, 'thresholdId'), thresholdFrom(formData, n))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }
@@ -2101,7 +2208,7 @@ export async function removeThresholdAction(_prev: FormState, formData: FormData
   try {
     await removeThreshold(userId, str(formData, 'thresholdId'))
   } catch (e) {
-    return { error: frError(e) }
+    return { error: await refusal(e) }
   }
   refreshActivity(activityId)
   return { ok: true }

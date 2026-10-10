@@ -1,0 +1,417 @@
+{
+  "words": {
+    "kind": {
+      "social": "Cotisations sociales",
+      "income_tax": "Impôt sur le revenu",
+      "vat": "TVA",
+      "other": "Autre"
+    },
+    "measure": {
+      "revenue": "recettes HT",
+      "revenue_incl_vat": "recettes TTC",
+      "expenses": "dépenses déductibles",
+      "profit": "bénéfice",
+      "vat_balance": "TVA collectée − déductible",
+      "withholdings": "retenues à la source",
+      "withholding_share": "part des recettes retenues",
+      "paid": "règlements d’une autre règle",
+      "amount": "montant d’une autre règle",
+      "input": "paramètre saisi",
+      "none": "aucune base"
+    },
+    "periodRef": {
+      "current": "la période",
+      "ytd": "l’exercice à ce jour",
+      "year": "l’exercice entier",
+      "year-1": "l’exercice n−1",
+      "year-2": "l’exercice n−2",
+      "rolling-12": "12 mois glissants"
+    },
+    "period": {
+      "month": "mensuelle",
+      "quarter": "trimestrielle",
+      "half": "semestrielle",
+      "year": "annuelle"
+    },
+    "effect": {
+      "rate_factor": "facteur sur le taux",
+      "replace_amount": "montant de remplacement",
+      "coefficient": "coefficient sur la base",
+      "exempt": "exonération"
+    },
+    "status": {
+      "extended_by_default": "prorogée",
+      "unconfirmed": "non confirmée"
+    }
+  },
+  "shared": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "add": "Ajouter",
+    "remove": "Retirer",
+    "delete": "Supprimer",
+    "name": "Nom",
+    "note": "Note",
+    "value": "Valeur",
+    "status": "Statut",
+    "measure": "Mesure",
+    "readOn": "Lue sur",
+    "from": "À partir du",
+    "sourceUrl": "Source (URL)",
+    "verifiedOn": "Vérifiée le",
+    "reviewOn": "À revérifier le",
+    "measureOver": "{measure} sur {period}"
+  },
+  "amount": {
+    "rate": "{rate} %",
+    "brackets": "barème, {count, plural, one {# tranche} other {# tranches}}",
+    "elective": "base choisie",
+    "nothing": "rien à payer",
+    "stated": "saisi",
+    "statedAmount": "montant saisi"
+  },
+  "measureOptions": {
+    "revenue": "Recettes HT",
+    "revenue_incl_vat": "Recettes TTC",
+    "expenses": "Dépenses déductibles",
+    "profit": "Bénéfice",
+    "vat_balance": "TVA collectée − déductible",
+    "withholdings": "Retenues à la source",
+    "withholding_share": "Part des recettes retenues (%)",
+    "paid": "Règlements d’une autre règle",
+    "amount": "Montant d’une autre règle",
+    "input": "Paramètre saisi",
+    "none": "Aucune base"
+  },
+  "page": {
+    "metaTitle": "Régime de l’activité",
+    "title": "Régime de {name}",
+    "personal": "Cette activité est perso : c’est une dimension d’analyse. Seule une activité professionnelle porte un régime.",
+    "partsLabel": "Parties du régime",
+    "parts": {
+      "rules": "Règles",
+      "inputs": "Paramètres",
+      "thresholds": "Seuils"
+    },
+    "newRule": {
+      "label": "Règle",
+      "title": "Nouvelle règle",
+      "description": "Un prélèvement, tel que son texte le fixe. Un taux qui change plus tard ne se corrige pas : il se remplace."
+    },
+    "newInput": "Paramètre",
+    "newThreshold": "Seuil"
+  },
+  "rules": {
+    "empty": "Aucune règle. Sans elles, les charges de l’activité ne se calculent pas.",
+    "toReview": "à revérifier",
+    "since": "depuis le {date}",
+    "facts": {
+      "amount": "Montant",
+      "kind": "Nature",
+      "period": "Période",
+      "validity": "Validité",
+      "source": "Source"
+    },
+    "edit": "Modifier",
+    "supersede": "Remplacer à une date",
+    "supersedeTitle": "Remplacer « {name} »",
+    "editDescription": "Corrige ce qui a été mal saisi. Une valeur qui a changé à une date se remplace, elle ne se corrige pas.",
+    "supersedeDescription": "La règle actuelle se clôt la veille, celle-ci prend la suite avec ses nouvelles valeurs.",
+    "close": {
+      "label": "Clore",
+      "description": "La règle ne s’applique plus après ce jour. Les périodes qu’elle couvrait gardent leurs chiffres.",
+      "success": "Règle close",
+      "lastDay": "Dernier jour d’application"
+    },
+    "delete": {
+      "description": "La règle disparaît, avec ses modificateurs. Si un règlement a déjà été déclaré dans sa catégorie, elle fait partie de l’histoire : clos-la plutôt.",
+      "title": "Supprimer « {name} » ?",
+      "confirm": "La règle disparaît, avec ses modificateurs."
+    }
+  },
+  "modifiers": {
+    "label": "Modificateurs",
+    "description": "Ce qui change la règle pour un temps. L’éligibilité est ce que tu affirmes : l’app rappelle la condition, elle ne la vérifie pas.",
+    "add": "Ajouter un modificateur",
+    "sheetTitle": "Modificateur de {name}",
+    "empty": "Aucun modificateur.",
+    "fromDate": "dès le {date}",
+    "fromStart": "dès le début",
+    "months": "{count} mois",
+    "periods": "{count} périodes",
+    "until": "jusqu’au {date}",
+    "removeLabel": "Retirer {label}",
+    "success": "Modificateur ajouté",
+    "claim": "Ce que tu affirmes",
+    "claimPlaceholder": "Taux réduit de début d’activité",
+    "effect": "Effet",
+    "effects": {
+      "rate_factor": "Facteur sur le taux",
+      "replace_amount": "Montant de remplacement",
+      "coefficient": "Coefficient sur la base",
+      "exempt": "Exonération"
+    },
+    "amount": "Montant (€)",
+    "valuePlaceholder": "0,75",
+    "startsOn": "À partir du (optionnel)",
+    "duration": "Durée",
+    "durations": {
+      "none": "sans fin",
+      "months": "mois civils",
+      "periods": "périodes de la règle",
+      "endsOn": "jusqu’à une date"
+    },
+    "monthCount": "Nombre de mois",
+    "periodCount": "Nombre de périodes",
+    "endsOn": "Jusqu’au",
+    "condition": "Condition rappelée à l’écran",
+    "conditionPlaceholder": "première année d’activité",
+    "statuses": {
+      "confirmed": "Confirmé par un texte",
+      "extended_by_default": "Prorogé faute de texte",
+      "unconfirmed": "Non confirmé"
+    }
+  },
+  "inputs": {
+    "empty": "Aucun paramètre saisi.",
+    "from": "à partir du {date}",
+    "removeNamed": "Retirer {name}",
+    "newTitle": "Nouveau paramètre",
+    "success": "Paramètre saisi",
+    "notePlaceholder": "d’où vient le chiffre"
+  },
+  "thresholds": {
+    "empty": "Aucun seuil surveillé.",
+    "label": "Libellé",
+    "labelPlaceholder": "Franchise de TVA",
+    "comparison": "Comparaison",
+    "comparisons": {
+      "lte": "tant que la mesure reste au plus à",
+      "gte": "tant que la mesure reste au moins à"
+    },
+    "consequence": "Ce qui change au-delà",
+    "consequencePlaceholder": "La TVA devient due dès le dépassement",
+    "verifiedOn": "Vérifié le",
+    "edited": "Seuil corrigé",
+    "removeDescription": "Le seuil cesse d’être surveillé. Rien d’autre ne change : un seuil alerte, il ne bascule aucun régime.",
+    "removeTitle": "Retirer « {label} » ?",
+    "removeConfirm": "Le seuil cesse d’être surveillé.",
+    "newTitle": "Nouveau seuil",
+    "created": "Seuil créé",
+    "create": "Créer le seuil"
+  },
+  "form": {
+    "success": {
+      "created": "Règle créée",
+      "edited": "Règle corrigée",
+      "superseded": "Règle remplacée"
+    },
+    "namePlaceholder": "Cotisations",
+    "kind": "Nature",
+    "statuses": {
+      "confirmed": "Confirmée par un texte",
+      "extended_by_default": "Prorogée faute de texte",
+      "unconfirmed": "Non confirmée"
+    },
+    "validFrom": "En vigueur à partir du",
+    "newValuesFrom": "Nouvelles valeurs à partir du",
+    "validTo": "Jusqu’au (optionnel)",
+    "supersedeNote": "La règle en vigueur depuis le {date} se clôt la veille de cette date. Le relevé des exercices déjà passés garde ses chiffres.",
+    "sourceUrl": "Source (URL du texte)",
+    "blocks": {
+      "base": "Base",
+      "amount": "Montant",
+      "schedule": "Calendrier",
+      "regularization": "Régularisation",
+      "settlement": "Règlement"
+    },
+    "baseLevy": "Règle lue",
+    "pickRule": "Choisir la règle",
+    "baseInputName": "Nom du paramètre saisi",
+    "coefficient": "Coefficient (optionnel)",
+    "coefficientPlaceholder": "0,93",
+    "scale": "Lecture de la mesure",
+    "scales": {
+      "none": "telle quelle",
+      "per_month": "ramenée au mois",
+      "per_period": "ramenée à la période",
+      "annualized": "annualisée"
+    },
+    "addBack": "Réintégrer les règlements de",
+    "abatement": "Abattement",
+    "abatementModes": {
+      "none": "Aucun",
+      "rate": "Taux fixe",
+      "brackets": "Par palier"
+    },
+    "rate": "Taux (%)",
+    "minimum": "Minimum (€)",
+    "tierReadOn": "Palier lu sur",
+    "ofPeriod": "De la période",
+    "upTo": "Jusqu’à",
+    "open": "ouvert",
+    "ratePercent": "Taux %",
+    "addTier": "Ajouter un palier",
+    "floor": "Plancher (€)",
+    "cap": "Plafond (€)",
+    "credits": "Crédits sur la base",
+    "creditSource": "Ce qui est crédité",
+    "creditSources": {
+      "withholdings": "Retenues à la source",
+      "paid": "Règlements d’une règle",
+      "amount": "Montant d’une règle"
+    },
+    "creditShare": "Part créditée, ligne {row}",
+    "removeCredit": "Retirer le crédit {row}",
+    "noRule": "(aucune règle)",
+    "addCredit": "Ajouter un crédit",
+    "cell": "{column}, ligne {row}",
+    "removeRow": "Retirer la ligne {row}",
+    "amountForms": {
+      "rate": "Taux",
+      "brackets": "Barème",
+      "elective_base": "Base choisie",
+      "fixed": "Fixe",
+      "none": "Rien"
+    },
+    "ratePlaceholder": "21,2",
+    "bracketsMode": "Lecture du barème",
+    "bracketsModes": {
+      "progressive": "Progressif : chaque tranche à son taux",
+      "step": "Par palier : la tranche atteinte s’applique en entier"
+    },
+    "orEuro": "ou € ",
+    "addBracket": "Ajouter une tranche",
+    "minBase": "Base mini",
+    "maxBase": "Base maxi",
+    "addTramo": "Ajouter un tramo",
+    "electiveInput": "Paramètre de la base choisie",
+    "fixedAmount": "Montant par période (€)",
+    "orInput": "ou paramètre saisi",
+    "fixedCredit": "Crédit fixe (€)",
+    "creditInput": "Paramètre de crédits",
+    "period": "Périodicité",
+    "due": "Échéance",
+    "dueTypes": {
+      "end_of_next_month": "Fin du mois suivant",
+      "after_period": "Fenêtre",
+      "fixed_dates": "Dates fixes"
+    },
+    "monthsAfter": "Mois après",
+    "fromDay": "Du jour",
+    "toDay": "Au jour",
+    "month": "Mois",
+    "day": "Jour",
+    "yearOffset": "Exercice +",
+    "addDate": "Ajouter une date",
+    "lag": "Paiement décalé de (mois)",
+    "firstDue": "Première échéance après (jours)",
+    "skipped": "Périodes absorbées par une autre déclaration",
+    "regularizationMode": "Mode",
+    "regularizations": {
+      "none": "Aucune : chaque période est définitive",
+      "annual_deadzone": "Zone morte à la clôture",
+      "provisional_then_settled": "Provisoire, puis définitive"
+    },
+    "settleOffset": "Régularisée (mois après l’exercice)",
+    "refundOffset": "Remboursée (mois après)",
+    "settlementCategory": "Catégorie qui la règle",
+    "noCategory": "(aucune)",
+    "deductible": "La payer réduit le bénéfice",
+    "deductibleHint": "une cotisation sociale souvent, un impôt sur le revenu jamais",
+    "passThrough": "Collectée pour le compte de l’État",
+    "passThroughHint": "la TVA n’est ni une recette ni une charge, elle sort du net",
+    "note": "Note (optionnelle)",
+    "create": "Créer la règle",
+    "supersede": "Remplacer la règle"
+  },
+  "wizard": {
+    "sheet": {
+      "label": "Activité",
+      "title": "Nouvelle activité",
+      "description": "Une sphère économique : indépendante avec son régime, ou personnelle pour l’analyse seule."
+    },
+    "created": "Activité créée",
+    "createdNamed": "« {name} » créée",
+    "selfConfigure": "Je configure moi-même",
+    "back": "Retour",
+    "namePlaceholder": "Freelance",
+    "type": "Type",
+    "kinds": {
+      "business": "Indépendante",
+      "personal": "Personnelle"
+    },
+    "jurisdiction": "Juridiction",
+    "jurisdictionPlaceholder": "Où tu exerces",
+    "elsewhere": "Ailleurs, je configure moi-même",
+    "continue": "Continuer",
+    "noModel": "Aucun régime du catalogue ne correspond à ces réponses. Reviens sur une réponse, ou configure l’activité toi-même.",
+    "backToQuestions": "Revenir aux questions",
+    "backToReview": "Revenir à la relecture",
+    "startedOn": "Début",
+    "create": "Créer l’activité",
+    "whichRegime": "Quel régime ?",
+    "source": "source",
+    "noSource": "sans source",
+    "readOn": "lue le {date}",
+    "review": {
+      "activity": "L’activité",
+      "basis": "Fait générateur",
+      "bases": {
+        "cash": "Encaissement",
+        "invoiced": "Facturation"
+      },
+      "vat": "TVA",
+      "vatRegisteredRate": "Assujettie, {rate} % par défaut",
+      "vatRegistered": "Assujettie",
+      "vatNotRegistered": "Non assujettie",
+      "expenses": "Charges",
+      "allDeductible": "Toutes déductibles",
+      "noneDeductible": "Aucune déductible",
+      "fiscalYear": "Exercice",
+      "opensOn": "ouvre le {day, plural, =1 {#er} other {#}} {month}",
+      "currency": "Devise",
+      "rules": "Les règles",
+      "rulesDescription": "ce que l’activité devra, et sur quel texte",
+      "thresholds": "Les seuils",
+      "thresholdsDescription": "ce qui change au-delà d’une valeur",
+      "inputs": "Les paramètres saisis",
+      "inputsDescription": "les chiffres qu’aucun calcul ne donne",
+      "atLeast": "au moins",
+      "atMost": "au plus",
+      "yours": "Ces règles deviennent les tiennes : tu les corriges quand tu veux, et corriger le catalogue plus tard ne les touchera pas."
+    }
+  },
+  "schedule": {
+    "nothingToday": "Rien à déclarer ni à payer aujourd’hui.",
+    "ahead": "À venir",
+    "aheadDescription": "dont la fenêtre de dépôt n’est pas ouverte",
+    "settled": "Déjà réglées",
+    "settledCount": "{count, plural, one {# échéance} other {# échéances}}",
+    "paidOn": "payée le {date} · estimée à {amount}",
+    "nilReturn": "déclarée à 0",
+    "nothingDue": "rien à déclarer ni à payer",
+    "payBefore": "à payer avant le {date}",
+    "instalment": "échéance {instalment}",
+    "absorbed": "rattachée à une autre déclaration",
+    "nilStillDue": "rien à payer, la déclaration reste due",
+    "unknownAmount": "montant inconnu : {inputs} non renseigné dans Réglages",
+    "nilButReceipt": "déclarée à 0, mais une recette est arrivée depuis",
+    "overdue": "{count, plural, one {en retard de # jour} other {en retard de # jours}}",
+    "dueToday": "à payer aujourd’hui",
+    "dueIn": "{count, plural, one {dans # jour} other {dans # jours}}",
+    "fileNil": "Déclarée à 0",
+    "amountLabel": "Montant réellement payé pour {name}",
+    "accountPlaceholder": "Depuis quel compte",
+    "accountLabel": "Compte débité pour {name}",
+    "actorPlaceholder": "Payé à",
+    "actorLabel": "Organisme payé pour {name}",
+    "paid": "Payé",
+    "paidToday": "Payé aujourd’hui",
+    "paidOtherDate": "Payé à une autre date…",
+    "refund": "à recevoir : déclare le revenu",
+    "nothingYet": "rien à payer pour l’instant",
+    "nothingOnItsSide": "rien à payer de son côté",
+    "withdrawNil": "Retirer la déclaration à 0"
+  }
+}

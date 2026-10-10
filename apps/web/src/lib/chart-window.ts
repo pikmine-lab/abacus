@@ -9,14 +9,8 @@ import { addPeriod } from '@abacus/core/domain/period'
  */
 export type ChartWindow = '1w' | '1m' | '1y' | 'all'
 
-const WINDOWS: ChartWindow[] = ['1w', '1m', '1y', 'all']
-
-export const WINDOW_LABEL: Record<ChartWindow, string> = {
-  '1w': '1S',
-  '1m': '1M',
-  '1y': '1A',
-  all: 'Tout',
-}
+/** The windows offered, shortest first; their names are in the catalog. */
+export const WINDOWS: ChartWindow[] = ['1w', '1m', '1y', 'all']
 
 /**
  * The first day to draw, for the chosen window. `earliest` is where the data

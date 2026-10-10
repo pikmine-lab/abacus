@@ -13,6 +13,7 @@ import {
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { CommitmentRow } from '@/components/commitment-blocks'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -20,12 +21,15 @@ import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/pag
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
 import { StatRow, StatTile } from '@/components/stats'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { eur, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Revenus récurrents' }
+export async function generateMetadata() {
+  const t = await getTranslations('shell.screens')
+  return { title: t('recurringIncome') }
+}
 
 const PATH = '/recurring-income'
 
@@ -39,6 +43,9 @@ export default async function RecurringIncomePage({
   const userId = session.user.id
   const params = await searchParams
   const { error } = params
+  const t = await getTranslations('recurring')
+  const tScreens = await getTranslations('shell.screens')
+  const format = await getFormat()
   const sort = sorter('sources', COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, params)
 
   const [commitments, pending, accounts, actors, categories, activities] = await Promise.all([
@@ -70,12 +77,8 @@ export default async function RecurringIncomePage({
 
   return (
     <>
-      <PageHeader title="Revenus récurrents" description="ce qui rentre tout seul : salaire, loyers, rentes">
-        <EntrySheet
-          label="Ajouter"
-          title="Nouveau revenu récurrent"
-          description="Même moteur d’échéances que les abonnements, sens inverse : l’app te proposera de confirmer chaque versement."
-        >
+      <PageHeader title={tScreens('recurringIncome')} description={t('income.description')}>
+        <EntrySheet label={t('add')} title={t('income.newTitle')} description={t('income.newDescription')}>
           <NewCommitmentForm
             direction="incoming"
             accounts={options.accounts}
@@ -97,29 +100,28 @@ export default async function RecurringIncomePage({
         <StatRow>
           <StatTile
             hero
-            label="Revenu récurrent"
-            value={`${eur(monthly, 2)}/mois`}
-            hint={`${eur(monthly * 12)} par an`}
+            label={t('income.recurringIncome')}
+            value={t('amountPerMonth', { amount: format.eur(monthly, 2) })}
+            hint={t('income.perYear', { amount: format.eur(monthly * 12) })}
           />
           <StatTile
-            label="Sources actives"
+            label={t('income.activeSources')}
             value={String(active.length)}
-            hint={
-              stopped.length > 0 ? `${stopped.length} arrêtée${stopped.length > 1 ? 's' : ''}` : undefined
-            }
+            hint={stopped.length > 0 ? t('income.stoppedCount', { count: stopped.length }) : undefined}
           />
           <StatTile
-            label="À confirmer"
+            label={t('toConfirm')}
             value={String(dueIn.length)}
-            hint={dueIn.length > 0 ? `attendu depuis le ${frDate(dueIn[0]!.dueOn)}` : 'tout est à jour'}
+            hint={
+              dueIn.length > 0
+                ? t('income.expectedSince', { date: format.date(dueIn[0]!.dueOn) })
+                : t('income.upToDate')
+            }
           />
         </StatRow>
 
         {pendingIn.length > 0 && (
-          <Section
-            title="Versements à confirmer"
-            description="corrige le montant s’il diffère : c’est comme ça qu’on voit une prime ou une hausse"
-          >
+          <Section title={t('income.pendingTitle')} description={t('income.pendingDescription')}>
             <PendingOccurrences
               back={PATH}
               items={pendingIn.map((p) => ({
@@ -138,26 +140,24 @@ export default async function RecurringIncomePage({
         )}
 
         <Section
-          title="Sources"
-          description="montant, périodicité et prochaine échéance"
+          title={t('income.sources')}
+          description={t('income.sourcesDescription')}
           action={
             active.length > 1 && (
               <SortMenu
                 sorter={sort}
                 options={[
-                  { field: 'monthly', label: 'Équivalent mensuel' },
-                  { field: 'amount', label: 'Montant versé' },
-                  { field: 'next', label: 'Prochaine échéance' },
-                  { field: 'label', label: 'Nom' },
+                  { field: 'monthly', label: t('sorts.monthlyEquivalent') },
+                  { field: 'amount', label: t('sorts.amountPaid') },
+                  { field: 'next', label: t('nextDue') },
+                  { field: 'label', label: t('name') },
                 ]}
               />
             )
           }
         >
           {active.length === 0 ? (
-            <EmptyLine>
-              Aucun revenu récurrent déclaré. Ton salaire ici, et la projection devient utile.
-            </EmptyLine>
+            <EmptyLine>{t('income.empty')}</EmptyLine>
           ) : (
             <Rows>
               {sortCommitments(active, sort.current).map((c) => (
@@ -174,13 +174,17 @@ export default async function RecurringIncomePage({
         </Section>
 
         {stopped.length > 0 && (
-          <Section title="Arrêtés" description="gardés pour l’historique">
+          <Section title={t('income.stopped')} description={t('income.stoppedDescription')}>
             <Rows>
               {stopped.map((c) => (
                 <div key={c.id} className="flex items-baseline gap-3 py-2 text-faint">
                   <span className="text-[12.5px]">{c.label}</span>
-                  <span className="text-[11px]">arrêté le {frDate(c.cancelledOn!)}</span>
-                  <span className="ml-auto font-mono text-[12.5px] tabular">{eur(Number(c.amount), 2)}</span>
+                  <span className="text-[11px]">
+                    {t('income.stoppedOn', { date: format.date(c.cancelledOn!) })}
+                  </span>
+                  <span className="ml-auto font-mono text-[12.5px] tabular">
+                    {format.eur(Number(c.amount), 2)}
+                  </span>
                 </div>
               ))}
             </Rows>

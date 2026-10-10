@@ -1,8 +1,9 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useEffect, useRef, useState } from 'react'
-import { eur } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /**
  * Income against spending, month by month, mirrored around zero. Direction is
@@ -29,16 +30,6 @@ export interface MonthFlow {
 /** Width of the "en cours" flag over the running month. */
 const FLAG_WIDTH = 54
 
-function monthLabel(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y!, m! - 1, 1)).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
-}
-
-function monthLabelLong(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y!, m! - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-}
-
 export function FlowChart({
   rows,
   currentMonth,
@@ -58,6 +49,9 @@ export function FlowChart({
   legend?: 'top' | 'axis'
   height?: number
 }) {
+  const t = useTranslations('analysis.flow')
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
   const router = useRouter()
   const searchParams = useSearchParams()
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -74,8 +68,7 @@ export function FlowChart({
     return () => ro.disconnect()
   }, [])
 
-  if (rows.length === 0)
-    return <p className="py-6 text-[13px] text-faint">Rien à comparer sur cette période.</p>
+  if (rows.length === 0) return <p className="py-6 text-[13px] text-faint">{t('empty')}</p>
 
   const H = height
   // The running month is still being filled: it is drawn hatched behind a flag
@@ -109,6 +102,10 @@ export function FlowChart({
   const tickLabels = H >= 180
   const ticks: number[] = []
   for (let v = tickStep; v <= peak; v += tickStep) ticks.push(v)
+  const tick = (v: number) => {
+    const decimals = v % 1000 ? 1 : 0
+    return words('thousands', { value: format.number(v / 1000, decimals, decimals) })
+  }
 
   const everyLabel = Math.max(1, Math.ceil(rows.length / (width < 520 ? 6 : 12)))
   const scopeTo = (ref: string) => {
@@ -126,15 +123,15 @@ export function FlowChart({
         <div className="flex items-center gap-4 text-[11.5px] text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: 'var(--good)' }} />
-            Revenus
+            {t('income')}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-            Dépenses (net)
+            {t('expensesNet')}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)', opacity: 0.32 }} />
-            Remboursé
+            {t('refunded')}
           </span>
         </div>
       )}
@@ -143,7 +140,7 @@ export function FlowChart({
         {/* Nothing is drawn before the container has been measured: a guessed
             width pushes the marks out of frame instead of scaling them. */}
         {width > 0 && (
-          <svg width="100%" height={H} role="img" aria-label="Revenus et dépenses par mois">
+          <svg width="100%" height={H} role="img" aria-label={t('chart')}>
             <defs>
               {/* Hatch, not a lighter tint: an unfinished month must not read as a small one. */}
               <pattern
@@ -208,7 +205,7 @@ export function FlowChart({
                       fontSize={10.5}
                       fill="var(--faint)"
                     >
-                      {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                      {tick(v)}
                     </text>
                     <text
                       x={M.l - 7}
@@ -218,7 +215,7 @@ export function FlowChart({
                       fontSize={10.5}
                       fill="var(--faint)"
                     >
-                      {`${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`}
+                      {tick(v)}
                     </text>
                   </>
                 )}
@@ -236,10 +233,10 @@ export function FlowChart({
             {legend === 'axis' && (
               <g fontSize={10.5} fill="var(--faint)" textAnchor="end">
                 <text x={M.l - 7} y={mid - 5}>
-                  entré
+                  {t('axisIn')}
                 </text>
                 <text x={M.l - 7} y={mid + 13}>
-                  sorti
+                  {t('axisOut')}
                 </text>
               </g>
             )}
@@ -276,7 +273,7 @@ export function FlowChart({
                   fontSize={9.5}
                   fill="var(--muted-foreground)"
                 >
-                  en cours
+                  {t('running')}
                 </text>
               </g>
             )}
@@ -299,7 +296,11 @@ export function FlowChart({
                   key={r.month}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${monthLabelLong(r.month)} : ${eur(r.income)} de revenus, ${eur(r.expenseNet)} de dépenses`}
+                  aria-label={t('month', {
+                    month: format.monthLong(r.month),
+                    income: format.eur(r.income),
+                    expenses: format.eur(r.expenseNet),
+                  })}
                   onPointerEnter={() => setHover(i)}
                   onFocus={() => setHover(i)}
                   onClick={() => scopeTo(ref)}
@@ -365,7 +366,7 @@ export function FlowChart({
                       fontSize={10.5}
                       fill={selected ? 'var(--foreground)' : on ? 'var(--muted-foreground)' : 'var(--faint)'}
                     >
-                      {monthLabel(r.month)}
+                      {format.monthName(r.month)}
                     </text>
                   )}
                 </g>
@@ -379,17 +380,19 @@ export function FlowChart({
             className="pointer-events-none absolute top-1 z-10 min-w-44 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
             style={{ left: tooltipLeft }}
           >
-            <p className="text-[11px] text-faint">{monthLabelLong(rows[hover].month)}</p>
+            <p className="text-[11px] text-faint">{format.monthLong(rows[hover].month)}</p>
             <p className="flex items-center gap-2 py-px text-xs">
               <span className="size-2 rounded-sm" style={{ background: 'var(--good)' }} />
-              <span className="text-muted-foreground">{legend === 'axis' ? 'Entré' : 'Revenus'}</span>
-              <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(rows[hover].income)}</span>
+              <span className="text-muted-foreground">{legend === 'axis' ? t('in') : t('income')}</span>
+              <span className="ml-auto pl-3 font-mono font-semibold tabular">
+                {format.eur(rows[hover].income)}
+              </span>
             </p>
             <p className="flex items-center gap-2 py-px text-xs">
               <span className="size-2 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-              <span className="text-muted-foreground">{legend === 'axis' ? 'Sorti' : 'Dépenses'}</span>
+              <span className="text-muted-foreground">{legend === 'axis' ? t('out') : t('expenses')}</span>
               <span className="ml-auto pl-3 font-mono font-semibold tabular">
-                {eur(rows[hover].expenseNet)}
+                {format.eur(rows[hover].expenseNet)}
               </span>
             </p>
             {rows[hover].expenseGross !== rows[hover].expenseNet &&
@@ -400,24 +403,26 @@ export function FlowChart({
                     className="size-2 rounded-sm"
                     style={{ background: 'var(--chart-1)', opacity: 0.32 }}
                   />
-                  <span className="text-muted-foreground">Remboursé</span>
+                  <span className="text-muted-foreground">{t('refunded')}</span>
                   <span className="ml-auto pl-3 font-mono font-semibold tabular">
-                    {eur(rows[hover].expenseGross - rows[hover].expenseNet)}
+                    {format.eur(rows[hover].expenseGross - rows[hover].expenseNet)}
                   </span>
                 </p>
               ) : (
-                <p className="text-[11px] text-faint">brut {eur(rows[hover].expenseGross)}</p>
+                <p className="text-[11px] text-faint">
+                  {words('gross', { amount: format.eur(rows[hover].expenseGross) })}
+                </p>
               ))}
             <p className="mt-1 flex items-center gap-2 border-t border-border pt-1 text-xs">
-              <span className="text-muted-foreground">Épargné</span>
+              <span className="text-muted-foreground">{t('saved')}</span>
               <span className="ml-auto pl-3 font-mono font-semibold tabular">
-                {eur(rows[hover].income - rows[hover].expenseNet)}
+                {format.eur(rows[hover].income - rows[hover].expenseNet)}
               </span>
             </p>
             {rows[hover].month.slice(0, 7) === currentMonth && (
-              <p className="text-[10.5px] text-faint">mois en cours, encore incomplet</p>
+              <p className="text-[10.5px] text-faint">{t('incomplete')}</p>
             )}
-            <p className="mt-1 text-[10.5px] text-faint">Clic : cadrer la page sur ce mois</p>
+            <p className="mt-1 text-[10.5px] text-faint">{t('scopeHint')}</p>
           </div>
         )}
       </div>

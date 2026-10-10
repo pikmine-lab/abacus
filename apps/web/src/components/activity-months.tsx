@@ -1,7 +1,8 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useEffect, useRef, useState } from 'react'
-import { eur, frMonthLong } from '@/lib/utils'
+import { type Format, useFormat } from '@/lib/format'
 
 /**
  * What one fiscal month of an activity came to: what came in under the
@@ -25,11 +26,6 @@ export interface ActivityMonth {
   running: boolean
 }
 
-function monthLabel(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y!, m! - 1, 1)).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
-}
-
 /** A round grid step cut on the amplitude: 1, 2 or 5 times a power of ten. */
 function niceStep(peak: number): number {
   const raw = Math.max(peak, 1) / 3
@@ -38,8 +34,11 @@ function niceStep(peak: number): number {
   return 10 * magnitude
 }
 
-function tick(value: number): string {
-  if (value >= 1000) return `${(value / 1000).toFixed(value % 1000 ? 1 : 0).replace('.', ',')}k`
+function tick(value: number, format: Format): string {
+  if (value >= 1000) {
+    const decimals = value % 1000 ? 1 : 0
+    return `${format.number(value / 1000, decimals, decimals)}k`
+  }
   return String(value)
 }
 
@@ -51,6 +50,8 @@ export function ActivityMonths({
   rows: ActivityMonth[]
   revenueWord: string
 }) {
+  const t = useTranslations('activity.months')
+  const format = useFormat()
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [hover, setHover] = useState<number | null>(null)
@@ -65,7 +66,7 @@ export function ActivityMonths({
     return () => ro.disconnect()
   }, [])
 
-  if (rows.length === 0) return <p className="py-6 text-[13px] text-faint">Rien sur cet exercice.</p>
+  if (rows.length === 0) return <p className="py-6 text-[13px] text-faint">{t('empty')}</p>
 
   const H = 200
   const M = { t: 12, r: 8, b: 22, l: 46 }
@@ -93,23 +94,18 @@ export function ActivityMonths({
       <div className="flex items-center gap-4 text-[11.5px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-          Net
+          {t('net')}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)', opacity: 0.32 }} />
-          Charges et provisions
+          {t('chargesAndProvisions')}
         </span>
       </div>
 
       <div ref={wrapRef} className="relative" style={{ minHeight: H }} onPointerLeave={() => setHover(null)}>
         {/* Nothing is drawn before the container has been measured. */}
         {width > 0 && (
-          <svg
-            width="100%"
-            height={H}
-            role="img"
-            aria-label="Par mois : ce qui est entré, les charges et provisions, le net"
-          >
+          <svg width="100%" height={H} role="img" aria-label={t('chartLabel')}>
             <defs>
               <pattern
                 id="activity-running"
@@ -140,7 +136,7 @@ export function ActivityMonths({
                   fontSize={10.5}
                   fill="var(--faint)"
                 >
-                  {tick(v)}
+                  {tick(v, format)}
                 </text>
               </g>
             ))}
@@ -171,7 +167,7 @@ export function ActivityMonths({
                   fontSize={9.5}
                   fill="var(--muted-foreground)"
                 >
-                  en cours
+                  {t('running')}
                 </text>
               </g>
             )}
@@ -231,7 +227,7 @@ export function ActivityMonths({
                       fontSize={10.5}
                       fill={on ? 'var(--muted-foreground)' : 'var(--faint)'}
                     >
-                      {monthLabel(r.month)}
+                      {format.monthName(r.month)}
                     </text>
                   )}
                 </g>
@@ -245,14 +241,12 @@ export function ActivityMonths({
             className="pointer-events-none absolute top-1 z-10 min-w-48 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
             style={{ left: tooltipLeft }}
           >
-            <p className="text-[11px] text-faint">{frMonthLong(rows[hover].month)}</p>
+            <p className="text-[11px] text-faint">{format.monthLong(rows[hover].month)}</p>
             <Line label={revenueWord} value={rows[hover].revenue} />
-            <Line label="Charges et provisions" value={rows[hover].charges} />
-            <Line label="Net" value={rows[hover].net} strong />
-            <Line label="Versé" value={rows[hover].paidToSelf} />
-            {rows[hover].running && (
-              <p className="text-[10.5px] text-faint">mois en cours, encore incomplet</p>
-            )}
+            <Line label={t('chargesAndProvisions')} value={rows[hover].charges} />
+            <Line label={t('net')} value={rows[hover].net} strong />
+            <Line label={t('paid')} value={rows[hover].paidToSelf} />
+            {rows[hover].running && <p className="text-[10.5px] text-faint">{t('runningNote')}</p>}
           </div>
         )}
       </div>
@@ -261,10 +255,13 @@ export function ActivityMonths({
 }
 
 function Line({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  const format = useFormat()
   return (
     <p className="flex items-baseline gap-2 py-px text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`ml-auto pl-3 font-mono tabular ${strong ? 'font-semibold' : ''}`}>{eur(value)}</span>
+      <span className={`ml-auto pl-3 font-mono tabular ${strong ? 'font-semibold' : ''}`}>
+        {format.eur(value)}
+      </span>
     </p>
   )
 }

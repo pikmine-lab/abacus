@@ -29,6 +29,8 @@ import { CircleAlertIcon } from 'lucide-react'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import type { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { BreakdownBars } from '@/components/breakdown-bars'
 import { ActionCard, ActionGroup, ActionRow, Block, Figure, FigureRow } from '@/components/composition'
@@ -38,17 +40,23 @@ import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
 import { SpendingDonut } from '@/components/spending-donut'
 import { Badge } from '@/components/ui/badge'
+import type { Format } from '@/lib/format'
+import { getFormat } from '@/lib/format-server'
 import { previousWindow, resolvePeriod, seriesFrom } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
-import { daysBetween, eur, frDate, freshness } from '@/lib/utils'
+import { daysBetween } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-const JUDGMENT = {
-  essential: { label: 'essentiel', variant: 'secondary' as const },
-  reducible: { label: 'réductible', variant: 'outline' as const },
-  to_cancel: { label: 'à résilier', variant: 'default' as const },
+const JUDGMENT_VARIANT = {
+  essential: 'secondary' as const,
+  reducible: 'outline' as const,
+  to_cancel: 'default' as const,
 }
+
+/** The words the alert lines are written with. */
+type AlertWords = ReturnType<typeof useTranslations<'home.alerts'>>
+type PercentWords = ReturnType<typeof useTranslations<'analysis.words'>>
 
 /** A check older than this is worth pointing at: the declarative model drifts. */
 const STALE_CHECK_DAYS = 45
@@ -63,8 +71,17 @@ export default async function OverviewPage({
   const userId = session.user.id
   const now = today()
   const params = await searchParams
-  const period = resolvePeriod(params, now)
-  const previous = previousWindow(period)
+  const [t, screens, alertWords, words, periodWords, format] = await Promise.all([
+    getTranslations('home'),
+    getTranslations('shell.screens'),
+    getTranslations('home.alerts'),
+    getTranslations('analysis.words'),
+    getTranslations('common.period'),
+    getFormat(),
+  ])
+  const periodContext = { t: periodWords, format }
+  const period = resolvePeriod(periodContext, params, now)
+  const previous = previousWindow(periodContext, period)
   const reading = await currentReading(params, userId)
 
   const [
@@ -112,30 +129,30 @@ export default async function OverviewPage({
   if (accounts.length === 0 || firstDay === null) {
     const steps: Step[] = [
       {
-        title: 'Déclare tes comptes',
-        why: 'Un compte courant suffit pour commencer. C’est ce qui porte les soldes et rend tout le reste calculable.',
+        title: t('onboarding.accounts.title'),
+        why: t('onboarding.accounts.why'),
         href: '/accounts',
-        cta: 'Ajouter un compte',
+        cta: t('onboarding.accounts.cta'),
         done: accounts.length > 0,
       },
       {
-        title: 'Déclare quelques mouvements',
-        why: 'Dépenses, revenus, virements entre tes comptes. Dès le premier, les soldes et les graphes existent.',
+        title: t('onboarding.movements.title'),
+        why: t('onboarding.movements.why'),
         href: '/movements',
-        cta: 'Déclarer',
+        cta: t('onboarding.movements.cta'),
         done: firstDay !== null,
       },
       {
-        title: 'Déclare tes engagements récurrents',
-        why: 'Abonnements et salaire : l’app en déduit ton coût mensuel engagé et te propose les échéances à confirmer.',
+        title: t('onboarding.commitments.title'),
+        why: t('onboarding.commitments.why'),
         href: '/recurring-expenses',
-        cta: 'Ajouter',
+        cta: t('onboarding.commitments.cta'),
         done: active.length > 0,
       },
     ]
     return (
       <>
-        <PageHeader title="Bienvenue" />
+        <PageHeader title={t('onboarding.title')} />
         <Onboarding steps={steps} mcpHref="/connect-ai" />
       </>
     )
@@ -197,44 +214,42 @@ export default async function OverviewPage({
 
   // Balances have one reading only: when the other one is chosen for the
   // flows, the block that ignores it says so.
-  const flowQualifier = reading === 'accrual' ? 'rattachement' : undefined
+  const flowQualifier = reading === 'accrual' ? periodWords('accrual') : undefined
   const wealthNote =
     missingContributions > 0
-      ? `${eur(missingContributions)} d’apports non déclarés : pointe les espèces du compte`
+      ? t('wealth.missingContributions', { amount: format.eur(missingContributions) })
       : holdings.value > 0
-        ? `placements au dernier cours${holdings.unpriced > 0 ? `, ${holdings.unpriced} sans cours` : ''}`
+        ? holdings.unpriced > 0
+          ? t('wealth.pricedWithUnpriced', { count: holdings.unpriced })
+          : t('wealth.priced')
         : undefined
   const pendingGroups = [
-    { items: pendingOut, href: '/recurring-expenses', one: 'prélèvement', many: 'prélèvements' },
-    { items: pendingIn, href: '/recurring-income', one: 'versement', many: 'versements' },
-    {
-      items: pendingPlacements,
-      href: '/investments',
-      one: 'versement programmé',
-      many: 'versements programmés',
-    },
+    { items: pendingOut, href: '/recurring-expenses', title: 'debits' as const },
+    { items: pendingIn, href: '/recurring-income', title: 'incomes' as const },
+    { items: pendingPlacements, href: '/investments', title: 'contributions' as const },
   ].filter((group) => group.items.length > 0)
+  const noSpending = t('spending.empty')
 
   return (
     <>
-      <PeriodHeader title="Vue d’ensemble" period={period} reading={reading} />
+      <PeriodHeader title={screens('overview')} period={period} reading={reading} />
 
       <PageBody className="gap-10 pt-8">
         {/* The one figure that dominates, beside the balances that explain it. */}
         <div className="grid items-end gap-8 lg:grid-cols-[minmax(18rem,4fr)_minmax(0,7fr)] lg:gap-12">
           <Figure
             hero
-            label="Patrimoine"
+            label={t('wealth.label')}
             value={wealth}
             href="/accounts?from=overview"
             delta={days.length > 1 ? { value: Math.round(wealthEnd - wealthStart), label: '' } : undefined}
             note={wealthNote}
           />
           <Block
-            label="Soldes"
-            qualifier={reading === 'accrual' ? 'date réelle' : undefined}
+            label={t('balances.label')}
+            qualifier={reading === 'accrual' ? t('balances.realDate') : undefined}
             href="/accounts?from=overview"
-            hrefLabel="Comptes"
+            hrefLabel={screens('accounts')}
           >
             <BalanceChart
               lines={accounts.filter((a) => !a.closedOn).map((a) => ({ id: a.id, name: a.name }))}
@@ -246,7 +261,7 @@ export default async function OverviewPage({
 
         <FigureRow>
           <Figure
-            label="Épargné"
+            label={t('figures.saved')}
             qualifier={flowQualifier}
             value={saved}
             delta={
@@ -261,7 +276,7 @@ export default async function OverviewPage({
             }
           />
           <Figure
-            label="Dépensé"
+            label={t('figures.spent')}
             qualifier={flowQualifier}
             value={expenseNet}
             href="/analysis?from=overview"
@@ -274,19 +289,26 @@ export default async function OverviewPage({
                   }
                 : undefined
             }
-            note={expenseGross !== expenseNet ? `brut ${eur(expenseGross)} avant remboursements` : undefined}
+            note={
+              expenseGross !== expenseNet
+                ? t('figures.grossBeforeRefunds', { amount: format.eur(expenseGross) })
+                : undefined
+            }
           />
           <Figure
-            label="Engagé"
+            label={t('figures.committed')}
             value={monthlyCommitted}
             decimals={2}
-            per="/mois"
+            per={t('figures.perMonth')}
             href="/recurring-expenses?from=overview"
-            note={`${subscriptions.length} abonnement${subscriptions.length > 1 ? 's' : ''}${
+            note={
               financings.length > 0
-                ? ` · ${financings.length} financement${financings.length > 1 ? 's' : ''}`
-                : ''
-            }`}
+                ? t('figures.subscriptionsAndFinancings', {
+                    subscriptions: subscriptions.length,
+                    financings: financings.length,
+                  })
+                : t('figures.subscriptions', { subscriptions: subscriptions.length })
+            }
           />
         </FigureRow>
 
@@ -295,7 +317,7 @@ export default async function OverviewPage({
           claims > 0 ||
           statementsDue.length > 0 ||
           alerts.length > 0) && (
-          <ActionCard label="À faire">
+          <ActionCard label={t('todo.label')}>
             {/* One line per direction: an occurrence to confirm lives on the
                 page of its own kind, and a single link could only guess. */}
             {pendingGroups.map((group) => (
@@ -303,8 +325,8 @@ export default async function OverviewPage({
                 key={group.href}
                 href={`${group.href}?from=overview`}
                 icon={<CircleAlertIcon className="size-4 text-primary" />}
-                title={`${group.items.length} ${group.items.length > 1 ? group.many : group.one} à confirmer`}
-                detail={`depuis le ${frDate(group.items[0]!.dueOn)}`}
+                title={t(`todo.${group.title}`, { count: group.items.length })}
+                detail={t('todo.since', { date: format.date(group.items[0]!.dueOn) })}
               />
             ))}
             {statementsDue.map(({ card, waiting }) => (
@@ -312,26 +334,32 @@ export default async function OverviewPage({
                 key={card.id}
                 href={`/accounts/cards/${card.id}?from=overview#statement-${waiting[0]!.id}`}
                 icon={<CircleAlertIcon className="size-4 text-primary" />}
-                title={`${waiting.length > 1 ? `${waiting.length} relevés` : 'Relevé'} de ${card.name} à valider`}
-                detail={`${eur(
-                  waiting.reduce((sum, s) => sum + Number(s.amount), 0),
-                  2,
-                )} depuis le ${frDate(waiting[0]!.dueOn)}`}
+                title={t('todo.statements', { count: waiting.length, card: card.name })}
+                detail={t('todo.statementsDetail', {
+                  amount: format.eur(
+                    waiting.reduce((sum, s) => sum + Number(s.amount), 0),
+                    2,
+                  ),
+                  date: format.date(waiting[0]!.dueOn),
+                })}
               />
             ))}
             {staleChecks.length > 0 && (
               <ActionRow
                 href="/accounts?from=overview"
                 icon={<CircleAlertIcon className="size-4 text-faint" />}
-                title={`${staleChecks.length} compte${staleChecks.length > 1 ? 's' : ''} à pointer`}
+                title={t('todo.checks', { count: staleChecks.length })}
                 detail={staleChecks
                   .slice(0, 3)
                   .map(({ account, check }) =>
                     check
                       ? check.openGap !== 0
-                        ? `${account.name} : écart de ${eur(check.openGap, 2)}`
-                        : `${account.name} : pointé ${freshness(check.check.checkedOn, now)}`
-                      : `${account.name} : jamais pointé`,
+                        ? t('todo.checkGap', { account: account.name, amount: format.eur(check.openGap, 2) })
+                        : t('todo.checkedAgo', {
+                            account: account.name,
+                            when: format.freshness(check.check.checkedOn, now),
+                          })
+                      : t('todo.neverChecked', { account: account.name }),
                   )
                   .join(' · ')}
               />
@@ -340,14 +368,14 @@ export default async function OverviewPage({
               <ActionRow
                 href="/movements?advances=1&from=overview"
                 icon={<CircleAlertIcon className="size-4 text-faint" />}
-                title={`${eur(claims, 2)} à récupérer`}
-                detail={`${advances.length} avance${advances.length > 1 ? 's' : ''}`}
+                title={t('todo.claims', { amount: format.eur(claims, 2) })}
+                detail={t('todo.advances', { count: advances.length })}
               />
             )}
             {/* Nothing when nothing alerts: a line saying "aucun seuil franchi"
                 would take the place of the day a seuil is. What changes a regime asks
                 for attention rather than a gesture, so it keeps its own label. */}
-            {alerts.length > 0 && <ActionGroup label="Activité" />}
+            {alerts.length > 0 && <ActionGroup label={t('todo.activity')} />}
             {alerts.map((alert) => (
               <ActionRow
                 key={`${alert.activityId}-${alert.kind}-${alert.subject}`}
@@ -367,8 +395,8 @@ export default async function OverviewPage({
                     }`}
                   />
                 }
-                title={alertHeadline(alert)}
-                detail={alertDetail(alert)}
+                title={alertHeadline(alert, alertWords)}
+                detail={alertDetail(alert, alertWords, words, format)}
               />
             ))}
           </ActionCard>
@@ -376,7 +404,7 @@ export default async function OverviewPage({
 
         {/* No title: the months on the axis name the window, and the two sides
             of the zero line name themselves. */}
-        <section aria-label="Entrées et sorties, douze derniers mois">
+        <section aria-label={t('flows')}>
           {flowQualifier && <p className="pb-1 text-[11.5px] text-faint">{flowQualifier}</p>}
           <FlowChart
             rows={monthlyRows}
@@ -387,34 +415,36 @@ export default async function OverviewPage({
         </section>
 
         <Block
-          label="Dépenses"
+          label={t('spending.label')}
           qualifier={flowQualifier}
           href="/analysis?from=overview"
-          hrefLabel="Analyse"
+          hrefLabel={screens('analysis')}
           rule
         >
           {byGroup.length === 0 && breakdown.length === 0 ? (
-            <EmptyLine>Aucune dépense déclarée sur cette période.</EmptyLine>
+            <EmptyLine>{noSpending}</EmptyLine>
           ) : (
             <div className="grid gap-8 pt-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-12">
-              <SpendingDonut
-                rows={amounts(byGroup)}
-                emptyLabel="Aucune dépense déclarée sur cette période."
-              />
+              <SpendingDonut rows={amounts(byGroup)} emptyLabel={noSpending} />
               <BreakdownBars
                 rows={amounts(breakdown)}
                 dimension="category"
                 link={{ from: 'overview', period, kind: 'expense' }}
                 max={6}
-                emptyLabel="Aucune dépense déclarée sur cette période."
+                emptyLabel={noSpending}
               />
             </div>
           )}
         </Block>
 
-        <Block label="À venir" href="/recurring-expenses?from=overview" hrefLabel="Toutes les échéances" rule>
+        <Block
+          label={t('upcoming.label')}
+          href="/recurring-expenses?from=overview"
+          hrefLabel={t('upcoming.link')}
+          rule
+        >
           {active.length === 0 ? (
-            <EmptyLine>Aucun engagement déclaré.</EmptyLine>
+            <EmptyLine>{t('upcoming.empty')}</EmptyLine>
           ) : (
             <div className="flex flex-col divide-y divide-border">
               {[...active]
@@ -433,22 +463,25 @@ export default async function OverviewPage({
                     className="group -mx-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-md px-2 py-2.5 hover:bg-secondary/40 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto_7rem]"
                   >
                     <span className="col-start-1 row-start-2 font-mono text-[12px] text-faint tabular sm:row-start-1">
-                      {frDate(c.nextDueOn)}
+                      {format.date(c.nextDueOn)}
                     </span>
                     <span className="col-start-1 row-start-1 truncate text-[13.5px] sm:col-start-2">
                       {c.label}
                       {c.kind === 'financing' && c.progress && (
                         <span className="ml-2 text-[12px] text-faint">
-                          {c.progress.paidInstallments}/{c.installmentsTotal} échéances
+                          {t('upcoming.installments', {
+                            paid: c.progress.paidInstallments,
+                            total: c.installmentsTotal ?? '',
+                          })}
                         </span>
                       )}
                     </span>
                     {c.judgment && c.direction === 'outgoing' && (
                       <Badge
-                        variant={JUDGMENT[c.judgment].variant}
+                        variant={JUDGMENT_VARIANT[c.judgment]}
                         className="col-start-2 row-start-2 justify-self-end sm:col-start-3 sm:row-start-1"
                       >
-                        {JUDGMENT[c.judgment].label}
+                        {t(`upcoming.judgments.${c.judgment}`)}
                       </Badge>
                     )}
                     <span
@@ -457,7 +490,7 @@ export default async function OverviewPage({
                       }`}
                     >
                       {c.direction === 'incoming' ? '+' : '−'}
-                      {eur(Number(c.amount), 2)}
+                      {format.eur(Number(c.amount), 2)}
                     </span>
                   </Link>
                 ))}
@@ -470,23 +503,28 @@ export default async function OverviewPage({
 }
 
 /** A threshold's figures: every measure is money but the share of receipts that bore a withholding. */
-function thresholdFigure(measure: ThresholdMeasure, value: number): string {
-  return measure === 'withholding_share' ? `${Math.round(value)} %` : eur(value)
+function thresholdFigure(
+  measure: ThresholdMeasure,
+  value: number,
+  words: PercentWords,
+  format: Format,
+): string {
+  return measure === 'withholding_share' ? words('percent', { value: Math.round(value) }) : format.eur(value)
 }
 
 /** What the alert is, in two to five words. */
-function alertHeadline(alert: ActivityAlert): string {
+function alertHeadline(alert: ActivityAlert, t: AlertWords): string {
   switch (alert.kind) {
     case 'threshold_crossed':
-      return `${alert.subject} franchi`
+      return t('thresholdCrossed', { subject: alert.subject })
     case 'threshold_near':
-      return `${alert.subject} bientôt atteint`
+      return t('thresholdNear', { subject: alert.subject })
     case 'rule_review_due':
-      return `${alert.subject} à revérifier`
+      return t('ruleReviewDue', { subject: alert.subject })
     case 'rule_unconfirmed':
-      return `${alert.subject} non confirmé`
+      return t('ruleUnconfirmed', { subject: alert.subject })
     case 'activity_unreadable':
-      return `${alert.subject} : relevé illisible`
+      return t('activityUnreadable', { subject: alert.subject })
   }
 }
 
@@ -495,24 +533,29 @@ function alertHeadline(alert: ActivityAlert): string {
  * user wrote: what a crossing costs is a fact of a regime, so it is written
  * once, in the configuration, and never here.
  */
-function alertDetail(alert: ActivityAlert): string {
-  if (isThresholdAlert(alert))
+function alertDetail(alert: ActivityAlert, t: AlertWords, words: PercentWords, format: Format): string {
+  if (isThresholdAlert(alert)) {
+    const figures = {
+      current: thresholdFigure(alert.measure, alert.current, words, format),
+      limit: thresholdFigure(alert.measure, alert.value, words, format),
+    }
     return [
       alert.activityName,
-      `${thresholdFigure(alert.measure, alert.current)} pour un ${alert.comparison === 'lte' ? 'plafond' : 'plancher'} à ${thresholdFigure(alert.measure, alert.value)}`,
+      alert.comparison === 'lte' ? t('ceiling', figures) : t('floor', figures),
       alert.consequence,
     ].join(' · ')
+  }
   if (isRuleAlert(alert))
     return [
       alert.activityName,
       alert.kind === 'rule_review_due'
-        ? `à revérifier depuis le ${frDate(alert.reviewOn!)}`
-        : 'aucun texte ne fixe cette valeur',
-      alert.verifiedOn ? `vérifié le ${frDate(alert.verifiedOn)}` : null,
+        ? t('reviewSince', { date: format.date(alert.reviewOn!) })
+        : t('noText'),
+      alert.verifiedOn ? t('verifiedOn', { date: format.date(alert.verifiedOn) }) : null,
     ]
       .filter(Boolean)
       .join(' · ')
-  return `une règle porte des paramètres illisibles : corrige-la pour retrouver les chiffres de l’activité`
+  return t('unreadable')
 }
 
 /** Breakdown rows as the charts read them: numbers, not decimal strings. */

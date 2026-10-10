@@ -1,12 +1,13 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton } from '@/components/forms'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { declareMovementAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 interface Option {
   id: string
@@ -44,71 +45,64 @@ export function ActivityPayout({
   to: Option[]
   today: string
 }) {
+  const t = useTranslations('activity.payout')
+  const format = useFormat()
   const [open, setOpen] = useState(false)
   const payable = amount > 0
 
   if (from.length === 0 || to.length === 0)
     return (
       <p className="text-[11.5px] text-faint">
-        {from.length === 0
-          ? 'Cette activité ne vit sur aucun compte : dis-le dans sa fiche, dans Réglages, pour te verser.'
-          : 'Cette activité vit sur tous tes comptes : il n’y a pas de compte perso où te verser.'}
+        {from.length === 0 ? t('noOwnAccount') : t('noOutsideAccount')}
       </p>
     )
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Button size="sm" onClick={() => setOpen(true)}>
-        {payable ? `Me verser ${eur(amount)}` : 'Me verser…'}
+        {payable ? t('button', { amount: format.eur(amount) }) : t('buttonEmpty')}
       </Button>
-      <p className="text-[11.5px] text-faint">
-        {payable
-          ? 'ouvre le virement vers un compte hors activité, montant modifiable'
-          : 'rien de disponible : la réserve et les échéances couvrent la trésorerie'}
-      </p>
+      <p className="text-[11.5px] text-faint">{payable ? t('hint') : t('hintEmpty')}</p>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
           <SheetHeader className="border-b border-border">
-            <SheetTitle className="text-[15px]">Me verser</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Un virement de l’activité vers un compte perso. Il ne change ni le net ni ce qui est dû : il
-              sort l’argent de l’activité.
-            </SheetDescription>
+            <SheetTitle className="text-[15px]">{t('title')}</SheetTitle>
+            <SheetDescription className="text-[12px]">{t('description')}</SheetDescription>
           </SheetHeader>
           <div className="p-4">
-            <ActionForm action={declareMovementAction} successLabel="Virement déclaré">
+            <ActionForm action={declareMovementAction} successLabel={t('success')}>
               <input type="hidden" name="type" value="transfer" />
               <input type="hidden" name="activityId" value={activityId} />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Date" name="date">
+                <Field label={t('date')} name="date">
                   <DateField name="date" defaultValue={today} />
                 </Field>
-                <Field label="Montant" name="amount">
+                <Field label={t('amount')} name="amount">
                   <AmountInput
                     name="amount"
-                    placeholder="1 200,00"
+                    placeholder={t('amountPlaceholder')}
                     defaultValue={payable ? amount.toFixed(2) : ''}
                   />
                 </Field>
               </div>
-              <Field label="Depuis le compte" name="accountId">
+              <Field label={t('from')} name="accountId">
                 <FormSelect
                   name="accountId"
-                  placeholder="Compte de l’activité"
+                  placeholder={t('fromPlaceholder')}
                   options={from.map((a) => ({ value: a.id, label: a.name }))}
                   defaultValue={from[0]?.id ?? ''}
                 />
               </Field>
-              <Field label="Vers le compte" name="toAccountId">
+              <Field label={t('to')} name="toAccountId">
                 <FormSelect
                   name="toAccountId"
-                  placeholder="Compte perso"
+                  placeholder={t('toPlaceholder')}
                   options={to.map((a) => ({ value: a.id, label: a.name }))}
                   defaultValue={to[0]?.id ?? ''}
                 />
               </Field>
-              <SubmitButton className="self-start">Déclarer le virement</SubmitButton>
+              <SubmitButton className="self-start">{t('submit')}</SubmitButton>
             </ActionForm>
           </div>
         </SheetContent>

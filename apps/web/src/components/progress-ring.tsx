@@ -1,4 +1,5 @@
 import { CheckIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 /**
@@ -19,6 +20,7 @@ export function ProgressRing({
   total: number
   className?: string
 }) {
+  const t = useTranslations('common.progress')
   const size = 42
   const stroke = 3.5
   const radius = (size - stroke) / 2
@@ -34,11 +36,7 @@ export function ProgressRing({
         // Start at 12 o'clock and run clockwise, the way a plan is read.
         className="-rotate-90"
         role="img"
-        aria-label={
-          left === 0
-            ? `Les ${total} échéances sont payées`
-            : `${done} échéances payées sur ${total}, ${left} restante${left > 1 ? 's' : ''}`
-        }
+        aria-label={left === 0 ? t('allPaid', { total }) : t('paid', { done, total, left })}
       >
         <circle
           cx={size / 2}

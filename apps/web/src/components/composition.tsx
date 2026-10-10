@@ -2,6 +2,7 @@ import { ArrowUpRightIcon } from 'lucide-react'
 import Link from 'next/link'
 import { Children } from 'react'
 import { type Delta, DeltaLine } from '@/components/stats'
+import { useFormat } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /*
@@ -61,12 +62,41 @@ export function Block({
   )
 }
 
-/** "47 652" and "€": the number carries the figure, the unit stays quiet beside it. */
+/**
+ * "47 652" and "€": the number carries the figure, the unit stays quiet beside
+ * it, on the side the language writes it ("47 652 €", "€47,652").
+ */
 function Amount({ value, decimals = 0, per }: { value: number; decimals?: number; per?: string }) {
+  const format = useFormat()
+  // The language's own amount, cut into parts: only the sign € is set small,
+  // so the minus and the spacing stay where the language puts them ("-694 €",
+  // "-€694").
+  const parts = new Intl.NumberFormat(format.locale, {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).formatToParts(value)
+  const unit = 'text-[0.5em] font-medium tracking-normal text-muted-foreground'
+  const euro = parts.findIndex((p) => p.type === 'currency')
+  // The space the language sets around the sign gives way to the margins below.
+  const text = (from: number, to: number) =>
+    parts
+      .slice(from, to)
+      .filter((p, i) => !(p.type === 'literal' && (from + i === euro - 1 || from + i === euro + 1)))
+      .map((p) => p.value)
+      .join('')
+  const before = text(0, euro)
+  const after = text(euro + 1, parts.length)
   return (
     <>
-      {value.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
-      <span className="ml-1 text-[0.5em] font-medium tracking-normal text-muted-foreground">€{per}</span>
+      {before}
+      <span className={cn(after ? 'mr-0.5' : 'ml-1', unit)}>
+        {parts[euro]?.value}
+        {!after && per}
+      </span>
+      {after}
+      {after && per && <span className={cn('ml-1', unit)}>{per}</span>}
     </>
   )
 }

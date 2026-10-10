@@ -82,11 +82,21 @@ export type Reading = 'cash' | 'accrual'
  */
 export type RankingView = 'strip' | 'bars'
 
+/**
+ * The languages the web interface ships catalogs for, the first being the one
+ * it falls back to when neither the person nor their browser names another.
+ * Mirrors the check of migration 0028.
+ */
+export const LANGUAGES = ['fr', 'en'] as const
+export type Language = (typeof LANGUAGES)[number]
+
 /** What a person settled once, and every session then opens in. */
 export interface UserPreference {
   userId: string
   reading: Reading
   rankingView: RankingView
+  /** Null until the person chooses: the interface then follows their browser. */
+  language: Language | null
 }
 
 export interface Movement {

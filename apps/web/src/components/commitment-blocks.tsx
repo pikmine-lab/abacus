@@ -1,20 +1,18 @@
-import type { PeriodUnit } from '@abacus/core/domain'
 import type { CommitmentWithEur, FinancingProgress } from '@abacus/core/services/commitments'
 import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
+import { useTranslations } from 'next-intl'
 import { type CommitmentOptions, JudgmentSelect } from '@/components/commitment-forms'
 import { CommitmentRowActions } from '@/components/commitment-row-actions'
 import type { ScheduleLine } from '@/components/financing-schedule-form'
 import type { PlacementOptions } from '@/components/investment-plan-forms'
 import { ProgressRing } from '@/components/progress-ring'
 import { Badge } from '@/components/ui/badge'
-import { eur, frDate, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
-const UNIT: Record<PeriodUnit, string> = { week: 'semaine', month: 'mois', year: 'an' }
-
-const JUDGMENT = {
-  essential: { label: 'essentiel', variant: 'secondary' as const },
-  reducible: { label: 'réductible', variant: 'outline' as const },
-  to_cancel: { label: 'à résilier', variant: 'default' as const },
+const JUDGMENT_VARIANT = {
+  essential: 'secondary' as const,
+  reducible: 'outline' as const,
+  to_cancel: 'default' as const,
 }
 
 export type CommitmentWithProgress = CommitmentWithEur & { progress: FinancingProgress | null }
@@ -48,13 +46,15 @@ export function CommitmentRow({
    */
   placement?: { options: PlacementOptions; assetName: string }
 }) {
+  const t = useTranslations('recurring')
+  const format = useFormat()
   const incoming = c.direction === 'incoming'
   const financing = c.kind === 'financing'
   const plan = c.kind === 'investment_plan'
   const foreign = c.currency !== 'EUR'
   // Amounts read in the billing currency; only the monthly hint converts.
   const inCurrency = (value: number, decimals = 0) =>
-    foreign ? money(value, c.currency, decimals) : eur(value, decimals)
+    foreign ? format.money(value, c.currency, decimals) : format.eur(value, decimals)
   const accountName = (id: string) => options?.accounts.find((a) => a.id === id)?.name ?? ''
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
@@ -78,38 +78,45 @@ export function CommitmentRow({
         <div className="flex flex-wrap items-baseline gap-2">
           <p className="text-[13px] font-medium">{c.label}</p>
           {showJudgment && c.judgment && (
-            <Badge variant={JUDGMENT[c.judgment].variant}>{JUDGMENT[c.judgment].label}</Badge>
+            <Badge variant={JUDGMENT_VARIANT[c.judgment]}>{t(`judgments.${c.judgment}`)}</Badge>
           )}
         </div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11.5px] text-faint">
           <span>
-            par {c.periodCount > 1 ? `${c.periodCount} ` : ''}
-            {UNIT[c.periodUnit]}
+            {t('row.perPeriod', { unit: c.periodUnit, count: c.periodCount })}
             {(c.periodUnit !== 'month' || foreign) &&
               c.amountEur !== null &&
-              ` · ≈ ${eur(monthlyEquivalentEur(c), 2)}/mois`}
+              ` · ${t('monthlyApprox', { amount: format.eur(monthlyEquivalentEur(c), 2) })}`}
           </span>
-          <span>prochaine le {frDate(c.nextDueOn)}</span>
+          <span>{t('nextOn', { date: format.date(c.nextDueOn) })}</span>
           {/* A move already declared: the only place it shows before its date. */}
           {c.nextAccountMove && (
             <span>
-              passe sur {accountName(c.nextAccountMove.accountId)} le {frDate(c.nextAccountMove.effectiveOn)}
+              {t('movesTo', {
+                account: accountName(c.nextAccountMove.accountId),
+                date: format.date(c.nextAccountMove.effectiveOn),
+              })}
             </span>
           )}
           {financing && c.progress && (
             <span>
-              {c.progress.paidInstallments}/{c.installmentsTotal} payées · reste{' '}
-              <span className="font-mono text-muted-foreground tabular">
-                {inCurrency(c.progress.remainingDue)}
-              </span>{' '}
-              sur {inCurrency(Number(c.totalAmount))}
+              {t.rich('row.progress', {
+                paid: c.progress.paidInstallments,
+                count: c.installmentsTotal ?? 0,
+                remaining: inCurrency(c.progress.remainingDue),
+                total: inCurrency(Number(c.totalAmount)),
+                amount: (chunks) => <span className="font-mono text-muted-foreground tabular">{chunks}</span>,
+              })}
             </span>
           )}
           {/* Where the money goes and what it buys: the two facts that make a
               placement readable, and that no amount can say. */}
           {plan && placement && (
             <span>
-              vers {accountName(c.targetAccountId ?? '')} · achète {placement.assetName}
+              {t('row.placement', {
+                account: accountName(c.targetAccountId ?? ''),
+                asset: placement.assetName,
+              })}
             </span>
           )}
         </div>

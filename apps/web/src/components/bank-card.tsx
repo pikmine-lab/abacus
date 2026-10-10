@@ -1,4 +1,5 @@
 import { NfcIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 /**
@@ -161,6 +162,7 @@ export function BankCard({
   expired?: boolean
   className?: string
 }) {
+  const t = useTranslations('accounts.card')
   const random = seeded(hash(id))
   const [from, to] = GROUNDS[Math.floor(random() * GROUNDS.length)]!
   const sheenX = 10 + random() * 40
@@ -197,7 +199,7 @@ export function BankCard({
         <div className="flex items-start justify-between gap-3">
           <span className="truncate text-[14px] leading-tight font-semibold tracking-tight">{name}</span>
           <span className="shrink-0 pt-0.5 text-[9px] font-medium tracking-[0.16em] text-white/60 uppercase">
-            {deferred ? 'Différé' : 'Immédiat'}
+            {t(`modesShort.${deferred ? 'deferred' : 'immediate'}`)}
           </span>
         </div>
         <div className="flex items-center gap-2.5">
@@ -210,7 +212,7 @@ export function BankCard({
           </span>
           <span className="flex shrink-0 flex-col items-end gap-0.5 leading-none">
             <span className="text-[7.5px] tracking-[0.18em] text-white/45 uppercase">
-              {expired ? 'expirée' : 'expire fin'}
+              {expired ? t('expired') : t('expiresLabel')}
             </span>
             <span className="font-mono text-[12.5px] tabular">{expiry}</span>
           </span>

@@ -1,11 +1,15 @@
 import { auth } from '@abacus/core/auth'
 import { clientDomain } from '@abacus/core/authorizations'
+import { getTranslations } from 'next-intl/server'
 import { LoginForm, type WaitingClient } from '@/components/login-form'
 import { oauthQuery } from '@/lib/oauth-query'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Connexion' }
+export async function generateMetadata() {
+  const t = await getTranslations('auth.login')
+  return { title: t('title') }
+}
 
 /**
  * The AI client waiting behind this sign-in, when an authorization opened it.

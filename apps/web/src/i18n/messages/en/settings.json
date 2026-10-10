@@ -1,0 +1,110 @@
+{
+  "language": {
+    "label": "Interface language",
+    "browser": "Browser"
+  },
+  "parts": {
+    "label": "Settings sections",
+    "categories": "Categories",
+    "activities": "Activities",
+    "actors": "Counterparties",
+    "preferences": "Preferences"
+  },
+  "sort": {
+    "group": "Group",
+    "name": "Name"
+  },
+  "newEntry": {
+    "category": "Category",
+    "actor": "Counterparty"
+  },
+  "form": {
+    "name": "Name",
+    "save": "Save",
+    "add": "Add",
+    "cancel": "Cancel"
+  },
+  "categories": {
+    "search": "Search a category or group",
+    "empty": "No categories. Without them, the analysis by category stays empty.",
+    "noMatch": "No category has this name.",
+    "noGroup": "No group",
+    "new": "New category",
+    "created": "Category created",
+    "edited": "Category updated",
+    "group": "Group (optional)",
+    "groupPlaceholder": "Everyday life"
+  },
+  "actors": {
+    "search": "Search a counterparty or alias",
+    "empty": "No counterparties. The first movement you declare creates one.",
+    "noMatch": "No counterparty has this name.",
+    "also": "also",
+    "new": "New counterparty",
+    "created": "Counterparty created",
+    "edited": "Counterparty updated",
+    "activity": "Activity",
+    "personal": "(personal)",
+    "note": "Note (optional)",
+    "vatRate": "Default VAT (%)",
+    "withholdingRate": "Default withholding (%)",
+    "leftBehind": "{count, plural, one {# movement already declared does not follow} other {# movements already declared do not follow}}: <link>attach the history</link> brings them along, now or later.",
+    "aliases": {
+      "label": "Aliases",
+      "added": "Alias added",
+      "new": "New alias",
+      "placeholder": "McD’s"
+    },
+    "history": {
+      "label": "History",
+      "reattach": "Attach the history to {activity}"
+    },
+    "merge": {
+      "label": "Merge",
+      "description": "Everything declared under “{name}” moves to the chosen counterparty, and “{name}” becomes one of its aliases. This is the only action here that rewrites movements already declared.",
+      "into": "Merge into",
+      "placeholder": "Choose the counterparty to keep",
+      "submit": "Merge"
+    },
+    "reattach": {
+      "title": "Attach the history of {actor} to {activity}?",
+      "nothing": "Nothing to attach: the history of {actor} is already under {activity}, or filed under another activity.",
+      "count": "{count, plural, one {# movement} other {# movements}} will move under {activity}. A movement filed under another activity stays put.",
+      "countSince": "{count, plural, one {# movement} other {# movements}} since {since} will move under {activity}. A movement filed under another activity stays put.",
+      "from": "Starting from (optional)",
+      "submit": "Attach"
+    }
+  },
+  "connectAi": {
+    "addServer": "Add the server",
+    "clientTabs": "Client to connect",
+    "claudeApp": "Claude app",
+    "otherClient": "Other client",
+    "hints": {
+      "claudeApp": "app connectors › custom connector",
+      "claudeCode": "in your terminal",
+      "cursor": "in {path}",
+      "other": "the address, or this block in your client’s MCP file",
+      "copilot": "Microsoft 365 Copilot: client ID <id>{clientId}</id>, no secret"
+    },
+    "missingUrl": "MCP server address missing (<code>{variable}</code>).",
+    "copy": "Copy",
+    "copied": "Copied",
+    "authorize": "Authorize access",
+    "authorizeHint": "Your AI opens abacus in the browser: sign in, then authorize.",
+    "applications": "Applications",
+    "noApplication": "No applications.",
+    "granted": "Authorized",
+    "lastUsed": "Last used",
+    "dates": "authorized on {granted}",
+    "datesUsed": "authorized on {granted} · used on {used}",
+    "revoke": {
+      "menuLabel": "{name}’s access",
+      "action": "Revoke access",
+      "title": "Revoke access for “{name}”?",
+      "description": "It loses access within ten minutes at most. To connect it again, you will have to authorize it again.",
+      "cancel": "Cancel",
+      "submit": "Revoke"
+    }
+  }
+}

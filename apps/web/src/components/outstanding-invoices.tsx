@@ -1,6 +1,7 @@
 'use client'
 
 import { BanIcon, CalendarIcon, PencilIcon, SendIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { DateField, FormSelect } from '@/components/forms'
@@ -20,7 +21,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cancelInvoiceAction, remindInvoiceAction, settleInvoiceAction } from '@/lib/actions'
-import { daysBetween, eur, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { daysBetween } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -98,6 +100,8 @@ function InvoiceRow({
   today: string
   back: string
 }) {
+  const t = useTranslations('activity')
+  const format = useFormat()
   const [dateOpen, setDateOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -115,10 +119,14 @@ function InvoiceRow({
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium">{label}</p>
         <p className="text-[11px] text-faint">
-          émise le {frDate(invoice.issuedOn)}
-          {invoice.dueOn && ` · échéance le ${frDate(invoice.dueOn)}`}
-          {invoice.remindedOn && ` · relancée le ${frDate(invoice.remindedOn)}`}
-          {invoice.paid > 0 && ` · ${eur(invoice.paid, 2)} déjà encaissés`}
+          {[
+            t('outstanding.issuedOn', { date: format.date(invoice.issuedOn) }),
+            invoice.dueOn && t('outstanding.dueOn', { date: format.date(invoice.dueOn) }),
+            invoice.remindedOn && t('outstanding.remindedOn', { date: format.date(invoice.remindedOn) }),
+            invoice.paid > 0 && t('outstanding.alreadyPaid', { amount: format.eur(invoice.paid, 2) }),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </div>
 
@@ -127,10 +135,10 @@ function InvoiceRow({
       <span
         className={`shrink-0 text-[11px] ${invoice.overdue ? 'text-destructive' : 'text-muted-foreground'}`}
       >
-        {invoice.overdue ? `en retard de ${late} jour${late > 1 ? 's' : ''}` : 'en attente'}
+        {invoice.overdue ? t('outstanding.overdue', { days: late }) : t('invoiceState.pending')}
       </span>
 
-      <span className="ml-auto font-mono text-[13px] tabular">{eur(invoice.receivable, 2)}</span>
+      <span className="ml-auto font-mono text-[13px] tabular">{format.eur(invoice.receivable, 2)}</span>
 
       <form action={settleInvoiceAction} className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
@@ -139,13 +147,13 @@ function InvoiceRow({
           name="amount"
           defaultValue={invoice.remaining.toFixed(2)}
           className="h-7 w-28 text-[12.5px]"
-          aria-label={`Montant encaissé de ${invoice.client}`}
+          aria-label={t('outstanding.amountLabel', { client: invoice.client })}
         />
         <div className="w-40">
           <FormSelect
             name="accountId"
-            placeholder="Sur quel compte"
-            ariaLabel={`Compte crédité par ${invoice.client}`}
+            placeholder={t('outstanding.accountPlaceholder')}
+            ariaLabel={t('outstanding.accountLabel', { client: invoice.client })}
             options={accounts.map((a) => ({ value: a.id, label: a.name }))}
             defaultValue={accounts[0]?.id ?? ''}
           />
@@ -156,7 +164,7 @@ function InvoiceRow({
           </div>
         )}
         <Button size="sm" type="submit" className="h-7">
-          Encaissée
+          {t('outstanding.collected')}
         </Button>
       </form>
 
@@ -167,31 +175,29 @@ function InvoiceRow({
             <input type="hidden" name="back" value={back} />
             <button type="submit" className="flex w-full items-center gap-2">
               <SendIcon />
-              Relancée aujourd’hui
+              {t('outstanding.remindedToday')}
             </button>
           </form>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
           <CalendarIcon />
-          {dateOpen ? 'Encaissée aujourd’hui' : 'Encaissée à une autre date…'}
+          {dateOpen ? t('outstanding.collectedToday') : t('outstanding.collectedOtherDate')}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setEditing(true)}>
           <PencilIcon />
-          Modifier
+          {t('outstanding.edit')}
         </DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
           <BanIcon />
-          Annuler la facture
+          {t('outstanding.cancel')}
         </DropdownMenuItem>
       </RowMenu>
 
       <Sheet open={editing} onOpenChange={setEditing}>
         <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
           <SheetHeader className="border-b border-border">
-            <SheetTitle className="text-[15px]">Modifier la facture</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              Corrige ce qui a été mal saisi. Les revenus déjà encaissés dessus gardent leur lien.
-            </SheetDescription>
+            <SheetTitle className="text-[15px]">{t('outstanding.editTitle')}</SheetTitle>
+            <SheetDescription className="text-[12px]">{t('outstanding.editDescription')}</SheetDescription>
           </SheetHeader>
           <div className="p-4">
             <InvoiceForm actors={actors} draft={invoice.draft} today={today} />
@@ -202,19 +208,16 @@ function InvoiceRow({
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Annuler cette facture ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {label}. Elle quitte les factures en attente et garde ses dates. Une facture déjà encaissée,
-              même en partie, ne s’annule pas : détache d’abord les revenus liés.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('outstanding.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('outstanding.confirmBody', { label })}</AlertDialogDescription>
           </AlertDialogHeader>
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Revenir</AlertDialogCancel>
+            <AlertDialogCancel>{t('outstanding.goBack')}</AlertDialogCancel>
             <form action={cancel}>
               <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
               <Button type="submit" variant="destructive" disabled={pending}>
-                {pending ? '…' : 'Annuler la facture'}
+                {pending ? '…' : t('outstanding.cancel')}
               </Button>
             </form>
           </AlertDialogFooter>

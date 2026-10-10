@@ -2,6 +2,7 @@
 
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -27,6 +28,7 @@ export function FiscalYearPicker({
   /** Newest: the running one, or the one the activity closed in. */
   last: number
 }) {
+  const t = useTranslations('common.fiscalYear')
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -44,7 +46,7 @@ export function FiscalYearPicker({
         variant="ghost"
         size="icon"
         className="size-7"
-        aria-label="Exercice précédent"
+        aria-label={t('previous')}
         disabled={year <= first}
         onClick={() => go(year - 1)}
       >
@@ -55,7 +57,7 @@ export function FiscalYearPicker({
         variant="ghost"
         size="icon"
         className="size-7"
-        aria-label="Exercice suivant"
+        aria-label={t('next')}
         disabled={year >= last}
         onClick={() => go(year + 1)}
       >

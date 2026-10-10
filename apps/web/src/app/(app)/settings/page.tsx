@@ -14,12 +14,18 @@ import {
   sortByName,
   sortCategories,
 } from '@abacus/core/services/catalog'
-import { rankingViewPreference, readingPreference } from '@abacus/core/services/preferences'
+import {
+  languagePreference,
+  rankingViewPreference,
+  readingPreference,
+} from '@abacus/core/services/preferences'
 import { listJurisdictions } from '@abacus/core/services/regimes'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { ActivityFiche, ActivityList } from '@/components/activity-forms'
 import { NewActivitySheet } from '@/components/activity-wizard'
+import { LanguagePreference } from '@/components/language-preference'
 import { MasterDetail, NewEntryLink, type Part, PartTabs } from '@/components/master-detail'
 import { PageHeader } from '@/components/page-shell'
 import { RankingViewPreference } from '@/components/ranking-view-preference'
@@ -33,11 +39,15 @@ import {
 } from '@/components/referential-rows'
 import { SortMenu } from '@/components/sort'
 import { entryHref } from '@/lib/entry-href'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Réglages' }
+export async function generateMetadata() {
+  const t = await getTranslations('shell.screens')
+  return { title: t('settings') }
+}
 
 const PARTS = ['categories', 'activities', 'actors', 'preferences'] as const
 type PartKey = (typeof PARTS)[number]
@@ -56,13 +66,16 @@ export default async function SettingsPage({
   if (!session) redirect('/login')
   const userId = session.user.id
   const params = await searchParams
+  const t = await getTranslations('settings')
+  const screens = await getTranslations('shell.screens')
+  const format = await getFormat()
   // A part the URL does not name, or names wrong, falls back to the first.
   const part: PartKey = PARTS.find((p) => p === params.part) ?? 'categories'
   const categorySort = sorter('categories', CATEGORY_SORTS, DEFAULT_CATEGORY_SORT, params)
   const activitySort = sorter('activities', NAME_SORTS, DEFAULT_NAME_SORT, params)
   const actorSort = sorter('actors', NAME_SORTS, DEFAULT_NAME_SORT, params)
 
-  const [categories, activities, exceptions, links, accounts, actors, reading, rankingView] =
+  const [categories, activities, exceptions, links, accounts, actors, reading, rankingView, language] =
     await Promise.all([
       listCategories(userId),
       listActivities(userId),
@@ -72,6 +85,7 @@ export default async function SettingsPage({
       listActorsWithAliases(userId),
       readingPreference(userId),
       rankingViewPreference(userId),
+      languagePreference(userId),
     ])
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }))
   // A closed account holds nothing an activity could still count on, so it is
@@ -92,28 +106,23 @@ export default async function SettingsPage({
     return `/settings?${query}`
   }
   const listHref = partHref(part)
-  const PART_LABEL: Record<PartKey, string> = {
-    categories: 'Catégories',
-    activities: 'Activités',
-    actors: 'Acteurs',
-    preferences: 'Préférences',
-  }
-  const back = { href: listHref, label: PART_LABEL[part] }
+  const partLabel = (key: PartKey) => t(`parts.${key}`)
+  const back = { href: listHref, label: partLabel(part) }
   const parts: Part[] = [
     {
       key: 'categories',
-      label: PART_LABEL.categories,
+      label: partLabel('categories'),
       count: categories.length,
       href: partHref('categories'),
     },
     {
       key: 'activities',
-      label: PART_LABEL.activities,
+      label: partLabel('activities'),
       count: activities.length,
       href: partHref('activities'),
     },
-    { key: 'actors', label: PART_LABEL.actors, count: actors.length, href: partHref('actors') },
-    { key: 'preferences', label: PART_LABEL.preferences, href: partHref('preferences') },
+    { key: 'actors', label: partLabel('actors'), count: actors.length, href: partHref('actors') },
+    { key: 'preferences', label: partLabel('preferences'), href: partHref('preferences') },
   ]
 
   // The entry the URL designates, or `new` for a blank sheet. One that
@@ -135,8 +144,8 @@ export default async function SettingsPage({
     const shown = blank || sorted.length === 0 ? undefined : (found ?? sorted[0])
     const groups = [
       ...new Set(categories.map((c) => c.groupLabel).filter((g): g is string => g !== null)),
-    ].sort((a, b) => a.localeCompare(b, 'fr'))
-    header = <NewEntryLink href={entryHref(listHref, 'new')} label="Catégorie" pressed={blank} />
+    ].sort((a, b) => a.localeCompare(b, format.locale))
+    header = <NewEntryLink href={entryHref(listHref, 'new')} label={t('newEntry.category')} pressed={blank} />
     body = (
       <MasterDetail
         designated={designated}
@@ -151,8 +160,8 @@ export default async function SettingsPage({
                 <SortMenu
                   sorter={categorySort}
                   options={[
-                    { field: 'group', label: 'Groupe' },
-                    { field: 'name', label: 'Nom' },
+                    { field: 'group', label: t('sort.group') },
+                    { field: 'name', label: t('sort.name') },
                   ]}
                 />
               )
@@ -184,7 +193,7 @@ export default async function SettingsPage({
             selection={{ id: shown?.id ?? null, designated }}
             tools={
               activities.length > 1 && (
-                <SortMenu sorter={activitySort} options={[{ field: 'name', label: 'Nom' }]} />
+                <SortMenu sorter={activitySort} options={[{ field: 'name', label: t('sort.name') }]} />
               )
             }
           />
@@ -209,7 +218,7 @@ export default async function SettingsPage({
     const sorted = sortByName(actors, actorSort.current)
     const { found, blank, designated } = designate(sorted)
     const shown = blank || sorted.length === 0 ? undefined : (found ?? sorted[0])
-    header = <NewEntryLink href={entryHref(listHref, 'new')} label="Acteur" pressed={blank} />
+    header = <NewEntryLink href={entryHref(listHref, 'new')} label={t('newEntry.actor')} pressed={blank} />
     body = (
       <MasterDetail
         designated={designated}
@@ -220,7 +229,9 @@ export default async function SettingsPage({
             listHref={listHref}
             selection={{ id: shown?.id ?? null, designated }}
             tools={
-              actors.length > 1 && <SortMenu sorter={actorSort} options={[{ field: 'name', label: 'Nom' }]} />
+              actors.length > 1 && (
+                <SortMenu sorter={actorSort} options={[{ field: 'name', label: t('sort.name') }]} />
+              )
             }
           />
         }
@@ -243,6 +254,7 @@ export default async function SettingsPage({
   } else {
     body = (
       <div className="flex max-w-3xl flex-col px-4 py-4 sm:px-6">
+        <LanguagePreference value={language} today={today()} />
         <ReadingPreference value={reading} />
         <RankingViewPreference value={rankingView} />
       </div>
@@ -251,8 +263,8 @@ export default async function SettingsPage({
 
   return (
     <>
-      <PageHeader title="Réglages">{header}</PageHeader>
-      <PartTabs parts={parts} current={part} label="Parties des réglages" />
+      <PageHeader title={screens('settings')}>{header}</PageHeader>
+      <PartTabs parts={parts} current={part} label={t('parts.label')} />
       <main>{body}</main>
     </>
   )

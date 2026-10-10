@@ -1,0 +1,190 @@
+{
+  "title": "Placements",
+  "natures": {
+    "equity": "Actions",
+    "fund": "Fonds",
+    "crypto": "Crypto",
+    "bond": "Obligations",
+    "real_estate": "Immobilier",
+    "other": "Autre"
+  },
+  "operationTypes": {
+    "buy": "Achat",
+    "sell": "Vente",
+    "dividend": "Dividende",
+    "fee": "Frais"
+  },
+  "payout": {
+    "accumulating": "capitalisant",
+    "distributing": "distribuant"
+  },
+  "window": {
+    "label": "Fenêtre du graphe",
+    "options": {
+      "1w": "1S",
+      "1m": "1M",
+      "1y": "1A",
+      "all": "Tout"
+    }
+  },
+  "words": {
+    "asset": "Actif",
+    "account": "Compte",
+    "date": "Date",
+    "type": "Type",
+    "quantity": "Quantité",
+    "amount": "Montant",
+    "price": "Cours",
+    "value": "Valorisation",
+    "performance": "Performance",
+    "contributions": "Apports",
+    "operations": "Opérations",
+    "name": "Nom",
+    "choose": "Choisir",
+    "change": "Changer",
+    "note": "Note (optionnel)",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "manualPrice": "cours saisi à la main",
+    "averageCost": "PRU {amount}"
+  },
+  "page": {
+    "description": "ce que tu détiens, et ce que ça vaut",
+    "follow": {
+      "label": "Suivre",
+      "title": "Suivre un actif",
+      "description": "Sans le détenir : son cours s’affichera, et le jour où tu en achètes il devient une position."
+    },
+    "plan": {
+      "label": "Programmer un versement",
+      "title": "Versement programmé",
+      "description": "Une somme qui part d’un compte vers un compte d’investissement à intervalle régulier, et y achète. Le virement et l’achat s’écrivent ensemble à chaque échéance."
+    },
+    "operation": {
+      "label": "Déclarer une opération",
+      "title": "Opération",
+      "description": "Ce qui se passe dans le compte. Alimenter le compte ou en sortir de l’argent est un virement, à déclarer dans les mouvements."
+    },
+    "noAccount": "Aucun compte d’investissement. Crée-le dans <link>Comptes</link>, puis déclare ici ce que tu y détiens.",
+    "firstBuy": "Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son ISIN ou son fournisseur.",
+    "valueHintUnpriced": "espèces + positions cotées ; {count} sans cours",
+    "valueHint": "espèces + positions au dernier cours",
+    "unrealized": "de plus-value latente",
+    "performanceMissing": "un cours manque : le calcul serait sous-estimé",
+    "performanceHint": "dividendes et frais compris, contre {amount} d’apports",
+    "scheduled": "Épargne programmée",
+    "scheduledValue": "{amount}/mois",
+    "scheduledHint": "{yearly} par an · {count, plural, one {# versement} other {# versements}}",
+    "pending": {
+      "title": "Échéances à confirmer",
+      "description": "le virement et l’achat s’écrivent ensemble, la quantité reçue en plus"
+    },
+    "plans": {
+      "title": "Versements programmés",
+      "description": "ce qui part tout seul vers un compte d’investissement",
+      "sorts": {
+        "monthly": "Épargne mensuelle",
+        "amount": "Montant versé",
+        "next": "Prochaine échéance"
+      }
+    },
+    "evolution": {
+      "title": "Évolution",
+      "performanceSince": "valorisation − apports, depuis le {date}",
+      "valueSince": "contre les apports, depuis le {date}",
+      "readingLabel": "Lecture du graphe",
+      "performanceAria": "Performance des placements contre les apports",
+      "valueAria": "Valorisation des placements et apports"
+    },
+    "accountToFund": "{value} · {cash} à alimenter",
+    "accountCash": "{value} · {cash} en espèces",
+    "noPosition": "Aucune position : rien n’a encore été acheté sur ce compte.",
+    "gainColumn": "+/− value",
+    "massUnpriced": "{count, plural, one {# sans cours, non valorisée} other {# sans cours, non valorisées}}",
+    "noPrice": "aucun cours connu",
+    "manualStamp": "saisi le {day}",
+    "followed": {
+      "title": "Suivis",
+      "description": "pas encore détenus"
+    },
+    "latest": "les {count} dernières",
+    "atMost": "{count} au plus, dans cet ordre",
+    "noOperation": "Rien de déclaré pour l’instant."
+  },
+  "detail": {
+    "againstCost": "contre le prix de revient",
+    "costBasis": "Prix de revient",
+    "costBasisHint": "PRU {amount}, frais d’ordre compris",
+    "watchedLastPrice": "Suivi, pas détenu : dernier cours {price}.",
+    "watchedNoPrice": "Suivi, pas détenu : aucun cours connu pour l’instant.",
+    "sessions": "{count} séances connues",
+    "priceAria": "Cours de {name}",
+    "onThisAsset": "sur cet actif",
+    "noOperation": "Aucune opération : cet actif est suivi, pas détenu.",
+    "unrealizedNote": "Plus-value latente {gain} : valorisation moins prix de revient, hors dividendes reçus et frais payés, qui sont passés par les espèces du compte."
+  },
+  "search": {
+    "otherVenuesOpen": "même fonds, autres cotations",
+    "otherVenues": "{count, plural, one {# autre cotation du même fonds} other {# autres cotations du même fonds}}",
+    "loading": "Chargement…",
+    "noVenue": "Aucune autre cotation trouvée.",
+    "retained": "retenue",
+    "unavailable": "Une cotation sans cours lisible n’est pas sélectionnable.",
+    "placeholder": "Nom, ISIN, symbole, fournisseur…",
+    "isinHint": "Le plus sûr : colle l’ISIN, affiché par ta banque. Sinon, le cours doit coller à ton relevé.",
+    "searching": "Recherche…",
+    "nothing": "Rien trouvé.",
+    "known": "Déjà à toi",
+    "watched": "suivi",
+    "securities": "Titres et ETF",
+    "coins": "Cryptos"
+  },
+  "forms": {
+    "nature": "Nature",
+    "trackAs": "Sous quel nom le suivre",
+    "operationDeclared": "Opération déclarée",
+    "quantityPlaceholder": "12,5",
+    "unitPlaceholder": "22,57",
+    "basisTotal": "Montant total",
+    "basisUnit": "Prix unitaire",
+    "amountDebited": "Montant débité, frais compris",
+    "amountCredited": "Montant crédité",
+    "unitPaid": "Prix payé par part",
+    "unitReceived": "Prix reçu par part",
+    "amountReceived": "Montant reçu",
+    "feeAmount": "Montant des frais",
+    "declare": "Déclarer",
+    "notQuoted": "Aucune source ne le cote (SCPI, parts non cotées, bien)",
+    "assetFollowed": "Actif suivi",
+    "followAs": "Sous quel nom",
+    "follow": "Suivre",
+    "rename": "Renommer",
+    "stopFollowing": "Arrêter de suivre",
+    "stopFollowingTitle": "Arrêter de suivre {name} ?",
+    "stopFollowingDescription": "Rien n’a été déclaré dessus, donc il n’y a rien à perdre. Tu pourras le suivre à nouveau en le cherchant.",
+    "stop": "Arrêter",
+    "assetRenamed": "Actif renommé",
+    "accountFee": "frais de compte",
+    "operationOn": "{type} du {date}",
+    "edit": "Corriger",
+    "delete": "Supprimer",
+    "operationCorrected": "Opération corrigée",
+    "deleteTitle": "Supprimer cette opération ?",
+    "deleteDescription": "{type} du {date}, {amount} sur {account}. La position et le PRU sont recalculés sans elle."
+  },
+  "plan": {
+    "created": "Versement programmé créé",
+    "labelPlaceholder": "Versement MSCI World",
+    "sourceAccount": "Compte prélevé",
+    "targetAccount": "Compte investi",
+    "amountPerPeriod": "Montant par période",
+    "firstDueOn": "Première échéance",
+    "activity": "Activité",
+    "personal": "(perso)",
+    "createNote": "À chaque échéance, le virement et l’achat s’écrivent d’un même geste : il restera à saisir la quantité achetée, que le cours d’exécution seul peut dire.",
+    "create": "Créer le versement",
+    "corrected": "Versement corrigé",
+    "editNote": "La correction vaut pour les échéances à venir. Les versements déjà confirmés gardent leur compte et l’actif acheté : ils disent ce qui s’est passé."
+  },
+  "securityType": "Titre"
+}

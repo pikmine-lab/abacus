@@ -54,11 +54,14 @@ produit, et chaque écran a son brief dans `apps/web/.impeccable/surfaces/`.
   livrée dans une seule des deux est incomplète, pas « en cours ». Cela ne veut pas dire
   les mêmes formulaires : chacune parle la langue de son acteur (des noms et une
   description qui enseigne côté MCP, des listes et des valeurs préremplies côté web).
-- **Le français s'arrête à ce qui s'affiche.** La frontière est le lecteur, pas le
-  fichier : ce qu'une personne lit devant l'application est en français, tout ce que seul
-  le code lit est en anglais. Segments d'URL, clés et valeurs de paramètres de requête,
-  noms de champs de formulaire, identifiants, noms de fichiers, slugs de branches,
-  commentaires et messages de commit : anglais. Les documents du dépôt (`DESIGN.md`, ce
+- **La langue de l'utilisateur s'arrête à ce qui s'affiche.** La frontière est le
+  lecteur, pas le fichier : ce qu'une personne lit devant l'application est dans la langue
+  qu'elle a choisie (le français par défaut), et vit dans les catalogues de
+  `apps/web/src/i18n/messages/`, jamais en dur dans un composant ; tout ce que seul le code
+  lit est en anglais. Segments d'URL, clés et valeurs de paramètres de requête, noms de
+  champs de formulaire, identifiants, noms de fichiers, slugs de branches, commentaires et
+  messages de commit : anglais. Les données ne se traduisent pas : ce que la personne a
+  saisi reste dans les mots où elle l'a saisi. Les documents du dépôt (`DESIGN.md`, ce
   fichier, les `AGENTS.md` imbriqués) et les issues restent en français.
 - **Intégrité par construction.** La nature d'un mouvement (dépense, revenu, virement
   interne) est une colonne générée depuis ses extrémités ; les règles du modèle sont des

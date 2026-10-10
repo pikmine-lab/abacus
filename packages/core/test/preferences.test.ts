@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
 import {
+  languagePreference,
   rankingViewPreference,
   readingPreference,
+  setLanguagePreference,
   setRankingViewPreference,
   setReadingPreference,
 } from '../src/services/preferences.ts'
@@ -55,4 +57,14 @@ test('settling one preference leaves the other as it was', async () => {
 
   await setReadingPreference(user, 'cash')
   assert.equal(await rankingViewPreference(user), 'bars')
+})
+
+test('the language follows the browser until someone chooses, and can be handed back', async () => {
+  const user = await seedUser()
+
+  assert.equal(await languagePreference(user), null)
+  await setLanguagePreference(user, 'en')
+  assert.equal(await languagePreference(user), 'en')
+  await setLanguagePreference(user, null)
+  assert.equal(await languagePreference(user), null)
 })

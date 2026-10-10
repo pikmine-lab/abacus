@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarClockIcon, PencilIcon, SlidersHorizontalIcon, SquarePenIcon, XIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -40,16 +41,8 @@ import {
   setInputAction,
 } from '@/lib/actions'
 import { entryHref } from '@/lib/entry-href'
-import {
-  LEVY_EFFECT_LABEL,
-  LEVY_KIND_LABEL,
-  LEVY_MEASURE_LABEL,
-  LEVY_PERIOD_LABEL,
-  LEVY_PERIOD_REF_LABEL,
-  LEVY_STATUS_BADGE,
-  thresholdValue,
-} from '@/lib/levy-words'
-import { eur, frDate } from '@/lib/utils'
+import { type Format, useFormat } from '@/lib/format'
+import { LEVY_PERIOD_REFS, useLevyWords } from '@/lib/levy-words'
 
 /**
  * The rules of an activity as lists that can be repaired: what it owes, the
@@ -97,22 +90,20 @@ export interface ThresholdEntry {
 }
 
 /** What the rule takes, in the shortest form that is still checkable. */
-function amountSummary(levy: LevyEntry): string {
-  if (levy.amountForm === 'rate') return `${Number(levy.rate ?? 0).toLocaleString('fr-FR')} %`
-  if (levy.amountForm === 'fixed')
-    return levy.fixedAmount ? eur(levy.fixedAmount, 2) : (levy.fixedInputName ?? 'saisi')
-  if (levy.amountForm === 'brackets') {
-    const rows = (levy.brackets as { rows?: unknown[] } | null)?.rows?.length ?? 0
-    return `barème, ${rows} tranche${rows > 1 ? 's' : ''}`
+function useAmountSummary(): (levy: LevyEntry) => string {
+  const t = useTranslations('regime.amount')
+  const format = useFormat()
+  return (levy) => {
+    if (levy.amountForm === 'rate') return t('rate', { rate: format.number(levy.rate ?? 0, 3) })
+    if (levy.amountForm === 'fixed')
+      return levy.fixedAmount ? format.eur(levy.fixedAmount, 2) : (levy.fixedInputName ?? t('stated'))
+    if (levy.amountForm === 'brackets') {
+      const rows = (levy.brackets as { rows?: unknown[] } | null)?.rows?.length ?? 0
+      return t('brackets', { count: rows })
+    }
+    if (levy.amountForm === 'elective_base') return t('elective')
+    return t('nothing')
   }
-  if (levy.amountForm === 'elective_base') return 'base choisie'
-  return 'rien à payer'
-}
-
-function validity(levy: LevyEntry): string {
-  return levy.validTo
-    ? `du ${frDate(levy.validFrom)} au ${frDate(levy.validTo)}`
-    : `depuis le ${frDate(levy.validFrom)}`
 }
 
 /**
@@ -130,10 +121,13 @@ export function LevyList({
   selection: Selection
   today: string
 }) {
+  const t = useTranslations('regime.rules')
+  const words = useLevyWords()
+  const amountSummary = useAmountSummary()
   return (
     <ListPane>
       {levies.length === 0 ? (
-        <ListEmpty>Aucune règle. Sans elles, les charges de l’activité ne se calculent pas.</ListEmpty>
+        <ListEmpty>{t('empty')}</ListEmpty>
       ) : (
         levies.map((levy) => {
           const stale = levy.reviewOn !== null && levy.reviewOn <= today
@@ -146,8 +140,8 @@ export function LevyList({
               title={levy.name}
               detail={
                 <>
-                  {LEVY_KIND_LABEL[levy.kind]} · {LEVY_PERIOD_LABEL[levy.period]}
-                  {stale && <span className="text-destructive"> · à revérifier</span>}
+                  {words.kind(levy.kind)} · {words.period(levy.period)}
+                  {stale && <span className="text-destructive"> · {t('toReview')}</span>}
                 </>
               }
               trailing={<span className="font-mono tabular">{amountSummary(levy)}</span>}
@@ -204,6 +198,13 @@ export function LevyFiche({
   today: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('regime.rules')
+  const ts = useTranslations('regime.shared')
+  const tm = useTranslations('regime.modifiers')
+  const tp = useTranslations('common.period')
+  const words = useLevyWords()
+  const format = useFormat()
+  const amountSummary = useAmountSummary()
   const [editing, setEditing] = useState(false)
   const [superseding, setSuperseding] = useState(false)
   const [addingModifier, setAddingModifier] = useState(false)
@@ -214,8 +215,11 @@ export function LevyFiche({
     if (deleteState.ok) setDeleting(false)
   }, [deleteState.ok])
 
-  const badge = LEVY_STATUS_BADGE[levy.status]
+  const badge = words.status(levy.status)
   const stale = levy.reviewOn !== null && levy.reviewOn <= today
+  const validity = levy.validTo
+    ? tp('range', { from: format.date(levy.validFrom), to: format.date(levy.validTo) })
+    : t('since', { date: format.date(levy.validFrom) })
   const panel = (
     title: string,
     mode: 'edit' | 'supersede',
@@ -227,9 +231,7 @@ export function LevyFiche({
         <SheetHeader className="border-b border-border">
           <SheetTitle className="text-[15px]">{title}</SheetTitle>
           <SheetDescription className="text-[12px]">
-            {mode === 'edit'
-              ? 'Corrige ce qui a été mal saisi. Une valeur qui a changé à une date se remplace, elle ne se corrige pas.'
-              : 'La règle actuelle se clôt la veille, celle-ci prend la suite avec ses nouvelles valeurs.'}
+            {mode === 'edit' ? t('editDescription') : t('supersedeDescription')}
           </SheetDescription>
         </SheetHeader>
         <div className="p-4">
@@ -260,14 +262,14 @@ export function LevyFiche({
       back={back}
     >
       <Facts>
-        <Fact label="Montant">
+        <Fact label={t('facts.amount')}>
           <span className="font-mono tabular">{amountSummary(levy)}</span>
         </Fact>
-        <Fact label="Nature">{LEVY_KIND_LABEL[levy.kind]}</Fact>
-        <Fact label="Période">{LEVY_PERIOD_LABEL[levy.period]}</Fact>
-        <Fact label="Validité">{validity(levy)}</Fact>
+        <Fact label={t('facts.kind')}>{words.kind(levy.kind)}</Fact>
+        <Fact label={t('facts.period')}>{words.period(levy.period)}</Fact>
+        <Fact label={t('facts.validity')}>{validity}</Fact>
         {levy.sourceUrl && (
-          <Fact label="Source">
+          <Fact label={t('facts.source')}>
             <a
               href={levy.sourceUrl}
               target="_blank"
@@ -278,41 +280,38 @@ export function LevyFiche({
             </a>
           </Fact>
         )}
-        {levy.verifiedOn && <Fact label="Vérifiée le">{frDate(levy.verifiedOn)}</Fact>}
+        {levy.verifiedOn && <Fact label={ts('verifiedOn')}>{format.date(levy.verifiedOn)}</Fact>}
         {levy.reviewOn && (
-          <Fact label="À revérifier le">
-            <span className={stale ? 'text-destructive' : undefined}>{frDate(levy.reviewOn)}</span>
+          <Fact label={ts('reviewOn')}>
+            <span className={stale ? 'text-destructive' : undefined}>{format.date(levy.reviewOn)}</span>
           </Fact>
         )}
-        {levy.note && <Fact label="Note">{levy.note}</Fact>}
+        {levy.note && <Fact label={ts('note')}>{levy.note}</Fact>}
       </Facts>
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => setEditing(true)}>
           <PencilIcon />
-          Modifier
+          {t('edit')}
         </Button>
         <Button variant="outline" onClick={() => setSuperseding(true)}>
           <SquarePenIcon />
-          Remplacer à une date
+          {t('supersede')}
         </Button>
       </div>
       {panel(levy.name, 'edit', editing, setEditing)}
-      {panel(`Remplacer « ${levy.name} »`, 'supersede', superseding, setSuperseding)}
+      {panel(t('supersedeTitle', { name: levy.name }), 'supersede', superseding, setSuperseding)}
 
-      <FicheSection label="Modificateurs">
-        <p className="text-[12px] text-faint">
-          Ce qui change la règle pour un temps. L’éligibilité est ce que tu affirmes : l’app rappelle la
-          condition, elle ne la vérifie pas.
-        </p>
+      <FicheSection label={tm('label')}>
+        <p className="text-[12px] text-faint">{tm('description')}</p>
         <ModifierList activityId={activityId} modifiers={levy.modifiers} />
         <Button variant="outline" className="self-start" onClick={() => setAddingModifier(true)}>
           <SlidersHorizontalIcon />
-          Ajouter un modificateur
+          {tm('add')}
         </Button>
         <Sheet open={addingModifier} onOpenChange={setAddingModifier}>
           <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
             <SheetHeader className="border-b border-border">
-              <SheetTitle className="text-[15px]">Modificateur de {levy.name}</SheetTitle>
+              <SheetTitle className="text-[15px]">{tm('sheetTitle', { name: levy.name })}</SheetTitle>
             </SheetHeader>
             <div className="p-4">
               <ModifierForm activityId={activityId} levyId={levy.id} today={today} />
@@ -321,50 +320,45 @@ export function LevyFiche({
         </Sheet>
       </FicheSection>
 
-      <FicheSection label="Clore">
-        <p className="text-[12px] text-faint">
-          La règle ne s’applique plus après ce jour. Les périodes qu’elle couvrait gardent leurs chiffres.
-        </p>
+      <FicheSection label={t('close.label')}>
+        <p className="text-[12px] text-faint">{t('close.description')}</p>
         <ActionForm
           action={closeLevyAction}
           className="flex-row flex-wrap items-end gap-2"
-          successLabel="Règle close"
+          successLabel={t('close.success')}
         >
           <input type="hidden" name="activityId" value={activityId} />
           <input type="hidden" name="levyId" value={levy.id} />
-          <Field label="Dernier jour d’application" name="validTo" className="w-52">
+          <Field label={t('close.lastDay')} name="validTo" className="w-52">
             <DateField name="validTo" defaultValue={levy.validTo ?? today} />
           </Field>
           <SubmitButton variant="outline">
             <CalendarClockIcon />
-            Clore
+            {t('close.label')}
           </SubmitButton>
         </ActionForm>
       </FicheSection>
 
-      <FicheSection label="Supprimer">
-        <p className="text-[12px] text-faint">
-          La règle disparaît, avec ses modificateurs. Si un règlement a déjà été déclaré dans sa catégorie,
-          elle fait partie de l’histoire : clos-la plutôt.
-        </p>
+      <FicheSection label={ts('delete')}>
+        <p className="text-[12px] text-faint">{t('delete.description')}</p>
         <Button variant="destructive" className="self-start" onClick={() => setDeleting(true)}>
           <XIcon />
-          Supprimer
+          {ts('delete')}
         </Button>
         <AlertDialog open={deleting} onOpenChange={setDeleting}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Supprimer « {levy.name} » ?</AlertDialogTitle>
-              <AlertDialogDescription>La règle disparaît, avec ses modificateurs.</AlertDialogDescription>
+              <AlertDialogTitle>{t('delete.title', { name: levy.name })}</AlertDialogTitle>
+              <AlertDialogDescription>{t('delete.confirm')}</AlertDialogDescription>
             </AlertDialogHeader>
             {deleteState.error && <p className="text-xs text-destructive">{deleteState.error}</p>}
             <AlertDialogFooter>
-              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogCancel>{ts('cancel')}</AlertDialogCancel>
               <form action={remove}>
                 <input type="hidden" name="activityId" value={activityId} />
                 <input type="hidden" name="levyId" value={levy.id} />
                 <Button type="submit" variant="destructive" disabled={deletePending}>
-                  {deletePending ? '…' : 'Supprimer'}
+                  {deletePending ? '…' : ts('delete')}
                 </Button>
               </form>
             </AlertDialogFooter>
@@ -375,16 +369,23 @@ export function LevyFiche({
   )
 }
 
-function duration(modifier: ModifierEntry): string {
-  if (modifier.durationMonths) return `${modifier.durationMonths} mois`
-  if (modifier.durationPeriods) return `${modifier.durationPeriods} périodes`
-  if (modifier.endsOn) return `jusqu’au ${frDate(modifier.endsOn)}`
-  return 'sans fin'
+function duration(
+  modifier: ModifierEntry,
+  t: ReturnType<typeof useTranslations<'regime.modifiers'>>,
+  format: Format,
+): string {
+  if (modifier.durationMonths) return t('months', { count: modifier.durationMonths })
+  if (modifier.durationPeriods) return t('periods', { count: modifier.durationPeriods })
+  if (modifier.endsOn) return t('until', { date: format.date(modifier.endsOn) })
+  return t('durations.none')
 }
 
 function ModifierList({ activityId, modifiers }: { activityId: string; modifiers: ModifierEntry[] }) {
+  const t = useTranslations('regime.modifiers')
+  const words = useLevyWords()
+  const format = useFormat()
   const [state, remove, pending] = useActionState(removeModifierAction, {})
-  if (modifiers.length === 0) return <EmptyLine>Aucun modificateur.</EmptyLine>
+  if (modifiers.length === 0) return <EmptyLine>{t('empty')}</EmptyLine>
   return (
     <>
       <Rows>
@@ -393,10 +394,10 @@ function ModifierList({ activityId, modifiers }: { activityId: string; modifiers
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[12.5px]">{modifier.label}</span>
               <span className="truncate text-[11px] text-faint">
-                {LEVY_EFFECT_LABEL[modifier.effect]}
-                {modifier.value && ` ${Number(modifier.value).toLocaleString('fr-FR')}`} ·{' '}
-                {modifier.startsOn ? `dès le ${frDate(modifier.startsOn)}` : 'dès le début'} ·{' '}
-                {duration(modifier)}
+                {words.effect(modifier.effect)}
+                {modifier.value && ` ${format.number(modifier.value, 3)}`} ·{' '}
+                {modifier.startsOn ? t('fromDate', { date: format.date(modifier.startsOn) }) : t('fromStart')}{' '}
+                · {duration(modifier, t, format)}
                 {modifier.condition && ` · ${modifier.condition}`}
               </span>
             </div>
@@ -409,7 +410,7 @@ function ModifierList({ activityId, modifiers }: { activityId: string; modifiers
                 size="icon"
                 disabled={pending}
                 className="size-7 shrink-0 text-faint hover:text-destructive"
-                aria-label={`Retirer ${modifier.label}`}
+                aria-label={t('removeLabel', { label: modifier.label })}
               >
                 <XIcon className="size-3.5" />
               </Button>
@@ -422,68 +423,59 @@ function ModifierList({ activityId, modifiers }: { activityId: string; modifiers
   )
 }
 
-const EFFECTS = [
-  { value: 'rate_factor', label: 'Facteur sur le taux' },
-  { value: 'replace_amount', label: 'Montant de remplacement' },
-  { value: 'coefficient', label: 'Coefficient sur la base' },
-  { value: 'exempt', label: 'Exonération' },
-]
+const EFFECTS = ['rate_factor', 'replace_amount', 'coefficient', 'exempt'] as const
 
-const DURATIONS = [
-  { value: 'none', label: 'sans fin' },
-  { value: 'months', label: 'mois civils' },
-  { value: 'periods', label: 'périodes de la règle' },
-  { value: 'endsOn', label: 'jusqu’à une date' },
-]
+const DURATIONS = ['none', 'months', 'periods', 'endsOn'] as const
+
+const MODIFIER_STATUSES = ['confirmed', 'extended_by_default', 'unconfirmed'] as const
 
 function ModifierForm({ activityId, levyId, today }: { activityId: string; levyId: string; today: string }) {
+  const t = useTranslations('regime.modifiers')
+  const ts = useTranslations('regime.shared')
   const [effect, setEffect] = useState('rate_factor')
   const [durationKind, setDurationKind] = useState('none')
   return (
-    <ActionForm action={addModifierAction} successLabel="Modificateur ajouté">
+    <ActionForm action={addModifierAction} successLabel={t('success')}>
       <input type="hidden" name="activityId" value={activityId} />
       <input type="hidden" name="levyId" value={levyId} />
-      <TextField name="label" label="Ce que tu affirmes" placeholder="Taux réduit de début d’activité" />
+      <TextField name="label" label={t('claim')} placeholder={t('claimPlaceholder')} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Effet" name="effect">
+        <Field label={t('effect')} name="effect">
           <FormSelect
             name="effect"
             required
             defaultValue={effect}
-            options={EFFECTS}
+            options={EFFECTS.map((value) => ({ value, label: t(`effects.${value}`) }))}
             onValueChange={setEffect}
           />
         </Field>
         {effect !== 'exempt' && (
-          <Field label={effect === 'replace_amount' ? 'Montant (€)' : 'Valeur'} name="value">
+          <Field label={effect === 'replace_amount' ? t('amount') : ts('value')} name="value">
             <Input
               name="value"
               inputMode="decimal"
               autoComplete="off"
-              placeholder={effect === 'replace_amount' ? '80' : '0,75'}
+              placeholder={effect === 'replace_amount' ? '80' : t('valuePlaceholder')}
               className="text-right font-mono tabular"
             />
           </Field>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="À partir du (optionnel)">
+        <Field label={t('startsOn')}>
           <DateField name="startsOn" />
         </Field>
-        <Field label="Durée">
+        <Field label={t('duration')}>
           <FormSelect
             name="durationKind"
             defaultValue={durationKind}
-            options={DURATIONS}
+            options={DURATIONS.map((value) => ({ value, label: t(`durations.${value}`) }))}
             onValueChange={setDurationKind}
           />
         </Field>
       </div>
       {(durationKind === 'months' || durationKind === 'periods') && (
-        <Field
-          label={durationKind === 'months' ? 'Nombre de mois' : 'Nombre de périodes'}
-          name="durationValue"
-        >
+        <Field label={durationKind === 'months' ? t('monthCount') : t('periodCount')} name="durationValue">
           <Input
             name="durationValue"
             inputMode="numeric"
@@ -494,33 +486,25 @@ function ModifierForm({ activityId, levyId, today }: { activityId: string; levyI
         </Field>
       )}
       {durationKind === 'endsOn' && (
-        <Field label="Jusqu’au" name="endsOn">
+        <Field label={t('endsOn')} name="endsOn">
           <DateField name="endsOn" defaultValue={today} />
         </Field>
       )}
-      <TextField
-        name="condition"
-        label="Condition rappelée à l’écran"
-        placeholder="première année d’activité"
-      />
+      <TextField name="condition" label={t('condition')} placeholder={t('conditionPlaceholder')} />
       <div className="grid grid-cols-2 gap-3">
-        <TextField name="modifierSourceUrl" label="Source (URL)" placeholder="https://…" />
-        <Field label="Vérifiée le">
+        <TextField name="modifierSourceUrl" label={ts('sourceUrl')} placeholder="https://…" />
+        <Field label={ts('verifiedOn')}>
           <DateField name="modifierVerifiedOn" defaultValue={today} />
         </Field>
       </div>
-      <Field label="Statut">
+      <Field label={ts('status')}>
         <FormSelect
           name="modifierStatus"
           defaultValue="confirmed"
-          options={[
-            { value: 'confirmed', label: 'Confirmé par un texte' },
-            { value: 'extended_by_default', label: 'Prorogé faute de texte' },
-            { value: 'unconfirmed', label: 'Non confirmé' },
-          ]}
+          options={MODIFIER_STATUSES.map((value) => ({ value, label: t(`statuses.${value}`) }))}
         />
       </Field>
-      <SubmitButton className="self-start">Ajouter</SubmitButton>
+      <SubmitButton className="self-start">{ts('add')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -550,10 +534,12 @@ export function InputList({
   listHref: string
   selection: Selection
 }) {
+  const t = useTranslations('regime.inputs')
+  const format = useFormat()
   return (
     <ListPane>
       {inputs.length === 0 ? (
-        <ListEmpty>Aucun paramètre saisi.</ListEmpty>
+        <ListEmpty>{t('empty')}</ListEmpty>
       ) : (
         inputs.map((input) => (
           <EntryRow
@@ -561,17 +547,13 @@ export function InputList({
             href={entryHref(listHref, input.id)}
             selected={selectionOf(selection, input.id)}
             title={<span className="font-mono">{input.name}</span>}
-            detail={`à partir du ${frDate(input.validFrom)}`}
-            trailing={<span className="font-mono tabular">{figure(input.value)}</span>}
+            detail={t('from', { date: format.date(input.validFrom) })}
+            trailing={<span className="font-mono tabular">{format.number(input.value, 4)}</span>}
           />
         ))
       )}
     </ListPane>
   )
-}
-
-function figure(value: string): string {
-  return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 4 })
 }
 
 /**
@@ -588,23 +570,26 @@ export function InputFiche({
   activityId: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('regime.inputs')
+  const ts = useTranslations('regime.shared')
+  const format = useFormat()
   const [state, remove, pending] = useActionState(removeInputAction, {})
   return (
     <Fiche title={input.name} back={back}>
       <Facts>
-        <Fact label="Valeur">
-          <span className="font-mono tabular">{figure(input.value)}</span>
+        <Fact label={ts('value')}>
+          <span className="font-mono tabular">{format.number(input.value, 4)}</span>
         </Fact>
-        <Fact label="À partir du">{frDate(input.validFrom)}</Fact>
-        {input.note && <Fact label="Note">{input.note}</Fact>}
+        <Fact label={ts('from')}>{format.date(input.validFrom)}</Fact>
+        {input.note && <Fact label={ts('note')}>{input.note}</Fact>}
       </Facts>
-      <FicheSection label="Retirer">
+      <FicheSection label={ts('remove')}>
         <form action={remove} className="flex flex-col gap-2">
           <input type="hidden" name="activityId" value={activityId} />
           <input type="hidden" name="inputId" value={input.id} />
           <Button type="submit" variant="destructive" disabled={pending} className="self-start">
             <XIcon />
-            {pending ? '…' : `Retirer ${input.name}`}
+            {pending ? '…' : t('removeNamed', { name: input.name })}
           </Button>
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
         </form>
@@ -623,99 +608,104 @@ export function NewInputFiche({
   today: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('regime.inputs')
+  const ts = useTranslations('regime.shared')
   return (
-    <Fiche title="Nouveau paramètre" back={back}>
-      <ActionForm action={setInputAction} successLabel="Paramètre saisi">
+    <Fiche title={t('newTitle')} back={back}>
+      <ActionForm action={setInputAction} successLabel={t('success')}>
         <input type="hidden" name="activityId" value={activityId} />
-        <Field label="Nom" name="name">
+        <Field label={ts('name')} name="name">
           <Input name="name" placeholder="contribution_base" className="font-mono" autoComplete="off" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="À partir du" name="validFrom">
+          <Field label={ts('from')} name="validFrom">
             <DateField name="validFrom" defaultValue={today} />
           </Field>
-          <Field label="Valeur" name="value">
+          <Field label={ts('value')} name="value">
             <AmountInput name="value" />
           </Field>
         </div>
-        <Field label="Note">
-          <Input name="note" placeholder="d’où vient le chiffre" />
+        <Field label={ts('note')}>
+          <Input name="note" placeholder={t('notePlaceholder')} />
         </Field>
-        <SubmitButton className="self-start">Ajouter</SubmitButton>
+        <SubmitButton className="self-start">{ts('add')}</SubmitButton>
       </ActionForm>
     </Fiche>
   )
 }
 
 const THRESHOLD_MEASURES = [
-  { value: 'revenue', label: 'Recettes HT' },
-  { value: 'revenue_incl_vat', label: 'Recettes TTC' },
-  { value: 'expenses', label: 'Dépenses déductibles' },
-  { value: 'profit', label: 'Bénéfice' },
-  { value: 'vat_balance', label: 'TVA collectée − déductible' },
-  { value: 'withholdings', label: 'Retenues à la source' },
-  { value: 'withholding_share', label: 'Part des recettes retenues (%)' },
-]
+  'revenue',
+  'revenue_incl_vat',
+  'expenses',
+  'profit',
+  'vat_balance',
+  'withholdings',
+  'withholding_share',
+] as const
 
-const PERIOD_REF_OPTIONS = Object.entries(LEVY_PERIOD_REF_LABEL).map(([value, label]) => ({ value, label }))
-
-const COMPARISONS = [
-  { value: 'lte', label: 'tant que la mesure reste au plus à' },
-  { value: 'gte', label: 'tant que la mesure reste au moins à' },
-]
+const COMPARISONS = ['lte', 'gte'] as const
 
 /** Shared by the entry panel and the correction dialog: a threshold's own fields. */
 function ThresholdFields({ threshold, today }: { threshold?: ThresholdEntry; today: string }) {
+  const t = useTranslations('regime.thresholds')
+  const ts = useTranslations('regime.shared')
+  const tm = useTranslations('regime.measureOptions')
+  const words = useLevyWords()
   return (
     <>
       <TextField
         name="label"
-        label="Libellé"
+        label={t('label')}
         defaultValue={threshold?.label ?? ''}
-        placeholder="Franchise de TVA"
+        placeholder={t('labelPlaceholder')}
       />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Mesure" name="measure">
+        <Field label={ts('measure')} name="measure">
           <FormSelect
             name="measure"
             required
             defaultValue={threshold?.measure ?? 'revenue'}
-            options={THRESHOLD_MEASURES}
+            options={THRESHOLD_MEASURES.map((value) => ({ value, label: tm(value) }))}
           />
         </Field>
-        <Field label="Lue sur">
+        <Field label={ts('readOn')}>
           <FormSelect
             name="periodRef"
             defaultValue={threshold?.periodRef ?? 'ytd'}
-            options={PERIOD_REF_OPTIONS}
+            options={LEVY_PERIOD_REFS.map((value) => ({ value, label: words.periodRef(value) }))}
           />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Comparaison">
-          <FormSelect name="comparison" defaultValue={threshold?.comparison ?? 'lte'} options={COMPARISONS} />
+        <Field label={t('comparison')}>
+          <FormSelect
+            name="comparison"
+            defaultValue={threshold?.comparison ?? 'lte'}
+            options={COMPARISONS.map((value) => ({ value, label: t(`comparisons.${value}`) }))}
+          />
         </Field>
-        <Field label="Valeur" name="value">
+        <Field label={ts('value')} name="value">
           <AmountInput name="value" defaultValue={threshold?.value ?? ''} />
         </Field>
       </div>
       <TextField
         name="consequence"
-        label="Ce qui change au-delà"
+        label={t('consequence')}
         defaultValue={threshold?.consequence ?? ''}
-        placeholder="La TVA devient due dès le dépassement"
+        placeholder={t('consequencePlaceholder')}
       />
       <TextField
         name="sourceUrl"
-        label="Source (URL)"
+        label={ts('sourceUrl')}
         defaultValue={threshold?.sourceUrl ?? ''}
         placeholder="https://…"
       />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Vérifié le">
+        <Field label={t('verifiedOn')}>
           <DateField name="verifiedOn" defaultValue={threshold?.verifiedOn ?? today} />
         </Field>
-        <Field label="À revérifier le">
+        <Field label={ts('reviewOn')}>
           <DateField name="reviewOn" defaultValue={threshold?.reviewOn ?? undefined} />
         </Field>
       </div>
@@ -733,10 +723,13 @@ export function ThresholdList({
   listHref: string
   selection: Selection
 }) {
+  const t = useTranslations('regime.thresholds')
+  const ts = useTranslations('regime.shared')
+  const words = useLevyWords()
   return (
     <ListPane>
       {thresholds.length === 0 ? (
-        <ListEmpty>Aucun seuil surveillé.</ListEmpty>
+        <ListEmpty>{t('empty')}</ListEmpty>
       ) : (
         thresholds.map((threshold) => (
           <EntryRow
@@ -744,11 +737,14 @@ export function ThresholdList({
             href={entryHref(listHref, threshold.id)}
             selected={selectionOf(selection, threshold.id)}
             title={threshold.label}
-            detail={`${LEVY_MEASURE_LABEL[threshold.measure]} sur ${LEVY_PERIOD_REF_LABEL[threshold.periodRef]}`}
+            detail={ts('measureOver', {
+              measure: words.measure(threshold.measure),
+              period: words.periodRef(threshold.periodRef),
+            })}
             trailing={
               <span className="font-mono tabular">
                 {threshold.comparison === 'lte' ? '≤ ' : '≥ '}
-                {thresholdValue(threshold.measure, threshold.value)}
+                {words.thresholdValue(threshold.measure, threshold.value)}
               </span>
             }
           />
@@ -774,6 +770,8 @@ export function ThresholdFiche({
   today: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('regime.thresholds')
+  const ts = useTranslations('regime.shared')
   const [removing, setRemoving] = useState(false)
   const [state, remove, pending] = useActionState(removeThresholdAction, {})
 
@@ -783,36 +781,33 @@ export function ThresholdFiche({
 
   return (
     <Fiche title={threshold.label} back={back}>
-      <ActionForm action={editThresholdAction} successLabel="Seuil corrigé">
+      <ActionForm action={editThresholdAction} successLabel={t('edited')}>
         <input type="hidden" name="activityId" value={activityId} />
         <input type="hidden" name="thresholdId" value={threshold.id} />
         <ThresholdFields threshold={threshold} today={today} />
-        <SubmitButton className="self-start">Enregistrer</SubmitButton>
+        <SubmitButton className="self-start">{ts('save')}</SubmitButton>
       </ActionForm>
 
-      <FicheSection label="Retirer">
-        <p className="text-[12px] text-faint">
-          Le seuil cesse d’être surveillé. Rien d’autre ne change : un seuil alerte, il ne bascule aucun
-          régime.
-        </p>
+      <FicheSection label={ts('remove')}>
+        <p className="text-[12px] text-faint">{t('removeDescription')}</p>
         <Button variant="destructive" className="self-start" onClick={() => setRemoving(true)}>
           <XIcon />
-          Retirer
+          {ts('remove')}
         </Button>
         <AlertDialog open={removing} onOpenChange={setRemoving}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Retirer « {threshold.label} » ?</AlertDialogTitle>
-              <AlertDialogDescription>Le seuil cesse d’être surveillé.</AlertDialogDescription>
+              <AlertDialogTitle>{t('removeTitle', { label: threshold.label })}</AlertDialogTitle>
+              <AlertDialogDescription>{t('removeConfirm')}</AlertDialogDescription>
             </AlertDialogHeader>
             {state.error && <p className="text-xs text-destructive">{state.error}</p>}
             <AlertDialogFooter>
-              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogCancel>{ts('cancel')}</AlertDialogCancel>
               <form action={remove}>
                 <input type="hidden" name="activityId" value={activityId} />
                 <input type="hidden" name="thresholdId" value={threshold.id} />
                 <Button type="submit" variant="destructive" disabled={pending}>
-                  {pending ? '…' : 'Retirer'}
+                  {pending ? '…' : ts('remove')}
                 </Button>
               </form>
             </AlertDialogFooter>
@@ -833,12 +828,13 @@ export function NewThresholdFiche({
   today: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('regime.thresholds')
   return (
-    <Fiche title="Nouveau seuil" back={back}>
-      <ActionForm action={createThresholdAction} successLabel="Seuil créé">
+    <Fiche title={t('newTitle')} back={back}>
+      <ActionForm action={createThresholdAction} successLabel={t('created')}>
         <input type="hidden" name="activityId" value={activityId} />
         <ThresholdFields today={today} />
-        <SubmitButton className="self-start">Créer le seuil</SubmitButton>
+        <SubmitButton className="self-start">{t('create')}</SubmitButton>
       </ActionForm>
     </Fiche>
   )

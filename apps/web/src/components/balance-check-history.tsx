@@ -1,6 +1,7 @@
 'use client'
 
 import { PencilIcon, ScaleIcon, Trash2Icon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -20,7 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
 import { correctBalanceCheckAction, deleteBalanceCheckAction, settleCheckGapAction } from '@/lib/actions'
-import { eur, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 export interface CheckEntry {
   id: string
@@ -44,7 +45,8 @@ export interface SettleOptions {
  * any other declaration: the amount, and the day it was read.
  */
 export function BalanceCheckHistory({ checks, options }: { checks: CheckEntry[]; options: SettleOptions }) {
-  if (checks.length === 0) return <p className="text-[13px] text-faint">Ce compte n’a jamais été pointé.</p>
+  const t = useTranslations('accounts.history')
+  if (checks.length === 0) return <p className="text-[13px] text-faint">{t('never')}</p>
 
   return (
     <div className="flex flex-col divide-y divide-border/70 border-y border-border">
@@ -56,6 +58,9 @@ export function BalanceCheckHistory({ checks, options }: { checks: CheckEntry[];
 }
 
 function CheckRow({ check, options }: { check: CheckEntry; options: SettleOptions }) {
+  const t = useTranslations('accounts')
+  const format = useFormat()
+  const day = format.date(check.checkedOn)
   const [correcting, setCorrecting] = useState(false)
   const [settling, setSettling] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -68,53 +73,53 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
   return (
     <div className="flex items-center gap-3 py-2.5">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[12.5px]">{frDate(check.checkedOn)}</span>
+        <span className="text-[12.5px]">{day}</span>
         <span className={`text-[11px] ${check.gap === 0 ? 'text-faint' : 'text-destructive'}`}>
-          {check.gap === 0 ? 'aucun écart' : `écart de ${eur(check.gap, 2)}`}
-          {check.settled && ' · soldé par un ajustement'}
+          {check.gap === 0 ? t('history.noGap') : t('history.gapOf', { amount: format.eur(check.gap, 2) })}
+          {check.settled && ` · ${t('history.settledByAdjustment')}`}
         </span>
       </div>
       <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
-        <span className="font-mono text-[12.5px] tabular">{eur(check.declared, 2)}</span>
-        <span className="font-mono text-[11px] text-faint tabular">calculé {eur(check.computed, 2)}</span>
+        <span className="font-mono text-[12.5px] tabular">{format.eur(check.declared, 2)}</span>
+        <span className="font-mono text-[11px] text-faint tabular">
+          {t('history.computed', { amount: format.eur(check.computed, 2) })}
+        </span>
       </div>
-      <RowMenu label={`le pointage du ${frDate(check.checkedOn)}`}>
+      <RowMenu label={t('history.rowLabel', { date: day })}>
         <DropdownMenuItem onSelect={() => setCorrecting(true)}>
           <PencilIcon />
-          Corriger
+          {t('actions.correct')}
         </DropdownMenuItem>
         {check.gap !== 0 && !check.settled && (
           <DropdownMenuItem onSelect={() => setSettling(true)}>
             <ScaleIcon />
-            Solder l’écart
+            {t('settle.title')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
           <Trash2Icon />
-          Supprimer
+          {t('actions.delete')}
         </DropdownMenuItem>
       </RowMenu>
 
       <Dialog open={correcting} onOpenChange={setCorrecting}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">Pointage du {frDate(check.checkedOn)}</DialogTitle>
+            <DialogTitle className="text-[15px]">{t('history.correctTitle', { date: day })}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              Corriger un pointage, c’est le refaire : l’écart est recalculé sur l’historique tel qu’il est
-              aujourd’hui.
-              {check.settled &&
-                ' L’ajustement qui le soldait suit le nouvel écart, et disparaît s’il n’y a plus rien à solder.'}
+              {t('history.correctDescription')}
+              {check.settled && ` ${t('history.correctSettled')}`}
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={correctBalanceCheckAction} onSuccess={() => setCorrecting(false)}>
             <input type="hidden" name="checkId" value={check.id} />
-            <Field label="Solde réel (€)" name="balance">
+            <Field label={t('fields.realBalance')} name="balance">
               <AmountInput name="balance" defaultValue={check.declared.toFixed(2)} />
             </Field>
-            <Field label="Lu le" name="checkedOn">
+            <Field label={t('history.readOn')} name="checkedOn">
               <DateField name="checkedOn" defaultValue={check.checkedOn} />
             </Field>
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
+            <SubmitButton className="self-start">{t('actions.save')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
@@ -122,17 +127,19 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
       <Dialog open={settling} onOpenChange={setSettling}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">Solder l’écart</DialogTitle>
+            <DialogTitle className="text-[15px]">{t('settle.title')}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              {eur(Math.abs(check.gap), 2)} {check.gap < 0 ? 'de sorties manquent' : 'd’entrées manquent'} au{' '}
-              {frDate(check.checkedOn)}. Un seul mouvement daté de ce jour les porte, attribué à l’acteur
-              choisi : dernier recours, déclarer ce qui manque vaut mieux.
+              {t(check.gap < 0 ? 'settle.missingOut' : 'settle.missingIn', {
+                amount: format.eur(Math.abs(check.gap), 2),
+                date: day,
+              })}{' '}
+              {t('settle.explain')}
             </DialogDescription>
           </DialogHeader>
           <ActionForm
             action={settleCheckGapAction}
             onSuccess={() => setSettling(false)}
-            successLabel="Écart soldé"
+            successLabel={t('settle.success')}
           >
             <input type="hidden" name="checkId" value={check.id} />
             <datalist id={`settle-actors-${check.id}`}>
@@ -142,31 +149,28 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
             </datalist>
             <TextField
               name="actor"
-              label="Attribué à"
+              label={t('settle.attributedTo')}
               list={`settle-actors-${check.id}`}
-              placeholder="Inconnu"
+              placeholder={t('settle.unknown')}
               autoComplete="off"
             />
-            <Field label="Catégorie">
+            <Field label={t('settle.category')}>
               <FormSelect
                 name="categoryId"
-                noneLabel="(aucune)"
+                noneLabel={t('settle.noCategory')}
                 options={options.categories.map((c) => ({ value: c.id, label: c.name }))}
               />
             </Field>
-            <TextField name="note" label="Note" defaultValue="Ajustement de pointage" />
+            <TextField name="note" label={t('settle.note')} defaultValue={t('settle.noteDefault')} />
             {/* The question the app cannot answer for the user: an écart that
                 stands for forgotten entries belongs in the analysis, one that
                 explains nothing does not. Unchecked by default, because the
                 first case is the ordinary one. */}
             <Label className="flex items-start gap-2 text-[11.5px] font-normal text-muted-foreground">
               <Checkbox name="ghost" className="mt-px" />
-              <span>
-                fantôme : cet écart ne dit rien de mes flux (régularisation) et ne doit entrer dans aucune
-                analyse
-              </span>
+              <span>{t('settle.ghost')}</span>
             </Label>
-            <SubmitButton className="self-start">Solder</SubmitButton>
+            <SubmitButton className="self-start">{t('settle.submit')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
@@ -174,20 +178,18 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer le pointage du {frDate(check.checkedOn)} ?</AlertDialogTitle>
+            <AlertDialogTitle>{t('history.deleteTitle', { date: day })}</AlertDialogTitle>
             <AlertDialogDescription>
-              {check.settled
-                ? 'L’ajustement qui soldait son écart est supprimé avec lui : il n’existait que pour ce pointage.'
-                : 'Les mouvements du compte ne sont pas touchés : un pointage ne fait que les confronter à la réalité.'}
+              {check.settled ? t('history.deleteSettled') : t('history.deleteUnsettled')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteState.error && <p className="text-xs text-destructive">{deleteState.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <form action={remove}>
               <input type="hidden" name="checkId" value={check.id} />
               <Button type="submit" variant="destructive" disabled={deletePending}>
-                {deletePending ? '…' : 'Supprimer'}
+                {deletePending ? '…' : t('actions.delete')}
               </Button>
             </form>
           </AlertDialogFooter>

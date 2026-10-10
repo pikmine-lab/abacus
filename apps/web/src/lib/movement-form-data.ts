@@ -76,11 +76,7 @@ export function movementDraft(m: Movement, actorName: Map<string, string>): Move
       ? (actorName.get(m.expectedRefundFromActorId) ?? '')
       : undefined,
     expectedRefundAmount: m.expectedRefundAmount ? Number(m.expectedRefundAmount) : undefined,
-    vatAmount: m.vatAmount === null ? undefined : Number(m.vatAmount).toFixed(2).replace('.', ','),
-    origin: m.commitmentId
-      ? 'Ce mouvement vient d’une échéance confirmée.'
-      : m.balanceCheckId
-        ? 'Ce mouvement est un ajustement de pointage.'
-        : undefined,
+    vatAmount: m.vatAmount === null ? undefined : Number(m.vatAmount).toFixed(2),
+    origin: m.commitmentId ? 'commitment' : m.balanceCheckId ? 'balanceCheck' : undefined,
   }
 }

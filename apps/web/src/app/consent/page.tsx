@@ -3,6 +3,7 @@ import { clientDomain } from '@abacus/core/authorizations'
 import { TriangleAlertIcon } from 'lucide-react'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import type { BeadState } from '@/components/abacus-gate'
 import { ConsentAnswer } from '@/components/consent-answer'
 import { Door } from '@/components/door'
@@ -10,7 +11,10 @@ import { oauthQuery } from '@/lib/oauth-query'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Autoriser une IA' }
+export async function generateMetadata() {
+  const t = await getTranslations('auth.consent')
+  return { title: t('title') }
+}
 
 // Whoever reaches consent is signed in: the abacus is complete, the way the
 // sign-in left it. An expired request has nothing left to count.
@@ -43,6 +47,7 @@ export default async function ConsentPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const query = oauthQuery(await searchParams)
+  const t = await getTranslations('auth.consent')
 
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect(`/login?${query}`)
@@ -62,8 +67,8 @@ export default async function ConsentPage({
   if (!clientId || !client) {
     return (
       <Door beads={EMPTY}>
-        <h1 className="mt-6 text-[17px] font-semibold tracking-tight">Demande expirée</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">Relance la connexion depuis ton IA.</p>
+        <h1 className="mt-6 text-[17px] font-semibold tracking-tight">{t('expired')}</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t('expiredHint')}</p>
       </Door>
     )
   }
@@ -74,25 +79,29 @@ export default async function ConsentPage({
   return (
     <Door beads={IN}>
       <h1 className="mt-6 text-[17px] font-semibold tracking-tight text-balance">
-        {client.client_name ?? clientId} veut accéder à ton compte
+        {t('wantsAccess', { client: client.client_name ?? clientId })}
       </h1>
       {domain && <p className="mt-1 font-mono text-[12px] text-faint">{domain}</p>}
 
       <p className="mt-4 text-[13px] text-muted-foreground">
-        Il pourra consulter et déclarer tout ce que tu vois ici, au nom de{' '}
-        <span className="text-foreground">{session.user.email}</span>.
+        {t.rich('scope', {
+          email: session.user.email,
+          strong: (chunks) => <span className="text-foreground">{chunks}</span>,
+        })}
       </p>
 
       {target && (
         <div className="mt-4 border-t pt-4 text-[12px]">
           <p className="text-faint">
-            retour vers <span className="font-mono text-muted-foreground">{target.label}</span>
+            {t.rich('returnTo', {
+              target: target.label,
+              code: (chunks) => <span className="font-mono text-muted-foreground">{chunks}</span>,
+            })}
           </p>
           {target.local && (
             <p className="mt-1.5 flex items-start gap-1.5 text-primary">
               <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
-              Un programme de cet ordinateur recevra l’accès. Autorise seulement si tu viens de lancer la
-              connexion.
+              {t('localWarning')}
             </p>
           )}
         </div>

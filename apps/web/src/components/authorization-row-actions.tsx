@@ -1,6 +1,7 @@
 'use client'
 
 import { Trash2Icon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { SubmitButton } from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
@@ -22,30 +23,29 @@ import { revokeAuthorizationAction } from '@/lib/actions'
  * deleted key it can be granted again, by connecting the client once more.
  */
 export function AuthorizationRowActions({ consentId, name }: { consentId: string; name: string }) {
+  const t = useTranslations('settings.connectAi.revoke')
   const [revoking, setRevoking] = useState(false)
 
   return (
     <>
-      <RowMenu label={`l’accès de ${name}`}>
+      <RowMenu label={t('menuLabel', { name })}>
         <DropdownMenuItem variant="destructive" onSelect={() => setRevoking(true)}>
           <Trash2Icon />
-          Révoquer l’accès
+          {t('action')}
         </DropdownMenuItem>
       </RowMenu>
 
       <AlertDialog open={revoking} onOpenChange={setRevoking}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Révoquer l’accès de « {name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Il perd l’accès d’ici dix minutes au plus. Pour le rebrancher, il faudra l’autoriser à nouveau.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('title', { name })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('description')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
             <form action={revokeAuthorizationAction}>
               <input type="hidden" name="consentId" value={consentId} />
-              <SubmitButton variant="destructive">Révoquer</SubmitButton>
+              <SubmitButton variant="destructive">{t('submit')}</SubmitButton>
             </form>
           </AlertDialogFooter>
         </AlertDialogContent>
