@@ -2,6 +2,7 @@
 
 import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -43,8 +44,6 @@ function useSortHref(): (param: string, value: string | undefined) => void {
   }
 }
 
-const WAY = { asc: 'croissant', desc: 'décroissant' } as const
-
 function Chevron({ direction, dimmed }: { direction: 'asc' | 'desc'; dimmed?: boolean }) {
   const Icon = direction === 'asc' ? ArrowUpIcon : ArrowDownIcon
   return (
@@ -72,6 +71,7 @@ export function SortButton<Field extends string>({
   label: string
   className?: string
 }) {
+  const t = useTranslations('common.sort')
   const go = useSortHref()
   const active = sorter.current.field === field
   const direction = active ? sorter.current.direction : sorter.fields[field]
@@ -82,8 +82,8 @@ export function SortButton<Field extends string>({
       onClick={() => go(sorter.param, nextSortValue(sorter, field))}
       aria-label={
         active
-          ? `${label}, tri ${WAY[direction]}. Trier ${WAY[next]}`
-          : `Trier par ${label}, ${WAY[direction]}`
+          ? t('active', { label, way: t(`ways.${direction}`), next: t(`ways.${next}`) })
+          : t('by', { label, way: t(`ways.${direction}`) })
       }
       className={cn(
         'group/sort inline-flex items-center gap-1 transition-colors hover:text-foreground',
@@ -169,6 +169,7 @@ export function SortMenu<Field extends string>({
   sorter: Sorter<Field>
   options: { field: Field; label: string }[]
 }) {
+  const t = useTranslations('common.sort')
   const go = useSortHref()
   const current = options.find((o) => o.field === sorter.current.field)
   // A list with a single criterion has nothing to choose between: the control
@@ -181,7 +182,7 @@ export function SortMenu<Field extends string>({
         variant="ghost"
         size="sm"
         onClick={() => go(sorter.param, nextSortValue(sorter, only.field))}
-        aria-label={`${only.label}, tri ${WAY[sorter.current.direction]}. Inverser`}
+        aria-label={t('reverse', { label: only.label, way: t(`ways.${sorter.current.direction}`) })}
         className="h-7 gap-1 px-2 text-[12px] text-muted-foreground"
       >
         {only.label}
@@ -193,7 +194,7 @@ export function SortMenu<Field extends string>({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[12px] text-muted-foreground">
-          Trier : {current?.label ?? ''}
+          {t('menu', { label: current?.label ?? '' })}
           <Chevron direction={sorter.current.direction} />
         </Button>
       </DropdownMenuTrigger>

@@ -12,16 +12,16 @@ import {
 } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { Block, Figure, FigureRow } from '@/components/composition'
 import { BAND } from '@/components/expense-list'
 import { OperationRows } from '@/components/investment-forms'
 import { PageBody, PageHeader } from '@/components/page-shell'
-import { quantity } from '@/components/position-list'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +36,8 @@ export default async function AssetPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+  const t = await getTranslations('investments')
+  const format = await getFormat()
   const { assetId } = await params
   const query = await searchParams
 
@@ -71,7 +73,7 @@ export default async function AssetPage({
       <PageHeader
         title={asset.name}
         description={
-          [asset.instrument?.isin, asset.instrument?.priceSourceRef ?? 'cours saisi à la main']
+          [asset.instrument?.isin, asset.instrument?.priceSourceRef ?? t('words.manualPrice')]
             .filter(Boolean)
             .join(' · ') || undefined
         }
@@ -84,25 +86,21 @@ export default async function AssetPage({
             <div className="flex min-w-0 flex-col gap-4">
               <Figure
                 hero
-                label="Valorisation"
+                label={t('words.value')}
                 value={position.value === null ? null : Number(position.value)}
                 // The limit of the gain is said with it: dividends and fees went
                 // through the account's cash, not through this line.
-                delta={
-                  gain === null
-                    ? undefined
-                    : { value: gain, label: 'de plus-value latente, hors dividendes et frais' }
-                }
-                note={`${quantity(position.quantity)} × ${
-                  position.price === null ? '—' : eur(Number(position.price), 2)
+                delta={gain === null ? undefined : { value: gain, label: t('detail.unrealized') }}
+                note={`${format.number(position.quantity, 8)} × ${
+                  position.price === null ? '—' : format.eur(position.price, 2)
                 }`}
               />
               <FigureRow compact>
                 <Figure
                   compact
-                  label="Prix de revient"
+                  label={t('detail.costBasis')}
                   value={Number(position.costBasis)}
-                  note={`PRU ${eur(Number(position.averageCost), 2)}, frais d’ordre compris`}
+                  note={t('detail.costBasisHint', { amount: format.eur(position.averageCost, 2) })}
                 />
               </FigureRow>
             </div>
@@ -110,23 +108,25 @@ export default async function AssetPage({
             // Followed, not held: what is read is its price.
             <Figure
               hero
-              label="Cours"
+              label={t('words.price')}
               value={lastPrice}
               decimals={2}
-              note={lastPrice === null ? 'suivi, pas détenu ; aucun cours connu' : 'suivi, pas détenu'}
+              note={lastPrice === null ? t('detail.watchedNoPrice') : t('detail.watched')}
             />
           )}
           {history.length > 1 && (
-            <section aria-label="Cours" className="flex min-w-0 flex-col gap-3">
+            <section aria-label={t('words.price')} className="flex min-w-0 flex-col gap-3">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <h2 className="text-[13px] font-medium text-muted-foreground">Cours</h2>
-                <span className="text-[11.5px] text-faint">{shown.length} séances connues</span>
+                <h2 className="text-[13px] font-medium text-muted-foreground">{t('words.price')}</h2>
+                <span className="text-[11.5px] text-faint">
+                  {t('detail.sessions', { count: shown.length })}
+                </span>
                 <div className="ml-auto">
                   <WindowTabs />
                 </div>
               </div>
               <BalanceChart
-                lines={[{ id: 'price', name: 'Cours' }]}
+                lines={[{ id: 'price', name: t('words.price') }]}
                 rows={shown.map((point) => ({
                   day: point.quotedOn,
                   lineId: 'price',
@@ -136,7 +136,7 @@ export default async function AssetPage({
                 // A price is not read against zero: forcing it in draws a share
                 // at 709 € as a flat line and hides the very move being looked at.
                 zeroBased={false}
-                ariaLabel={`Cours de ${asset.name}`}
+                ariaLabel={t('detail.priceAria', { name: asset.name })}
               />
             </section>
           )}
@@ -144,7 +144,7 @@ export default async function AssetPage({
 
         {/* A followed asset has none, which its figure already says. */}
         {mine.length > 0 && (
-          <Block label="Opérations" className="gap-2">
+          <Block label={t('words.operations')} className="gap-2">
             <OperationRows
               sorter={operationSort}
               showAsset={false}

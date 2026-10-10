@@ -1,0 +1,203 @@
+{
+  "empty": "Aucun compte pour l’instant : tout part du premier.",
+  "wealth": {
+    "label": "Patrimoine",
+    "missingContributions": "{amount} d’apports non déclarés : pointe les espèces du compte",
+    "holdingsIncluded": "dont {amount} de placements, au dernier cours"
+  },
+  "toCheck": {
+    "label": "À pointer",
+    "neverChecked": "jamais pointé",
+    "gapOn": "écart de {amount} au {date}",
+    "checkedOn": "pointé le {date}",
+    "seeGap": "Voir l’écart",
+    "seeGapOf": "Voir l’écart de {name}"
+  },
+  "sections": {
+    "payment": "Courants",
+    "savings": "Épargne",
+    "investment": "Investissement",
+    "closed": "Clos",
+    "investmentQualifier": "espèces",
+    "investmentLink": "Placements"
+  },
+  "sort": {
+    "name": "Nom",
+    "balance": "Solde",
+    "checked": "Dernier pointage"
+  },
+  "row": {
+    "cardCount": "{count, plural, one {# carte} other {# cartes}}",
+    "statementToValidate": "relevé à valider",
+    "closedOn": "clos le {date}"
+  },
+  "newAccount": {
+    "add": "Ajouter un compte",
+    "title": "Nouveau compte",
+    "description": "Un compte qui existait déjà part de son solde d’ouverture, qui n’est pas un revenu.",
+    "success": "Compte créé",
+    "submit": "Créer le compte"
+  },
+  "fields": {
+    "name": "Nom",
+    "namePlaceholder": "Courant principal",
+    "type": "Type",
+    "institution": "Établissement (optionnel)",
+    "institutionPlaceholder": "Nom de la banque",
+    "openingBalance": "Solde d’ouverture (€)",
+    "openedOn": "Ouvert le",
+    "amountPlaceholder": "0,00",
+    "realBalance": "Solde réel (€)"
+  },
+  "behaviors": {
+    "payment": "Courant",
+    "savings": "Épargne (livret)",
+    "investment": "Investissement"
+  },
+  "actions": {
+    "edit": "Modifier",
+    "correct": "Corriger",
+    "delete": "Supprimer",
+    "cancel": "Annuler",
+    "save": "Enregistrer"
+  },
+  "menu": {
+    "checkBalance": "Pointer le solde",
+    "checks": "Pointages",
+    "addCard": "Ajouter une carte",
+    "reopen": "Réouvrir",
+    "close": "Clore le compte"
+  },
+  "edit": {
+    "description": "Son solde part de l’ouverture, puis suit ses mouvements."
+  },
+  "close": {
+    "title": "Clore « {name} » ?",
+    "description": "Plus aucun mouvement après aujourd’hui. Son historique reste entier, et tu peux le réouvrir.",
+    "confirm": "Clore"
+  },
+  "reopen": {
+    "title": "Réouvrir « {name} » ?",
+    "description": "Le compte accepte de nouveau des mouvements. Son historique ne change pas."
+  },
+  "check": {
+    "title": "Pointer {name}",
+    "description": "Le solde que ta banque affiche, face au calculé : {amount}.",
+    "submit": "Pointer"
+  },
+  "history": {
+    "title": "Pointages de {name}",
+    "description": "Le solde lu, face au calculé ce jour-là.",
+    "never": "Ce compte n’a jamais été pointé.",
+    "noGap": "aucun écart",
+    "gapOf": "écart de {amount}",
+    "settledByAdjustment": "soldé par un ajustement",
+    "computed": "calculé {amount}",
+    "rowLabel": "le pointage du {date}",
+    "correctTitle": "Pointage du {date}",
+    "correctDescription": "Corriger un pointage, c’est le refaire : l’écart est recalculé sur l’historique tel qu’il est aujourd’hui.",
+    "correctSettled": "L’ajustement qui le soldait suit le nouvel écart, et disparaît s’il n’y a plus rien à solder.",
+    "readOn": "Lu le",
+    "deleteTitle": "Supprimer le pointage du {date} ?",
+    "deleteSettled": "L’ajustement qui soldait son écart est supprimé avec lui : il n’existait que pour ce pointage.",
+    "deleteUnsettled": "Les mouvements du compte ne sont pas touchés : un pointage ne fait que les confronter à la réalité."
+  },
+  "settle": {
+    "title": "Solder l’écart",
+    "missingOut": "{amount} de sorties manquent au {date}.",
+    "missingIn": "{amount} d’entrées manquent au {date}.",
+    "explain": "Un seul mouvement daté de ce jour les porte, attribué à l’acteur choisi : dernier recours, déclarer ce qui manque vaut mieux.",
+    "success": "Écart soldé",
+    "attributedTo": "Attribué à",
+    "unknown": "Inconnu",
+    "category": "Catégorie",
+    "noCategory": "(aucune)",
+    "note": "Note",
+    "noteDefault": "Ajustement de pointage",
+    "ghost": "fantôme : cet écart ne dit rien de mes flux (régularisation) et ne doit entrer dans aucune analyse",
+    "submit": "Solder"
+  },
+  "rail": {
+    "ariaNever": "{name} : jamais pointé",
+    "ariaGap": "{name} : pointé le {date}, écart de {amount} non soldé",
+    "ariaNoGap": "{name} : pointé le {date}, aucun écart ouvert",
+    "days": "{days} j",
+    "todayShort": "auj.",
+    "today": "aujourd’hui",
+    "checkedOn": "Pointé le {date}",
+    "gapOpen": "écart de {amount}, non soldé",
+    "gapSettled": "écart soldé",
+    "count": "{count, plural, one {# pointage} other {# pointages}} en {days} jours",
+    "never": "Jamais pointé"
+  },
+  "card": {
+    "schedule": "arrêté {cutOff}, prélevé {debit}",
+    "day": "le {day}",
+    "monthEnd": "en fin de mois",
+    "expired": "expirée",
+    "expiresEnd": "expire fin {month}",
+    "expiresLabel": "expire fin",
+    "modes": {
+      "immediate": "Débit immédiat",
+      "deferred": "Débit différé"
+    },
+    "modesShort": {
+      "immediate": "immédiat",
+      "deferred": "différé"
+    },
+    "shifts": {
+      "none": "reste en place",
+      "previous": "avancé au vendredi",
+      "next": "reporté au lundi"
+    },
+    "open": "Ouvrir la carte {name}",
+    "debitExpected": "débit attendu le {date}",
+    "runningUntil": "en cours jusqu’au {date}",
+    "toValidate": "à valider",
+    "nothingPending": "rien en attente"
+  },
+  "cardPage": {
+    "toDebit": "À prélever",
+    "partOfTotal": "dont {amount}, débit attendu le {date}",
+    "paidIn": "Payé en {month}",
+    "byPurchaseDate": "par date d’achat",
+    "statements": "Relevés",
+    "noPurchases": "Aucun achat pour l’instant.",
+    "purchases": "Achats",
+    "nothingPaid": "Rien n’a encore été payé avec cette carte.",
+    "cutOffOn": "Arrêté le {date}",
+    "runningUntil": "En cours jusqu’au {date}",
+    "purchaseCount": "{count, plural, one {# achat} other {# achats}}",
+    "debitedOn": "débité le {date}",
+    "debitExpectedToValidate": "débit attendu le {date} · à valider",
+    "recurring": "Dépenses récurrentes",
+    "moveToNewCard": "à reporter sur la nouvelle carte",
+    "nextOn": "prochaine le {date}",
+    "installmentsPaid": "{paid}/{total} payées",
+    "perMonth": "/mois"
+  },
+  "cardForm": {
+    "namePlaceholder": "Visa Premier",
+    "debitedAccount": "Compte débité",
+    "choose": "Choisir",
+    "expiresEnd": "Expire fin",
+    "statementDay": "Arrêté des achats",
+    "ifWeekend": "S’il tombe un week-end",
+    "debitDay": "Prélèvement",
+    "example": "Acheté aujourd’hui → prélevé le <day>{date}</day>",
+    "added": "Carte ajoutée",
+    "submit": "Ajouter la carte",
+    "newTitle": "Nouvelle carte",
+    "newDescription": "Un nom suffit à la reconnaître, jamais son numéro.",
+    "editDescription": "Un nouveau calendrier déplace les achats des relevés pas encore validés. Ceux d’un relevé validé restent au jour de son débit.",
+    "deleteTitle": "Supprimer « {name} » ?",
+    "deleteDescription": "Seule une carte qui n’a rien payé se supprime. Une carte qui a servi reste : son expiration dit qu’elle ne marche plus."
+  },
+  "statement": {
+    "validate": "Valider",
+    "title": "Relevé de {name}",
+    "description": "{count, plural, one {# achat arrêté} other {# achats arrêtés}} le {date}, soit <money>{amount}</money>. Ils passent au jour du débit et entrent dans le solde.",
+    "debitedOn": "Débité le",
+    "undo": "Annuler la validation"
+  }
+}

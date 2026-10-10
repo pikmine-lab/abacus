@@ -2,6 +2,7 @@
 
 import { PREREGISTERED_CLIENT_IDS } from '@abacus/core/oauth'
 import { CheckIcon, CopyIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -35,6 +36,7 @@ function cursorConfig(url: string): string {
 }
 
 function CodeBlock({ text }: { text: string }) {
+  const t = useTranslations('settings.connectAi')
   const [copied, setCopied] = useState(false)
   return (
     <div className="relative min-w-0 rounded-md border border-border bg-card">
@@ -54,7 +56,7 @@ function CodeBlock({ text }: { text: string }) {
         }}
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? 'Copié' : 'Copier'}
+        {copied ? t('copied') : t('copy')}
       </Button>
     </div>
   )
@@ -103,14 +105,15 @@ function Step({
  * the split the applications list below lines its dates up on.
  */
 export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
+  const t = useTranslations('settings.connectAi')
   return (
     <ol className="grid min-w-0 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @3xl:gap-x-12">
-      <Step n={1} title="Ajoute le serveur" leadsOn>
+      <Step n={1} title={t('addServer')} leadsOn>
         {mcpUrl ? (
           <Tabs defaultValue="claude-app" className="min-w-0 gap-2.5">
-            <TabsList className="h-7" aria-label="Client à brancher">
+            <TabsList className="h-7" aria-label={t('clientTabs')}>
               <TabsTrigger value="claude-app" className="px-2 text-[12px]">
-                App Claude
+                {t('claudeApp')}
               </TabsTrigger>
               <TabsTrigger value="claude-code" className="px-2 text-[12px]">
                 Claude Code
@@ -119,51 +122,49 @@ export function McpConnection({ mcpUrl }: { mcpUrl?: string }) {
                 Cursor
               </TabsTrigger>
               <TabsTrigger value="other" className="px-2 text-[12px]">
-                Autre client
+                {t('otherClient')}
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="claude-app" className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[12px] text-faint">connecteurs de l’app › connecteur personnalisé</p>
+              <p className="text-[12px] text-faint">{t('hints.claudeApp')}</p>
               <CodeBlock text={mcpUrl} />
             </TabsContent>
 
             <TabsContent value="claude-code" className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[12px] text-faint">dans ton terminal</p>
+              <p className="text-[12px] text-faint">{t('hints.claudeCode')}</p>
               <CodeBlock text={claudeCodeCommand(mcpUrl)} />
             </TabsContent>
 
             <TabsContent value="cursor" className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[12px] text-faint">dans ~/.cursor/mcp.json</p>
+              <p className="text-[12px] text-faint">{t('hints.cursor', { path: '~/.cursor/mcp.json' })}</p>
               <CodeBlock text={cursorConfig(mcpUrl)} />
             </TabsContent>
 
             <TabsContent value="other" className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[12px] text-faint">
-                l’adresse, ou ce bloc dans le fichier MCP de ton client
-              </p>
+              <p className="text-[12px] text-faint">{t('hints.other')}</p>
               <CodeBlock text={mcpUrl} />
               <CodeBlock text={clientConfig(mcpUrl)} />
               <p className="text-[12px] text-faint">
-                Microsoft 365 Copilot : identifiant client{' '}
-                <span className="font-mono text-muted-foreground">
-                  {PREREGISTERED_CLIENT_IDS.microsoft365Copilot}
-                </span>
-                , sans secret
+                {t.rich('hints.copilot', {
+                  clientId: PREREGISTERED_CLIENT_IDS.microsoft365Copilot,
+                  id: (chunks) => <span className="font-mono text-muted-foreground">{chunks}</span>,
+                })}
               </p>
             </TabsContent>
           </Tabs>
         ) : (
           <p className="text-[12.5px] text-destructive">
-            Adresse du serveur MCP absente (<span className="font-mono">MCP_URL</span>).
+            {t.rich('missingUrl', {
+              variable: 'MCP_URL',
+              code: (chunks) => <span className="font-mono">{chunks}</span>,
+            })}
           </p>
         )}
       </Step>
 
-      <Step n={2} title="Autorise l’accès">
-        <p className="text-[12.5px] text-muted-foreground">
-          Ton IA ouvre abacus dans le navigateur : connecte-toi, puis autorise.
-        </p>
+      <Step n={2} title={t('authorize')}>
+        <p className="text-[12.5px] text-muted-foreground">{t('authorizeHint')}</p>
       </Step>
     </ol>
   )

@@ -2,6 +2,7 @@
 
 import type { Activity, ActivityKind, DeductibleExpenses, RevenueBasis } from '@abacus/core/domain'
 import { ArchiveIcon, ArchiveRestoreIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useState } from 'react'
 import { CurrencySelect } from '@/components/currency-select'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -27,20 +28,21 @@ import {
   setActivityExceptionsAction,
 } from '@/lib/actions'
 import { entryHref } from '@/lib/entry-href'
-import { frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 export interface Option {
   id: string
   name: string
 }
 
-const KIND_LABEL: Record<ActivityKind, string> = { business: 'Indépendante', personal: 'Personnelle' }
-
-/** Rendered once, from the locale, like the calendar's own month names. */
-const MONTHS = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1),
-  label: new Date(2000, i, 1).toLocaleDateString('fr-FR', { month: 'long' }),
-}))
+/** The month names in the interface's language, like the calendar's own. */
+function useMonths(): { value: string; label: string }[] {
+  const format = useFormat()
+  return Array.from({ length: 12 }, (_, i) => ({
+    value: String(i + 1),
+    label: format.dateAs(`2000-${String(i + 1).padStart(2, '0')}-01`, { month: 'long' }),
+  }))
+}
 
 /**
  * An exclusive choice that has to reach the server: the tabs show it, a hidden
@@ -91,10 +93,11 @@ function ExceptionList({
   policy: DeductibleExpenses
   checked?: string[]
 }) {
+  const t = useTranslations('activity.form')
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-muted-foreground">
-        {policy === 'all' ? 'Sauf ces catégories' : 'Déductibles quand même'}
+        {policy === 'all' ? t('exceptAll') : t('exceptNone')}
       </span>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
         {categories.map((c) => (
@@ -114,9 +117,10 @@ function ExceptionList({
  * one, which is the only thing the caption has to teach.
  */
 export function AccountList({ accounts, checked = [] }: { accounts: Option[]; checked?: string[] }) {
+  const t = useTranslations('activity.form')
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">Comptes · un compte peut en servir plusieurs</span>
+      <span className="text-xs text-muted-foreground">{t('accounts')}</span>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
         {accounts.map((a) => (
           <Label key={a.id} className="flex items-center gap-2 text-[12px] font-normal">
@@ -154,6 +158,8 @@ export function ActivityForm({
   attached?: string[]
   onSuccess?: () => void
 }) {
+  const t = useTranslations('activity')
+  const months = useMonths()
   const editing = activity !== undefined
   const [kind, setKind] = useState<ActivityKind>(activity?.kind ?? draft?.kind ?? 'personal')
   const [basis, setBasis] = useState<RevenueBasis>(activity?.revenueBasis ?? 'cash')
@@ -163,7 +169,7 @@ export function ActivityForm({
   return (
     <ActionForm
       action={editing ? editActivityAction : createActivityAction}
-      successLabel={editing ? 'Activité corrigée' : 'Activité créée'}
+      successLabel={editing ? t('form.corrected') : t('form.created')}
       onSuccess={() => {
         // A success remounts the fields; this state lives above the remount.
         if (!editing) {
@@ -177,98 +183,98 @@ export function ActivityForm({
     >
       {editing && <input type="hidden" name="activityId" value={activity.id} />}
       <Choice
-        label="Type"
+        label={t('form.kind')}
         name="kind"
         value={kind}
         onValueChange={(v) => setKind(v as ActivityKind)}
         options={[
-          { value: 'business', label: KIND_LABEL.business },
-          { value: 'personal', label: KIND_LABEL.personal },
+          { value: 'business', label: t('kinds.business') },
+          { value: 'personal', label: t('kinds.personal') },
         ]}
       />
       <TextField
         name="name"
-        label="Nom"
+        label={t('form.name')}
         defaultValue={activity?.name ?? draft?.name ?? ''}
-        placeholder="Freelance"
+        placeholder={t('form.namePlaceholder')}
       />
 
       {kind === 'business' && (
         <>
           <TextField
             name="jurisdiction"
-            label="Juridiction"
+            label={t('form.jurisdiction')}
             defaultValue={activity?.jurisdiction ?? draft?.jurisdiction ?? ''}
-            placeholder="Où l’activité est exercée"
+            placeholder={t('form.jurisdictionPlaceholder')}
           />
           <TextField
             name="regimeLabel"
-            label="Régime"
+            label={t('form.regime')}
             defaultValue={activity?.regimeLabel ?? ''}
-            placeholder="Le régime, en clair"
+            placeholder={t('form.regimePlaceholder')}
           />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Début" name="startedOn">
+            <Field label={t('form.startedOn')} name="startedOn">
               <DateField name="startedOn" defaultValue={activity?.startedOn ?? undefined} />
             </Field>
-            <Field label="Devise" name="currency">
+            <Field label={t('form.currency')} name="currency">
               <CurrencySelect defaultValue={activity?.currency ?? 'EUR'} />
             </Field>
           </div>
           {accounts.length > 0 && <AccountList accounts={accounts} checked={attached} />}
           <Choice
-            label="Fait générateur"
+            label={t('form.basis')}
             name="revenueBasis"
             value={basis}
             onValueChange={(v) => setBasis(v as RevenueBasis)}
             options={[
-              { value: 'cash', label: 'Encaissement' },
-              { value: 'invoiced', label: 'Facturation' },
+              { value: 'cash', label: t('form.basisCash') },
+              { value: 'invoiced', label: t('form.basisInvoiced') },
             ]}
           />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Exercice · mois" name="fiscalYearStartMonth">
+            <Field label={t('form.fiscalYearMonth')} name="fiscalYearStartMonth">
               <FormSelect
                 name="fiscalYearStartMonth"
                 defaultValue={String(activity?.fiscalYearStartMonth ?? 1)}
-                options={MONTHS}
+                options={months}
               />
             </Field>
             <TextField
               name="fiscalYearStartDay"
-              label="Exercice · jour"
+              label={t('form.fiscalYearDay')}
               inputMode="numeric"
               defaultValue={String(activity?.fiscalYearStartDay ?? 1)}
             />
           </div>
           <Label className="flex items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
             <Checkbox name="vatRegistered" checked={vat} onCheckedChange={(c) => setVat(c === true)} />
-            assujettie à la TVA
+            {t('form.vatRegistered')}
           </Label>
           {vat && (
             <TextField
               name="defaultVatRate"
-              label="TVA par défaut (%)"
+              label={t('form.defaultVatRate')}
               inputMode="decimal"
               defaultValue={activity?.defaultVatRate ?? ''}
               placeholder="20"
             />
           )}
           <Choice
-            label="Charges"
+            label={t('form.deductible')}
             name="deductibleExpenses"
             value={deductible}
             onValueChange={(v) => setDeductible(v as DeductibleExpenses)}
             options={[
-              { value: 'all', label: 'Toutes déductibles' },
-              { value: 'none', label: 'Aucune' },
+              { value: 'all', label: t('form.deductibleAll') },
+              { value: 'none', label: t('form.deductibleNone') },
             ]}
           />
           {!editing && categories.length > 0 && <ExceptionList categories={categories} policy={deductible} />}
         </>
       )}
 
-      <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Créer l’activité'}</SubmitButton>
+      <SubmitButton className="self-start">{editing ? t('form.save') : t('form.create')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -289,10 +295,12 @@ export function ActivityList({
   selection: Selection
   tools?: React.ReactNode
 }) {
+  const t = useTranslations('activity')
+  const format = useFormat()
   return (
     <ListPane tools={tools}>
       {activities.length === 0 ? (
-        <ListEmpty>Aucune activité. Tout est considéré comme perso.</ListEmpty>
+        <ListEmpty>{t('list.empty')}</ListEmpty>
       ) : (
         activities.map((activity) => (
           <EntryRow
@@ -305,15 +313,15 @@ export function ActivityList({
               [
                 activity.jurisdiction,
                 activity.regimeLabel,
-                activity.startedOn && `depuis le ${frDate(activity.startedOn)}`,
-                activity.closedOn && `close le ${frDate(activity.closedOn)}`,
+                activity.startedOn && t('list.since', { date: format.date(activity.startedOn) }),
+                activity.closedOn && t('list.closedOn', { date: format.date(activity.closedOn) }),
               ]
                 .filter(Boolean)
                 .join(' · ') || undefined
             }
             // Only the exception trails: the regime under the name already says
             // an activity is a business one, and the room goes to it.
-            trailing={activity.kind === 'personal' ? KIND_LABEL.personal : undefined}
+            trailing={activity.kind === 'personal' ? t('kinds.personal') : undefined}
           />
         ))
       )}
@@ -345,6 +353,7 @@ export function ActivityFiche({
   today: string
   back: { href: string; label: string }
 }) {
+  const t = useTranslations('activity')
   const [reopenState, reopen, reopenPending] = useActionState(reopenActivityAction, {})
   const closed = activity.closedOn !== null
   const business = activity.kind === 'business'
@@ -354,31 +363,28 @@ export function ActivityFiche({
       title={activity.name}
       badge={
         <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">
-          {KIND_LABEL[activity.kind]}
+          {t(`kinds.${activity.kind}`)}
         </Badge>
       }
       link={
-        business ? { href: `/settings/activities/${activity.id}?from=settings`, label: 'Régime' } : undefined
+        business
+          ? { href: `/settings/activities/${activity.id}?from=settings`, label: t('form.regime') }
+          : undefined
       }
       back={back}
     >
-      <p className="mb-4 text-[12px] text-faint">
-        Ce qui est déjà classé sous cette activité y reste. Le type et le fait générateur ne changent plus dès
-        qu’une règle ou une facture existe.
-      </p>
+      <p className="mb-4 text-[12px] text-faint">{t('fiche.intro')}</p>
       <ActivityForm activity={activity} categories={categories} accounts={accounts} attached={attached} />
 
       {business && (
-        <FicheSection label="Exceptions de catégories">
+        <FicheSection label={t('fiche.exceptions')}>
           {categories.length === 0 ? (
-            <p className="text-[12px] text-faint">Aucune catégorie à excepter.</p>
+            <p className="text-[12px] text-faint">{t('fiche.noCategories')}</p>
           ) : (
-            <ActionForm action={setActivityExceptionsAction} successLabel="Exceptions enregistrées">
+            <ActionForm action={setActivityExceptionsAction} successLabel={t('fiche.exceptionsSaved')}>
               <input type="hidden" name="activityId" value={activity.id} />
               <p className="text-[12px] text-faint">
-                {activity.deductibleExpenses === 'all'
-                  ? 'Toute charge de l’activité est déductible, sauf celles cochées ici.'
-                  : 'Aucune charge de l’activité n’est déductible, sauf celles cochées ici.'}
+                {activity.deductibleExpenses === 'all' ? t('fiche.policyAll') : t('fiche.policyNone')}
               </p>
               <ExceptionList
                 categories={categories}
@@ -386,7 +392,7 @@ export function ActivityFiche({
                 checked={exceptions}
               />
               <SubmitButton variant="outline" className="self-start">
-                Enregistrer
+                {t('form.save')}
               </SubmitButton>
             </ActionForm>
           )}
@@ -394,15 +400,13 @@ export function ActivityFiche({
       )}
 
       {closed ? (
-        <FicheSection label="Réouvrir">
-          <p className="text-[12px] text-faint">
-            L’activité accepte de nouveau des mouvements. Son historique ne change pas.
-          </p>
+        <FicheSection label={t('fiche.reopen')}>
+          <p className="text-[12px] text-faint">{t('fiche.reopenBody')}</p>
           <form action={reopen} className="flex flex-col gap-2">
             <input type="hidden" name="activityId" value={activity.id} />
             <Button type="submit" variant="outline" disabled={reopenPending} className="self-start">
               <ArchiveRestoreIcon />
-              {reopenPending ? '…' : 'Réouvrir'}
+              {reopenPending ? '…' : t('fiche.reopen')}
             </Button>
             {reopenState.error && <p className="text-xs text-destructive">{reopenState.error}</p>}
           </form>
@@ -410,19 +414,16 @@ export function ActivityFiche({
       ) : (
         // The last day matters here: a regime ends on a date, not on the day
         // the sheet happens to be opened.
-        <FicheSection label="Clore">
-          <p className="text-[12px] text-faint">
-            Aucun mouvement ne s’y déclare après ce jour. L’historique reste entier, et un nouveau régime est
-            une nouvelle activité.
-          </p>
+        <FicheSection label={t('fiche.close')}>
+          <p className="text-[12px] text-faint">{t('fiche.closeBody')}</p>
           <ActionForm action={closeActivityAction} className="flex-row flex-wrap items-end gap-2">
             <input type="hidden" name="activityId" value={activity.id} />
-            <Field label="Dernier jour" name="closedOn" className="w-44">
+            <Field label={t('fiche.lastDay')} name="closedOn" className="w-44">
               <DateField name="closedOn" defaultValue={today} />
             </Field>
             <SubmitButton variant="destructive">
               <ArchiveIcon />
-              Clore
+              {t('fiche.close')}
             </SubmitButton>
           </ActionForm>
         </FicheSection>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { type PointerEvent, useEffect, useRef, useState } from 'react'
 import {
   BreakdownBars,
@@ -9,9 +10,11 @@ import {
   type Mark,
   movementsHref,
   type RowLink,
-  UNSET_LABEL,
+  useShare,
+  useUnsetLabels,
 } from '@/components/breakdown-bars'
-import { cn, eur, share } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /*
  * The whole period in one bar: each line takes the length of its share, so
@@ -85,6 +88,10 @@ function ShareStrip({
   mark: Mark | null
 }) {
   const router = useRouter()
+  const words = useTranslations('analysis.words')
+  const unset = useUnsetLabels()
+  const format = useFormat()
+  const share = useShare()
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [hovered, setHovered] = useState<Hovered | null>(null)
@@ -110,14 +117,14 @@ function ShareStrip({
   const tail = sorted.slice(head.length)
   const slices: Slice[] = head.map((r) => ({
     id: r.key ?? 'none',
-    label: r.label ?? UNSET_LABEL[dimension],
+    label: r.label ?? unset[dimension],
     item: r,
     amount: r.net,
   }))
   if (tail.length > 0)
     slices.push({
       id: 'rest',
-      label: `${tail.length} autres`,
+      label: words('others', { count: tail.length }),
       amount: tail.reduce((sum, r) => sum + r.net, 0),
       rest: true,
     })
@@ -165,7 +172,7 @@ function ShareStrip({
                 style={{ left: `${part.from}%`, width: `${part.width}%` }}
               />
             ) : null
-          const label = `${s.label}, ${eur(s.amount)}, ${share(s.amount, total)}`
+          const label = `${s.label}, ${format.eur(s.amount)}, ${share(s.amount, total)}`
           const box = 'relative min-w-[3px] overflow-hidden rounded-[3px] transition-[opacity] duration-150'
           return (
             // The slice carries the dim, its lit part sits beside it at full
@@ -263,6 +270,9 @@ const CARD_WIDTH = 208
 const CARD_HEIGHT = 96
 
 function HoverCard({ slice, x, y, total }: Hovered & { total: number }) {
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
+  const share = useShare()
   const flipX = typeof window !== 'undefined' && x + CARD_WIDTH + 20 > window.innerWidth
   const flipY = typeof window !== 'undefined' && y + CARD_HEIGHT + 24 > window.innerHeight
   return (
@@ -274,11 +284,11 @@ function HoverCard({ slice, x, y, total }: Hovered & { total: number }) {
       <p className="truncate text-[11px] text-faint">{slice.label}</p>
       <p className="flex items-baseline gap-2 py-px text-xs">
         <span className="text-muted-foreground">{share(slice.amount, total)}</span>
-        <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(slice.amount)}</span>
+        <span className="ml-auto pl-3 font-mono font-semibold tabular">{format.eur(slice.amount)}</span>
       </p>
       {slice.item && (
         <p className="mt-1 border-t border-border pt-1 text-[10.5px] text-faint">
-          {slice.item.count} mouvement{slice.item.count > 1 ? 's' : ''}
+          {words('movements', { count: slice.item.count })}
         </p>
       )}
     </div>

@@ -1,7 +1,9 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
-import { cn, daysBetween, frDate, freshness } from '@/lib/utils'
+import { type Format, useFormat } from '@/lib/format'
+import { cn, daysBetween } from '@/lib/utils'
 
 /** How far ahead a rail reads, in days: a month, so every monthly line has its dot on it. */
 export const RAIL_DAYS = 30
@@ -44,6 +46,8 @@ export function ExpenseRail({
   marks: RailMark[]
   today: string
 }) {
+  const t = useTranslations('recurring')
+  const format = useFormat()
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const late = marks.filter((m) => m.dueOn <= today)
@@ -64,8 +68,8 @@ export function ExpenseRail({
   }
   const next = ahead[0] ?? beyond
   const summary = [
-    late.length > 0 && `${late.length} échéance${late.length > 1 ? 's' : ''} à confirmer`,
-    next && `prochaine le ${frDate(next.dueOn)}`,
+    late.length > 0 && t('rail.lateCount', { count: late.length }),
+    next && t('nextOn', { date: format.date(next.dueOn) }),
   ]
     .filter(Boolean)
     .join(', ')
@@ -74,7 +78,7 @@ export function ExpenseRail({
   return (
     <button
       type="button"
-      aria-label={`${name} : ${summary}`}
+      aria-label={t('rail.label', { name, summary })}
       className="relative block h-4 w-full cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onPointerMove={(e) => e.pointerType === 'mouse' && setCursor({ x: e.clientX, y: e.clientY })}
       onPointerLeave={() => setCursor(null)}
@@ -125,11 +129,13 @@ export function ExpenseRail({
 
 /** The rail's scale, set once in the header of each list, over the column of rails. */
 export function ExpenseRailAxis({ today }: { today: string }) {
+  const t = useTranslations('recurring.rail')
+  const format = useFormat()
   const turn = monthTurn(today)
   return (
     <div aria-hidden className="relative h-3 font-mono text-[10px] leading-none text-faint">
       <span className="absolute -translate-x-1/2" style={{ left: position(0) }}>
-        auj.
+        {t('today')}
       </span>
       {/* The month that starts there, rather than a count of days: what leaves
           before the tick is this month's, which is how a budget is read. Too
@@ -139,10 +145,10 @@ export function ExpenseRailAxis({ today }: { today: string }) {
           className={cn('absolute -translate-x-1/2', turn > 18 && 'hidden @4xl:inline')}
           style={{ left: position(turn) }}
         >
-          {dayMonth(addDays(today, turn), false)}
+          {dayMonth(format, addDays(today, turn), false)}
         </span>
       )}
-      <span className="absolute right-0">{dayMonth(addDays(today, RAIL_DAYS), true)}</span>
+      <span className="absolute right-0">{dayMonth(format, addDays(today, RAIL_DAYS), true)}</span>
     </div>
   )
 }
@@ -161,12 +167,8 @@ function monthTurn(today: string): number | null {
 }
 
 /** "nov." or "8 nov.": the year is never in doubt thirty days out. */
-function dayMonth(iso: string, withDay: boolean): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y!, m! - 1, d!).toLocaleDateString(
-    'fr-FR',
-    withDay ? { day: 'numeric', month: 'short' } : { month: 'short' },
-  )
+function dayMonth(format: Format, iso: string, withDay: boolean): string {
+  return format.dateAs(iso, withDay ? { day: 'numeric', month: 'short' } : { month: 'short' })
 }
 
 function addDays(iso: string, days: number): string {
@@ -193,6 +195,8 @@ function RailTooltip({
   next: RailMark | undefined
   today: string
 }) {
+  const t = useTranslations('recurring.rail')
+  const format = useFormat()
   const flipX = x + CARD_WIDTH + 20 > window.innerWidth
   const flipY = y + CARD_HEIGHT + 24 > window.innerHeight
   return (
@@ -205,14 +209,14 @@ function RailTooltip({
       {late.length > 0 && (
         <p className="py-px text-xs text-primary">
           {late.length > 1
-            ? `${late.length} échéances à confirmer, depuis le ${frDate(late[0]!.dueOn)}`
-            : `À confirmer, attendue le ${frDate(late[0]!.dueOn)}`}
+            ? t('lateMany', { count: late.length, date: format.date(late[0]!.dueOn) })
+            : t('lateOne', { date: format.date(late[0]!.dueOn) })}
         </p>
       )}
       {next && (
         <p className="py-px text-xs">
-          Prochaine le {frDate(next.dueOn)}{' '}
-          <span className="whitespace-nowrap text-faint">· {freshness(next.dueOn, today)}</span>
+          {t('next', { date: format.date(next.dueOn) })}{' '}
+          <span className="whitespace-nowrap text-faint">· {format.freshness(next.dueOn, today)}</span>
         </p>
       )}
     </div>

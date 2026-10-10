@@ -1,7 +1,9 @@
 'use client'
 
 import { createContext, type PointerEvent, useContext, useEffect, useRef, useState } from 'react'
-import { cn, eur, share } from '@/lib/utils'
+import { useShare } from '@/components/breakdown-bars'
+import { useFormat } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /*
  * The portfolio's split in one bar: each mass (funds, shares, coins, what no
@@ -62,6 +64,8 @@ interface Hovered {
 }
 
 export function MassStrip({ parts, label }: { parts: StripPart[]; label: string }) {
+  const format = useFormat()
+  const share = useShare()
   const { lit: pointedInList } = useContext(FocusContext)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -101,7 +105,7 @@ export function MassStrip({ parts, label }: { parts: StripPart[]; label: string 
             }}
           >
             <span className="sr-only">
-              {label} : {part.label}, {eur(part.amount)}, {share(part.amount, total)}
+              {label}, {part.label}, {format.eur(part.amount)}, {share(part.amount, total)}
             </span>
           </a>
         ))}
@@ -141,6 +145,8 @@ const CARD_WIDTH = 208
 const CARD_HEIGHT = 64
 
 function HoverCard({ part, x, y, total }: Hovered & { total: number }) {
+  const format = useFormat()
+  const share = useShare()
   const flipX = typeof window !== 'undefined' && x + CARD_WIDTH + 20 > window.innerWidth
   const flipY = typeof window !== 'undefined' && y + CARD_HEIGHT + 24 > window.innerHeight
   return (
@@ -154,7 +160,7 @@ function HoverCard({ part, x, y, total }: Hovered & { total: number }) {
       <p className="truncate text-[11px] text-faint">{part.label}</p>
       <p className="flex items-baseline gap-2 py-px text-xs">
         <span className="text-muted-foreground">{share(part.amount, total)}</span>
-        <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(part.amount)}</span>
+        <span className="ml-auto pl-3 font-mono font-semibold tabular">{format.eur(part.amount)}</span>
       </p>
     </div>
   )

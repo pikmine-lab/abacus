@@ -1,0 +1,259 @@
+{
+  "title": "Activity",
+  "personal": "“{name}” is a personal activity: it has no regime, so no statement. It splits the flows in <link>Analysis</link>.",
+  "noBusiness": {
+    "description": "invoices, collections and fiscal year statement",
+    "body": "No business activity declared. In <link>Settings</link>, switch an activity to “business” to give it its fiscal year, its invoices and its rules."
+  },
+  "fiscalYear": {
+    "named": "fiscal year {span}",
+    "span": "{from} → {to}",
+    "regularization": "true-up of fiscal year {span}"
+  },
+  "basis": {
+    "cash": {
+      "tile": "Revenue collected",
+      "word": "Collected",
+      "lower": "collected",
+      "other": "collected {amount}",
+      "sentence": "revenue counted when collected"
+    },
+    "invoiced": {
+      "tile": "Revenue invoiced",
+      "word": "Invoiced",
+      "lower": "invoiced",
+      "other": "invoiced {amount}",
+      "sentence": "revenue counted when invoiced"
+    }
+  },
+  "invoiceState": {
+    "pending": "pending",
+    "overdue": "overdue",
+    "paid": "collected",
+    "cancelled": "canceled"
+  },
+  "setup": {
+    "oneStep": "One step and the statement fills in.",
+    "twoSteps": "Two steps and the statement fills in.",
+    "rules": {
+      "title": "Its rules",
+      "why": "What it owes, with its source and its calendar: this is what fills the provisions, the reserve and the schedule.",
+      "cta": "Activity settings"
+    },
+    "accounts": {
+      "title": "Its accounts",
+      "why": "The accounts it runs on make its cash, and so what it can pay you.",
+      "cta": "Settings"
+    }
+  },
+  "caveats": {
+    "toReview": "{count, plural, one {# rule} other {# rules}} to recheck",
+    "extended": "{count, plural, one {# extended} other {# extended}} for lack of a new text",
+    "unconfirmed": "{count, plural, one {# unconfirmed} other {# unconfirmed}}",
+    "tail": "{caveats}: their amounts are the least certain on this screen."
+  },
+  "schedule": {
+    "title": "Schedule",
+    "description": "what to declare and pay, overdue first",
+    "window": "file from {from} to {to}",
+    "instalment": "{number} of {total}"
+  },
+  "noClient": "No client",
+  "noCategory": "No category",
+  "newInvoice": {
+    "label": "Invoice",
+    "title": "Record an invoice",
+    "description": "What the invoice says: invoiced is not collected, the collection is recorded when the money arrives."
+  },
+  "stats": {
+    "charges": "Expenses",
+    "chargesHint": "{provisions} provisioned · {expenses} out of the accounts",
+    "net": "Net",
+    "netHint": "revenue − expenses − provisions",
+    "payable": "Available to pay yourself",
+    "payableHintShared": "cash − everything owed on these accounts − due payments",
+    "payableHint": "cash − reserve − this month’s due payments",
+    "paid": "Paid out",
+    "paidHint": "transfers to an account outside the activity"
+  },
+  "months": {
+    "title": "By month",
+    "description": "what came in, and what is left of it",
+    "month": "Month",
+    "provisions": "Provisions",
+    "charges": "Expenses",
+    "net": "Net",
+    "paid": "Paid out",
+    "running": "current",
+    "empty": "Nothing this fiscal year.",
+    "chargesAndProvisions": "Expenses and provisions",
+    "chartLabel": "By month: what came in, the expenses and provisions, the net",
+    "runningNote": "current month, still incomplete"
+  },
+  "payable": {
+    "title": "To pay yourself",
+    "description": "the activity’s cash, minus what is owed and not yet paid",
+    "accounts": "Accounts",
+    "treasury": "Cash",
+    "noAccount": "no account declared on this activity",
+    "sharedAccount": "{name} (shared with {others})",
+    "reserve": "− Reserve",
+    "reserveHint": "what is owed, rule by rule",
+    "review": "to recheck",
+    "owedPaid": "owed {accrued} · paid {paid}",
+    "overpaid": "overpaid {amount}",
+    "passThrough": "collected to be passed on",
+    "assumedBase": "base not entered, minimum assumed",
+    "sharedReserve": "− Reserve of {names}",
+    "sharedReserveHint": "what is owed on the shared accounts",
+    "sharedReserveUnreadable": "what is owed on the shared accounts, except {names}, which has an unreadable rule",
+    "commitments": "− Due payments through {date}",
+    "commitmentsHint": "the activity’s commitments",
+    "available": "Available",
+    "pastYear": "What you can pay yourself is read on the current fiscal year: the cash is today’s, not this fiscal year’s. On this fiscal year, {amount} was paid out."
+  },
+  "payout": {
+    "noOwnAccount": "This activity runs on no account: say so on its sheet, in Settings, to pay yourself.",
+    "noOutsideAccount": "This activity runs on all your accounts: there is no personal account to pay yourself into.",
+    "button": "Pay yourself {amount}",
+    "buttonEmpty": "Pay yourself…",
+    "hint": "opens the transfer to an account outside the activity, amount editable",
+    "hintEmpty": "nothing available: the reserve and due payments cover the cash",
+    "title": "Pay yourself",
+    "description": "A transfer from the activity to a personal account. It changes neither the net nor what is owed: it takes the money out of the activity.",
+    "success": "Transfer declared",
+    "date": "Date",
+    "amount": "Amount",
+    "amountPlaceholder": "1,200.00",
+    "from": "From account",
+    "fromPlaceholder": "Activity account",
+    "to": "To account",
+    "toPlaceholder": "Personal account",
+    "submit": "Declare the transfer"
+  },
+  "outstanding": {
+    "title": "Pending invoices",
+    "description": "“Collected” records the income on the account that received the money",
+    "empty": "Nothing pending: everything invoiced has been collected.",
+    "issuedOn": "issued {date}",
+    "dueOn": "due {date}",
+    "remindedOn": "reminded {date}",
+    "alreadyPaid": "{amount} already collected",
+    "overdue": "{days, plural, one {# day} other {# days}} overdue",
+    "amountLabel": "Amount collected from {client}",
+    "accountPlaceholder": "Into which account",
+    "accountLabel": "Account credited by {client}",
+    "collected": "Collected",
+    "remindedToday": "Reminded today",
+    "collectedToday": "Collected today",
+    "collectedOtherDate": "Collected on another date…",
+    "edit": "Edit",
+    "cancel": "Cancel invoice",
+    "editTitle": "Edit invoice",
+    "editDescription": "Fix what was entered wrong. Income already collected on it keeps its link.",
+    "confirmTitle": "Cancel this invoice?",
+    "confirmBody": "{label}. It leaves the pending invoices and keeps its dates. An invoice already collected, even partly, cannot be canceled: detach the linked income first.",
+    "goBack": "Go back"
+  },
+  "ranks": {
+    "revenueTitle": "Revenue by client",
+    "revenueEmpty": "No revenue this fiscal year.",
+    "chargesTitle": "Expenses by category",
+    "chargesDescription": "out of the activity’s accounts",
+    "chargesEmpty": "No expenses this fiscal year.",
+    "settlementNote": "dashed: settles a provision, already counted in the expenses"
+  },
+  "thresholds": {
+    "title": "Watched thresholds",
+    "description": "where the activity stands, and what changes beyond",
+    "atMost": "{measure} over {periodRef} · at most {value}",
+    "atLeast": "{measure} over {periodRef} · at least {value}",
+    "progress": "{percent}%",
+    "breached": "Exceeded."
+  },
+  "invoices": {
+    "title": "This fiscal year’s invoices",
+    "count": "{count, plural, one {# invoice issued} other {# invoices issued}}",
+    "empty": "No invoices this fiscal year.",
+    "date": "Date",
+    "client": "Client",
+    "reference": "Reference",
+    "base": "Excl. VAT",
+    "vat": "VAT",
+    "withholding": "Withholding",
+    "net": "Net",
+    "state": "Status",
+    "remaining": "{amount} left"
+  },
+  "invoiceForm": {
+    "corrected": "Invoice corrected",
+    "recorded": "Invoice recorded",
+    "activity": "Activity",
+    "activityPlaceholder": "Choose an activity",
+    "client": "Client",
+    "clientPlaceholder": "Client name",
+    "reference": "Reference",
+    "base": "Amount excl. VAT",
+    "basePlaceholder": "1,200.00",
+    "issuedOn": "Issued on",
+    "dueOn": "Due date",
+    "vat": "VAT collected",
+    "withholding": "Withholding",
+    "rate": "Rate (%)",
+    "orAmount": "or in €",
+    "net": "net to receive <value>{amount}</value>",
+    "note": "Note (optional)",
+    "save": "Save",
+    "submit": "Record the invoice"
+  },
+  "kinds": {
+    "business": "Business",
+    "personal": "Personal"
+  },
+  "form": {
+    "corrected": "Activity corrected",
+    "created": "Activity created",
+    "kind": "Type",
+    "name": "Name",
+    "namePlaceholder": "Freelance",
+    "jurisdiction": "Jurisdiction",
+    "jurisdictionPlaceholder": "Where the activity is carried out",
+    "regime": "Regime",
+    "regimePlaceholder": "The regime, in plain words",
+    "startedOn": "Start",
+    "currency": "Currency",
+    "accounts": "Accounts · one account can serve several",
+    "basis": "Taxable event",
+    "basisCash": "Collection",
+    "basisInvoiced": "Invoicing",
+    "fiscalYearMonth": "Fiscal year · month",
+    "fiscalYearDay": "Fiscal year · day",
+    "vatRegistered": "VAT registered",
+    "defaultVatRate": "Default VAT (%)",
+    "deductible": "Expenses",
+    "deductibleAll": "All deductible",
+    "deductibleNone": "None",
+    "exceptAll": "Except these categories",
+    "exceptNone": "Deductible anyway",
+    "save": "Save",
+    "create": "Create the activity"
+  },
+  "list": {
+    "empty": "No activities. Everything counts as personal.",
+    "since": "since {date}",
+    "closedOn": "closed {date}"
+  },
+  "fiche": {
+    "intro": "What is already filed under this activity stays there. The type and the taxable event can no longer change once a rule or an invoice exists.",
+    "exceptions": "Category exceptions",
+    "noCategories": "No category to except.",
+    "exceptionsSaved": "Exceptions saved",
+    "policyAll": "Every expense of the activity is deductible, except those checked here.",
+    "policyNone": "No expense of the activity is deductible, except those checked here.",
+    "reopen": "Reopen",
+    "reopenBody": "The activity accepts movements again. Its history does not change.",
+    "close": "Close",
+    "closeBody": "No movement can be declared on it after this day. The history stays whole, and a new regime is a new activity.",
+    "lastDay": "Last day"
+  }
+}

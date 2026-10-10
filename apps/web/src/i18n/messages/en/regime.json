@@ -1,0 +1,417 @@
+{
+  "words": {
+    "kind": {
+      "social": "Social contributions",
+      "income_tax": "Income tax",
+      "vat": "VAT",
+      "other": "Other"
+    },
+    "measure": {
+      "revenue": "revenue excl. VAT",
+      "revenue_incl_vat": "revenue incl. VAT",
+      "expenses": "deductible expenses",
+      "profit": "profit",
+      "vat_balance": "VAT collected − deductible",
+      "withholdings": "withholding taxes",
+      "withholding_share": "share of revenue withheld",
+      "paid": "payments of another rule",
+      "amount": "amount of another rule",
+      "input": "stated input",
+      "none": "no base"
+    },
+    "periodRef": {
+      "current": "the period",
+      "ytd": "the fiscal year to date",
+      "year": "the whole fiscal year",
+      "year-1": "fiscal year n−1",
+      "year-2": "fiscal year n−2",
+      "rolling-12": "rolling 12 months"
+    },
+    "period": {
+      "month": "monthly",
+      "quarter": "quarterly",
+      "half": "half-yearly",
+      "year": "yearly"
+    },
+    "effect": {
+      "rate_factor": "factor on the rate",
+      "replace_amount": "replacement amount",
+      "coefficient": "coefficient on the base",
+      "exempt": "exemption"
+    },
+    "status": {
+      "extended_by_default": "extended",
+      "unconfirmed": "unconfirmed"
+    }
+  },
+  "shared": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "add": "Add",
+    "remove": "Remove",
+    "delete": "Delete",
+    "name": "Name",
+    "note": "Note",
+    "value": "Value",
+    "status": "Status",
+    "measure": "Measure",
+    "readOn": "Read over",
+    "from": "From",
+    "sourceUrl": "Source (URL)",
+    "verifiedOn": "Verified on",
+    "reviewOn": "Review on",
+    "measureOver": "{measure} over {period}"
+  },
+  "amount": {
+    "rate": "{rate}%",
+    "brackets": "scale, {count, plural, one {# bracket} other {# brackets}}",
+    "elective": "chosen base",
+    "nothing": "nothing to pay",
+    "stated": "stated",
+    "statedAmount": "stated amount"
+  },
+  "measureOptions": {
+    "revenue": "Revenue excl. VAT",
+    "revenue_incl_vat": "Revenue incl. VAT",
+    "expenses": "Deductible expenses",
+    "profit": "Profit",
+    "vat_balance": "VAT collected − deductible",
+    "withholdings": "Withholding taxes",
+    "withholding_share": "Share of revenue withheld (%)",
+    "paid": "Payments of another rule",
+    "amount": "Amount of another rule",
+    "input": "Stated input",
+    "none": "No base"
+  },
+  "page": {
+    "metaTitle": "Activity regime",
+    "title": "Regime of {name}",
+    "personal": "This activity is personal: it is a way to slice the analysis. Only a business activity has a regime.",
+    "partsLabel": "Parts of the regime",
+    "parts": {
+      "rules": "Rules",
+      "inputs": "Inputs",
+      "thresholds": "Thresholds"
+    },
+    "newRule": {
+      "label": "Rule",
+      "title": "New rule",
+      "description": "A levy, as its text sets it. A rate that changes later is not edited: it is replaced."
+    },
+    "newInput": "Input",
+    "newThreshold": "Threshold"
+  },
+  "rules": {
+    "empty": "No rules. Without them, the activity’s charges cannot be computed.",
+    "toReview": "to review",
+    "since": "since {date}",
+    "facts": {
+      "amount": "Amount",
+      "kind": "Type",
+      "period": "Period",
+      "validity": "Validity",
+      "source": "Source"
+    },
+    "edit": "Edit",
+    "supersede": "Replace from a date",
+    "supersedeTitle": "Replace “{name}”",
+    "editDescription": "Fix what was entered wrong. A value that changed on a date is replaced, not edited.",
+    "supersedeDescription": "The current rule ends the day before, and this one takes over with its new values.",
+    "close": {
+      "label": "End",
+      "description": "The rule no longer applies after this day. The periods it covered keep their figures.",
+      "success": "Rule ended",
+      "lastDay": "Last day it applies"
+    },
+    "delete": {
+      "description": "The rule disappears, with its modifiers. If a payment was already declared in its category, it is part of the history: end it instead.",
+      "title": "Delete “{name}”?",
+      "confirm": "The rule disappears, with its modifiers."
+    }
+  },
+  "modifiers": {
+    "label": "Modifiers",
+    "description": "What changes the rule for a while. Eligibility is what you assert: the app reminds you of the condition, it does not check it.",
+    "add": "Add a modifier",
+    "sheetTitle": "Modifier of {name}",
+    "empty": "No modifiers.",
+    "fromDate": "from {date}",
+    "fromStart": "from the start",
+    "months": "{count, plural, one {# month} other {# months}}",
+    "periods": "{count, plural, one {# period} other {# periods}}",
+    "until": "until {date}",
+    "removeLabel": "Remove {label}",
+    "success": "Modifier added",
+    "claim": "What you assert",
+    "claimPlaceholder": "Reduced rate for a new business",
+    "effect": "Effect",
+    "effects": {
+      "rate_factor": "Factor on the rate",
+      "replace_amount": "Replacement amount",
+      "coefficient": "Coefficient on the base",
+      "exempt": "Exemption"
+    },
+    "amount": "Amount (€)",
+    "valuePlaceholder": "0.75",
+    "startsOn": "From (optional)",
+    "duration": "Duration",
+    "durations": {
+      "none": "no end",
+      "months": "calendar months",
+      "periods": "periods of the rule",
+      "endsOn": "until a date"
+    },
+    "monthCount": "Number of months",
+    "periodCount": "Number of periods",
+    "endsOn": "Until",
+    "condition": "Condition shown on screen",
+    "conditionPlaceholder": "first year of business",
+    "statuses": {
+      "confirmed": "Confirmed by a text",
+      "extended_by_default": "Extended for lack of a text",
+      "unconfirmed": "Unconfirmed"
+    }
+  },
+  "inputs": {
+    "empty": "No inputs.",
+    "from": "from {date}",
+    "removeNamed": "Remove {name}",
+    "newTitle": "New input",
+    "success": "Input saved",
+    "notePlaceholder": "where the figure comes from"
+  },
+  "thresholds": {
+    "empty": "No thresholds watched.",
+    "label": "Label",
+    "labelPlaceholder": "VAT exemption",
+    "comparison": "Comparison",
+    "comparisons": {
+      "lte": "while the measure stays at most",
+      "gte": "while the measure stays at least"
+    },
+    "consequence": "What changes beyond it",
+    "consequencePlaceholder": "VAT becomes due as soon as it is crossed",
+    "verifiedOn": "Verified on",
+    "edited": "Threshold updated",
+    "removeDescription": "The threshold stops being watched. Nothing else changes: a threshold warns, it never switches a regime.",
+    "removeTitle": "Remove “{label}”?",
+    "removeConfirm": "The threshold stops being watched.",
+    "newTitle": "New threshold",
+    "created": "Threshold created",
+    "create": "Create the threshold"
+  },
+  "form": {
+    "success": {
+      "created": "Rule created",
+      "edited": "Rule updated",
+      "superseded": "Rule replaced"
+    },
+    "namePlaceholder": "Contributions",
+    "kind": "Type",
+    "statuses": {
+      "confirmed": "Confirmed by a text",
+      "extended_by_default": "Extended for lack of a text",
+      "unconfirmed": "Unconfirmed"
+    },
+    "validFrom": "In force from",
+    "newValuesFrom": "New values from",
+    "validTo": "Until (optional)",
+    "supersedeNote": "The rule in force since {date} ends the day before this date. The statement of past fiscal years keeps its figures.",
+    "sourceUrl": "Source (URL of the text)",
+    "blocks": {
+      "base": "Base",
+      "amount": "Amount",
+      "schedule": "Schedule",
+      "regularization": "Adjustment",
+      "settlement": "Payment"
+    },
+    "baseLevy": "Rule read",
+    "pickRule": "Choose the rule",
+    "baseInputName": "Input name",
+    "coefficient": "Coefficient (optional)",
+    "coefficientPlaceholder": "0.93",
+    "scale": "Measure reading",
+    "scales": {
+      "none": "as is",
+      "per_month": "per month",
+      "per_period": "per period",
+      "annualized": "annualized"
+    },
+    "addBack": "Add back the payments of",
+    "abatement": "Allowance",
+    "abatementModes": {
+      "none": "None",
+      "rate": "Flat rate",
+      "brackets": "By tier"
+    },
+    "rate": "Rate (%)",
+    "minimum": "Minimum (€)",
+    "tierReadOn": "Tier read on",
+    "ofPeriod": "Over the period",
+    "upTo": "Up to",
+    "open": "open",
+    "ratePercent": "Rate %",
+    "addTier": "Add a tier",
+    "floor": "Floor (€)",
+    "cap": "Cap (€)",
+    "credits": "Credits against the base",
+    "creditSource": "What is credited",
+    "creditSources": {
+      "withholdings": "Withholding taxes",
+      "paid": "Payments of a rule",
+      "amount": "Amount of a rule"
+    },
+    "creditShare": "Share credited, row {row}",
+    "removeCredit": "Remove credit {row}",
+    "noRule": "(no rule)",
+    "addCredit": "Add a credit",
+    "cell": "{column}, row {row}",
+    "removeRow": "Remove row {row}",
+    "amountForms": {
+      "rate": "Rate",
+      "brackets": "Scale",
+      "elective_base": "Chosen base",
+      "fixed": "Fixed",
+      "none": "None"
+    },
+    "ratePlaceholder": "21.2",
+    "bracketsMode": "Scale reading",
+    "bracketsModes": {
+      "progressive": "Progressive: each bracket at its own rate",
+      "step": "Stepped: the bracket reached applies in full"
+    },
+    "orEuro": "or € ",
+    "addBracket": "Add a bracket",
+    "minBase": "Min base",
+    "maxBase": "Max base",
+    "addTramo": "Add a tramo",
+    "electiveInput": "Input for the chosen base",
+    "fixedAmount": "Amount per period (€)",
+    "orInput": "or input",
+    "fixedCredit": "Fixed credit (€)",
+    "creditInput": "Credits input",
+    "period": "Frequency",
+    "due": "Due date",
+    "dueTypes": {
+      "end_of_next_month": "End of next month",
+      "after_period": "Window",
+      "fixed_dates": "Fixed dates"
+    },
+    "monthsAfter": "Months after",
+    "fromDay": "From day",
+    "toDay": "To day",
+    "month": "Month",
+    "day": "Day",
+    "yearOffset": "Fiscal year +",
+    "addDate": "Add a date",
+    "lag": "Payment delayed by (months)",
+    "firstDue": "First due date after (days)",
+    "skipped": "Periods absorbed by another return",
+    "regularizationMode": "Mode",
+    "regularizations": {
+      "none": "None: each period is final",
+      "annual_deadzone": "Dead zone at year end",
+      "provisional_then_settled": "Provisional, then final"
+    },
+    "settleOffset": "Adjusted (months after the fiscal year)",
+    "refundOffset": "Refunded (months after)",
+    "settlementCategory": "Category that pays it",
+    "noCategory": "(none)",
+    "deductible": "Paying it reduces profit",
+    "deductibleHint": "often a social contribution, never income tax",
+    "passThrough": "Collected on behalf of the state",
+    "passThroughHint": "VAT is neither income nor an expense, it leaves the net",
+    "note": "Note (optional)",
+    "create": "Create the rule",
+    "supersede": "Replace the rule"
+  },
+  "wizard": {
+    "sheet": {
+      "label": "Activity",
+      "title": "New activity",
+      "description": "An economic sphere: a business with its regime, or personal for analysis only."
+    },
+    "created": "Activity created",
+    "createdNamed": "“{name}” created",
+    "selfConfigure": "I’ll set it up myself",
+    "back": "Back",
+    "namePlaceholder": "Freelance",
+    "type": "Type",
+    "kinds": {
+      "business": "Business",
+      "personal": "Personal"
+    },
+    "jurisdiction": "Jurisdiction",
+    "jurisdictionPlaceholder": "Where you work",
+    "elsewhere": "Elsewhere, I’ll set it up myself",
+    "continue": "Continue",
+    "noModel": "No regime in the catalog matches these answers. Go back to an answer, or set up the activity yourself.",
+    "backToQuestions": "Back to the questions",
+    "backToReview": "Back to the review",
+    "startedOn": "Start",
+    "create": "Create the activity",
+    "whichRegime": "Which regime?",
+    "source": "source",
+    "noSource": "no source",
+    "readOn": "read on {date}",
+    "review": {
+      "activity": "The activity",
+      "basis": "Revenue basis",
+      "bases": {
+        "cash": "On collection",
+        "invoiced": "On invoicing"
+      },
+      "vat": "VAT",
+      "vatRegisteredRate": "Registered, {rate}% by default",
+      "vatRegistered": "Registered",
+      "vatNotRegistered": "Not registered",
+      "expenses": "Expenses",
+      "allDeductible": "All deductible",
+      "noneDeductible": "None deductible",
+      "fiscalYear": "Fiscal year",
+      "opensOn": "opens on {month} {day}",
+      "currency": "Currency",
+      "rules": "The rules",
+      "rulesDescription": "what the activity will owe, and under which text",
+      "thresholds": "The thresholds",
+      "thresholdsDescription": "what changes beyond a value",
+      "inputs": "The inputs",
+      "inputsDescription": "the figures no calculation gives",
+      "atLeast": "at least",
+      "atMost": "at most",
+      "yours": "These rules become yours: you can edit them whenever you like, and later changes to the catalog will not touch them."
+    }
+  },
+  "schedule": {
+    "nothingToday": "Nothing to file or pay today.",
+    "ahead": "Upcoming",
+    "aheadDescription": "whose filing window has not opened",
+    "settled": "Already settled",
+    "settledCount": "{count, plural, one {# due payment} other {# due payments}}",
+    "paidOn": "paid on {date} · estimated at {amount}",
+    "nilReturn": "nil return filed",
+    "nothingDue": "nothing to file or pay",
+    "payBefore": "pay before {date}",
+    "instalment": "installment {instalment}",
+    "absorbed": "part of another return",
+    "nilStillDue": "nothing to pay, the return is still due",
+    "unknownAmount": "amount unknown: {inputs} not set in Settings",
+    "nilButReceipt": "nil return filed, but income has come in since",
+    "overdue": "{count, plural, one {# day overdue} other {# days overdue}}",
+    "dueToday": "due today",
+    "dueIn": "{count, plural, one {in # day} other {in # days}}",
+    "fileNil": "Nil return filed",
+    "amountLabel": "Amount actually paid for {name}",
+    "accountPlaceholder": "From which account",
+    "accountLabel": "Account debited for {name}",
+    "actorPlaceholder": "Paid to",
+    "actorLabel": "Payee for {name}",
+    "paid": "Paid",
+    "paidToday": "Paid today",
+    "paidOtherDate": "Paid on another date…",
+    "refund": "to receive: declare the income",
+    "nothingYet": "nothing to pay for now",
+    "nothingOnItsSide": "nothing to pay on its own",
+    "withdrawNil": "Withdraw the nil return"
+  }
+}

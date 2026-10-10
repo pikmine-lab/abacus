@@ -2,9 +2,10 @@
 
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { isNavigable, type Period, PRESET_LABEL, type Preset } from '@/lib/period'
+import { isNavigable, type Period, type Preset } from '@/lib/period'
 import { cn } from '@/lib/utils'
 
 // The presets one can pick. A bare range carried by a link is not one of them:
@@ -34,6 +35,7 @@ function usePeriodNavigation() {
  * the title of a screen that reads everything over one period.
  */
 export function PeriodStepper({ period, heading }: { period: Period; heading?: boolean }) {
+  const t = useTranslations('common.period')
   const go = usePeriodNavigation()
   const type = heading
     ? 'text-[19px] font-semibold tracking-tight sm:text-[22px]'
@@ -45,7 +47,7 @@ export function PeriodStepper({ period, heading }: { period: Period; heading?: b
         variant="ghost"
         size="icon"
         className={heading ? 'size-8' : 'size-7'}
-        aria-label="Période précédente"
+        aria-label={t('previous')}
         onClick={() => go({ ref: period.prev })}
       >
         <ChevronLeftIcon />
@@ -57,7 +59,7 @@ export function PeriodStepper({ period, heading }: { period: Period; heading?: b
         variant="ghost"
         size="icon"
         className={heading ? 'size-8' : 'size-7'}
-        aria-label="Période suivante"
+        aria-label={t('next')}
         disabled={period.next === null}
         onClick={() => period.next && go({ ref: period.next })}
       >
@@ -68,6 +70,7 @@ export function PeriodStepper({ period, heading }: { period: Period; heading?: b
 }
 
 export function PresetTabs({ period }: { period: Period }) {
+  const t = useTranslations('common.period.presets')
   const go = usePeriodNavigation()
   return (
     <Tabs
@@ -79,7 +82,7 @@ export function PresetTabs({ period }: { period: Period }) {
       <TabsList className="h-7">
         {PRESETS.map((p) => (
           <TabsTrigger key={p} value={p} className="px-2 text-[12px]">
-            {PRESET_LABEL[p]}
+            {t(p)}
           </TabsTrigger>
         ))}
       </TabsList>

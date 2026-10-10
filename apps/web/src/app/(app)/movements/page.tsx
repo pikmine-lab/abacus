@@ -16,6 +16,8 @@ import {
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { ActionCard } from '@/components/composition'
 import { EntryDock } from '@/components/entry-dock'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -27,15 +29,19 @@ import { PageBody } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
 import { SortButton, SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { getFormat } from '@/lib/format-server'
 import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
 import { resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
 import { sorter } from '@/lib/sort'
-import { eur, frDate, frMonth, idParam, money, NONE } from '@/lib/utils'
+import { idParam, NONE } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Mouvements' }
+export async function generateMetadata() {
+  const t = await getTranslations('movements')
+  return { title: t('title') }
+}
 
 const PATH = '/movements'
 const KINDS: MovementKind[] = ['expense', 'income', 'transfer']
@@ -50,9 +56,11 @@ export default async function MovementsPage({
   if (!session) redirect('/login')
   const userId = session.user.id
   const params = await searchParams
+  const t = await getTranslations('movements')
+  const format = await getFormat()
   // A ledger opens on a window wide enough to hold something, not on the
   // first day of the month.
-  const period = resolvePeriod(params, today(), '90d')
+  const period = resolvePeriod({ t: await getTranslations('common.period'), format }, params, today(), '90d')
 
   const limit = Number(params.limit) > 0 ? Math.min(Number(params.limit), 1000) : PAGE_SIZE
 
@@ -136,23 +144,26 @@ export default async function MovementsPage({
     // sent lands in a table that stays readable next to it.
     <EntryDock>
       <PeriodHeader
-        title="Mouvements"
+        title={t('title')}
         period={period}
         reading={reading}
         actions={
-          <EntrySheet label="Déclarer" title="Déclarer un mouvement">
+          <EntrySheet label={t('declare')} title={t('declareTitle')}>
             <MovementForm
               {...options}
               advances={openAdvances.map((a) => ({
                 id: a.movementId,
-                happenedOn: frDate(a.happenedOn),
+                happenedOn: format.date(a.happenedOn),
                 amount: a.expected,
                 remaining: a.remaining,
               }))}
               invoices={openInvoices.map((i) => ({
                 id: i.id,
                 client: actorName.get(i.actorId) ?? '',
-                label: `${i.reference ?? frDate(i.issuedOn)} · reste ${eur(Number(i.remainingAmount), 2)}`,
+                label: t('list.invoiceOption', {
+                  name: i.reference ?? format.date(i.issuedOn),
+                  remaining: format.eur(Number(i.remainingAmount), 2),
+                }),
               }))}
               today={today()}
             />
@@ -169,7 +180,7 @@ export default async function MovementsPage({
 
       <PageBody className="gap-6">
         {openAdvances.length > 0 && (
-          <ActionCard label="À récupérer">
+          <ActionCard label={t('list.toRecover')}>
             <OutstandingAdvances advances={openAdvances} today={today()} back={PATH} />
           </ActionCard>
         )}
@@ -180,34 +191,46 @@ export default async function MovementsPage({
           {count > 0 && (
             <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[12.5px]">
               <span className="text-muted-foreground">
-                <span className="font-semibold tabular text-foreground">{count}</span> mouvement
-                {count > 1 ? 's' : ''}
+                {t.rich('list.count', {
+                  count,
+                  strong: (chunks) => <span className="font-semibold tabular text-foreground">{chunks}</span>,
+                })}
               </span>
               {Number(selection.expense) > 0 && (
                 <span className="text-faint">
-                  dépenses{' '}
-                  <span className="font-mono tabular text-muted-foreground">{eur(selection.expense)}</span>
+                  {t.rich('list.expenses', {
+                    value: format.eur(selection.expense),
+                    amount: (chunks) => (
+                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                    ),
+                  })}
                 </span>
               )}
               {Number(selection.income) > 0 && (
                 <span className="text-faint">
-                  revenus{' '}
-                  <span className="font-mono tabular text-muted-foreground">{eur(selection.income)}</span>
+                  {t.rich('list.income', {
+                    value: format.eur(selection.income),
+                    amount: (chunks) => (
+                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                    ),
+                  })}
                 </span>
               )}
               {Number(selection.transfer) > 0 && (
                 <span className="text-faint">
-                  virements{' '}
-                  <span className="font-mono tabular text-muted-foreground">{eur(selection.transfer)}</span>
+                  {t.rich('list.transfers', {
+                    value: format.eur(selection.transfer),
+                    amount: (chunks) => (
+                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                    ),
+                  })}
                 </span>
               )}
             </div>
           )}
 
           {movements.length === 0 ? (
-            <p className="py-8 text-center text-[13px] text-faint">
-              Rien ne correspond à cette sélection. Élargis la période ou efface les filtres.
-            </p>
+            <p className="py-8 text-center text-[13px] text-faint">{t('list.empty')}</p>
           ) : (
             // Columns follow the room the table has, not the screen: the docked
             // panel narrows it as much as a tablet does. What qualifies a line
@@ -220,7 +243,7 @@ export default async function MovementsPage({
                     <SortHead
                       sorter={sort}
                       field="date"
-                      label="Date"
+                      label={t('fields.date')}
                       className="hidden w-20 @md:table-cell"
                     />
                     <TableHead
@@ -239,33 +262,45 @@ export default async function MovementsPage({
                           group instead of opening a gap that reads as a
                           column of its own. */}
                       <span className="flex items-center gap-1.5">
-                        <SortButton sorter={sort} field="date" label="Date" className="@md:hidden" />
+                        <SortButton
+                          sorter={sort}
+                          field="date"
+                          label={t('fields.date')}
+                          className="@md:hidden"
+                        />
                         <span aria-hidden className="text-faint @md:hidden">
                           ·
                         </span>
-                        <SortButton sorter={sort} field="counterparty" label="Contrepartie" />
+                        <SortButton sorter={sort} field="counterparty" label={t('fields.counterparty')} />
                       </span>
                     </TableHead>
                     <SortHead
                       sorter={sort}
                       field="account"
-                      label="Compte"
+                      label={t('fields.account')}
                       className="hidden @2xl:table-cell"
                     />
                     <SortHead
                       sorter={sort}
                       field="category"
-                      label="Catégorie"
+                      label={t('fields.category')}
                       className="hidden @2xl:table-cell"
                     />
                     {/* Not sortable: the column only exists while the selection
                     holds a live claim, so an order resting on it would come
                     and go with the filters. */}
                     {owedInList && (
-                      <TableHead className="hidden w-28 text-right @3xl:table-cell">À rembourser</TableHead>
+                      <TableHead className="hidden w-28 text-right @3xl:table-cell">
+                        {t('list.owed')}
+                      </TableHead>
                     )}
-                    <SortHead sorter={sort} field="amount" label="Montant" className="w-28 text-right" />
-                    <TableHead className="w-9 sr-only">Actions</TableHead>
+                    <SortHead
+                      sorter={sort}
+                      field="amount"
+                      label={t('fields.amount')}
+                      className="w-28 text-right"
+                    />
+                    <TableHead className="w-9 sr-only">{t('list.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,7 +311,7 @@ export default async function MovementsPage({
                       ? `${accountName.get(m.sourceAccountId!) ?? '?'} → ${accountName.get(m.targetAccountId!) ?? '?'}`
                       : (actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!) ?? '?')
                     const account = isTransfer
-                      ? 'virement interne'
+                      ? t('list.internalTransfer')
                       : (accountName.get((isIncome ? m.targetAccountId : m.sourceAccountId)!) ?? '?')
                     const category = m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''
                     const card = m.cardId && (
@@ -284,7 +319,7 @@ export default async function MovementsPage({
                         href={`/accounts/cards/${m.cardId}?from=movements`}
                         className="text-[11px] text-faint transition-colors hover:text-primary"
                       >
-                        carte {cardName.get(m.cardId) ?? ''}
+                        {t('list.card', { name: cardName.get(m.cardId) ?? '' })}
                       </Link>
                     )
                     // What is still owed, which is not the same as "was an advance":
@@ -293,15 +328,15 @@ export default async function MovementsPage({
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
-                          {frDate(m.happenedOn)}
+                          {format.date(m.happenedOn)}
                           {/* Only when it differs from the date's own month: the
                           arrow is there to be noticed, not to repeat. */}
                           {m.accrualMonth && (
                             <span
                               className="block text-[10.5px] text-primary"
-                              title={`Compté dans le mois de ${frMonth(m.accrualMonth)}`}
+                              title={t('list.accruedIn', { month: format.month(m.accrualMonth) })}
                             >
-                              → {frMonth(m.accrualMonth)}
+                              → {format.month(m.accrualMonth)}
                             </span>
                           )}
                           {/* The date above is the debit of the card's statement: the
@@ -310,13 +345,11 @@ export default async function MovementsPage({
                             <span
                               className="block text-[10.5px]"
                               title={
-                                m.awaitingDebit
-                                  ? 'Date d’achat. Prélèvement prévu à la date ci-dessus, relevé à valider'
-                                  : 'Date d’achat, prélevé à la date ci-dessus'
+                                m.awaitingDebit ? t('list.purchaseAwaitingDebit') : t('list.purchaseDebited')
                               }
                             >
-                              achat {frDate(m.purchasedOn)}
-                              {m.awaitingDebit && <span className="block">prévu</span>}
+                              {t('list.purchasedOn', { date: format.date(m.purchasedOn) })}
+                              {m.awaitingDebit && <span className="block">{t('list.expected')}</span>}
                             </span>
                           )}
                         </TableCell>
@@ -331,7 +364,7 @@ export default async function MovementsPage({
                               the line is what gets cut. */}
                           <span className="block truncate text-[11.5px] text-faint @2xl:hidden">
                             <span className="font-mono text-[11px] @md:hidden">
-                              {frDate(m.happenedOn)} ·{' '}
+                              {format.date(m.happenedOn)} ·{' '}
                             </span>
                             {category && `${category} · `}
                             {account}
@@ -340,11 +373,13 @@ export default async function MovementsPage({
                           {(m.accrualMonth || m.purchasedOn) && (
                             <span className="block truncate font-mono text-[10.5px] text-faint @md:hidden">
                               {m.accrualMonth && (
-                                <span className="text-primary">→ {frMonth(m.accrualMonth)}</span>
+                                <span className="text-primary">→ {format.month(m.accrualMonth)}</span>
                               )}
                               {m.accrualMonth && m.purchasedOn && ' · '}
                               {m.purchasedOn &&
-                                `achat ${frDate(m.purchasedOn)}${m.awaitingDebit ? ', prévu' : ''}`}
+                                t(m.awaitingDebit ? 'list.purchasedOnExpected' : 'list.purchasedOn', {
+                                  date: format.date(m.purchasedOn),
+                                })}
                             </span>
                           )}
                           {m.note && <span className="block truncate text-[11px] text-faint">{m.note}</span>}
@@ -361,7 +396,7 @@ export default async function MovementsPage({
                             {owed !== undefined && (
                               <>
                                 <span className="block font-mono text-[12.5px] tabular text-primary">
-                                  {eur(owed, 2)}
+                                  {format.eur(owed, 2)}
                                 </span>
                                 <span className="block truncate text-[11px] text-faint">
                                   {actorName.get(m.expectedRefundFromActorId!) ?? '?'}
@@ -376,17 +411,20 @@ export default async function MovementsPage({
                           }`}
                         >
                           {isIncome ? '+' : isTransfer ? '' : '−'}
-                          {eur(Number(m.amount), 2)}
+                          {format.eur(Number(m.amount), 2)}
                           {m.originalCurrency && (
                             <span className="block text-[11px] font-normal text-faint">
-                              {money(Number(m.originalAmount), m.originalCurrency)}
+                              {format.money(Number(m.originalAmount), m.originalCurrency)}
                             </span>
                           )}
                           {/* Without its column, what is owed keeps a place by the
                               amount it is part of, never on the note's line. */}
                           {owed !== undefined && (
                             <span className="block font-sans text-[11px] font-normal text-primary @3xl:hidden">
-                              {actorName.get(m.expectedRefundFromActorId!) ?? '?'} doit {eur(owed, 2)}
+                              {t('list.owes', {
+                                debtor: actorName.get(m.expectedRefundFromActorId!) ?? '?',
+                                amount: format.eur(owed, 2),
+                              })}
                             </span>
                           )}
                           {/* Under the amount, because that is what it qualifies:
@@ -394,9 +432,9 @@ export default async function MovementsPage({
                           {m.ghost && (
                             <span
                               className="block text-[11px] font-normal text-faint"
-                              title="Compté dans les soldes, dans aucune analyse"
+                              title={t('list.ghostHint')}
                             >
-                              fantôme
+                              {t('list.ghost')}
                             </span>
                           )}
                         </TableCell>
@@ -404,7 +442,7 @@ export default async function MovementsPage({
                           <MovementRowActions
                             {...options}
                             today={today()}
-                            label={`${frDate(m.happenedOn)} · ${counterparty} · ${eur(Number(m.amount), 2)}`}
+                            label={`${format.date(m.happenedOn)} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
                             draft={movementDraft(m, actorName)}
                           />
                         </TableCell>
@@ -437,6 +475,7 @@ function MoreLink({
   shown: number
   total: number
 }) {
+  const t = useTranslations('movements.list')
   const next = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][],
   )
@@ -446,7 +485,7 @@ function MoreLink({
       href={`?${next}`}
       className="self-start text-[12.5px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
     >
-      Afficher plus ({shown} sur {total})
+      {t('more', { shown, total })}
     </a>
   )
 }

@@ -10,11 +10,28 @@ pour ce que chaque geste fait et refuse. Une règle d'écran ci-dessous dit comm
 se présente, jamais ce qu'il autorise : ça, c'est le service qui le tranche, et les deux
 interfaces le lisent au même endroit.
 
+## Les textes et les formats
+
+- **Aucun texte affiché n'est écrit dans un composant.** Libellé, phrase, `aria-label`,
+  `title`, `placeholder`, titre de page, message d'erreur : tout vit dans les catalogues de
+  `src/i18n/messages/<langue>/`, un fichier par groupe d'écrans, et se lit par
+  `useTranslations` (composant client ou serveur synchrone) ou `getTranslations` (serveur
+  asynchrone, action). Le français fait référence : ses clés typent les appels, et un test
+  exige que chaque autre langue ait exactement les mêmes clés et les mêmes arguments. Une
+  phrase qui porte une valeur passe par un argument ICU, jamais par une concaténation, et
+  un pluriel par `plural`.
+- **Un montant ou une date passe par les formateurs de la langue** : `useFormat()`
+  (`lib/format.ts`) ou `getFormat()` (`lib/format-server.ts`). Un `toLocaleString('fr-FR')`
+  ou un nom de mois écrit en dur écrirait des chiffres français sous une page anglaise.
+- **La langue se résout dans `src/i18n/request.ts`** : la préférence du profil, sinon celle
+  du navigateur, sinon le français. Ni l'URL ni un cookie ne la portent. Seule la page
+  Réglages l'écrit, et le MCP par `manage_preferences`.
+
 ## Le système de composants
 
 **Un besoin d'interface passe d'abord par le système, jamais par un élément natif.** La
 base est shadcn/ui (style new-york), installée par son CLI dans `src/components/ui/`. Une
-date se saisit avec `Calendar` + `Popover` (locale `fr`), un choix exclusif avec `Tabs`,
+date se saisit avec `Calendar` + `Popover` (locale `CALENDAR_LOCALE`), un choix exclusif avec `Tabs`,
 une liste déroulante avec `Select` Radix, une confirmation destructive avec `AlertDialog`,
 un panneau avec `Sheet`. Un `<input type="date">` ou un `<select>` du navigateur casse la
 palette, ignore le thème et ne se comporte pas comme le reste : si un composant manque, il
@@ -29,8 +46,8 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
 
 - **Une devise se choisit dans un combobox recherchable** (`CurrencySelect`), jamais dans
   un Select brut : ~180 codes n'ont ni vue d'ensemble ni tri utile (le problème du
-  sélecteur de pays, mesuré par Baymard). La recherche matche le code et le nom français,
-  accents ignorés (« etats » trouve USD), le code passant devant ; les devises courantes
+  sélecteur de pays, mesuré par Baymard). La recherche matche le code et le nom dans la
+  langue affichée, accents ignorés (« etats » trouve USD), le code passant devant ; les devises courantes
   ouvrent la liste, le déclencheur reste compact et montre le code, EUR par défaut. Posé à
   côté du montant, dont il qualifie l'unité.
 - **Un mois se choisit dans une grille d'année** (`MonthField`), jamais dans un Select :

@@ -1,10 +1,11 @@
 import { db } from '../db/client.ts'
 import { getPreferences, upsertPreferences } from '../db/datasources/preferences.ts'
-import type { RankingView, Reading } from '../domain/types.ts'
+import type { Language, RankingView, Reading } from '../domain/types.ts'
 
 /**
  * What a person settles once and never has to say again: which month they
- * count a movement in, and how the Analyse screen draws its ranking.
+ * count a movement in, how the Analyse screen draws its ranking, and which
+ * language the web interface speaks.
  *
  * The distinction this file holds is between a preference and a switch. The
  * preference is where every session starts, and it changes only when someone
@@ -43,4 +44,22 @@ export async function rankingViewPreference(userId: string): Promise<RankingView
 export async function setRankingViewPreference(userId: string, view: RankingView): Promise<RankingView> {
   const row = await upsertPreferences(db(), userId, { rankingView: view })
   return row.rankingView
+}
+
+/** Null when the person never chose: the interface follows their browser. */
+export async function languagePreference(userId: string): Promise<Language | null> {
+  const row = await getPreferences(db(), userId)
+  return row?.language ?? null
+}
+
+/**
+ * A display preference: it changes the words around the figures, never the
+ * data. Null hands the choice back to the browser.
+ */
+export async function setLanguagePreference(
+  userId: string,
+  language: Language | null,
+): Promise<Language | null> {
+  const row = await upsertPreferences(db(), userId, { language })
+  return row.language
 }

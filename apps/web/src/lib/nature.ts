@@ -1,14 +1,9 @@
 import type { AssetNature } from '@abacus/core/domain'
 
-/** The masses, in the words a holder uses for them. */
-export const NATURE_LABEL: Record<AssetNature, string> = {
-  equity: 'Actions',
-  fund: 'Fonds',
-  crypto: 'Crypto',
-  bond: 'Obligations',
-  real_estate: 'Immobilier',
-  other: 'Autre',
-}
+/*
+ * The masses' names, in the words a holder uses for them, live in the catalog
+ * (`investments.natures.<nature>`): this module only holds their orders.
+ */
 
 /**
  * What can be declared by hand, which is only ever asked of an asset no source
@@ -22,4 +17,4 @@ export const DECLARED_NATURES: AssetNature[] = ['real_estate', 'equity', 'fund',
  * watchlist: what is quoted first, "other" last, so the list does not reshuffle
  * every time a line is added.
  */
-export const NATURE_ORDER = Object.keys(NATURE_LABEL) as AssetNature[]
+export const NATURE_ORDER: AssetNature[] = ['equity', 'fund', 'crypto', 'bond', 'real_estate', 'other']

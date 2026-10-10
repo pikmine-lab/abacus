@@ -27,6 +27,7 @@ import {
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { CommitmentRow } from '@/components/commitment-blocks'
 import { ActionCard, Block, Figure, FigureRow } from '@/components/composition'
@@ -50,12 +51,15 @@ import { SortMenu } from '@/components/sort'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Placements' }
+export async function generateMetadata() {
+  const t = await getTranslations('investments')
+  return { title: t('title') }
+}
 
 const PATH = '/investments'
 
@@ -70,6 +74,8 @@ export default async function InvestmentsPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+  const t = await getTranslations('investments')
+  const format = await getFormat()
 
   // Prices come from the read, never from a scheduler: whoever opens this page
   // gets them as fresh as the sources allow. It never throws, and a source that
@@ -163,24 +169,22 @@ export default async function InvestmentsPage({
   // on a wide screen, gathered behind one menu on a phone, where the header
   // has room for a single named button.
   const followEntry = {
-    label: 'Suivre un actif',
-    title: 'Suivre un actif',
-    description:
-      'Sans le détenir : son cours s’affiche, et le jour où tu en achètes il devient une position.',
+    label: t('page.follow.title'),
+    title: t('page.follow.title'),
+    description: t('page.follow.description'),
     content: <FollowForm />,
   }
   const planEntry = {
-    label: 'Programmer un versement',
-    title: 'Versement programmé',
-    description:
-      'Une somme qui part d’un compte vers un compte d’investissement, à intervalle régulier, et y achète. Le virement et l’achat s’écrivent ensemble à chaque échéance.',
+    label: t('page.plan.label'),
+    title: t('page.plan.title'),
+    description: t('page.plan.description'),
     content: <InvestmentPlanForm options={placementOptions} today={now} />,
   }
   const entry = (
     <>
       <div className="contents max-sm:hidden">
         <EntrySheet
-          label="Suivre"
+          label={t('page.follow.label')}
           title={followEntry.title}
           description={followEntry.description}
           variant="outline"
@@ -197,13 +201,13 @@ export default async function InvestmentsPage({
         </EntrySheet>
       </div>
       <div className="contents sm:hidden">
-        <EntryMenu label="Autres déclarations" entries={[followEntry, planEntry]} />
+        <EntryMenu label={t('page.otherEntries')} entries={[followEntry, planEntry]} />
       </div>
       <EntrySheet
-        label="Déclarer une opération"
-        short="Déclarer"
-        title="Opération"
-        description="Ce qui se passe dans le compte. Alimenter le compte ou en sortir de l’argent est un virement, à déclarer dans les mouvements."
+        label={t('page.operation.label')}
+        short={t('page.operation.short')}
+        title={t('page.operation.title')}
+        description={t('page.operation.description')}
       >
         <OperationForm
           accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
@@ -218,25 +222,24 @@ export default async function InvestmentsPage({
     // Operations are declared in bursts: the panel docks beside the page, so
     // each one sent lands in a journal that stays readable next to it.
     <EntryDock>
-      <PageHeader title="Placements">{investmentAccounts.length > 0 && entry}</PageHeader>
+      <PageHeader title={t('title')}>{investmentAccounts.length > 0 && entry}</PageHeader>
 
       {/* One container for the band and the list, so the list's figures line up under its split. */}
       <PageBody className="@container gap-10">
         {investmentAccounts.length === 0 ? (
           <EmptyLine>
-            Aucun compte d’investissement. Crée-le dans{' '}
-            <Link href="/accounts" className="text-primary hover:underline">
-              Comptes
-            </Link>
-            , puis déclare ici ce que tu y détiens.
+            {t.rich('page.noAccount', {
+              link: (chunks) => (
+                <Link href="/accounts" className="text-primary hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </EmptyLine>
         ) : firstOperation === null && assets.length === 0 && plans.length === 0 ? (
           // One line, and the panels the header already carries: a title, a
           // description and a sentence all saying "nothing yet" said it thrice.
-          <EmptyLine>
-            Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son ISIN
-            ou son fournisseur.
-          </EmptyLine>
+          <EmptyLine>{t('page.firstBuy')}</EmptyLine>
         ) : (
           <>
             {/* The figure that dominates with what it rests on under it, beside
@@ -245,30 +248,24 @@ export default async function InvestmentsPage({
               <div className="flex min-w-0 flex-col gap-4">
                 <Figure
                   hero
-                  label="Valorisation"
+                  label={t('words.value')}
                   value={value}
-                  delta={
-                    positionCount > 0 ? { value: unrealized, label: 'de plus-value latente' } : undefined
-                  }
-                  note={
-                    unpriced > 0
-                      ? `espèces + positions cotées ; ${unpriced} sans cours`
-                      : 'espèces + positions au dernier cours'
-                  }
+                  delta={positionCount > 0 ? { value: unrealized, label: t('page.unrealized') } : undefined}
+                  note={unpriced > 0 ? t('page.valueHintUnpriced', { count: unpriced }) : t('page.valueHint')}
                 />
                 <FigureRow compact>
                   <Figure
                     compact
                     signed
-                    label="Performance"
+                    label={t('words.performance')}
                     value={totalReturn}
                     // The method is the number: what it includes, and what it is
                     // measured against. Naming the contributions is what makes it
                     // checkable by hand.
                     note={
                       totalReturn === null
-                        ? 'un cours manque : le calcul serait sous-estimé'
-                        : `dividendes et frais compris, contre ${eur(contributions)} d’apports`
+                        ? t('page.performanceMissing')
+                        : t('page.performanceHint', { amount: format.eur(contributions) })
                     }
                   />
                   {/* Counted apart, never beside the committed costs: this money
@@ -276,10 +273,10 @@ export default async function InvestmentsPage({
                   {plans.length > 0 && (
                     <Figure
                       compact
-                      label="Épargne programmée"
+                      label={t('page.scheduled')}
                       value={monthlyInvested}
-                      per="/mois"
-                      note={`soit ${eur(monthlyInvested * 12)} par an`}
+                      per={t('page.perMonth')}
+                      note={t('page.scheduledYearly', { amount: format.eur(monthlyInvested * 12) })}
                     />
                   )}
                 </FigureRow>
@@ -291,7 +288,7 @@ export default async function InvestmentsPage({
               {pendingPlacements.length > 0 && (
                 <div className="relative min-h-0">
                   <div className="flex flex-col @4xl:absolute @4xl:inset-x-0 @4xl:top-0 @4xl:max-h-full">
-                    <ActionCard label="À confirmer" scrolls>
+                    <ActionCard label={t('page.toConfirm')} scrolls>
                       <PendingOccurrences
                         back={PATH}
                         aheadInPanel
@@ -320,15 +317,15 @@ export default async function InvestmentsPage({
             {series.some((p) => Number(p.holdings) > 0) && (
               // The selected reading names the block: a title over a tab saying
               // the same word said it twice.
-              <section aria-label="Évolution" className="flex min-w-0 flex-col gap-3">
+              <section aria-label={t('page.evolution.title')} className="flex min-w-0 flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <UrlTabs
                     param="chart"
                     fallback="performance"
-                    ariaLabel="Lecture du graphe"
+                    ariaLabel={t('page.evolution.readingLabel')}
                     options={[
-                      { value: 'performance', label: 'Performance' },
-                      { value: 'value', label: 'Valorisation' },
+                      { value: 'performance', label: t('words.performance') },
+                      { value: 'value', label: t('words.value') },
                     ]}
                   />
                   <div className="ml-auto">
@@ -340,21 +337,21 @@ export default async function InvestmentsPage({
                   // not jump when money comes in (both series rise by the same
                   // amount), so every move it makes is one the market made.
                   <BalanceChart
-                    lines={[{ id: 'performance', name: 'Performance' }]}
+                    lines={[{ id: 'performance', name: t('words.performance') }]}
                     rows={series.map((point) => ({
                       day: point.day,
                       lineId: 'performance',
                       balance: Number(point.cash) + Number(point.holdings) - Number(point.contributions),
                     }))}
                     today={now}
-                    baseline={{ value: 0, name: 'Apports' }}
-                    ariaLabel="Performance des placements contre les apports"
+                    baseline={{ value: 0, name: t('words.contributions') }}
+                    ariaLabel={t('page.evolution.performanceAria')}
                   />
                 ) : (
                   <BalanceChart
                     lines={[
-                      { id: 'value', name: 'Valorisation' },
-                      { id: 'contributions', name: 'Apports' },
+                      { id: 'value', name: t('words.value') },
+                      { id: 'contributions', name: t('words.contributions') },
                     ]}
                     rows={series.flatMap((point) => [
                       {
@@ -365,7 +362,7 @@ export default async function InvestmentsPage({
                       { day: point.day, lineId: 'contributions', balance: Number(point.contributions) },
                     ])}
                     today={now}
-                    ariaLabel="Valorisation des placements et apports"
+                    ariaLabel={t('page.evolution.valueAria')}
                   />
                 )}
               </section>
@@ -379,7 +376,7 @@ export default async function InvestmentsPage({
 
             {/* The accounts keep what the masses cannot say: their own worth,
                 and the cash beside the holdings. */}
-            <Block label="Comptes">
+            <Block label={t('page.accounts')}>
               <FigureRow compact>
                 {held.map(({ account, positions, cash: accountCash, value: accountValue }) => (
                   <Figure
@@ -389,10 +386,10 @@ export default async function InvestmentsPage({
                     value={Number(accountValue)}
                     note={
                       Number(accountCash) < 0
-                        ? `${eur(-Number(accountCash), 2)} à alimenter`
+                        ? t('page.toFund', { cash: format.eur(-Number(accountCash), 2) })
                         : positions.length === 0
-                          ? 'aucune position'
-                          : `${eur(Number(accountCash), 2)} en espèces`
+                          ? t('page.noPositionShort')
+                          : t('page.inCash', { cash: format.eur(accountCash, 2) })
                     }
                   />
                 ))}
@@ -400,7 +397,7 @@ export default async function InvestmentsPage({
             </Block>
 
             {followed.length > 0 && (
-              <Block label="Suivis">
+              <Block label={t('page.followed.title')}>
                 <AssetRows assets={followed} />
               </Block>
             )}
@@ -409,17 +406,17 @@ export default async function InvestmentsPage({
                 down what the page is opened for. */}
             {plans.length > 0 && (
               <FoldSection
-                title="Versements programmés"
-                description={`${plans.length} en cours`}
+                title={t('page.plans.title')}
+                description={t('page.plans.count', { count: plans.length })}
                 action={
                   plans.length > 1 && (
                     <SortMenu
                       sorter={planSort}
                       options={[
-                        { field: 'monthly', label: 'Épargne mensuelle' },
-                        { field: 'amount', label: 'Montant versé' },
-                        { field: 'next', label: 'Prochaine échéance' },
-                        { field: 'label', label: 'Nom' },
+                        { field: 'monthly', label: t('page.plans.sorts.monthly') },
+                        { field: 'amount', label: t('page.plans.sorts.amount') },
+                        { field: 'next', label: t('page.plans.sorts.next') },
+                        { field: 'label', label: t('words.name') },
                       ]}
                     />
                   )
@@ -444,18 +441,18 @@ export default async function InvestmentsPage({
             )}
 
             <Block
-              label="Opérations"
+              label={t('words.operations')}
               className="gap-2"
               // What the slice holds depends on the order it was cut in, so it
               // is named rather than left to be assumed.
               qualifier={
                 operationSort.current.field === 'date' && operationSort.current.direction === 'desc'
-                  ? `les ${OPERATION_PAGE} dernières`
-                  : `${OPERATION_PAGE} au plus, dans cet ordre`
+                  ? t('page.latest', { count: OPERATION_PAGE })
+                  : t('page.atMost', { count: OPERATION_PAGE })
               }
             >
               {operations.length === 0 ? (
-                <EmptyLine>Rien de déclaré pour l’instant.</EmptyLine>
+                <EmptyLine>{t('page.noOperation')}</EmptyLine>
               ) : (
                 <OperationRows
                   sorter={operationSort}

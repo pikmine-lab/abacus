@@ -37,7 +37,7 @@ export function EntrySheet({
   children,
   variant = 'default',
 }: {
-  /** Button text. Keep it a verb: "Déclarer", "Ajouter un compte". */
+  /** Button text. Keep it a verb: "Declare", "Add an account". */
   label: string
   /** The word kept on a phone, where a header carrying several entries has no room for the label. */
   short?: string

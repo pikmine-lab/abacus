@@ -2,6 +2,7 @@
 
 import { ListFilterIcon, SearchIcon, XIcon } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toggle } from '@/components/ui/toggle'
 import { NONE } from '@/lib/utils'
-import { UNSET_LABEL } from './breakdown-bars'
 
 interface Option {
   id: string
@@ -20,12 +20,7 @@ interface Option {
 
 const ALL = '__all__'
 
-const KINDS = [
-  { value: 'all', label: 'Tous' },
-  { value: 'expense', label: 'Dépenses' },
-  { value: 'income', label: 'Revenus' },
-  { value: 'transfer', label: 'Virements' },
-]
+const KINDS = ['all', 'expense', 'income', 'transfer'] as const
 
 const FILTER_KEYS = ['account', 'category', 'actor', 'activity', 'q', 'type', 'advances']
 
@@ -50,6 +45,7 @@ export function MovementFilters({
   actors: Option[]
   activities: Option[]
 }) {
+  const t = useTranslations('movements')
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -85,21 +81,21 @@ export function MovementFilters({
   // ranking of the analysis names it, since that is where one comes from. An
   // actor never is: every expense goes to one and every income comes from one.
   const dimensions = [
-    { key: 'account', name: 'Compte', all: 'Tous les comptes', options: accounts },
+    { key: 'account', name: t('fields.account'), all: t('filters.allAccounts'), options: accounts },
     {
       key: 'category',
-      name: 'Catégorie',
-      all: 'Toutes catégories',
+      name: t('fields.category'),
+      all: t('filters.allCategories'),
       options: categories,
-      none: UNSET_LABEL.category,
+      none: t('filters.noCategory'),
     },
-    { key: 'actor', name: 'Acteur', all: 'Tous les acteurs', options: actors },
+    { key: 'actor', name: t('fields.actor'), all: t('filters.allActors'), options: actors },
     {
       key: 'activity',
-      name: 'Activité',
-      all: 'Toutes activités',
+      name: t('fields.activity'),
+      all: t('filters.allActivities'),
       options: activities,
-      none: UNSET_LABEL.activity,
+      none: t('filters.noActivity'),
     },
   ].filter((d) => d.options.length > 0 || (d.none && searchParams.get(d.key) === NONE))
 
@@ -109,10 +105,11 @@ export function MovementFilters({
   const chosen = dimensions.flatMap((d) => {
     const raw = searchParams.get(d.key)
     const name = d.none && raw === NONE ? d.none : d.options.find((o) => o.id === raw)?.name
-    return name ? [{ key: d.key, label: `${d.name} : ${name}`, name }] : []
+    return name ? [{ key: d.key, label: t('filters.chip', { dimension: d.name, name }), name }] : []
   })
   const advancesOnly = searchParams.get('advances') === '1'
-  if (advancesOnly) chosen.push({ key: 'advances', label: 'Avances en attente', name: 'Avances en attente' })
+  if (advancesOnly)
+    chosen.push({ key: 'advances', label: t('filters.advancesPending'), name: t('filters.advancesPending') })
 
   const active = FILTER_KEYS.some((k) => searchParams.get(k))
 
@@ -123,8 +120,8 @@ export function MovementFilters({
         <Input
           value={term}
           onChange={(e) => onSearch(e.target.value)}
-          placeholder="Acteur ou note…"
-          aria-label="Rechercher"
+          placeholder={t('filters.searchPlaceholder')}
+          aria-label={t('filters.search')}
           className="h-7 w-full pl-7 text-[12.5px]"
         />
       </div>
@@ -138,9 +135,9 @@ export function MovementFilters({
         className="order-1 w-full @2xl:order-none @2xl:w-auto"
       >
         <TabsList className="h-7 w-full @2xl:w-auto">
-          {KINDS.map((k) => (
-            <TabsTrigger key={k.value} value={k.value} className="px-2 text-[12px]">
-              {k.label}
+          {KINDS.map((kind) => (
+            <TabsTrigger key={kind} value={kind} className="px-2 text-[12px]">
+              {t(`filters.kinds.${kind}`)}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -151,7 +148,7 @@ export function MovementFilters({
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-[12px] font-normal">
               <ListFilterIcon className="size-3.5 text-faint" />
-              Filtres
+              {t('filters.filters')}
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="flex w-64 flex-col gap-3 p-3">
@@ -191,7 +188,7 @@ export function MovementFilters({
               onPressedChange={(on) => push((p) => (on ? p.set('advances', '1') : p.delete('advances')))}
               className="h-8 justify-start px-2 text-[12.5px] font-normal text-muted-foreground data-[state=on]:text-primary"
             >
-              Avances en attente
+              {t('filters.advancesPending')}
             </Toggle>
           </PopoverContent>
         </Popover>
@@ -203,7 +200,7 @@ export function MovementFilters({
           variant="secondary"
           size="sm"
           onClick={() => push((p) => p.delete(c.key))}
-          aria-label={`Retirer le filtre ${c.label}`}
+          aria-label={t('filters.remove', { label: c.label })}
           className="order-2 h-7 gap-1 pr-1.5 pl-2 text-[12px] font-normal @2xl:order-none"
         >
           {c.name}
@@ -222,7 +219,7 @@ export function MovementFilters({
             })
           }
         >
-          Effacer
+          {t('filters.clear')}
         </Button>
       )}
     </>

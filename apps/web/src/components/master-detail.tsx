@@ -2,6 +2,7 @@
 
 import { ArrowLeftIcon, ArrowUpRightIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -175,9 +176,10 @@ export function ListSearch({
 }: {
   value: string
   onChange: (value: string) => void
-  /** What the search reads, for assistive technology; the field itself says « Chercher ». */
+  /** What the search reads, for assistive technology; the field itself only says "Search". */
   label: string
 }) {
+  const t = useTranslations('common.list')
   return (
     <div className="relative min-w-0 flex-1">
       <SearchIcon
@@ -188,7 +190,7 @@ export function ListSearch({
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Chercher"
+        placeholder={t('search')}
         aria-label={label}
         className="h-8 pl-8 text-[13px]"
       />

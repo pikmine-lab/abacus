@@ -1,0 +1,25 @@
+{
+  "fields": {
+    "required": "Required.",
+    "invalidAmount": "Invalid amount.",
+    "positive": "Must be greater than zero.",
+    "installmentCount": "At least 2 installments.",
+    "invalidDate": "Invalid date.",
+    "percentage": "Between 0 and 100.",
+    "dayOfMonth": "Between 1 and 31."
+  },
+  "movement": {
+    "counterpartyMissing": "Enter the counterparty (merchant, client, organization)."
+  },
+  "schedule": {
+    "installmentIncomplete": "Each installment needs a date and an amount greater than zero."
+  },
+  "levy": {
+    "payeeMissing": "Enter who was paid."
+  },
+  "preferences": {
+    "unknownReading": "Unknown reading.",
+    "unknownRankingView": "Unknown display.",
+    "unknownLanguage": "Unknown language."
+  }
+}

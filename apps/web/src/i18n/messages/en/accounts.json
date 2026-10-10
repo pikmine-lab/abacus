@@ -1,0 +1,203 @@
+{
+  "empty": "No accounts yet: everything starts from the first one.",
+  "wealth": {
+    "label": "Net worth",
+    "missingContributions": "{amount} of undeclared contributions: check the account’s cash balance",
+    "holdingsIncluded": "including {amount} of investments, at the latest price"
+  },
+  "toCheck": {
+    "label": "To check",
+    "neverChecked": "never checked",
+    "gapOn": "gap of {amount} on {date}",
+    "checkedOn": "checked on {date}",
+    "seeGap": "See the gap",
+    "seeGapOf": "See the gap on {name}"
+  },
+  "sections": {
+    "payment": "Current accounts",
+    "savings": "Savings",
+    "investment": "Investment",
+    "closed": "Closed",
+    "investmentQualifier": "cash",
+    "investmentLink": "Investments"
+  },
+  "sort": {
+    "name": "Name",
+    "balance": "Balance",
+    "checked": "Last balance check"
+  },
+  "row": {
+    "cardCount": "{count, plural, one {# card} other {# cards}}",
+    "statementToValidate": "statement to validate",
+    "closedOn": "closed on {date}"
+  },
+  "newAccount": {
+    "add": "Add an account",
+    "title": "New account",
+    "description": "An account that already existed starts from its opening balance, which is not income.",
+    "success": "Account created",
+    "submit": "Create the account"
+  },
+  "fields": {
+    "name": "Name",
+    "namePlaceholder": "Main current account",
+    "type": "Type",
+    "institution": "Institution (optional)",
+    "institutionPlaceholder": "Bank name",
+    "openingBalance": "Opening balance (€)",
+    "openedOn": "Opened on",
+    "amountPlaceholder": "0.00",
+    "realBalance": "Actual balance (€)"
+  },
+  "behaviors": {
+    "payment": "Current account",
+    "savings": "Savings account",
+    "investment": "Investment"
+  },
+  "actions": {
+    "edit": "Edit",
+    "correct": "Edit",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "menu": {
+    "checkBalance": "Check the balance",
+    "checks": "Balance checks",
+    "addCard": "Add a card",
+    "reopen": "Reopen",
+    "close": "Close the account"
+  },
+  "edit": {
+    "description": "Its balance starts from the opening, then follows its movements."
+  },
+  "close": {
+    "title": "Close “{name}”?",
+    "description": "No more movements after today. Its history stays whole, and you can reopen it.",
+    "confirm": "Close"
+  },
+  "reopen": {
+    "title": "Reopen “{name}”?",
+    "description": "The account accepts movements again. Its history does not change."
+  },
+  "check": {
+    "title": "Check {name}",
+    "description": "The balance your bank shows, against the computed one: {amount}.",
+    "submit": "Check"
+  },
+  "history": {
+    "title": "Balance checks of {name}",
+    "description": "The balance read, against the one computed that day.",
+    "never": "This account has never been checked.",
+    "noGap": "no gap",
+    "gapOf": "gap of {amount}",
+    "settledByAdjustment": "settled by an adjustment",
+    "computed": "computed {amount}",
+    "rowLabel": "the balance check of {date}",
+    "correctTitle": "Balance check of {date}",
+    "correctDescription": "Editing a balance check means doing it again: the gap is recomputed on the history as it stands today.",
+    "correctSettled": "The adjustment that settled it follows the new gap, and disappears if nothing is left to settle.",
+    "readOn": "Read on",
+    "deleteTitle": "Delete the balance check of {date}?",
+    "deleteSettled": "The adjustment that settled its gap is deleted with it: it existed only for this balance check.",
+    "deleteUnsettled": "The account’s movements are not touched: a balance check only sets them against reality."
+  },
+  "settle": {
+    "title": "Settle the gap",
+    "missingOut": "{amount} of outflows missing as of {date}.",
+    "missingIn": "{amount} of inflows missing as of {date}.",
+    "explain": "A single movement dated that day carries them, attributed to the chosen counterparty: a last resort, declaring what is missing is better.",
+    "success": "Gap settled",
+    "attributedTo": "Attributed to",
+    "unknown": "Unknown",
+    "category": "Category",
+    "noCategory": "(none)",
+    "note": "Note",
+    "noteDefault": "Balance check adjustment",
+    "ghost": "ghost: this gap says nothing about my flows (a correction) and must stay out of every analysis",
+    "submit": "Settle"
+  },
+  "rail": {
+    "ariaNever": "{name}: never checked",
+    "ariaGap": "{name}: checked on {date}, gap of {amount} not settled",
+    "ariaNoGap": "{name}: checked on {date}, no open gap",
+    "days": "{days}d",
+    "todayShort": "today",
+    "today": "today",
+    "checkedOn": "Checked on {date}",
+    "gapOpen": "gap of {amount}, not settled",
+    "gapSettled": "gap settled",
+    "count": "{count, plural, one {# balance check} other {# balance checks}} in {days} days",
+    "never": "Never checked"
+  },
+  "card": {
+    "schedule": "cut off {cutOff}, debited {debit}",
+    "day": "on the {day, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}",
+    "monthEnd": "at month end",
+    "expired": "expired",
+    "expiresEnd": "expires end of {month}",
+    "expiresLabel": "valid thru",
+    "modes": {
+      "immediate": "Immediate debit",
+      "deferred": "Deferred debit"
+    },
+    "modesShort": {
+      "immediate": "immediate",
+      "deferred": "deferred"
+    },
+    "shifts": {
+      "none": "stays put",
+      "previous": "moved back to Friday",
+      "next": "moved to Monday"
+    },
+    "open": "Open the card {name}",
+    "debitExpected": "debit expected on {date}",
+    "runningUntil": "running until {date}",
+    "toValidate": "to validate",
+    "nothingPending": "nothing pending"
+  },
+  "cardPage": {
+    "toDebit": "To be debited",
+    "partOfTotal": "including {amount}, debit expected on {date}",
+    "paidIn": "Paid in {month}",
+    "byPurchaseDate": "by purchase date",
+    "statements": "Statements",
+    "noPurchases": "No purchases yet.",
+    "purchases": "Purchases",
+    "nothingPaid": "Nothing has been paid with this card yet.",
+    "cutOffOn": "Cut off on {date}",
+    "runningUntil": "Running until {date}",
+    "purchaseCount": "{count, plural, one {# purchase} other {# purchases}}",
+    "debitedOn": "debited on {date}",
+    "debitExpectedToValidate": "debit expected on {date} · to validate",
+    "recurring": "Recurring expenses",
+    "moveToNewCard": "to move to the new card",
+    "nextOn": "next on {date}",
+    "installmentsPaid": "{paid}/{total} paid",
+    "perMonth": "/mo"
+  },
+  "cardForm": {
+    "namePlaceholder": "Visa Premier",
+    "debitedAccount": "Debited account",
+    "choose": "Choose",
+    "expiresEnd": "Expires end of",
+    "statementDay": "Statement cut-off",
+    "ifWeekend": "If it falls on a weekend",
+    "debitDay": "Debit day",
+    "example": "Bought today → debited on <day>{date}</day>",
+    "added": "Card added",
+    "submit": "Add the card",
+    "newTitle": "New card",
+    "newDescription": "A name is enough to recognize it, never its number.",
+    "editDescription": "A new schedule moves the purchases of statements not yet validated. Those of a validated statement stay on its debit day.",
+    "deleteTitle": "Delete “{name}”?",
+    "deleteDescription": "Only a card that paid nothing can be deleted. A card that was used stays: its expiry says it no longer works."
+  },
+  "statement": {
+    "validate": "Validate",
+    "title": "Statement of {name}",
+    "description": "{count, plural, one {# purchase cut off} other {# purchases cut off}} on {date}, for <money>{amount}</money>. They move to the debit day and enter the balance.",
+    "debitedOn": "Debited on",
+    "undo": "Undo the validation"
+  }
+}

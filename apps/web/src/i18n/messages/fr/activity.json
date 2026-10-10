@@ -1,0 +1,259 @@
+{
+  "title": "Activité",
+  "personal": "« {name} » est une activité perso : elle n’a pas de régime, donc pas de relevé. Elle découpe les flux dans <link>Analyse</link>.",
+  "noBusiness": {
+    "description": "factures, encaissements et relevé d’exercice",
+    "body": "Aucune activité indépendante déclarée. Dans <link>Réglages</link>, passe une activité en « indépendante » pour lui donner son exercice, ses factures et ses règles."
+  },
+  "fiscalYear": {
+    "named": "exercice {span}",
+    "span": "{from} → {to}",
+    "regularization": "régularisation de l’exercice {span}"
+  },
+  "basis": {
+    "cash": {
+      "tile": "Chiffre d’affaires encaissé",
+      "word": "Encaissé",
+      "lower": "encaissé",
+      "other": "encaissé {amount}",
+      "sentence": "recettes comptées à l’encaissement"
+    },
+    "invoiced": {
+      "tile": "Chiffre d’affaires facturé",
+      "word": "Facturé",
+      "lower": "facturé",
+      "other": "facturé {amount}",
+      "sentence": "recettes comptées à la facturation"
+    }
+  },
+  "invoiceState": {
+    "pending": "en attente",
+    "overdue": "en retard",
+    "paid": "encaissée",
+    "cancelled": "annulée"
+  },
+  "setup": {
+    "oneStep": "Un pas et le relevé se remplit.",
+    "twoSteps": "Deux pas et le relevé se remplit.",
+    "rules": {
+      "title": "Ses règles",
+      "why": "Ce qu’elle doit, avec sa source et son calendrier : c’est ce qui remplit les provisions, la réserve et l’échéancier.",
+      "cta": "Réglages de l’activité"
+    },
+    "accounts": {
+      "title": "Ses comptes",
+      "why": "Les comptes sur lesquels elle vit font sa trésorerie, donc ce qu’elle peut te verser.",
+      "cta": "Réglages"
+    }
+  },
+  "caveats": {
+    "toReview": "{count, plural, one {# règle} other {# règles}} à revérifier",
+    "extended": "{count, plural, one {# prorogée} other {# prorogées}} faute de texte",
+    "unconfirmed": "{count, plural, one {# non confirmée} other {# non confirmées}}",
+    "tail": "{caveats} : leurs montants sont les moins sûrs de l’écran."
+  },
+  "schedule": {
+    "title": "Échéancier",
+    "description": "ce qu’il faut déclarer et payer, en retard d’abord",
+    "window": "dépôt du {from} au {to}",
+    "instalment": "{number} sur {total}"
+  },
+  "noClient": "Sans client",
+  "noCategory": "Sans catégorie",
+  "newInvoice": {
+    "label": "Facture",
+    "title": "Enregistrer une facture",
+    "description": "Ce que la facture dit : facturé n’est pas encaissé, l’encaissement s’écrit quand l’argent arrive."
+  },
+  "stats": {
+    "charges": "Charges",
+    "chargesHint": "{provisions} provisionnés · {expenses} sortis des comptes",
+    "net": "Net",
+    "netHint": "recettes − charges − provisions",
+    "payable": "Disponible à me verser",
+    "payableHintShared": "trésorerie − tout ce qui est dû sur ces comptes − échéances",
+    "payableHint": "trésorerie − réserve − échéances du mois",
+    "paid": "Versé",
+    "paidHint": "virements vers un compte hors activité"
+  },
+  "months": {
+    "title": "Par mois",
+    "description": "ce qui est entré, et ce qu’il en reste",
+    "month": "Mois",
+    "provisions": "Provisions",
+    "charges": "Charges",
+    "net": "Net",
+    "paid": "Versé",
+    "running": "en cours",
+    "empty": "Rien sur cet exercice.",
+    "chargesAndProvisions": "Charges et provisions",
+    "chartLabel": "Par mois : ce qui est entré, les charges et provisions, le net",
+    "runningNote": "mois en cours, encore incomplet"
+  },
+  "payable": {
+    "title": "À me verser",
+    "description": "trésorerie de l’activité, moins ce qui est dû et pas encore payé",
+    "accounts": "Comptes",
+    "treasury": "Trésorerie",
+    "noAccount": "aucun compte déclaré sur cette activité",
+    "sharedAccount": "{name} (partagé avec {others})",
+    "reserve": "− Réserve",
+    "reserveHint": "ce qui est dû, règle par règle",
+    "review": "à revérifier",
+    "owedPaid": "dues {accrued} · payées {paid}",
+    "overpaid": "trop-payé {amount}",
+    "passThrough": "collectée pour être reversée",
+    "assumedBase": "base non saisie, minimum retenu",
+    "sharedReserve": "− Réserve de {names}",
+    "sharedReserveHint": "ce qui est dû sur les comptes partagés",
+    "sharedReserveUnreadable": "ce qui est dû sur les comptes partagés, sauf {names} dont une règle est illisible",
+    "commitments": "− Échéances d’ici le {date}",
+    "commitmentsHint": "engagements de l’activité",
+    "available": "Disponible",
+    "pastYear": "Le versable se lit sur l’exercice en cours : la trésorerie est celle d’aujourd’hui, pas celle de cet exercice. Sur cet exercice, {amount} ont été versés."
+  },
+  "payout": {
+    "noOwnAccount": "Cette activité ne vit sur aucun compte : dis-le dans sa fiche, dans Réglages, pour te verser.",
+    "noOutsideAccount": "Cette activité vit sur tous tes comptes : il n’y a pas de compte perso où te verser.",
+    "button": "Me verser {amount}",
+    "buttonEmpty": "Me verser…",
+    "hint": "ouvre le virement vers un compte hors activité, montant modifiable",
+    "hintEmpty": "rien de disponible : la réserve et les échéances couvrent la trésorerie",
+    "title": "Me verser",
+    "description": "Un virement de l’activité vers un compte perso. Il ne change ni le net ni ce qui est dû : il sort l’argent de l’activité.",
+    "success": "Virement déclaré",
+    "date": "Date",
+    "amount": "Montant",
+    "amountPlaceholder": "1 200,00",
+    "from": "Depuis le compte",
+    "fromPlaceholder": "Compte de l’activité",
+    "to": "Vers le compte",
+    "toPlaceholder": "Compte perso",
+    "submit": "Déclarer le virement"
+  },
+  "outstanding": {
+    "title": "Factures en attente",
+    "description": "« Encaissée » écrit le revenu sur le compte qui a reçu l’argent",
+    "empty": "Rien en attente : tout ce qui a été facturé est encaissé.",
+    "issuedOn": "émise le {date}",
+    "dueOn": "échéance le {date}",
+    "remindedOn": "relancée le {date}",
+    "alreadyPaid": "{amount} déjà encaissés",
+    "overdue": "en retard de {days, plural, one {# jour} other {# jours}}",
+    "amountLabel": "Montant encaissé de {client}",
+    "accountPlaceholder": "Sur quel compte",
+    "accountLabel": "Compte crédité par {client}",
+    "collected": "Encaissée",
+    "remindedToday": "Relancée aujourd’hui",
+    "collectedToday": "Encaissée aujourd’hui",
+    "collectedOtherDate": "Encaissée à une autre date…",
+    "edit": "Modifier",
+    "cancel": "Annuler la facture",
+    "editTitle": "Modifier la facture",
+    "editDescription": "Corrige ce qui a été mal saisi. Les revenus déjà encaissés dessus gardent leur lien.",
+    "confirmTitle": "Annuler cette facture ?",
+    "confirmBody": "{label}. Elle quitte les factures en attente et garde ses dates. Une facture déjà encaissée, même en partie, ne s’annule pas : détache d’abord les revenus liés.",
+    "goBack": "Revenir"
+  },
+  "ranks": {
+    "revenueTitle": "Recettes par client",
+    "revenueEmpty": "Aucune recette sur cet exercice.",
+    "chargesTitle": "Charges par catégorie",
+    "chargesDescription": "sorti des comptes de l’activité",
+    "chargesEmpty": "Aucune charge sur cet exercice.",
+    "settlementNote": "en pointillé : règle une provision, déjà comptée dans les charges"
+  },
+  "thresholds": {
+    "title": "Seuils surveillés",
+    "description": "où en est l’activité, et ce qui change au-delà",
+    "atMost": "{measure} sur {periodRef} · au plus {value}",
+    "atLeast": "{measure} sur {periodRef} · au moins {value}",
+    "progress": "{percent} %",
+    "breached": "Dépassé."
+  },
+  "invoices": {
+    "title": "Factures de l’exercice",
+    "count": "{count, plural, one {# facture émise} other {# factures émises}}",
+    "empty": "Aucune facture sur cet exercice.",
+    "date": "Date",
+    "client": "Client",
+    "reference": "Référence",
+    "base": "HT",
+    "vat": "TVA",
+    "withholding": "Retenue",
+    "net": "Net",
+    "state": "État",
+    "remaining": "reste {amount}"
+  },
+  "invoiceForm": {
+    "corrected": "Facture corrigée",
+    "recorded": "Facture enregistrée",
+    "activity": "Activité",
+    "activityPlaceholder": "Choisir une activité",
+    "client": "Client",
+    "clientPlaceholder": "Nom du client",
+    "reference": "Référence",
+    "base": "Base HT",
+    "basePlaceholder": "1 200,00",
+    "issuedOn": "Émise le",
+    "dueOn": "Échéance",
+    "vat": "TVA collectée",
+    "withholding": "Retenue à la source",
+    "rate": "Taux (%)",
+    "orAmount": "ou en €",
+    "net": "net à recevoir <value>{amount}</value>",
+    "note": "Note (optionnelle)",
+    "save": "Enregistrer",
+    "submit": "Enregistrer la facture"
+  },
+  "kinds": {
+    "business": "Indépendante",
+    "personal": "Personnelle"
+  },
+  "form": {
+    "corrected": "Activité corrigée",
+    "created": "Activité créée",
+    "kind": "Type",
+    "name": "Nom",
+    "namePlaceholder": "Freelance",
+    "jurisdiction": "Juridiction",
+    "jurisdictionPlaceholder": "Où l’activité est exercée",
+    "regime": "Régime",
+    "regimePlaceholder": "Le régime, en clair",
+    "startedOn": "Début",
+    "currency": "Devise",
+    "accounts": "Comptes · un compte peut en servir plusieurs",
+    "basis": "Fait générateur",
+    "basisCash": "Encaissement",
+    "basisInvoiced": "Facturation",
+    "fiscalYearMonth": "Exercice · mois",
+    "fiscalYearDay": "Exercice · jour",
+    "vatRegistered": "assujettie à la TVA",
+    "defaultVatRate": "TVA par défaut (%)",
+    "deductible": "Charges",
+    "deductibleAll": "Toutes déductibles",
+    "deductibleNone": "Aucune",
+    "exceptAll": "Sauf ces catégories",
+    "exceptNone": "Déductibles quand même",
+    "save": "Enregistrer",
+    "create": "Créer l’activité"
+  },
+  "list": {
+    "empty": "Aucune activité. Tout est considéré comme perso.",
+    "since": "depuis le {date}",
+    "closedOn": "close le {date}"
+  },
+  "fiche": {
+    "intro": "Ce qui est déjà classé sous cette activité y reste. Le type et le fait générateur ne changent plus dès qu’une règle ou une facture existe.",
+    "exceptions": "Exceptions de catégories",
+    "noCategories": "Aucune catégorie à excepter.",
+    "exceptionsSaved": "Exceptions enregistrées",
+    "policyAll": "Toute charge de l’activité est déductible, sauf celles cochées ici.",
+    "policyNone": "Aucune charge de l’activité n’est déductible, sauf celles cochées ici.",
+    "reopen": "Réouvrir",
+    "reopenBody": "L’activité accepte de nouveau des mouvements. Son historique ne change pas.",
+    "close": "Clore",
+    "closeBody": "Aucun mouvement ne s’y déclare après ce jour. L’historique reste entier, et un nouveau régime est une nouvelle activité.",
+    "lastDay": "Dernier jour"
+  }
+}

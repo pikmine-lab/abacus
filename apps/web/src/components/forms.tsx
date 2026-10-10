@@ -1,8 +1,8 @@
 'use client'
 
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { useLocale, useTranslations } from 'next-intl'
 import { createContext, useActionState, useContext, useEffect, useRef, useState } from 'react'
-import { fr } from 'react-day-picker/locale'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -10,8 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CALENDAR_LOCALE } from '@/i18n/calendar'
 import type { FormState } from '@/lib/actions'
-import { cn, frMonthLong } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /**
  * Per-field messages from the last submit. A context rather than props because
@@ -164,6 +166,9 @@ export function DateField({
   /** Receives the day as "YYYY-MM-DD", for callers that derive from it. */
   onValueChange?: (day: string) => void
 }) {
+  const t = useTranslations('common.fields')
+  const format = useFormat()
+  const language = useLocale()
   const [date, setDate] = useState<Date | undefined>(defaultValue ? fromIsoDay(defaultValue) : undefined)
   const [open, setOpen] = useState(false)
   return (
@@ -173,9 +178,9 @@ export function DateField({
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-between font-normal">
             {date ? (
-              date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+              format.dateLong(toIsoDay(date))
             ) : (
-              <span className="text-muted-foreground">Choisir une date</span>
+              <span className="text-muted-foreground">{t('pickDate')}</span>
             )}
             <CalendarIcon className="text-muted-foreground" />
           </Button>
@@ -183,7 +188,7 @@ export function DateField({
         <PopoverContent className="w-auto p-0" align="start">
           <Calendar
             mode="single"
-            locale={fr}
+            locale={CALENDAR_LOCALE[language]}
             selected={date}
             defaultMonth={date}
             onSelect={(d) => {
@@ -197,11 +202,6 @@ export function DateField({
     </>
   )
 }
-
-/** Rendered once, from the locale, rather than kept as a fourth hardcoded list. */
-const MONTH_LABELS = Array.from({ length: 12 }, (_, i) =>
-  new Date(2000, i, 1).toLocaleDateString('fr-FR', { month: 'short' }),
-)
 
 /**
  * A month, picked out of a year laid flat. Same shape as `DateField` because
@@ -234,6 +234,12 @@ export function MonthField({
   value: string | null
   onValueChange: (month: string | null) => void
 }) {
+  const t = useTranslations('common.fields')
+  const format = useFormat()
+  // From the locale rather than kept as a hardcoded list per language.
+  const monthLabels = Array.from({ length: 12 }, (_, i) =>
+    format.dateAs(`2000-${String(i + 1).padStart(2, '0')}-01`, { month: 'short' }),
+  )
   const own = anchor?.slice(0, 7)
   const shown = value ?? own ?? toIsoDay(new Date()).slice(0, 7)
   const [open, setOpen] = useState(false)
@@ -257,11 +263,13 @@ export function MonthField({
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-between font-normal">
             {value ? (
-              <span className={cn(own && 'text-primary')}>{frMonthLong(value)}</span>
+              <span className={cn(own && 'text-primary')}>{format.monthLong(value)}</span>
             ) : own ? (
-              <span className="text-muted-foreground">{frMonthLong(own)} · le mois de la date</span>
+              <span className="text-muted-foreground">
+                {t('monthOfDateNamed', { month: format.monthLong(own) })}
+              </span>
             ) : (
-              <span className="text-muted-foreground">Choisir un mois</span>
+              <span className="text-muted-foreground">{t('pickMonth')}</span>
             )}
             <CalendarIcon className="text-muted-foreground" />
           </Button>
@@ -273,7 +281,7 @@ export function MonthField({
               variant="ghost"
               size="icon"
               className="size-8"
-              aria-label="Année précédente"
+              aria-label={t('previousYear')}
               onClick={() => setYear(year - 1)}
             >
               <ChevronLeftIcon className="size-4" />
@@ -284,14 +292,14 @@ export function MonthField({
               variant="ghost"
               size="icon"
               className="size-8"
-              aria-label="Année suivante"
+              aria-label={t('nextYear')}
               onClick={() => setYear(year + 1)}
             >
               <ChevronRightIcon className="size-4" />
             </Button>
           </div>
           <div className="grid grid-cols-4 gap-1">
-            {MONTH_LABELS.map((label, index) => {
+            {monthLabels.map((label, index) => {
               const month = `${year}-${String(index + 1).padStart(2, '0')}`
               const selected = month === value
               return (
@@ -322,7 +330,7 @@ export function MonthField({
               className="mt-2 h-8 w-full font-normal text-muted-foreground"
               onClick={() => pick(null)}
             >
-              Le mois de la date
+              {t('monthOfDate')}
             </Button>
           )}
         </PopoverContent>
@@ -347,6 +355,7 @@ export function DayOfMonthField({
   defaultValue?: number
   onValueChange?: (day: number) => void
 }) {
+  const t = useTranslations('common.fields')
   const [day, setDay] = useState<number | undefined>(defaultValue)
   const [open, setOpen] = useState(false)
   return (
@@ -357,12 +366,12 @@ export function DayOfMonthField({
           <Button variant="outline" className="w-full justify-between font-normal">
             {day ? (
               day === 31 ? (
-                'fin de mois'
+                t('monthEnd')
               ) : (
-                `le ${day}`
+                t('dayOfMonth', { day })
               )
             ) : (
-              <span className="text-muted-foreground">Choisir un jour</span>
+              <span className="text-muted-foreground">{t('pickDay')}</span>
             )}
             <CalendarIcon className="text-muted-foreground" />
           </Button>
@@ -376,7 +385,7 @@ export function DayOfMonthField({
                 variant={d === day ? 'default' : 'ghost'}
                 size="sm"
                 aria-pressed={d === day}
-                aria-label={d === 31 ? 'Fin de mois' : `Le ${d}`}
+                aria-label={d === 31 ? t('monthEnd') : t('dayOfMonth', { day: d })}
                 className="size-8 p-0 font-normal tabular"
                 onClick={() => {
                   setDay(d)
@@ -384,7 +393,7 @@ export function DayOfMonthField({
                   setOpen(false)
                 }}
               >
-                {d === 31 ? 'fin' : d}
+                {d === 31 ? t('monthEndShort') : d}
               </Button>
             ))}
           </div>

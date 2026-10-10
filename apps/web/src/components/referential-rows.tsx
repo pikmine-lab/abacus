@@ -3,6 +3,7 @@
 import type { ReattachableCount } from '@abacus/core/services/actors'
 import { Link2Icon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import {
@@ -40,7 +41,7 @@ import {
   reattachActorHistoryAction,
 } from '@/lib/actions'
 import { entryHref } from '@/lib/entry-href'
-import { frDateLong } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /**
  * The vocabulary, as lists that can be repaired. A referential entry is
@@ -94,6 +95,7 @@ export function CategoryList({
   /** The order control, beside the search. */
   tools?: React.ReactNode
 }) {
+  const t = useTranslations('settings.categories')
   const [search, setSearch] = useState('')
   const term = fold(search.trim())
   const shown = term
@@ -108,18 +110,15 @@ export function CategoryList({
   }
 
   return (
-    <ListPane
-      search={<ListSearch value={search} onChange={setSearch} label="Chercher une catégorie ou un groupe" />}
-      tools={tools}
-    >
+    <ListPane search={<ListSearch value={search} onChange={setSearch} label={t('search')} />} tools={tools}>
       {categories.length === 0 ? (
-        <ListEmpty>Aucune catégorie. Sans elles, l’analyse par catégorie reste vide.</ListEmpty>
+        <ListEmpty>{t('empty')}</ListEmpty>
       ) : shown.length === 0 ? (
-        <ListEmpty>Aucune catégorie ne porte ce nom.</ListEmpty>
+        <ListEmpty>{t('noMatch')}</ListEmpty>
       ) : (
         sections.map((section) => (
           <div key={section.label ?? ''} className="flex flex-col not-first:mt-4">
-            {grouped && <GroupHeading label={section.label ?? 'Sans groupe'} count={section.rows.length} />}
+            {grouped && <GroupHeading label={section.label ?? t('noGroup')} count={section.rows.length} />}
             {section.rows.map((category) => (
               <EntryRow
                 key={category.id}
@@ -151,23 +150,24 @@ export function CategoryFiche({
   groups: string[]
   back: Back
 }) {
+  const t = useTranslations('settings')
   const editing = category !== undefined
   return (
-    <Fiche title={editing ? category.name : 'Nouvelle catégorie'} back={back}>
+    <Fiche title={editing ? category.name : t('categories.new')} back={back}>
       <ActionForm
         action={editing ? editCategoryAction : createCategoryAction}
-        successLabel={editing ? 'Catégorie corrigée' : 'Catégorie créée'}
+        successLabel={editing ? t('categories.edited') : t('categories.created')}
       >
         {editing && <input type="hidden" name="categoryId" value={category.id} />}
-        <TextField name="name" label="Nom" defaultValue={category?.name ?? ''} />
+        <TextField name="name" label={t('form.name')} defaultValue={category?.name ?? ''} />
         <SuggestField
           name="group"
-          label="Groupe (optionnel)"
+          label={t('categories.group')}
           defaultValue={category?.groupLabel ?? ''}
           suggestions={groups}
-          placeholder="Vie courante"
+          placeholder={t('categories.groupPlaceholder')}
         />
-        <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Ajouter'}</SubmitButton>
+        <SubmitButton className="self-start">{editing ? t('form.save') : t('form.add')}</SubmitButton>
       </ActionForm>
     </Fiche>
   )
@@ -203,6 +203,7 @@ export function ActorList({
   selection: Selection
   tools?: React.ReactNode
 }) {
+  const t = useTranslations('settings.actors')
   const [search, setSearch] = useState('')
   const term = fold(search.trim())
   const shown = term
@@ -212,14 +213,11 @@ export function ActorList({
     : actors
 
   return (
-    <ListPane
-      search={<ListSearch value={search} onChange={setSearch} label="Chercher un acteur ou un alias" />}
-      tools={tools}
-    >
+    <ListPane search={<ListSearch value={search} onChange={setSearch} label={t('search')} />} tools={tools}>
       {actors.length === 0 ? (
-        <ListEmpty>Aucun acteur. Le premier mouvement déclaré en crée un.</ListEmpty>
+        <ListEmpty>{t('empty')}</ListEmpty>
       ) : shown.length === 0 ? (
-        <ListEmpty>Aucun acteur ne porte ce nom.</ListEmpty>
+        <ListEmpty>{t('noMatch')}</ListEmpty>
       ) : (
         shown.map((actor) => {
           // The alias the search went through comes first, marked.
@@ -237,7 +235,7 @@ export function ActorList({
               detail={
                 aliases.length > 0 && (
                   <>
-                    aussi{' '}
+                    {t('also')}{' '}
                     {aliases.map((alias, i) => (
                       <span key={alias}>
                         {i > 0 && ', '}
@@ -258,18 +256,15 @@ export function ActorList({
 
 /** A blank sheet: an actor is a name first, the rest is corrected afterwards. */
 export function NewActorFiche({ back }: { back: Back }) {
+  const t = useTranslations('settings')
   return (
-    <Fiche title="Nouvel acteur" back={back}>
-      <ActionForm action={createActorAction} successLabel="Acteur créé">
-        <TextField name="name" label="Nom" />
-        <SubmitButton className="self-start">Ajouter</SubmitButton>
+    <Fiche title={t('actors.new')} back={back}>
+      <ActionForm action={createActorAction} successLabel={t('actors.created')}>
+        <TextField name="name" label={t('form.name')} />
+        <SubmitButton className="self-start">{t('form.add')}</SubmitButton>
       </ActionForm>
     </Fiche>
   )
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n > 1 ? many : one}`
 }
 
 /**
@@ -292,6 +287,7 @@ export function ActorFiche({
   listHref: string
   back: Back
 }) {
+  const t = useTranslations('settings')
   const router = useRouter()
   // The activity the actor had when the sheet opened: a changed one leaves
   // movements behind, and the reattachment then names it as former.
@@ -308,57 +304,55 @@ export function ActorFiche({
         // A changed activity that left movements behind is acknowledged here,
         // pointing at the gesture that takes them along.
         onSuccess={(state: ActorFormState) => setLeftBehind(state.leftBehind ?? 0)}
-        successLabel="Acteur corrigé"
+        successLabel={t('actors.edited')}
       >
         <input type="hidden" name="actorId" value={actor.id} />
-        <TextField name="name" label="Nom" defaultValue={actor.name} />
-        <Field label="Activité">
+        <TextField name="name" label={t('form.name')} defaultValue={actor.name} />
+        <Field label={t('actors.activity')}>
           <FormSelect
             name="activityId"
-            noneLabel="(perso)"
+            noneLabel={t('actors.personal')}
             defaultValue={actor.activityId ?? ''}
             options={activities.map((a) => ({ value: a.id, label: a.name }))}
           />
         </Field>
-        <TextField name="note" label="Note (optionnelle)" defaultValue={actor.note ?? ''} />
+        <TextField name="note" label={t('actors.note')} defaultValue={actor.note ?? ''} />
         {/* What this client does to an invoice: defaults a new invoice
             copies, which is why they belong to the payer, not the activity. */}
         <div className="grid grid-cols-2 gap-3">
           <TextField
             name="invoiceVatRate"
-            label="TVA par défaut (%)"
+            label={t('actors.vatRate')}
             inputMode="decimal"
             defaultValue={actor.invoiceVatRate ?? ''}
           />
           <TextField
             name="invoiceWithholdingRate"
-            label="Retenue par défaut (%)"
+            label={t('actors.withholdingRate')}
             inputMode="decimal"
             defaultValue={actor.invoiceWithholdingRate ?? ''}
           />
         </div>
-        <SubmitButton className="self-start">Enregistrer</SubmitButton>
+        <SubmitButton className="self-start">{t('form.save')}</SubmitButton>
       </ActionForm>
       {leftBehind > 0 && activityName && (
         <p className="mt-3 text-[12px] text-faint">
-          {plural(
-            leftBehind,
-            'mouvement déjà déclaré ne suit pas',
-            'mouvements déjà déclarés ne suivent pas',
-          )}{' '}
-          :{' '}
-          <button
-            type="button"
-            className="underline underline-offset-2 hover:text-foreground"
-            onClick={() => setReattaching({ previousActivityId: activityBefore.current })}
-          >
-            rattacher l’historique
-          </button>{' '}
-          les reprend, maintenant ou plus tard.
+          {t.rich('actors.leftBehind', {
+            count: leftBehind,
+            link: (chunks) => (
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground"
+                onClick={() => setReattaching({ previousActivityId: activityBefore.current })}
+              >
+                {chunks}
+              </button>
+            ),
+          })}
         </p>
       )}
 
-      <FicheSection label="Alias">
+      <FicheSection label={t('actors.aliases.label')}>
         {actor.aliases.length > 0 && (
           <ul className="flex flex-wrap gap-1.5">
             {actor.aliases.map((alias) => (
@@ -371,25 +365,29 @@ export function ActorFiche({
         <ActionForm
           action={addAliasAction}
           className="flex-row flex-wrap items-end gap-2"
-          successLabel="Alias ajouté"
+          successLabel={t('actors.aliases.added')}
         >
           <input type="hidden" name="actorId" value={actor.id} />
           <div className="min-w-48 flex-1">
-            <TextField name="alias" label="Nouvel alias" placeholder="Macdo" />
+            <TextField
+              name="alias"
+              label={t('actors.aliases.new')}
+              placeholder={t('actors.aliases.placeholder')}
+            />
           </div>
-          <SubmitButton variant="outline">Ajouter</SubmitButton>
+          <SubmitButton variant="outline">{t('form.add')}</SubmitButton>
         </ActionForm>
       </FicheSection>
 
       {activityName && (
-        <FicheSection label="Historique">
+        <FicheSection label={t('actors.history.label')}>
           <Button
             variant="outline"
             className="self-start"
             onClick={() => setReattaching({ previousActivityId: null })}
           >
             <Link2Icon />
-            Rattacher l’historique à {activityName}
+            {t('actors.history.reattach', { activity: activityName })}
           </Button>
           <ReattachDialog
             actor={actor}
@@ -402,11 +400,8 @@ export function ActorFiche({
       )}
 
       {others.length > 0 && (
-        <FicheSection label="Fusionner">
-          <p className="text-[12px] text-faint">
-            Tout ce qui est déclaré sous « {actor.name} » bascule sur l’acteur choisi, et « {actor.name} »
-            devient un de ses alias. C’est le seul geste ici qui réécrit des mouvements déjà déclarés.
-          </p>
+        <FicheSection label={t('actors.merge.label')}>
+          <p className="text-[12px] text-faint">{t('actors.merge.description', { name: actor.name })}</p>
           <ActionForm
             // The actor merged away no longer exists: the sheet follows the one
             // kept. Navigated from the action itself, not on success: the
@@ -418,16 +413,16 @@ export function ActorFiche({
             }}
           >
             <input type="hidden" name="actorId" value={actor.id} />
-            <Field label="Fusionner dans" name="keepId">
+            <Field label={t('actors.merge.into')} name="keepId">
               <FormSelect
                 name="keepId"
                 required
-                placeholder="Choisir l’acteur à garder"
+                placeholder={t('actors.merge.placeholder')}
                 options={others.map((a) => ({ value: a.id, label: a.name }))}
               />
             </Field>
             <SubmitButton variant="destructive" className="self-start">
-              Fusionner
+              {t('actors.merge.submit')}
             </SubmitButton>
           </ActionForm>
         </FicheSection>
@@ -456,6 +451,8 @@ function ReattachDialog({
   /** Stable, so that closing on success fires once per success and not once per render. */
   onClose: () => void
 }) {
+  const t = useTranslations('settings')
+  const format = useFormat()
   const [from, setFrom] = useState<string | undefined>(undefined)
   const [scope, setScope] = useState<ReattachableCount | null>(null)
   const [state, reattach, pending] = useActionState(reattachActorHistoryAction, {})
@@ -482,28 +479,34 @@ function ReattachDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Rattacher l’historique de {actor.name} à {activityName} ?
+            {t('actors.reattach.title', { actor: actor.name, activity: activityName })}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {scope === null
               ? '…'
               : scope.count === 0
-                ? `Rien à rattacher : l’historique de ${actor.name} est déjà sous ${activityName}, ou classé dans une autre activité.`
-                : `${plural(scope.count, 'mouvement', 'mouvements')}${scope.since ? `, depuis le ${frDateLong(scope.since)},` : ''} ${scope.count > 1 ? 'passeront' : 'passera'} sous ${activityName}. Un mouvement classé dans une autre activité ne bouge pas.`}
+                ? t('actors.reattach.nothing', { actor: actor.name, activity: activityName })
+                : scope.since
+                  ? t('actors.reattach.countSince', {
+                      count: scope.count,
+                      since: format.dateLong(scope.since),
+                      activity: activityName,
+                    })
+                  : t('actors.reattach.count', { count: scope.count, activity: activityName })}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <Field label="À partir du (optionnel)">
+        <Field label={t('actors.reattach.from')}>
           <DateField name="from" onValueChange={setFrom} />
         </Field>
         {state.error && <p className="text-xs text-destructive">{state.error}</p>}
         <AlertDialogFooter>
-          <AlertDialogCancel>Annuler</AlertDialogCancel>
+          <AlertDialogCancel>{t('form.cancel')}</AlertDialogCancel>
           <form action={reattach}>
             <input type="hidden" name="actorId" value={actor.id} />
             <input type="hidden" name="from" value={from ?? ''} />
             <input type="hidden" name="previousActivityId" value={previousActivityId ?? ''} />
             <Button type="submit" disabled={pending || !scope?.count}>
-              {pending ? '…' : 'Rattacher'}
+              {pending ? '…' : t('actors.reattach.submit')}
             </Button>
           </form>
         </AlertDialogFooter>

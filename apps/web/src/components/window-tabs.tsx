@@ -1,7 +1,6 @@
+import { useTranslations } from 'next-intl'
 import { UrlTabs } from '@/components/url-tabs'
-import { type ChartWindow, WINDOW_LABEL } from '@/lib/chart-window'
-
-const WINDOWS: ChartWindow[] = ['1w', '1m', '1y', 'all']
+import { WINDOWS } from '@/lib/chart-window'
 
 /**
  * How far back the curve it sits on is drawn. It belongs to its chart, not to
@@ -9,12 +8,13 @@ const WINDOWS: ChartWindow[] = ['1w', '1m', '1y', 'all']
  * ones a brokerage screen uses, because that is where this reading is learnt.
  */
 export function WindowTabs() {
+  const t = useTranslations('investments.window')
   return (
     <UrlTabs
       param="window"
       fallback="all"
-      ariaLabel="Fenêtre du graphe"
-      options={WINDOWS.map((w) => ({ value: w, label: WINDOW_LABEL[w] }))}
+      ariaLabel={t('label')}
+      options={WINDOWS.map((w) => ({ value: w, label: t(`options.${w}`) }))}
     />
   )
 }

@@ -1,13 +1,14 @@
 import type { HeldPosition, PositionMass, PositionSortField } from '@abacus/core/services/investments'
 import { ChevronRightIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { AssetMenu } from '@/components/investment-forms'
 import { MassLight, MassStrip } from '@/components/mass-strip'
 import { RowArrow } from '@/components/page-shell'
 import { SortColumn, SortMenu } from '@/components/sort'
-import { NATURE_LABEL } from '@/lib/nature'
+import { type Format, useFormat } from '@/lib/format'
 import type { Sorter } from '@/lib/sort'
-import { cn, eur, eurSigned, share } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 /*
  * The holdings of every account, by mass, under the strip that weighs them.
@@ -24,38 +25,26 @@ const WIDE_CELL = 'hidden text-right @2xl:block'
 /** Value over gain while narrow, two columns once wide. */
 const FIGURES_CELL = 'flex flex-col items-end gap-0.5 @2xl:contents'
 
-const SORT_OPTIONS: { field: PositionSortField; label: string }[] = [
-  { field: 'value', label: 'Valorisation' },
-  { field: 'gain', label: '+/− value' },
-  { field: 'quantity', label: 'Quantité' },
-  { field: 'price', label: 'Cours' },
-  { field: 'name', label: 'Nom' },
-]
-
-/** Quantities are not money: they keep their own precision, trailing zeros cut. */
-export function quantity(value: string): string {
-  return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 8 })
-}
-
 /**
  * When the price was made, to the minute. Euronext is 15 minutes delayed at
  * best, imposed by its licence, so freshness cannot be gained: it is declared
  * instead, and a number without its hour would be read as "now".
  */
-function priceStamp(at: Date | null, manual: boolean): string {
-  if (!at) return 'aucun cours connu'
-  const day = at.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-  if (manual) return `saisi le ${day}`
-  return `${day} ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+function priceStamp(at: Date | null, manual: boolean, format: Format, enteredOn: (day: string) => string) {
+  if (!at) return null
+  const day = at.toLocaleDateString(format.locale, { day: '2-digit', month: '2-digit' })
+  if (manual) return enteredOn(day)
+  return `${day} ${at.toLocaleTimeString(format.locale, { hour: '2-digit', minute: '2-digit' })}`
 }
 
 /** The direction in an arrow and a sign, the colour only reinforcing them. */
 function Gain({ value, strong }: { value: string | null; strong?: boolean }) {
+  const format = useFormat()
   if (value === null) return <span className="text-faint">—</span>
   const gain = Number(value)
   return (
     <span className={cn(gain >= 0 ? 'text-good' : 'text-destructive', strong && 'font-semibold')}>
-      {gain >= 0 ? '↑' : '↓'} {eurSigned(gain, 2)}
+      {gain >= 0 ? '↑' : '↓'} {format.eurSigned(gain, 2)}
     </span>
   )
 }
@@ -70,19 +59,33 @@ export function PositionList({
   /** Whether a line names its account: not when a single account holds them all. */
   showAccount: boolean
 }) {
+  const t = useTranslations('investments')
+  const words = useTranslations('analysis.words')
   // A mass with nothing priced has no length to draw: it stays in the list,
   // where its dash and its note say why.
   const drawn = masses.filter((m) => Number(m.value) > 0)
   const total = drawn.reduce((sum, m) => sum + Number(m.value), 0)
+  // The same share as under the strip: a sliver is said to be one, not zero.
+  const share = (part: number) => {
+    const pct = total > 0 ? (part / total) * 100 : 0
+    return pct > 0 && pct < 1 ? words('sliver') : words('percent', { value: Math.round(pct) })
+  }
+  const sortOptions: { field: PositionSortField; label: string }[] = [
+    { field: 'value', label: t('words.value') },
+    { field: 'gain', label: t('page.gainColumn') },
+    { field: 'quantity', label: t('words.quantity') },
+    { field: 'price', label: t('words.price') },
+    { field: 'name', label: t('words.name') },
+  ]
   return (
-    <section aria-label="Positions" className="flex min-w-0 flex-col gap-3">
-      <h2 className="text-[13px] font-medium text-muted-foreground">Positions</h2>
+    <section aria-label={t('page.positions')} className="flex min-w-0 flex-col gap-3">
+      <h2 className="text-[13px] font-medium text-muted-foreground">{t('page.positions')}</h2>
       {drawn.length > 1 && (
         <MassStrip
-          label="Répartition des positions"
+          label={t('page.strip')}
           parts={drawn.map((m) => ({
             id: m.nature,
-            label: NATURE_LABEL[m.nature],
+            label: t(`natures.${m.nature}`),
             amount: Number(m.value),
             href: `#mass-${m.nature}`,
           }))}
@@ -90,43 +93,43 @@ export function PositionList({
       )}
       <div className="flex flex-col">
         <div className={cn(COLUMNS, 'border-b border-border pb-2 text-[11px] text-faint')}>
-          <SortColumn sorter={sorter} field="name" label="Actif" className="hidden @2xl:flex" />
+          <SortColumn sorter={sorter} field="name" label={t('words.asset')} className="hidden @2xl:flex" />
           <SortColumn
             sorter={sorter}
             field="quantity"
-            label="Quantité"
+            label={t('words.quantity')}
             align="right"
             className="hidden @2xl:flex"
           />
           <SortColumn
             sorter={sorter}
             field="price"
-            label="Cours"
+            label={t('words.price')}
             align="right"
             className="hidden @2xl:flex"
           />
           <SortColumn
             sorter={sorter}
             field="value"
-            label="Valorisation"
+            label={t('words.value')}
             align="right"
             className="hidden @2xl:flex"
           />
           <SortColumn
             sorter={sorter}
             field="gain"
-            label="+/− value"
+            label={t('page.gainColumn')}
             align="right"
             className="hidden @2xl:flex"
           />
           {/* Narrow, the columns are gone: the order is named instead. */}
           <div className="col-span-3 justify-self-end @2xl:hidden">
-            <SortMenu sorter={sorter} options={SORT_OPTIONS} />
+            <SortMenu sorter={sorter} options={sortOptions} />
           </div>
         </div>
         {masses.map((mass) => (
           <MassLight key={mass.nature} id={mass.nature}>
-            <Mass mass={mass} share={share(Number(mass.value), total)} showAccount={showAccount} />
+            <Mass mass={mass} share={share(Number(mass.value))} showAccount={showAccount} />
           </MassLight>
         ))}
       </div>
@@ -151,32 +154,32 @@ function Mass({
   share: string
   showAccount: boolean
 }) {
+  const t = useTranslations('investments')
+  const format = useFormat()
   // Nothing priced: a zero would read as "worth nothing", where the note says
   // what is actually the case.
   const blind = mass.unpriced === mass.positions.length
-  const note =
-    mass.unpriced > 0
-      ? `${mass.unpriced} sans cours, non valorisée${mass.unpriced > 1 ? 's' : ''}`
-      : undefined
   return (
     <details open id={`mass-${mass.nature}`} className="fold group/mass scroll-mt-20 border-b border-border">
       <summary className={cn(COLUMNS, 'cursor-pointer list-none py-2.5 [&::-webkit-details-marker]:hidden')}>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex min-w-0 items-baseline gap-2">
             <ChevronRightIcon className="size-3 shrink-0 self-center text-faint transition-transform group-open/mass:rotate-90" />
-            <span className="truncate text-[13.5px] font-semibold">{NATURE_LABEL[mass.nature]}</span>
-            {!blind && share && (
-              <span className="font-mono text-[12px] text-muted-foreground tabular">{share}</span>
-            )}
+            <span className="truncate text-[13.5px] font-semibold">{t(`natures.${mass.nature}`)}</span>
+            {!blind && <span className="font-mono text-[12px] text-muted-foreground tabular">{share}</span>}
           </span>
-          {note && <span className="truncate pl-5 text-[11px] text-faint">{note}</span>}
+          {mass.unpriced > 0 && (
+            <span className="truncate pl-5 text-[11px] text-faint">
+              {t('page.massUnpriced', { count: mass.unpriced })}
+            </span>
+          )}
         </span>
         <span className={WIDE_CELL} />
         <span className={WIDE_CELL} />
         {/* A mass of one line carries no totals: they would repeat that line. */}
         {mass.positions.length > 1 ? (
           <span className={cn(FIGURES_CELL, 'font-mono text-[13px] font-semibold tabular')}>
-            <span className="text-right">{blind ? '—' : eur(Number(mass.value), 2)}</span>
+            <span className="text-right">{blind ? '—' : format.eur(mass.value, 2)}</span>
             <span className="text-right">
               <Gain value={mass.gain} strong />
             </span>
@@ -210,7 +213,11 @@ function Mass({
  * two numbers one comes for are the ones that always fit.
  */
 function PositionLine({ position: p, showAccount }: { position: HeldPosition; showAccount: boolean }) {
-  const price = p.price === null ? null : eur(Number(p.price), 2)
+  const t = useTranslations('investments')
+  const format = useFormat()
+  const price = p.price === null ? null : format.eur(p.price, 2)
+  const quantity = format.number(p.quantity, 8)
+  const stamp = priceStamp(p.pricedAt, p.manualPrice, format, (day) => t('page.manualStamp', { day }))
   return (
     <div className={cn(COLUMNS, 'group py-2')}>
       <Link
@@ -222,18 +229,18 @@ function PositionLine({ position: p, showAccount }: { position: HeldPosition; sh
           {showAccount && <span className="text-muted-foreground">{p.accountName}</span>}
           {/* Narrow, the quantity and the price live here, the price with its hour. */}
           <span className="@2xl:hidden">
-            {quantity(p.quantity)} × {price ?? '—'}
+            {quantity} × {price ?? '—'}
           </span>
-          <span>PRU {eur(Number(p.averageCost), 2)}</span>
-          <span>{priceStamp(p.pricedAt, p.manualPrice)}</span>
+          <span>{t('words.averageCost', { amount: format.eur(p.averageCost, 2) })}</span>
+          <span>{stamp ?? t('page.noPrice')}</span>
         </span>
       </Link>
-      <span className={cn(WIDE_CELL, 'font-mono text-[12.5px] tabular')}>{quantity(p.quantity)}</span>
+      <span className={cn(WIDE_CELL, 'font-mono text-[12.5px] tabular')}>{quantity}</span>
       <span className={cn(WIDE_CELL, 'font-mono text-[12.5px] text-muted-foreground tabular')}>
         {price ?? '—'}
       </span>
       <span className={cn(FIGURES_CELL, 'font-mono text-[12.5px] tabular')}>
-        <span className="text-right">{p.value === null ? '—' : eur(Number(p.value), 2)}</span>
+        <span className="text-right">{p.value === null ? '—' : format.eur(p.value, 2)}</span>
         <span className="text-right">
           <Gain value={p.gain} />
         </span>

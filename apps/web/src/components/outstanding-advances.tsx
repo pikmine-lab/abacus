@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarIcon, HandCoinsIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { DateField } from '@/components/forms'
@@ -8,7 +9,7 @@ import { RowMenu } from '@/components/row-menu'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { closeAdvanceAction, refundAdvanceAction } from '@/lib/actions'
-import { eur, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 export interface OpenAdvance {
   movementId: string
@@ -64,6 +65,8 @@ export function OutstandingAdvances({
 }
 
 function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: string; back: string }) {
+  const t = useTranslations('movements.advances')
+  const format = useFormat()
   const [dateOpen, setDateOpen] = useState(false)
   const partial = advance.expected < advance.expense
 
@@ -71,15 +74,25 @@ function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: str
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
       <div className="flex min-w-0 flex-col gap-0.5">
         <p className="truncate text-[13.5px] font-medium">
-          {advance.debtor} doit <span className="tabular">{eur(advance.remaining, 2)}</span>
+          {t.rich('owes', {
+            debtor: advance.debtor,
+            amount: format.eur(advance.remaining, 2),
+            tabular: (chunks) => <span className="tabular">{chunks}</span>,
+          })}
         </p>
         <p className="text-[12px] text-faint">
-          {advance.label} · {eur(advance.expense, 2)} le {frDate(advance.happenedOn)}
-          {/* The share expected only says something new once part of it came
-              back: before that it is the figure the line leads with. */}
-          {partial && advance.refunded > 0 && `, ${eur(advance.expected, 2)} attendus`}
-          {advance.refunded > 0 && `, ${eur(advance.refunded, 2)} déjà revenus`} · revient sur{' '}
-          {advance.account}
+          {t('detail', {
+            label: advance.label,
+            expense: format.eur(advance.expense, 2),
+            date: format.date(advance.happenedOn),
+            // The share expected only says something new once part of it came
+            // back: before that it is the figure the line leads with.
+            partial: partial && advance.refunded > 0 ? 'yes' : 'no',
+            expected: format.eur(advance.expected, 2),
+            returned: advance.refunded > 0 ? 'yes' : 'no',
+            refunded: format.eur(advance.refunded, 2),
+            account: advance.account,
+          })}
         </p>
       </div>
 
@@ -90,7 +103,7 @@ function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: str
           name="amount"
           defaultValue={advance.remaining.toFixed(2)}
           className="h-7 w-28 text-[12.5px]"
-          aria-label={`Montant remboursé par ${advance.debtor}`}
+          aria-label={t('refundedAmount', { debtor: advance.debtor })}
         />
         {dateOpen && (
           <div className="w-40">
@@ -98,14 +111,14 @@ function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: str
           </div>
         )}
         <Button size="sm" type="submit" className="h-7">
-          Remboursé
+          {t('refunded')}
         </Button>
       </form>
 
       <RowMenu label={advance.label}>
         <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
           <CalendarIcon />
-          {dateOpen ? 'Revenu aujourd’hui' : 'Revenu à une autre date…'}
+          {dateOpen ? t('backToday') : t('backOtherDay')}
         </DropdownMenuItem>
         <DropdownMenuItem asChild variant="destructive">
           <form action={closeAdvanceAction}>
@@ -113,7 +126,7 @@ function AdvanceRow({ advance, today, back }: { advance: OpenAdvance; today: str
             <input type="hidden" name="back" value={back} />
             <button type="submit" className="flex w-full items-center gap-2">
               <HandCoinsIcon />
-              Solder : il ne rendra rien
+              {t('writeOff')}
             </button>
           </form>
         </DropdownMenuItem>

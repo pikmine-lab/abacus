@@ -271,7 +271,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   entière prend 450 ms en décélération, un pas de zoom (+ / −) 200 ms ; sous
   `prefers-reduced-motion`, rien ne glisse.
 - **Marques** : lignes 2 px, points de fin r4 avec anneau du fond, barres ≤ 24 px à bout
-  arrondi, grille en filet discret, ticks au format français (`13,5k`).
+  arrondi, grille en filet discret, ticks compacts au format de la langue affichée
+  (`13,5 k €`, `€13.5K`).
 
 ## Tri
 
@@ -332,8 +333,12 @@ Le texte est le dernier recours : un écran qui doit s'expliquer est mal découp
    un écran valent zéro.
 4. **Ce qui ne change pas l'action reste dans le dépôt** : le motif technique d'une limite,
    le rappel d'une évidence. La limite elle-même se dit.
-5. **La voix** : on tutoie ; guillemets français « » et apostrophe typographique ’ ; pas de
-   point d'exclamation, pas d'emphase, pas de formule qui annonce au lieu de dire.
+5. **La voix** : pas de point d'exclamation, pas d'emphase, pas de formule qui annonce au
+   lieu de dire, dans toutes les langues. En français, on tutoie ; guillemets « » et
+   apostrophe typographique ’. En anglais, on s'adresse à « you », en anglais américain,
+   capitale au seul premier mot d'un libellé ou d'un titre ; guillemets “ ” et apostrophe
+   typographique ’. Les nombres et les dates suivent la langue (`1 234,50 €` et `05/10/26`,
+   `€1,234.50` et `10/05/26`).
 
 ## Identité
 

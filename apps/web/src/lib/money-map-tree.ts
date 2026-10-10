@@ -11,11 +11,17 @@ import { NONE } from '@/lib/utils'
  */
 const LEAVES = 500
 
-const UNSET = {
-  activity: 'Hors activité',
-  group: 'Sans groupe',
-  category: 'Sans catégorie',
-  actor: 'Sans acteur',
+/**
+ * The words the tree names its blocks with, in the language being spoken:
+ * resolved by the page, so this file stays free of any catalog.
+ */
+export interface MapLabels {
+  /** What an unset dimension is called. */
+  unset: { activity: string; group: string; category: string; actor: string }
+  /** The block that sums the movements a category leaves out. */
+  rest: (count: number) => string
+  /** The whole map, on the side of the ledger it reads. */
+  root: string
 }
 
 /**
@@ -30,12 +36,14 @@ export async function moneyMap({
   kind,
   reading,
   split,
+  labels,
 }: {
   userId: string
   period: Period
   kind: FlowKind
   reading: Reading
   split: boolean
+  labels: MapLabels
 }): Promise<MapNode> {
   const { from, to } = period
   const list = (filters: Record<string, string>) =>
@@ -70,7 +78,7 @@ export async function moneyMap({
     push(place(m.categoryId, m.activityId), {
       id: `m:${m.id}`,
       level: 'movement',
-      label: m.actor ?? UNSET.actor,
+      label: m.actor ?? labels.unset.actor,
       net: Number(m.net),
       count: 1,
       date: m.happenedOn,
@@ -83,7 +91,7 @@ export async function moneyMap({
     push(key, {
       id: `rest:${key}`,
       level: 'rest',
-      label: `${r.count} autres`,
+      label: labels.rest(Number(r.count)),
       net: Number(r.net),
       count: Number(r.count),
       href: list(categoryFilters(r.categoryId, split ? r.activityId : undefined)),
@@ -96,12 +104,12 @@ export async function moneyMap({
       ...figures(g),
       id,
       level: 'group',
-      label: g.label ?? UNSET.group,
+      label: g.label ?? labels.unset.group,
       children: g.categories.map((c) => ({
         ...figures(c),
         id: `${id}/c:${c.key ?? NONE}`,
         level: 'category' as const,
-        label: c.label ?? UNSET.category,
+        label: c.label ?? labels.unset.category,
         href: list(categoryFilters(c.key, split ? activity : undefined)),
         children: byPlace.get(place(c.key, activity)) ?? [],
       })),
@@ -116,7 +124,7 @@ export async function moneyMap({
         ...figures(activity),
         id,
         level: 'activity' as const,
-        label: activity.label ?? UNSET.activity,
+        label: activity.label ?? labels.unset.activity,
         children: groups.map((g) => groupNode(g, id, activity.key)),
       },
     ]
@@ -125,7 +133,7 @@ export async function moneyMap({
   return {
     id: 'root',
     level: 'root',
-    label: kind === 'expense' ? 'Toutes les dépenses' : 'Tous les revenus',
+    label: labels.root,
     net: children.reduce((sum, c) => sum + Math.max(0, c.net), 0),
     count: children.reduce((sum, c) => sum + c.count, 0),
     children,

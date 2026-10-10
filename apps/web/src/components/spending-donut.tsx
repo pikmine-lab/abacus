@@ -1,8 +1,9 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
-import type { BreakdownItem } from '@/components/breakdown-bars'
-import { eur } from '@/lib/utils'
+import { type BreakdownItem, useUnsetLabels } from '@/components/breakdown-bars'
+import { useFormat } from '@/lib/format'
 
 /**
  * Spending by big mass: one arc per category group, ordered by weight, with
@@ -68,15 +69,20 @@ interface Arc {
 
 export function SpendingDonut({
   rows,
-  emptyLabel = 'Rien sur cette période.',
+  emptyLabel,
   /** What an unset group is called in this dimension. */
-  noneLabel = 'Sans groupe',
+  noneLabel: noneLabelProp,
 }: {
   /** Ordered by net, biggest first: the service already returns them so. */
   rows: BreakdownItem[]
   emptyLabel?: string
   noneLabel?: string
 }) {
+  const t = useTranslations('home.donut')
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
+  const unset = useUnsetLabels()
+  const noneLabel = noneLabelProp ?? unset.categoryGroup
   const [hover, setHover] = useState<number | null>(null)
 
   // Two totals, one per job: the circle is drawn against the gross, which is
@@ -84,7 +90,8 @@ export function SpendingDonut({
   // which is what the period cost.
   const total = rows.reduce((sum, r) => sum + r.gross, 0)
   const netTotal = rows.reduce((sum, r) => sum + r.net, 0)
-  if (rows.length === 0 || total === 0) return <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
+  if (rows.length === 0 || total === 0)
+    return <p className="py-3 text-[13px] text-faint">{emptyLabel ?? t('empty')}</p>
 
   const tail = rows.slice(NAMED)
   const slices: Slice[] = rows.slice(0, NAMED).map((row, i) => ({
@@ -96,7 +103,7 @@ export function SpendingDonut({
   }))
   if (tail.length > 0)
     slices.push({
-      label: `Autres (${tail.length})`,
+      label: t('others', { count: tail.length }),
       detail: tail.map((row) => row.label ?? noneLabel).join(', '),
       gross: tail.reduce((sum, r) => sum + r.gross, 0),
       net: tail.reduce((sum, r) => sum + r.net, 0),
@@ -132,9 +139,10 @@ export function SpendingDonut({
           viewBox="0 0 100 100"
           className="size-[132px] sm:size-[148px]"
           role="img"
-          aria-label={`Dépenses par groupe : ${slices
-            .map((s) => `${s.label} ${eur(s.net)}`)
-            .join(', ')}. Total ${eur(netTotal)}.`}
+          aria-label={t('chart', {
+            slices: slices.map((s) => `${s.label} ${format.eur(s.net)}`).join(', '),
+            total: format.eur(netTotal),
+          })}
         >
           {/* Arcs start at noon and run clockwise, biggest first. */}
           <g transform="rotate(-90 50 50)">
@@ -173,13 +181,15 @@ export function SpendingDonut({
             className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center"
             aria-hidden
           >
-            <span className="font-mono text-[13px] font-semibold tabular">{share(on.net, netTotal)} %</span>
-            {on.net !== on.gross && (
-              <span className="font-mono text-[10.5px] tabular text-faint">brut {eur(on.gross)}</span>
-            )}
-            <span className="text-[10px] text-faint">
-              {on.count} mouvement{on.count > 1 ? 's' : ''}
+            <span className="font-mono text-[13px] font-semibold tabular">
+              {words('percent', { value: share(on.net, netTotal) })}
             </span>
+            {on.net !== on.gross && (
+              <span className="font-mono text-[10.5px] tabular text-faint">
+                {words('gross', { amount: format.eur(on.gross) })}
+              </span>
+            )}
+            <span className="text-[10px] text-faint">{words('movements', { count: on.count })}</span>
           </div>
         )}
       </div>
@@ -213,10 +223,10 @@ export function SpendingDonut({
               )}
             </span>
             <span className="shrink-0 text-right font-mono text-[12.5px] font-semibold tabular">
-              {eur(slice.net)}
+              {format.eur(slice.net)}
             </span>
             <span className="w-9 shrink-0 text-right font-mono text-[11px] tabular text-faint">
-              {share(slice.net, netTotal)} %
+              {words('percent', { value: share(slice.net, netTotal) })}
             </span>
           </li>
         ))}

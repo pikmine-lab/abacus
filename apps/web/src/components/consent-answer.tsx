@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/auth-client'
@@ -12,10 +13,11 @@ import { authClient } from '@/lib/auth-client'
  * and the plugin follows that redirect.
  *
  * `data-answer` lets the abacus above preview each answer (globals.css):
- * pointing at Refuser empties it, and a refusal sent keeps it empty, as does
+ * pointing at the refusal empties it, and a refusal sent keeps it empty, as does
  * an answer the server turned down (`data-expired`).
  */
 export function ConsentAnswer({ className }: { className?: string }) {
+  const t = useTranslations('auth.consent')
   const [chosen, setChosen] = useState<'accept' | 'refuse' | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -40,7 +42,7 @@ export function ConsentAnswer({ className }: { className?: string }) {
           aria-busy={chosen === 'refuse'}
           onClick={() => answer(false)}
         >
-          Refuser
+          {t('refuse')}
         </Button>
         <Button
           data-answer="accept"
@@ -48,12 +50,12 @@ export function ConsentAnswer({ className }: { className?: string }) {
           aria-busy={chosen === 'accept'}
           onClick={() => answer(true)}
         >
-          Autoriser
+          {t('accept')}
         </Button>
       </div>
       {failed && (
         <p aria-live="polite" className="mt-2 text-right text-[12px] text-destructive">
-          Demande expirée : relance la connexion depuis ton IA.
+          {t('answerExpired')}
         </p>
       )}
     </div>

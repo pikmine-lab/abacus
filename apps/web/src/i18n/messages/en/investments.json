@@ -1,0 +1,185 @@
+{
+  "title": "Investments",
+  "natures": {
+    "equity": "Shares",
+    "fund": "Funds",
+    "crypto": "Crypto",
+    "bond": "Bonds",
+    "real_estate": "Real estate",
+    "other": "Other"
+  },
+  "operationTypes": {
+    "buy": "Buy",
+    "sell": "Sell",
+    "dividend": "Dividend",
+    "fee": "Fee"
+  },
+  "payout": {
+    "accumulating": "accumulating",
+    "distributing": "distributing"
+  },
+  "window": {
+    "label": "Chart window",
+    "options": {
+      "1w": "1W",
+      "1m": "1M",
+      "1y": "1Y",
+      "all": "All"
+    }
+  },
+  "words": {
+    "asset": "Asset",
+    "account": "Account",
+    "date": "Date",
+    "type": "Type",
+    "quantity": "Quantity",
+    "amount": "Amount",
+    "price": "Price",
+    "value": "Value",
+    "performance": "Performance",
+    "contributions": "Contributions",
+    "operations": "Operations",
+    "name": "Name",
+    "choose": "Choose",
+    "change": "Change",
+    "note": "Note (optional)",
+    "save": "Save",
+    "cancel": "Cancel",
+    "manualPrice": "price entered by hand",
+    "averageCost": "Avg cost {amount}"
+  },
+  "page": {
+    "follow": {
+      "label": "Watch",
+      "title": "Watch an asset",
+      "description": "Without holding it: its price will show, and the day you buy some it becomes a position."
+    },
+    "plan": {
+      "label": "Schedule a contribution",
+      "title": "Scheduled contribution",
+      "description": "A sum that moves from an account to an investment account at a regular interval, and buys there. The transfer and the buy are recorded together at each due payment."
+    },
+    "operation": {
+      "label": "Declare an operation",
+      "title": "Operation",
+      "description": "What happens inside the account. Funding the account or taking money out of it is a transfer, declared in movements.",
+      "short": "Declare"
+    },
+    "noAccount": "No investment account. Create one in <link>Accounts</link>, then declare here what you hold in it.",
+    "firstBuy": "Declare your first buy: the panel finds the ETF, share or crypto by its name, ISIN or provider.",
+    "valueHintUnpriced": "cash + priced positions; {count} without a price",
+    "valueHint": "cash + positions at last price",
+    "unrealized": "unrealized gain",
+    "performanceMissing": "a price is missing: the figure would be understated",
+    "performanceHint": "dividends and fees included, against {amount} of contributions",
+    "scheduled": "Scheduled savings",
+    "plans": {
+      "title": "Scheduled contributions",
+      "sorts": {
+        "monthly": "Monthly savings",
+        "amount": "Amount paid in",
+        "next": "Next due date"
+      },
+      "count": "{count} running"
+    },
+    "evolution": {
+      "title": "Over time",
+      "readingLabel": "Chart reading",
+      "performanceAria": "Investment performance against contributions",
+      "valueAria": "Investment value and contributions"
+    },
+    "gainColumn": "Gain/loss",
+    "massUnpriced": "{count} without a price, not valued",
+    "noPrice": "no known price",
+    "manualStamp": "entered {day}",
+    "followed": {
+      "title": "Watched"
+    },
+    "latest": "the last {count}",
+    "atMost": "{count} at most, in this order",
+    "noOperation": "Nothing declared yet.",
+    "otherEntries": "Other entries",
+    "toConfirm": "To confirm",
+    "scheduledYearly": "{amount} a year",
+    "positions": "Positions",
+    "strip": "Split of positions",
+    "accounts": "Accounts",
+    "toFund": "{cash} to fund",
+    "inCash": "{cash} in cash",
+    "noPositionShort": "no position",
+    "perMonth": "/mo"
+  },
+  "detail": {
+    "costBasis": "Cost basis",
+    "costBasisHint": "Avg cost {amount}, order fees included",
+    "watchedNoPrice": "watched, not held; no known price",
+    "sessions": "{count, plural, one {# known session} other {# known sessions}}",
+    "priceAria": "{name} price",
+    "unrealized": "unrealized gain, dividends and fees excluded",
+    "watched": "watched, not held"
+  },
+  "search": {
+    "otherVenuesOpen": "same fund, other listings",
+    "otherVenues": "{count, plural, one {# other listing of the same fund} other {# other listings of the same fund}}",
+    "loading": "Loading…",
+    "noVenue": "No other listing found.",
+    "retained": "chosen",
+    "unavailable": "A listing without a readable price cannot be selected.",
+    "placeholder": "Name, ISIN, ticker, provider…",
+    "isinHint": "Safest: paste the ISIN, shown by your bank. Otherwise, the price should match your statement.",
+    "searching": "Searching…",
+    "nothing": "Nothing found.",
+    "known": "Already yours",
+    "watched": "watched",
+    "securities": "Securities and ETFs",
+    "coins": "Crypto"
+  },
+  "forms": {
+    "nature": "Type",
+    "trackAs": "Name to watch it under",
+    "operationDeclared": "Operation declared",
+    "quantityPlaceholder": "12.5",
+    "unitPlaceholder": "22.57",
+    "basisTotal": "Total amount",
+    "basisUnit": "Unit price",
+    "amountDebited": "Amount debited, fees included",
+    "amountCredited": "Amount credited",
+    "unitPaid": "Price paid per share",
+    "unitReceived": "Price received per share",
+    "amountReceived": "Amount received",
+    "feeAmount": "Fee amount",
+    "declare": "Declare",
+    "notQuoted": "No source quotes it (real estate fund, unlisted shares, property)",
+    "assetFollowed": "Asset watched",
+    "followAs": "Name it",
+    "follow": "Watch",
+    "rename": "Rename",
+    "stopFollowing": "Stop watching",
+    "stopFollowingTitle": "Stop watching {name}?",
+    "stopFollowingDescription": "Nothing was declared on it, so there is nothing to lose. You can watch it again by searching for it.",
+    "stop": "Stop",
+    "assetRenamed": "Asset renamed",
+    "accountFee": "account fee",
+    "operationOn": "{type} on {date}",
+    "edit": "Edit",
+    "delete": "Delete",
+    "operationCorrected": "Operation corrected",
+    "deleteTitle": "Delete this operation?",
+    "deleteDescription": "{type} on {date}, {amount} in {account}. The position and average cost are recalculated without it."
+  },
+  "plan": {
+    "created": "Scheduled contribution created",
+    "labelPlaceholder": "MSCI World contribution",
+    "sourceAccount": "Debited account",
+    "targetAccount": "Investment account",
+    "amountPerPeriod": "Amount per period",
+    "firstDueOn": "First due date",
+    "activity": "Activity",
+    "personal": "(personal)",
+    "createNote": "At each due payment, the transfer and the buy are recorded in one step: you will still enter the quantity bought, which only the execution price can tell.",
+    "create": "Create the contribution",
+    "corrected": "Contribution corrected",
+    "editNote": "The correction applies to upcoming due payments. Contributions already confirmed keep their account and the asset bought: they record what happened."
+  },
+  "securityType": "Security"
+}

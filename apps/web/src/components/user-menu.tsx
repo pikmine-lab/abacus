@@ -3,6 +3,7 @@
 import { LogOutIcon, PlugZapIcon, SettingsIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -15,6 +16,7 @@ import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar'
 import { authClient } from '@/lib/auth-client'
 
 export function UserMenu({ name }: { name: string }) {
+  const t = useTranslations('shell')
   const router = useRouter()
   const { isMobile } = useSidebar()
   return (
@@ -34,13 +36,13 @@ export function UserMenu({ name }: { name: string }) {
         <DropdownMenuItem asChild>
           <Link href="/connect-ai">
             <PlugZapIcon />
-            Brancher une IA
+            {t('screens.connectAi')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/settings">
             <SettingsIcon />
-            Réglages
+            {t('screens.settings')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -53,7 +55,7 @@ export function UserMenu({ name }: { name: string }) {
           }}
         >
           <LogOutIcon />
-          Se déconnecter
+          {t('signOut')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

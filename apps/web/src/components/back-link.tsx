@@ -3,6 +3,7 @@
 import { ArrowLeftIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 /**
  * The way back from a cross-page jump. Links that leave a page tag themselves
@@ -13,25 +14,27 @@ import { useRouter, useSearchParams } from 'next/navigation'
  * there is no history to pop (a pasted link) does it fall back to the plain
  * route.
  */
-const ORIGINS: Record<string, { label: string; href: string }> = {
-  overview: { label: 'Vue d’ensemble', href: '/' },
-  analysis: { label: 'Analyse', href: '/analysis' },
-  movements: { label: 'Mouvements', href: '/movements' },
-  activity: { label: 'Activité', href: '/activity' },
-  expenses: { label: 'Dépenses récurrentes', href: '/recurring-expenses' },
-  income: { label: 'Revenus récurrents', href: '/recurring-income' },
-  accounts: { label: 'Comptes', href: '/accounts' },
-  investments: { label: 'Placements', href: '/investments' },
-  settings: { label: 'Réglages', href: '/settings?part=activities' },
-}
+const ORIGINS = {
+  overview: { screen: 'overview', href: '/' },
+  analysis: { screen: 'analysis', href: '/analysis' },
+  movements: { screen: 'movements', href: '/movements' },
+  activity: { screen: 'activity', href: '/activity' },
+  expenses: { screen: 'recurringExpenses', href: '/recurring-expenses' },
+  income: { screen: 'recurringIncome', href: '/recurring-income' },
+  accounts: { screen: 'accounts', href: '/accounts' },
+  investments: { screen: 'investments', href: '/investments' },
+  settings: { screen: 'settings', href: '/settings?part=activities' },
+} as const
 
 /** The look every return shares, whether it pops history or follows a link. */
 const RETURN =
   'flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground'
 
 export function BackLink({ parent }: { parent?: { label: string; href: string } }) {
+  const t = useTranslations('shell.screens')
   const router = useRouter()
-  const origin = ORIGINS[useSearchParams().get('from') ?? '']
+  const from = useSearchParams().get('from') ?? ''
+  const origin = Object.hasOwn(ORIGINS, from) ? ORIGINS[from as keyof typeof ORIGINS] : undefined
   // A page that belongs under another one (an activity's regime under its
   // activity) names that parent when no jump brought the reader here, or once
   // the page has been walked on its own: it is never a dead end.
@@ -53,7 +56,7 @@ export function BackLink({ parent }: { parent?: { label: string; href: string } 
       className={RETURN}
     >
       <ArrowLeftIcon className="size-3.5" />
-      <span className="hidden sm:inline">{origin.label}</span>
+      <span className="hidden sm:inline">{t(origin.screen)}</span>
     </button>
   )
 }

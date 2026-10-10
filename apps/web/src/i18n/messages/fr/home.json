@@ -1,0 +1,94 @@
+{
+  "onboarding": {
+    "title": "Bienvenue",
+    "accounts": {
+      "title": "Déclare tes comptes",
+      "why": "Un compte courant suffit pour commencer. C’est ce qui porte les soldes et rend tout le reste calculable.",
+      "cta": "Ajouter un compte"
+    },
+    "movements": {
+      "title": "Déclare quelques mouvements",
+      "why": "Dépenses, revenus, virements entre tes comptes. Dès le premier, les soldes et les graphes existent.",
+      "cta": "Déclarer"
+    },
+    "commitments": {
+      "title": "Déclare tes engagements récurrents",
+      "why": "Abonnements et salaire : l’app en déduit ton coût mensuel engagé et te propose les échéances à confirmer.",
+      "cta": "Ajouter"
+    }
+  },
+  "wealth": {
+    "label": "Patrimoine",
+    "missingContributions": "{amount} d’apports non déclarés : pointe les espèces du compte",
+    "priced": "placements au dernier cours",
+    "pricedWithUnpriced": "placements au dernier cours, {count} sans cours"
+  },
+  "balances": {
+    "label": "Soldes",
+    "realDate": "date réelle"
+  },
+  "figures": {
+    "saved": "Épargné",
+    "spent": "Dépensé",
+    "grossBeforeRefunds": "brut {amount} avant remboursements",
+    "committed": "Engagé",
+    "perMonth": "/mois",
+    "subscriptions": "{subscriptions, plural, one {# abonnement} other {# abonnements}}",
+    "subscriptionsAndFinancings": "{subscriptions, plural, one {# abonnement} other {# abonnements}} · {financings, plural, one {# financement} other {# financements}}"
+  },
+  "todo": {
+    "label": "À faire",
+    "debits": "{count, plural, one {# prélèvement à confirmer} other {# prélèvements à confirmer}}",
+    "incomes": "{count, plural, one {# versement à confirmer} other {# versements à confirmer}}",
+    "contributions": "{count, plural, one {# versement programmé à confirmer} other {# versements programmés à confirmer}}",
+    "since": "depuis le {date}",
+    "statements": "{count, plural, one {Relevé de {card} à valider} other {# relevés de {card} à valider}}",
+    "statementsDetail": "{amount} depuis le {date}",
+    "checks": "{count, plural, one {# compte à pointer} other {# comptes à pointer}}",
+    "checkGap": "{account} : écart de {amount}",
+    "checkedAgo": "{account} : pointé {when}",
+    "neverChecked": "{account} : jamais pointé",
+    "claims": "{amount} à récupérer",
+    "advances": "{count, plural, one {# avance} other {# avances}}",
+    "activity": "Activité"
+  },
+  "alerts": {
+    "thresholdCrossed": "{subject} franchi",
+    "thresholdNear": "{subject} bientôt atteint",
+    "ruleReviewDue": "{subject} à revérifier",
+    "ruleUnconfirmed": "{subject} non confirmé",
+    "activityUnreadable": "{subject} : relevé illisible",
+    "ceiling": "{current} pour un plafond à {limit}",
+    "floor": "{current} pour un plancher à {limit}",
+    "reviewSince": "à revérifier depuis le {date}",
+    "noText": "aucun texte ne fixe cette valeur",
+    "verifiedOn": "vérifié le {date}",
+    "unreadable": "une règle porte des paramètres illisibles : corrige-la pour retrouver les chiffres de l’activité"
+  },
+  "flows": "Entrées et sorties, douze derniers mois",
+  "spending": {
+    "label": "Dépenses",
+    "empty": "Aucune dépense déclarée sur cette période."
+  },
+  "upcoming": {
+    "label": "À venir",
+    "link": "Toutes les échéances",
+    "empty": "Aucun engagement déclaré.",
+    "installments": "{paid}/{total} échéances",
+    "judgments": {
+      "essential": "essentiel",
+      "reducible": "réductible",
+      "to_cancel": "à résilier"
+    }
+  },
+  "donut": {
+    "empty": "Rien sur cette période.",
+    "others": "Autres ({count})",
+    "chart": "Dépenses par groupe : {slices}. Total {total}."
+  },
+  "balanceChart": {
+    "label": "Évolution des soldes par compte",
+    "notEnough": "Pas encore assez d’historique pour tracer une courbe.",
+    "projection": "projection"
+  }
+}

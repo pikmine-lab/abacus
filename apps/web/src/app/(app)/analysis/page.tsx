@@ -11,6 +11,7 @@ import {
 } from '@abacus/core/services/reports'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { BreakdownBars } from '@/components/breakdown-bars'
 import { Figure, FigureRow } from '@/components/composition'
 import { FlowChart } from '@/components/flow-chart'
@@ -21,16 +22,19 @@ import { ShareRanking } from '@/components/share-strip'
 import { UrlTabs } from '@/components/url-tabs'
 import { BarsIcon, MapIcon, StripIcon } from '@/components/view-icons'
 import { flowBandWindow } from '@/lib/flow-band'
+import { getFormat } from '@/lib/format-server'
 import { FOCUS_PARAM, VIEW_PARAM } from '@/lib/money-map'
 import { moneyMap } from '@/lib/money-map-tree'
 import { paceMonths } from '@/lib/pace'
 import { previousWindow, readingQualifier, resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
-import { eur } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Analyse' }
+export async function generateMetadata() {
+  const t = await getTranslations('shell.screens')
+  return { title: t('analysis') }
+}
 
 /**
  * The dimensions ranked here. The category group leads, and is the default: it
@@ -41,14 +45,6 @@ export const metadata = { title: 'Analyse' }
 const GROUPS = ['categoryGroup', 'category', 'actor', 'activity'] as const
 type Ranked = (typeof GROUPS)[number]
 const DEFAULT_GROUP: Ranked = 'categoryGroup'
-
-/** How a dimension names itself, for the ranking's accessible name. */
-const DIMENSION_NOUN: Record<Ranked, string> = {
-  categoryGroup: 'groupe',
-  category: 'catégorie',
-  actor: 'acteur',
-  activity: 'activité',
-}
 
 export default async function AnalysisPage({
   searchParams,
@@ -68,13 +64,23 @@ export default async function AnalysisPage({
   const userId = session.user.id
   const now = today()
   const params = await searchParams
-  const period = resolvePeriod(params, now)
-  const previous = previousWindow(period)
+  const [t, screens, mapWords, unset, words, periodWords, format] = await Promise.all([
+    getTranslations('analysis'),
+    getTranslations('shell.screens'),
+    getTranslations('analysis.map'),
+    getTranslations('analysis.unset'),
+    getTranslations('analysis.words'),
+    getTranslations('common.period'),
+    getFormat(),
+  ])
+  const periodContext = { t: periodWords, format }
+  const period = resolvePeriod(periodContext, params, now)
+  const previous = previousWindow(periodContext, period)
   const reading = await currentReading(params, userId)
   // Every flow figure says when the accrual reading is in force, as on the
   // overview; the band above them also names the whole months it covers.
-  const flowQualifier = reading === 'accrual' ? 'rattachement' : undefined
-  const bandQualifier = readingQualifier(period, reading)
+  const flowQualifier = reading === 'accrual' ? periodWords('accrual') : undefined
+  const bandQualifier = readingQualifier(periodContext, period, reading)
 
   const groupBy = (GROUPS as readonly string[]).includes(params.by ?? '')
     ? (params.by as Ranked)
@@ -96,7 +102,25 @@ export default async function AnalysisPage({
       : spendingBreakdown(userId, period.from, period.to, groupBy, kind, reading)
   const [breakdown, tree, view, totals, previousTotals, monthly] = await Promise.all([
     ranking,
-    map ? moneyMap({ userId, period, kind, reading, split }) : null,
+    map
+      ? moneyMap({
+          userId,
+          period,
+          kind,
+          reading,
+          split,
+          labels: {
+            unset: {
+              activity: unset('activity'),
+              group: unset('categoryGroup'),
+              category: unset('category'),
+              actor: unset('actor'),
+            },
+            rest: (count) => words('others', { count }),
+            root: kind === 'expense' ? mapWords('allExpenses') : mapWords('allIncome'),
+          },
+        })
+      : null,
     // How the ranking is drawn is the person's to settle, in Réglages.
     rankingViewPreference(userId),
     flowTotals(userId, period.from, period.to, reading),
@@ -123,12 +147,11 @@ export default async function AnalysisPage({
     ...amounts(r),
     categories: 'categories' in r ? r.categories.map(amounts) : undefined,
   }))
-  const emptyLabel =
-    kind === 'expense' ? 'Aucune dépense sur cette période.' : 'Aucun revenu sur cette période.'
+  const emptyLabel = kind === 'expense' ? t('ranking.emptyExpense') : t('ranking.emptyIncome')
 
   return (
     <>
-      <PeriodHeader title="Analyse" period={period} reading={reading} />
+      <PeriodHeader title={screens('analysis')} period={period} reading={reading} />
 
       <PageBody className="gap-8 pt-6">
         {/* The figures frame the ranking and stay smaller than it. The biggest
@@ -136,7 +159,7 @@ export default async function AnalysisPage({
         <FigureRow compact>
           <Figure
             compact
-            label="Dépensé"
+            label={t('figures.spent')}
             qualifier={flowQualifier}
             value={expenseNet}
             delta={
@@ -148,11 +171,15 @@ export default async function AnalysisPage({
                   }
                 : undefined
             }
-            note={expenseGross !== expenseNet ? `brut ${eur(expenseGross)} avant remboursements` : undefined}
+            note={
+              expenseGross !== expenseNet
+                ? t('figures.grossBeforeRefunds', { amount: format.eur(expenseGross) })
+                : undefined
+            }
           />
           <Figure
             compact
-            label="Reçu"
+            label={t('figures.received')}
             qualifier={flowQualifier}
             value={income}
             delta={
@@ -160,30 +187,30 @@ export default async function AnalysisPage({
                 ? { value: Math.round(income - Number(previousTotals.income)), label: previous!.label }
                 : undefined
             }
-            note={`${incomeCount} mouvement${incomeCount > 1 ? 's' : ''}`}
+            note={words('movements', { count: incomeCount })}
           />
           <Figure
             compact
-            label="Épargné"
+            label={t('figures.saved')}
             qualifier={flowQualifier}
             value={saved}
-            note={savingRate !== null ? `${savingRate} % de ce qui est entré` : 'aucun revenu déclaré'}
+            note={savingRate !== null ? t('figures.savingRate', { rate: savingRate }) : t('figures.noIncome')}
           />
           {/* On a single month the average is the total again. */}
           {pace !== null && (
             <Figure
               compact
-              label="Rythme"
+              label={t('figures.pace')}
               qualifier={flowQualifier}
               value={expenseNet / pace}
-              per="/mois"
-              note={`dépensé en moyenne sur ${pace.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} mois`}
+              per={t('figures.perMonth')}
+              note={t('figures.paceNote', { months: format.number(pace, 1) })}
             />
           )}
         </FigureRow>
 
         {(monthly.length > 1 || bandQualifier) && (
-          <section aria-label="Entrées et sorties par mois">
+          <section aria-label={t('band')}>
             {bandQualifier && <p className="pb-1 text-[11.5px] text-faint">{bandQualifier}</p>}
             {/* No title: the months on the axis name the window, the two sides
                 of the zero line name themselves, and each month is the way to
@@ -205,7 +232,7 @@ export default async function AnalysisPage({
           </section>
         )}
 
-        <section aria-label={`${kind === 'expense' ? 'Dépenses' : 'Revenus'} par ${DIMENSION_NOUN[groupBy]}`}>
+        <section aria-label={t('ranking.label', { kind, dimension: t(`ranking.dimensions.${groupBy}`) })}>
           {/* The direction names the block, the dimension sorts it: both scope
               this ranking only, so they sit on it rather than in the header. */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border pb-3">
@@ -213,10 +240,10 @@ export default async function AnalysisPage({
               param="flow"
               fallback="expense"
               clears={[VIEW_PARAM, FOCUS_PARAM]}
-              ariaLabel="Sens des flux"
+              ariaLabel={t('ranking.flow')}
               options={[
-                { value: 'expense', label: 'Dépenses' },
-                { value: 'income', label: 'Revenus' },
+                { value: 'expense', label: t('ranking.expense') },
+                { value: 'income', label: t('ranking.income') },
               ]}
             />
             {flowQualifier && <span className="-ml-2 text-[11.5px] text-faint">{flowQualifier}</span>}
@@ -229,39 +256,34 @@ export default async function AnalysisPage({
                   param="split"
                   fallback="group"
                   clears={[VIEW_PARAM, FOCUS_PARAM]}
-                  ariaLabel="Premier niveau de la carte"
+                  ariaLabel={t('ranking.split')}
                   options={[
-                    { value: 'group', label: 'Par groupe' },
-                    { value: 'activity', label: 'Par activité' },
+                    { value: 'group', label: t('ranking.byGroup') },
+                    { value: 'activity', label: t('ranking.byActivity') },
                   ]}
                 />
               ) : (
                 <UrlTabs
                   param="by"
                   fallback={DEFAULT_GROUP}
-                  ariaLabel="Regrouper par"
-                  options={[
-                    { value: 'categoryGroup', label: 'Groupe' },
-                    { value: 'category', label: 'Catégorie' },
-                    { value: 'actor', label: 'Acteur' },
-                    { value: 'activity', label: 'Activité' },
-                  ]}
+                  ariaLabel={t('ranking.groupBy')}
+                  options={GROUPS.map((value) => ({ value, label: t(`ranking.options.${value}`) }))}
                 />
               )}
               <UrlTabs
                 param="view"
                 fallback="ranking"
                 clears={[VIEW_PARAM, FOCUS_PARAM]}
-                ariaLabel="Vue"
+                ariaLabel={t('ranking.view')}
                 // The ranking is drawn the way Réglages says, so its icon is
                 // that drawing.
                 options={[
                   {
                     value: 'ranking',
-                    label: 'Classement',
+                    label: t('ranking.rankingView'),
                     icon: view === 'strip' ? <StripIcon /> : <BarsIcon />,
                   },
-                  { value: 'map', label: 'Carte', icon: <MapIcon /> },
+                  { value: 'map', label: t('ranking.mapView'), icon: <MapIcon /> },
                 ]}
               />
             </div>
@@ -271,7 +293,11 @@ export default async function AnalysisPage({
               tree.net > 0 ? (
                 // A new reading is a new map: it opens where its URL says,
                 // not where the previous one was left.
-                <MoneyMap key={`${period.from}|${period.to}|${kind}|${reading}|${split}`} root={tree} />
+                <MoneyMap
+                  key={`${period.from}|${period.to}|${kind}|${reading}|${split}`}
+                  root={tree}
+                  kind={kind}
+                />
               ) : (
                 <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
               )

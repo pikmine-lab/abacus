@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { Field, FormSelect } from '@/components/forms'
 
 /**
@@ -7,29 +8,17 @@ import { Field, FormSelect } from '@/components/forms'
  * and a multiple to combine: these are the rhythms things are actually billed
  * at. The value travels as "unit:count", which the server action splits back.
  */
-const PERIODS = [
-  { value: 'week:1', label: 'chaque semaine' },
-  { value: 'week:2', label: 'toutes les 2 semaines' },
-  { value: 'week:4', label: 'toutes les 4 semaines' },
-  { value: 'month:1', label: 'chaque mois' },
-  { value: 'month:2', label: 'tous les 2 mois' },
-  { value: 'month:3', label: 'tous les 3 mois' },
-  { value: 'month:6', label: 'tous les 6 mois' },
-  { value: 'year:1', label: 'chaque année' },
-  { value: 'year:2', label: 'tous les 2 ans' },
-]
+const PERIODS = ['week:1', 'week:2', 'week:4', 'month:1', 'month:2', 'month:3', 'month:6', 'year:1', 'year:2']
 
-const PLURAL: Record<string, string> = { week: 'semaines', month: 'mois', year: 'ans' }
+type Unit = 'week' | 'month' | 'year'
 
 /**
  * The list covers what a commitment is normally billed at, but the MCP accepts
  * any multiple: one declared there keeps its own rhythm in the list instead of
  * being silently rewritten by the first correction.
  */
-function optionsFor(value: string) {
-  if (PERIODS.some((p) => p.value === value)) return PERIODS
-  const [unit, count] = value.split(':')
-  return [...PERIODS, { value, label: `toutes les ${count} ${PLURAL[unit ?? 'month']}` }]
+function valuesFor(value: string): string[] {
+  return PERIODS.includes(value) ? PERIODS : [...PERIODS, value]
 }
 
 export function PeriodField({
@@ -40,12 +29,17 @@ export function PeriodField({
   /** For callers deriving from it, such as a schedule preview. */
   onValueChange?: (value: string) => void
 }) {
+  const t = useTranslations('common.recurrence')
+  const label = (value: string) => {
+    const [unit = 'month', count = '1'] = value.split(':') as [Unit?, string?]
+    return count === '1' ? t(`single.${unit}`) : t(`multiple.${unit}`, { count: Number(count) })
+  }
   return (
-    <Field label="Périodicité" name="period">
+    <Field label={t('label')} name="period">
       <FormSelect
         name="period"
         defaultValue={defaultValue}
-        options={optionsFor(defaultValue)}
+        options={valuesFor(defaultValue).map((value) => ({ value, label: label(value) }))}
         onValueChange={onValueChange}
       />
     </Field>

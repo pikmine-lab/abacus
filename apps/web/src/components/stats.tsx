@@ -1,6 +1,8 @@
 import { ArrowUpRightIcon } from 'lucide-react'
 import Link from 'next/link'
-import { cn, eur } from '@/lib/utils'
+import { useTranslations } from 'next-intl'
+import { useFormat } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 /**
  * A 12-point trend, drawn small and quiet: grey line, last segment and end
@@ -38,20 +40,23 @@ function Sparkline({ points, className }: { points: number[]; className?: string
 export interface Delta {
   /** Signed change in currency against the comparison window. */
   value: number
-  /** Names what it is compared to: "vs juillet", "vs 12 mois plus tôt". */
+  /** Names what it is compared to: "vs July", "vs previous 12 months". */
   label: string
   /** True when going up is bad (spending): flips the semantic color only. */
   invert?: boolean
 }
 
 export function DeltaLine({ delta }: { delta: Delta }) {
-  if (delta.value === 0) return <p className="text-[11.5px] text-faint">stable {delta.label}</p>
+  const t = useTranslations('common.stats')
+  const format = useFormat()
+  if (delta.value === 0)
+    return <p className="text-[11.5px] text-faint">{t('stable', { label: delta.label })}</p>
   const up = delta.value > 0
   const good = delta.invert ? !up : up
   return (
     <p className={cn('text-[11.5px]', good ? 'text-good' : 'text-destructive')}>
       {/* The arrow carries the direction; color only reinforces it. */}
-      {up ? '↑' : '↓'} {eur(Math.abs(delta.value))} {delta.label}
+      {up ? '↑' : '↓'} {format.eur(Math.abs(delta.value))} {delta.label}
     </p>
   )
 }

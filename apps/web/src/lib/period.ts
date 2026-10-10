@@ -1,6 +1,7 @@
 import type { Reading } from '@abacus/core/domain'
 import { today } from '@abacus/core/domain/period'
-import { frDate } from '@/lib/utils'
+import type { useTranslations } from 'next-intl'
+import type { Format } from '@/lib/format'
 
 /**
  * The period a view is scoped to, resolved from the URL so it survives a
@@ -16,7 +17,7 @@ export interface Period {
   ref: string
   from: string
   to: string
-  /** Named for a sentence: "dépensé en août", "sur les 90 derniers jours". */
+  /** Named for a sentence, in the interface's language: "août 2026", "90 derniers jours". */
   label: string
   /** Anchor of the previous/next window, or null when there is nowhere to go. */
   prev: string | null
@@ -29,13 +30,14 @@ function isDay(value: string | undefined): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value ?? '')
 }
 
-export const PRESET_LABEL: Record<Preset, string> = {
-  month: 'Mois',
-  year: 'Année',
-  '90d': '90 jours',
-  '12m': '12 mois',
-  all: 'Tout',
-  range: 'Période',
+/**
+ * What a period needs to name itself: the `common.period` words and the
+ * formatters of the language being spoken. Resolved on the server, the label
+ * then travels as plain text to whatever displays it.
+ */
+export interface PeriodWords {
+  t: ReturnType<typeof useTranslations<'common.period'>>
+  format: Format
 }
 
 /**
@@ -64,21 +66,6 @@ export function periodParams(period: Period): string {
   return `period=${period.preset}${anchored ? `&ref=${period.ref}` : ''}`
 }
 
-const MONTHS = [
-  'janvier',
-  'février',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'août',
-  'septembre',
-  'octobre',
-  'novembre',
-  'décembre',
-]
-
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate()
 }
@@ -97,6 +84,7 @@ function daysBack(count: number, to: string): string {
 }
 
 export function resolvePeriod(
+  { t, format }: PeriodWords,
   params: { period?: string; ref?: string },
   now = today(),
   /** What the view means by "no period chosen": a ledger wants a wider one. */
@@ -112,7 +100,7 @@ export function resolvePeriod(
         ref: params.ref!,
         from: from!,
         to: to!,
-        label: `du ${frDate(from!)} au ${frDate(to!)}`,
+        label: t('range', { from: format.date(from!), to: format.date(to!) }),
         prev: null,
         next: null,
       }
@@ -131,7 +119,10 @@ export function resolvePeriod(
       ref,
       from,
       to,
-      label: ref === currentMonth ? `${MONTHS[m! - 1]} (en cours)` : `${MONTHS[m! - 1]} ${y}`,
+      label:
+        ref === currentMonth
+          ? t('current', { name: format.dateAs(from, { month: 'long' }) })
+          : format.monthLong(from),
       prev: shiftMonth(ref, -1),
       next: next > currentMonth ? null : next,
     }
@@ -145,7 +136,7 @@ export function resolvePeriod(
       ref,
       from: `${ref}-01-01`,
       to: `${ref}-12-31`,
-      label: ref === currentYear ? `${ref} (en cours)` : ref,
+      label: ref === currentYear ? t('current', { name: ref }) : ref,
       prev: String(Number(ref) - 1),
       next: next > currentYear ? null : next,
     }
@@ -157,7 +148,7 @@ export function resolvePeriod(
       ref: now,
       from: daysBack(90, now),
       to: now,
-      label: '90 derniers jours',
+      label: t('last90'),
       prev: null,
       next: null,
     }
@@ -168,7 +159,7 @@ export function resolvePeriod(
       ref: now,
       from: daysBack(365, now),
       to: now,
-      label: '12 derniers mois',
+      label: t('last12'),
       prev: null,
       next: null,
     }
@@ -179,7 +170,7 @@ export function resolvePeriod(
     // Far enough back to hold any declared history without a query per view.
     from: '1970-01-01',
     to: now,
-    label: 'depuis le début',
+    label: t('sinceStart'),
     prev: null,
     next: null,
   }
@@ -190,7 +181,10 @@ export function resolvePeriod(
  * before. Null for "tout", which has nothing before it: a delta against an
  * empty window would read as a collapse rather than as "no comparison".
  */
-export function previousWindow(period: Period): { from: string; to: string; label: string } | null {
+export function previousWindow(
+  { t, format }: PeriodWords,
+  period: Period,
+): { from: string; to: string; label: string } | null {
   if (period.preset === 'all') return null
   if (period.preset === 'month') {
     const ref = shiftMonth(period.ref, -1)
@@ -198,21 +192,21 @@ export function previousWindow(period: Period): { from: string; to: string; labe
     return {
       from: `${ref}-01`,
       to: `${ref}-${String(lastDayOfMonth(y!, m!)).padStart(2, '0')}`,
-      label: `vs ${MONTHS[m! - 1]}`,
+      label: t('versus', { name: format.dateAs(`${ref}-01`, { month: 'long' }) }),
     }
   }
   if (period.preset === 'year') {
     const ref = String(Number(period.ref) - 1)
-    return { from: `${ref}-01-01`, to: `${ref}-12-31`, label: `vs ${ref}` }
+    return { from: `${ref}-01-01`, to: `${ref}-12-31`, label: t('versus', { name: ref }) }
   }
   const span = daysSpan(period.from, period.to)
   const to = shiftDays(period.from, -1)
   const label =
     period.preset === '90d'
-      ? 'vs 90 jours avant'
+      ? t('versusPrevious90')
       : period.preset === '12m'
-        ? 'vs 12 mois avant'
-        : 'vs la période précédente'
+        ? t('versusPrevious12')
+        : t('versusPrevious')
   return { from: shiftDays(to, -(span - 1)), to, label }
 }
 
@@ -238,21 +232,6 @@ export function seriesFrom(period: Period, firstDeclaredDay: string | null): str
   return period.from > firstDeclaredDay ? period.from : firstDeclaredDay
 }
 
-const SHORT_MONTHS = [
-  'janv.',
-  'févr.',
-  'mars',
-  'avr.',
-  'mai',
-  'juin',
-  'juil.',
-  'août',
-  'sept.',
-  'oct.',
-  'nov.',
-  'déc.',
-]
-
 /**
  * What a flow figure says about its reading, when it has to say anything.
  * Under cash, nothing: the period in the title is what was read. Under accrual
@@ -261,19 +240,14 @@ const SHORT_MONTHS = [
  * attachment holds a month and nothing finer, so "90 derniers jours" is not
  * what was answered.
  */
-export function readingQualifier(period: Period, reading: Reading): string | undefined {
+export function readingQualifier(
+  { t, format }: PeriodWords,
+  period: Period,
+  reading: Reading,
+): string | undefined {
   if (reading === 'cash') return undefined
-  if (period.preset === 'month' || period.preset === 'year' || period.preset === 'all') return 'rattachement'
-  return `rattachement, ${monthsCovered(period)}`
-}
-
-function monthsCovered(period: Period): string {
-  const from = shortMonth(period.from)
-  const to = shortMonth(period.to)
-  return from === to ? from : `${from} → ${to}`
-}
-
-function shortMonth(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  return `${SHORT_MONTHS[m! - 1]} ${y}`
+  if (period.preset === 'month' || period.preset === 'year' || period.preset === 'all') return t('accrual')
+  const from = format.dateAs(period.from, { month: 'short', year: 'numeric' })
+  const to = format.dateAs(period.to, { month: 'short', year: 'numeric' })
+  return t('accrualOver', { months: from === to ? from : `${from} → ${to}` })
 }

@@ -1,12 +1,11 @@
 'use client'
 
 import type { RankingView } from '@abacus/core/domain'
+import { useTranslations } from 'next-intl'
 import { useOptimistic, useState, useTransition } from 'react'
 import { PreferenceRow } from '@/components/preference-row'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { setRankingViewPreferenceAction } from '@/lib/actions'
-
-const LABEL: Record<RankingView, string> = { strip: 'Ruban', bars: 'Barres' }
 
 /** Shares of an illustrative ranking, largest first, as the Analyse draws one. */
 const SHARES = [36, 22, 15, 10, 7]
@@ -47,13 +46,14 @@ function Miniature({ view }: { view: RankingView }) {
  * form, for the same reason as the reading beside it (`ReadingPreference`).
  */
 export function RankingViewPreference({ value }: { value: RankingView }) {
+  const t = useTranslations('common.preferences.rankingView')
   const [pending, startTransition] = useTransition()
   const [failed, setFailed] = useState<string | null>(null)
   const [view, showView] = useOptimistic(value)
 
   return (
     <PreferenceRow
-      label="Classement de l’Analyse"
+      label={t('label')}
       example={<Miniature view={view} />}
       control={
         <div className="flex flex-col items-start gap-1.5 sm:items-end">
@@ -66,10 +66,10 @@ export function RankingViewPreference({ value }: { value: RankingView }) {
               })
             }
           >
-            <TabsList aria-label="Classement de l’Analyse">
+            <TabsList aria-label={t('label')}>
               {(['strip', 'bars'] as const).map((option) => (
                 <TabsTrigger key={option} value={option} disabled={pending} className="px-3 text-[12.5px]">
-                  {LABEL[option]}
+                  {t(option)}
                 </TabsTrigger>
               ))}
             </TabsList>
