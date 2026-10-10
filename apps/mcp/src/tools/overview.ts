@@ -16,11 +16,12 @@ import {
 import { holdingsValue } from '@abacus/core/services/investments'
 import { readingPreference } from '@abacus/core/services/preferences'
 import type { BreakdownRow } from '@abacus/core/services/reports'
-import { spendingBreakdown, spendingByCategoryGroup } from '@abacus/core/services/reports'
+import { flowMovements, spendingBreakdown, spendingByCategoryGroup } from '@abacus/core/services/reports'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
+import { requireActivityByName, requireCategoryByName } from '../resolve.ts'
 import { advancesView } from './movements.ts'
-import { isoDate, ok, run } from './shared.ts'
+import { clearable, isoDate, ok, run } from './shared.ts'
 
 /** What an alert is worth: where a measure stands against its threshold, or how old a rule's source is. */
 function alertFacts(alert: ActivityAlert) {
@@ -167,11 +168,30 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'analyze_flows',
     {
       description:
-        'Breaks a period down by category, actor, activity, or the group its categories belong to, on either side of the ledger: spending by default, what came in with kind: income. Rows are ranked biggest first, the order the user sees on screen: keep it when reporting. An expense row carries two readings, gross (what actually left the accounts) and net (gross minus linked refunds actually received), and the ranking follows the net, because the net is what the period actually cost. An income row carries one amount: a refund is an advance coming back, not money earned, so refunds are left out of the income side rather than deducted from it. A business activity\'s income is net of what its regime makes it pay, the way a salary is net of its contributions: the payments of its rules (its expenses filed in a rule\'s settlement category) come off that activity\'s income, and grouped by actor, category or categoryGroup each of its incomes keeps its share of what remains. When those payments exceed what the activity received over the period asked, it made a loss: its income counts for nothing and what exceeds shows as expenses, under the category, actor and activity of those payments. Either way the net of the period is unchanged, and a loss belongs to the period read: charges paid the month after the receipts are a loss of that month alone, and none over both. Every row says how many movements make it. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)"; list_movements with category: "none" (or activity: "none"), the same period and reading, and the kind of the side read lists the movements behind such a row. Freelance revenue, net of its charges, is kind: income grouped by activity; get_activity_statement gives the revenue before them. A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
+        'Breaks a period down by category, actor, activity, or the group its categories belong to, on either side of the ledger: spending by default, what came in with kind: income. Rows are ranked biggest first, the order the user sees on screen: keep it when reporting. An expense row carries two readings, gross (what actually left the accounts) and net (gross minus linked refunds actually received), and the ranking follows the net, because the net is what the period actually cost. An income row carries one amount: a refund is an advance coming back, not money earned, so refunds are left out of the income side rather than deducted from it. A business activity\'s income is net of what its regime makes it pay, the way a salary is net of its contributions: the payments of its rules (its expenses filed in a rule\'s settlement category) come off that activity\'s income, and grouped by actor, category or categoryGroup each of its incomes keeps its share of what remains. When those payments exceed what the activity received over the period asked, it made a loss: its income counts for nothing and what exceeds shows as expenses, under the category, actor and activity of those payments. Either way the net of the period is unchanged, and a loss belongs to the period read: charges paid the month after the receipts are a loss of that month alone, and none over both. Every row says how many movements make it. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". activity and category narrow the reading to one activity or one category ("none" for what carries none) without changing how any figure is computed, so a narrowed row is the very row the full reading shows: activity plus groupBy categoryGroup answers "where does this activity\'s money go". groupBy movement drills to the end: the movements behind a row, biggest net first, each counted exactly as the row counts it (refunds deducted, an activity\'s income for its share), so their nets add up to the row to the cent\'s rounding, which a list_movements amount does not; past limit, the rest comes back as one sum. Freelance revenue, net of its charges, is kind: income grouped by activity; get_activity_statement gives the revenue before them. A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
-        groupBy: z.enum(['category', 'actor', 'activity', 'categoryGroup']),
+        groupBy: z.enum(['category', 'actor', 'activity', 'categoryGroup', 'movement']),
+        activity: z
+          .string()
+          .optional()
+          .describe('Activity name, or "none" for what belongs to no activity: only its movements are read'),
+        category: z
+          .string()
+          .optional()
+          .describe(
+            'Category name, or "none" for the movements carrying no category: only its movements are read',
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe(
+            'groupBy movement only: how many movements to list before the rest is summed. Default 20',
+          ),
         kind: z
           .enum(['expense', 'income'])
           .optional()
@@ -186,34 +206,54 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           ),
       }),
     },
-    async ({ from, to, groupBy, kind = 'expense', reading: asked }) =>
+    async ({ from, to, groupBy, kind = 'expense', reading: asked, limit = 20, ...f }) =>
       run(async () => {
         // Absent, the figures come back in the reading the user counts in:
         // answering in the other one without being asked would put a table in
         // front of them that no screen of theirs shows.
         const reading = asked ?? (await readingPreference(userId))
+        const activity = clearable(f.activity)
+        const category = clearable(f.category)
+        const scope = {
+          activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
+          categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
+        }
         // An income has one figure where an expense has two: a refund never
         // enters the income side, so a gross and a net there would be the same
         // number written twice, and reading them as a pair would invent a
         // difference.
+        const figures = (r: { gross: string; net: string }) =>
+          kind === 'expense' ? { gross: Number(r.gross), net: Number(r.net) } : { amount: Number(r.gross) }
         const line = (r: BreakdownRow, dimension: string) => ({
           [dimension]: r.label ?? '(none)',
-          ...(kind === 'expense'
-            ? { gross: Number(r.gross), net: Number(r.net) }
-            : { amount: Number(r.gross) }),
+          ...figures(r),
           movements: Number(r.count),
         })
         // A group has no entity behind it, so it cannot be drilled into by a
         // filter: it comes with the categories it merges, the way the screen
         // unfolds it. Left to a second call, the totals would have to be added
         // up by whoever asked, which is exactly the arithmetic to avoid.
-        const rows =
-          groupBy === 'categoryGroup'
-            ? (await spendingByCategoryGroup(userId, from, to, kind, reading)).map((mass) => ({
-                ...line(mass, 'categoryGroup'),
-                categories: mass.categories.map((c) => line(c, 'category')),
-              }))
-            : (await spendingBreakdown(userId, from, to, groupBy, kind, reading)).map((r) => line(r, groupBy))
+        let rest: { movements: number; gross?: number; net?: number; amount?: number } | undefined
+        let rows: object[]
+        if (groupBy === 'movement') {
+          const leaves = await flowMovements(userId, from, to, kind, reading, scope, limit)
+          rows = leaves.movements.map((m) => ({
+            movementId: m.id,
+            date: m.happenedOn,
+            actor: m.actor ?? '(none)',
+            ...figures(m),
+            note: m.note ?? undefined,
+          }))
+          rest = leaves.rest ? { movements: Number(leaves.rest.count), ...figures(leaves.rest) } : undefined
+        } else if (groupBy === 'categoryGroup')
+          rows = (await spendingByCategoryGroup(userId, from, to, kind, reading, scope)).map((mass) => ({
+            ...line(mass, 'categoryGroup'),
+            categories: mass.categories.map((c) => line(c, 'category')),
+          }))
+        else
+          rows = (await spendingBreakdown(userId, from, to, groupBy, kind, reading, scope)).map((r) =>
+            line(r, groupBy),
+          )
         // Both travel back with the figures: the side read is no longer in the
         // tool's name, and one month has two legitimate totals. A table saying
         // neither cannot be read out loud, and neither was necessarily asked
@@ -225,7 +265,11 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
             reading === 'accrual'
               ? `movements attached to ${from.slice(0, 7)} → ${to.slice(0, 7)} (whole months)`
               : `movements settled between ${from} and ${to}`,
+          // Only what narrowed the reading, named as it was asked.
+          ...(activity !== undefined ? { activity: activity ?? '(none)' } : {}),
+          ...(category !== undefined ? { category: category ?? '(none)' } : {}),
           rows,
+          ...(rest ? { rest } : {}),
         })
       }),
   )
