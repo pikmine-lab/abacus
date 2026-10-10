@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarIcon, Undo2Icon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { FoldSection } from '@/components/fold-section'
@@ -11,7 +12,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { confirmLevyPaymentAction, confirmNilReturnAction, withdrawNilReturnAction } from '@/lib/actions'
-import { daysBetween, eur, eurSigned, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { daysBetween } from '@/lib/utils'
 
 interface Option {
   id: string
@@ -88,6 +90,8 @@ export function LevySchedule({
   /** Where a failed action comes back to, with its message. */
   back: string
 }) {
+  const t = useTranslations('regime.schedule')
+  const format = useFormat()
   const settled = entries.filter(
     (e) =>
       e.status === 'paid' || e.status === 'nil_return' || (e.status === 'nothing_due' && e.opensOn <= today),
@@ -108,7 +112,7 @@ export function LevySchedule({
       </datalist>
 
       {open.length === 0 ? (
-        <p className="py-3 text-[13px] text-faint">Rien à déclarer ni à payer aujourd’hui.</p>
+        <p className="py-3 text-[13px] text-faint">{t('nothingToday')}</p>
       ) : (
         <Rows>
           {[...overdue, ...upcoming].map((entry) => (
@@ -127,7 +131,7 @@ export function LevySchedule({
       )}
 
       {ahead.length > 0 && (
-        <FoldSection title="À venir" description="dont la fenêtre de dépôt n’est pas ouverte">
+        <FoldSection title={t('ahead')} description={t('aheadDescription')}>
           <Rows>
             {ahead.map((entry) => (
               <DueRow key={entry.key} entry={entry} accounts={accounts} today={today} back={back} />
@@ -137,10 +141,7 @@ export function LevySchedule({
       )}
 
       {settled.length > 0 && (
-        <FoldSection
-          title="Déjà réglées"
-          description={`${settled.length} échéance${settled.length > 1 ? 's' : ''}`}
-        >
+        <FoldSection title={t('settled')} description={t('settledCount', { count: settled.length })}>
           <Rows>
             {settled.map((entry) => (
               <div key={entry.key} className="flex flex-wrap items-center gap-2 py-2">
@@ -150,14 +151,17 @@ export function LevySchedule({
                   </p>
                   <p className="text-[11px] text-faint">
                     {entry.status === 'paid'
-                      ? `payée le ${entry.paidOn ? frDate(entry.paidOn) : '?'} · estimée à ${eur(entry.amount, 2)}`
+                      ? t('paidOn', {
+                          date: entry.paidOn ? format.date(entry.paidOn) : '?',
+                          amount: format.eur(entry.amount, 2),
+                        })
                       : entry.status === 'nil_return'
-                        ? 'déclarée à 0'
-                        : 'rien à déclarer ni à payer'}
+                        ? t('nilReturn')
+                        : t('nothingDue')}
                   </p>
                 </div>
                 <span className="ml-auto font-mono text-[12.5px] tabular">
-                  {eur(entry.paidAmount ?? 0, 2)}
+                  {format.eur(entry.paidAmount ?? 0, 2)}
                 </span>
                 {entry.status === 'nil_return' ? (
                   <WithdrawMenu entry={entry} back={back} />
@@ -185,6 +189,8 @@ function DueRow({
   today: string
   back: string
 }) {
+  const t = useTranslations('regime.schedule')
+  const format = useFormat()
   const [dateOpen, setDateOpen] = useState(false)
   // Who was paid is the one thing nothing here can infer, so the gesture waits
   // for it rather than inventing an actor out of an empty field.
@@ -208,12 +214,17 @@ function DueRow({
           {entry.levyName} · {entry.what}
         </p>
         <p className="text-[11px] text-faint">
-          {entry.window} · à payer avant le {frDate(entry.dueOn)}
-          {entry.instalment && ` · échéance ${entry.instalment}`}
-          {entry.absorbed && ' · rattachée à une autre déclaration'}
-          {nil && ' · rien à payer, la déclaration reste due'}
-          {unknown && ` · montant inconnu : ${entry.missingInputs.join(', ')} non renseigné dans Réglages`}
-          {entry.nilReturn && ' · déclarée à 0, mais une recette est arrivée depuis'}
+          {[
+            entry.window,
+            t('payBefore', { date: format.date(entry.dueOn) }),
+            entry.instalment && t('instalment', { instalment: entry.instalment }),
+            entry.absorbed && t('absorbed'),
+            nil && t('nilStillDue'),
+            unknown && t('unknownAmount', { inputs: entry.missingInputs.join(', ') }),
+            entry.nilReturn && t('nilButReceipt'),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </div>
 
@@ -223,21 +234,21 @@ function DueRow({
         className={`shrink-0 text-[11px] ${entry.status === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}`}
       >
         {entry.status === 'overdue'
-          ? `en retard de ${late} jour${late > 1 ? 's' : ''}`
+          ? t('overdue', { count: late })
           : late === 0
-            ? 'à payer aujourd’hui'
-            : `dans ${-late} jour${-late > 1 ? 's' : ''}`}
+            ? t('dueToday')
+            : t('dueIn', { count: -late })}
       </span>
 
       <span className="ml-auto font-mono text-[13px] tabular">
-        {unknown ? '—' : refund ? eurSigned(entry.amount, 2) : eur(entry.amount, 2)}
+        {unknown ? '—' : refund ? format.eurSigned(entry.amount, 2) : format.eur(entry.amount, 2)}
       </span>
 
       {nil ? (
         <form action={confirmNilReturnAction}>
           <DueFields entry={entry} back={back} />
           <Button size="sm" type="submit" variant="outline" className="h-7">
-            Déclarée à 0
+            {t('fileNil')}
           </Button>
         </form>
       ) : payable && !zero ? (
@@ -249,13 +260,13 @@ function DueRow({
               name="amount"
               defaultValue={unknown ? '' : entry.amount.toFixed(2)}
               className="h-7 w-28 text-[12.5px]"
-              aria-label={`Montant réellement payé pour ${entry.levyName}`}
+              aria-label={t('amountLabel', { name: entry.levyName })}
             />
             <div className="w-40">
               <FormSelect
                 name="accountId"
-                placeholder="Depuis quel compte"
-                ariaLabel={`Compte débité pour ${entry.levyName}`}
+                placeholder={t('accountPlaceholder')}
+                ariaLabel={t('accountLabel', { name: entry.levyName })}
                 options={accounts.map((a) => ({ value: a.id, label: a.name }))}
                 defaultValue={accounts[0]?.id ?? ''}
               />
@@ -263,12 +274,12 @@ function DueRow({
             <Input
               name="actor"
               list="levy-actors-list"
-              placeholder="Payé à"
+              placeholder={t('actorPlaceholder')}
               autoComplete="off"
               value={actor}
               onChange={(e) => setActor(e.target.value)}
               className="h-7 w-36 text-[12.5px]"
-              aria-label={`Organisme payé pour ${entry.levyName}`}
+              aria-label={t('actorLabel', { name: entry.levyName })}
             />
             {dateOpen && (
               <div className="w-40">
@@ -276,14 +287,14 @@ function DueRow({
               </div>
             )}
             <Button size="sm" type="submit" className="h-7" disabled={actor.trim() === ''}>
-              Payé
+              {t('paid')}
             </Button>
           </form>
 
           <RowMenu label={`${entry.levyName} ${entry.what}`}>
             <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
               <CalendarIcon />
-              {dateOpen ? 'Payé aujourd’hui' : 'Payé à une autre date…'}
+              {dateOpen ? t('paidToday') : t('paidOtherDate')}
             </DropdownMenuItem>
             {entry.nilReturn && <WithdrawItem entry={entry} back={back} />}
           </RowMenu>
@@ -291,12 +302,12 @@ function DueRow({
       ) : (
         <span className="text-[11.5px] text-faint">
           {refund
-            ? 'à recevoir : déclare le revenu'
+            ? t('refund')
             : entry.status === 'nothing_due'
-              ? 'rien à déclarer ni à payer'
+              ? t('nothingDue')
               : zero
-                ? 'rien à payer pour l’instant'
-                : 'rien à payer de son côté'}
+                ? t('nothingYet')
+                : t('nothingOnItsSide')}
         </span>
       )}
     </div>
@@ -317,13 +328,14 @@ function DueFields({ entry, back }: { entry: DueEntry; back: string }) {
 }
 
 function WithdrawItem({ entry, back }: { entry: DueEntry; back: string }) {
+  const t = useTranslations('regime.schedule')
   return (
     <DropdownMenuItem asChild>
       <form action={withdrawNilReturnAction}>
         <DueFields entry={entry} back={back} />
         <button type="submit" className="flex w-full items-center gap-2">
           <Undo2Icon />
-          Retirer la déclaration à 0
+          {t('withdrawNil')}
         </button>
       </form>
     </DropdownMenuItem>

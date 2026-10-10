@@ -2,6 +2,7 @@
 
 import type { CommitmentKind } from '@abacus/core/domain'
 import { ArrowRightLeftIcon, BanIcon, BanknoteIcon, CalendarClockIcon, PencilIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { type CommitmentOptions, EditCommitmentForm, MoveAccountForm } from '@/components/commitment-forms'
@@ -24,7 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cancelCommitmentAction, changePriceAction } from '@/lib/actions'
-import { eur, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /**
  * Life-cycle actions of a recurring commitment. Changing the amount is
@@ -93,8 +94,12 @@ export function CommitmentRowActions({
     if (cancelState.ok) setConfirming(false)
   }, [cancelState.ok])
 
+  const t = useTranslations('recurring.actions')
+  const tForm = useTranslations('recurring.form')
+  const format = useFormat()
   const placementKind = kind === 'investment_plan'
-  const stopVerb = kind === 'financing' ? 'Clore' : incoming || placementKind ? 'Arrêter' : 'Résilier'
+  const stop = kind === 'financing' ? 'close' : incoming || placementKind ? 'stop' : 'cancel'
+  const stopVerb = t(`stop.${stop}`)
 
   return (
     <>
@@ -102,25 +107,25 @@ export function CommitmentRowActions({
         {((options && defaults) || placement) && (
           <DropdownMenuItem onSelect={() => setEditing(true)}>
             <PencilIcon />
-            Modifier
+            {t('edit')}
           </DropdownMenuItem>
         )}
         {(kind === 'subscription' || placementKind) && (
           <DropdownMenuItem onSelect={() => setPricing(true)}>
             <BanknoteIcon />
-            {incoming || placementKind ? 'Changer le montant' : 'Changer le prix'}
+            {incoming || placementKind ? t('changeAmount') : t('changePrice')}
           </DropdownMenuItem>
         )}
         {options && today && (
           <DropdownMenuItem onSelect={() => setMoving(true)}>
             <ArrowRightLeftIcon />
-            Changer de compte
+            {t('changeAccount')}
           </DropdownMenuItem>
         )}
         {kind === 'financing' && schedule && (
           <DropdownMenuItem onSelect={() => setRevising(true)}>
             <CalendarClockIcon />
-            Réviser l’échéancier
+            {t('reviseSchedule')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
@@ -134,13 +139,14 @@ export function CommitmentRowActions({
           <DialogHeader>
             <DialogTitle className="text-[15px]">{label}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              Le changement est daté et conservé : c’est ce qui permet de voir les hausses sur la durée.
-              Actuellement {currency === 'EUR' ? eur(amount, 2) : money(amount, currency)}.
+              {t('priceDescription', {
+                amount: currency === 'EUR' ? format.eur(amount, 2) : format.money(amount, currency),
+              })}
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={changePriceAction} onSuccess={() => setPricing(false)}>
             <input type="hidden" name="commitmentId" value={commitmentId} />
-            <Field label={incoming || placementKind ? 'Nouveau montant' : 'Nouveau prix'} name="amount">
+            <Field label={incoming || placementKind ? t('newAmount') : t('newPrice')} name="amount">
               <div className="flex gap-2">
                 <AmountInput name="amount" defaultValue={amount.toFixed(2)} />
                 {/* A placement is in euros: an operation is not multi-currency,
@@ -148,7 +154,7 @@ export function CommitmentRowActions({
                 {!placementKind && <CurrencySelect defaultValue={currency} />}
               </div>
             </Field>
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
+            <SubmitButton className="self-start">{tForm('save')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
@@ -160,8 +166,7 @@ export function CommitmentRowActions({
           <DialogHeader>
             <DialogTitle className="text-[15px]">{label}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              {incoming ? 'Versé sur' : 'Prélevé sur'} {accountName} aujourd’hui. Chaque échéance suit le
-              compte en vigueur à sa date.
+              {t(incoming ? 'moveIncoming' : 'moveOutgoing', { account: accountName })}
             </DialogDescription>
           </DialogHeader>
           {options && today && (
@@ -182,9 +187,7 @@ export function CommitmentRowActions({
           <SheetHeader className="border-b border-border">
             <SheetTitle className="text-[15px]">{label}</SheetTitle>
             <SheetDescription className="text-[12px]">
-              {placementKind
-                ? 'Corriger ce que ce versement dit de lui-même. Le montant et le compte prélevé ont le leur, daté.'
-                : 'Corriger ce que cet engagement dit de lui-même. Le montant et le compte ont le leur, daté.'}
+              {placementKind ? t('editPlacement') : t('editCommitment')}
             </SheetDescription>
           </SheetHeader>
           <div className="p-4">
@@ -225,10 +228,7 @@ export function CommitmentRowActions({
         <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
           <SheetHeader className="border-b border-border">
             <SheetTitle className="text-[15px]">{label}</SheetTitle>
-            <SheetDescription className="text-[12px]">
-              L’échéancier fait foi : le restant dû et le total suivent ce qui est écrit ici. Modifier une
-              échéance déjà payée corrige aussi son mouvement.
-            </SheetDescription>
+            <SheetDescription className="text-[12px]">{t('reviseDescription')}</SheetDescription>
           </SheetHeader>
           <div className="p-4">
             {schedule && (
@@ -247,17 +247,12 @@ export function CommitmentRowActions({
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {stopVerb} « {label} » ?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Il cesse de produire des échéances à partir d’aujourd’hui. Son historique et ses mouvements
-              passés restent intacts.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t(`stopTitle.${stop}`, { label })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('stopDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           {cancelState.error && <p className="text-xs text-destructive">{cancelState.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('dismiss')}</AlertDialogCancel>
             <form action={cancel}>
               <input type="hidden" name="commitmentId" value={commitmentId} />
               <Button type="submit" variant="destructive" disabled={cancelPending}>

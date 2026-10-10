@@ -2,6 +2,7 @@
 
 import type { PeriodUnit } from '@abacus/core/domain'
 import { CalendarIcon, ChevronRightIcon, CoinsIcon, SkipForwardIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { FoldSection } from '@/components/fold-section'
@@ -22,7 +23,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { confirmOccurrenceAction, skipOccurrenceAction } from '@/lib/actions'
-import { eur, frDate, frMonthLong, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 export interface PendingItem {
   commitmentId: string
@@ -90,6 +91,7 @@ export function PendingOccurrences({
    */
   aheadInPanel?: boolean
 }) {
+  const t = useTranslations('recurring.pending')
   const oldest = new Map<string, string>()
   for (const item of items) if (!oldest.has(item.commitmentId)) oldest.set(item.commitmentId, item.dueOn)
   const row = (item: PendingItem) => {
@@ -115,7 +117,7 @@ export function PendingOccurrences({
               type="button"
               className="flex items-center gap-1.5 self-start py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=open]:text-primary"
             >
-              À venir
+              {t('ahead')}
               <span className="text-faint tabular">{ahead.length}</span>
               <ChevronRightIcon className="size-3.5 text-faint" />
             </button>
@@ -124,10 +126,8 @@ export function PendingOccurrences({
               the menu on one line. */}
           <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-lg">
             <SheetHeader className="border-b border-border">
-              <SheetTitle className="text-[15px]">À venir</SheetTitle>
-              <SheetDescription className="text-[12px]">
-                Ce qui est déjà parti avant sa date se confirme ici, à la date réelle.
-              </SheetDescription>
+              <SheetTitle className="text-[15px]">{t('ahead')}</SheetTitle>
+              <SheetDescription className="text-[12px]">{t('aheadDescription')}</SheetDescription>
             </SheetHeader>
             <div className="px-4">
               <Rows className="border-t-0">{ahead.map(row)}</Rows>
@@ -136,7 +136,7 @@ export function PendingOccurrences({
         </Sheet>
       )}
       {ahead.length > 0 && !aheadInPanel && (
-        <FoldSection title="À venir" description="se confirme en avance, à la date réelle">
+        <FoldSection title={t('ahead')} description={t('aheadFoldDescription')}>
           <Rows>{ahead.map(row)}</Rows>
         </FoldSection>
       )}
@@ -154,6 +154,8 @@ function PendingRow({
   /** The older occurrence of the same commitment this one waits for, if any. */
   after: string | null
 }) {
+  const t = useTranslations('recurring.pending')
+  const format = useFormat()
   const expected = item.amount.toFixed(2)
   const [amount, setAmount] = useState(expected)
   // Confirmed ahead of its date, an occurrence is almost never at that date:
@@ -163,7 +165,7 @@ function PendingRow({
   const [quantity, setQuantity] = useState('')
   const placement = item.placement
   const foreign = item.currency !== 'EUR'
-  const inCurrency = (value: number) => (foreign ? money(value, item.currency) : eur(value, 2))
+  const inCurrency = (value: number) => (foreign ? format.money(value, item.currency) : format.eur(value, 2))
 
   const entered = Number(amount)
   const differs = amount !== '' && Number.isFinite(entered) && entered !== item.amount
@@ -177,16 +179,33 @@ function PendingRow({
         <div className="min-w-0 flex-1 basis-56">
           <p className="text-[13px] font-medium">{item.label}</p>
           <p className="text-[11px] text-faint">
-            {item.periodUnit !== 'week' && `${frMonthLong(item.dueOn)} · `}attendu le {frDate(item.dueOn)} ·{' '}
-            {placement
-              ? `versement de ${inCurrency(item.amount)} de ${item.account} vers ${placement.targetAccount} · achète ${placement.asset}`
-              : // The amount is in the field beside it, ready to be corrected; a
-                // row waiting on an older one has no field, so it says it here.
-                `${item.incoming ? 'entrée' : 'prélèvement'}${after ? ` de ${inCurrency(item.amount)}` : ''} sur ${item.account}`}
+            {[
+              item.periodUnit !== 'week' && format.monthLong(item.dueOn),
+              t('expectedOn', { date: format.date(item.dueOn) }),
+              placement
+                ? t('placement', {
+                    amount: inCurrency(item.amount),
+                    from: item.account,
+                    to: placement.targetAccount,
+                    asset: placement.asset,
+                  })
+                : // The amount is in the field beside it, ready to be corrected; a
+                  // row waiting on an older one has no field, so it says it here.
+                  after
+                  ? t(item.incoming ? 'creditOfOn' : 'debitOfOn', {
+                      amount: inCurrency(item.amount),
+                      account: item.account,
+                    })
+                  : t(item.incoming ? 'creditOn' : 'debitOn', { account: item.account }),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
         </div>
 
-        {after && <p className="ml-auto text-[11.5px] text-faint">après l’échéance du {frDate(after)}</p>}
+        {after && (
+          <p className="ml-auto text-[11.5px] text-faint">{t('after', { date: format.date(after) })}</p>
+        )}
 
         {after === null && (
           // The menu stays beside the form, which wraps on its own: left to
@@ -200,14 +219,17 @@ function PendingRow({
                 defaultValue={expected}
                 onValueChange={setAmount}
                 className="h-7 w-28 text-[12.5px]"
-                aria-label={`Montant réellement ${placement ? 'versé' : item.incoming ? 'reçu' : 'prélevé'}${foreign ? ` (${item.currency})` : ''}`}
+                aria-label={t(placement ? 'actualPaid' : item.incoming ? 'actualReceived' : 'actualDebited', {
+                  foreign: String(foreign),
+                  currency: item.currency,
+                })}
               />
               {foreign && (
                 <AmountInput
                   name="eurAmount"
-                  placeholder="€ au cours du jour"
+                  placeholder={t('eurPlaceholder')}
                   className="h-7 w-36 text-[12.5px]"
-                  aria-label={`Euros réellement ${item.incoming ? 'crédités' : 'débités'} (optionnel)`}
+                  aria-label={item.incoming ? t('eurCredited') : t('eurDebited')}
                 />
               )}
               {/* Required, and typed as the broker states it: fractions are the
@@ -216,20 +238,20 @@ function PendingRow({
                 <Input
                   name="quantity"
                   inputMode="decimal"
-                  placeholder="parts achetées"
+                  placeholder={t('quantityPlaceholder')}
                   autoComplete="off"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   className="h-7 w-32 text-[12.5px]"
-                  aria-label="Quantité achetée, telle que le courtier l’affiche"
+                  aria-label={t('quantityLabel')}
                 />
               )}
               {placement && partial && (
                 <AmountInput
                   name="investedAmount"
-                  placeholder="€ investis"
+                  placeholder={t('investedPlaceholder')}
                   className="h-7 w-32 text-[12.5px]"
-                  aria-label="Montant réellement investi, si le courtier n’a pas tout investi"
+                  aria-label={t('investedLabel')}
                 />
               )}
               {dateOpen && (
@@ -238,7 +260,7 @@ function PendingRow({
                 </div>
               )}
               <Button size="sm" type="submit" className="h-7" disabled={placement !== undefined && !quantity}>
-                Confirmer
+                {t('confirm')}
               </Button>
 
               {/* The one thing the app cannot guess, asked only when it applies. */}
@@ -246,11 +268,14 @@ function PendingRow({
                 <Label className="flex w-full items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
                   <Checkbox name="newAmount" />
                   <span>
-                    écart de{' '}
-                    <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
-                      {`${gap > 0 ? '+' : '−'}${inCurrency(Math.abs(gap))}`}
-                    </span>{' '}
-                    : c’est le nouveau montant habituel
+                    {t.rich('newUsual', {
+                      gap: `${gap > 0 ? '+' : '−'}${inCurrency(Math.abs(gap))}`,
+                      tone: (chunks) => (
+                        <span className={gap > 0 === item.incoming ? 'text-good' : 'text-destructive'}>
+                          {chunks}
+                        </span>
+                      ),
+                    })}
                   </span>
                 </Label>
               )}
@@ -259,18 +284,14 @@ function PendingRow({
             <RowMenu label={item.label}>
               <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
                 <CalendarIcon />
-                {dateOpen
-                  ? 'Garder la date attendue'
-                  : placement
-                    ? 'Versé à une autre date…'
-                    : 'Reçu à une autre date…'}
+                {dateOpen ? t('keepDate') : placement ? t('paidOtherDate') : t('receivedOtherDate')}
               </DropdownMenuItem>
               {/* A broker that buys no fraction leaves the remainder in cash, which
               is where it really is: the rarer case, so it is asked for. */}
               {placement && (
                 <DropdownMenuItem onSelect={() => setPartial((v) => !v)}>
                   <CoinsIcon />
-                  {partial ? 'Tout a été investi' : 'Une partie est restée en espèces…'}
+                  {partial ? t('allInvested') : t('partlyCash')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem asChild variant="destructive">
@@ -279,7 +300,7 @@ function PendingRow({
                   <input type="hidden" name="back" value={back} />
                   <button type="submit" className="flex w-full items-center gap-2">
                     <SkipForwardIcon />
-                    Passer cette échéance
+                    {t('skip')}
                   </button>
                 </form>
               </DropdownMenuItem>

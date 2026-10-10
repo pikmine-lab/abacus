@@ -1,8 +1,9 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Toggle } from '@/components/ui/toggle'
-import { eur, frDateLong } from '@/lib/utils'
+import { type Format, useFormat } from '@/lib/format'
 
 /**
  * Amounts over time, the reference chart of DESIGN.md: 2px family lines,
@@ -86,17 +87,6 @@ function fitLabel(name: string, amount: string, room: number, measure: (s: strin
   return `${cut}… · ${amount}`
 }
 
-function frDay(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y!, m! - 1, d)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-}
-
-function frMonth(iso: string): string {
-  const [y, m] = iso.split('-').map(Number)
-  const label = new Date(Date.UTC(y!, m! - 1, 1)).toLocaleDateString('fr-FR', { month: 'short' })
-  return label.replace('.', '')
-}
-
 /**
  * The gap between two gridlines: a round number (1, 2 or 5 × a power of ten)
  * of the right size for four or five of them. A fixed 500 € step was written
@@ -112,19 +102,24 @@ function niceStep(range: number): number {
 }
 
 /**
- * A tick, in French. Thousands read as `13,5k`, which is the whole point of
- * the form; below that the number is written out, because "0,7k" for a share
- * at 709 € is a worse answer than the price itself.
+ * A tick. Thousands read as `13,5k`, which is the whole point of the form;
+ * below that the number is written out, because "0,7k" for a share at 709 €
+ * is a worse answer than the price itself.
  */
-function tickLabel(value: number, step: number): string {
+function tickLabel(
+  value: number,
+  step: number,
+  format: Format,
+  thousands: (value: string) => string,
+): string {
   // Math.ceil hands back -0 for a floor just under zero, and that formats as "-0".
   const v = value === 0 ? 0 : value
-  if (step >= 100 && Math.abs(v) >= 1000) return `${(v / 1000).toFixed(v % 1000 ? 1 : 0).replace('.', ',')}k`
+  if (step >= 100 && Math.abs(v) >= 1000) {
+    const decimals = v % 1000 ? 1 : 0
+    return thousands(format.number(v / 1000, decimals, decimals))
+  }
   const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : 2
-  return v.toLocaleString('fr-FR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
+  return format.number(v, decimals, decimals)
 }
 
 export function BalanceChart({
@@ -133,7 +128,7 @@ export function BalanceChart({
   today,
   baseline,
   zeroBased = true,
-  ariaLabel = 'Évolution des soldes par compte',
+  ariaLabel,
 }: {
   lines: Line[]
   rows: Row[]
@@ -149,6 +144,9 @@ export function BalanceChart({
   zeroBased?: boolean
   ariaLabel?: string
 }) {
+  const t = useTranslations('home.balanceChart')
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
   const wrapRef = useRef<HTMLDivElement>(null)
   const inkRef = useRef<CanvasRenderingContext2D | null>(null)
   const [width, setWidth] = useState(0)
@@ -220,10 +218,7 @@ export function BalanceChart({
     })
   }
 
-  if (days.length < 2)
-    return (
-      <p className="py-6 text-[13px] text-faint">Pas encore assez d’historique pour tracer une courbe.</p>
-    )
+  if (days.length < 2) return <p className="py-6 text-[13px] text-faint">{t('notEnough')}</p>
 
   const hasFuture = lastPast < days.length - 1
   const narrow = width < 520
@@ -260,7 +255,7 @@ export function BalanceChart({
   for (let i = Math.ceil(y0 / tickStep); i * tickStep <= y1; i++) yTicks.push(i * tickStep)
   // Amounts to the precision the scale itself resolves. Whole euros read a
   // balance fine and turn a token at 0,42 € into "0 €".
-  const amount = (v: number) => eur(v, tickStep < 10 ? 2 : 0)
+  const amount = (v: number) => format.eur(v, tickStep < 10 ? 2 : 0)
 
   const textWidth = (s: string) => inkRef.current?.measureText(s).width ?? s.length * LABEL_SIZE * 0.56
   // More labels than the height holds are dropped rather than stacked: the
@@ -287,7 +282,9 @@ export function BalanceChart({
   let previous = ''
   const every = Math.max(1, Math.round(days.length / (narrow ? 4 : 8)))
   for (let i = 0; i < days.length; i += every) {
-    const label = byDay ? frDay(days[i]!) : frMonth(days[i]!)
+    const label = byDay
+      ? format.dateAs(days[i]!, { day: 'numeric', month: 'short' })
+      : format.monthName(days[i]!)
     if (label === previous) continue
     previous = label
     xTicks.push({ i, label })
@@ -358,7 +355,7 @@ export function BalanceChart({
         {/* Nothing is drawn before the container has been measured: a guessed
             width pushes the marks out of frame instead of scaling them. */}
         {width > 0 && (
-          <svg width="100%" height={H} role="img" aria-label={ariaLabel}>
+          <svg width="100%" height={H} role="img" aria-label={ariaLabel ?? t('label')}>
             {yTicks.map((v) => (
               <g key={v}>
                 <line x1={M.l} x2={width - M.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" />
@@ -370,7 +367,7 @@ export function BalanceChart({
                   fontSize={10.5}
                   fill="var(--faint)"
                 >
-                  {tickLabel(v, tickStep)}
+                  {tickLabel(v, tickStep, format, (value) => words('thousands', { value }))}
                 </text>
               </g>
             ))}
@@ -412,7 +409,7 @@ export function BalanceChart({
                   stroke="var(--border)"
                 />
                 <text x={X(lastPast) + 6} y={M.t + 10} fontSize={9.5} fill="var(--muted-foreground)">
-                  projection
+                  {t('projection')}
                 </text>
               </g>
             )}
@@ -521,7 +518,7 @@ export function BalanceChart({
             className="pointer-events-none absolute top-3 z-10 min-w-44 rounded-lg border border-border bg-popover px-3 py-2 text-popover-foreground shadow-lg"
             style={{ left: tooltipLeft }}
           >
-            <p className="text-[11px] text-faint">{frDateLong(days[hover])}</p>
+            <p className="text-[11px] text-faint">{format.dateLong(days[hover])}</p>
             {series.map((s) => (
               <p key={s.id} className="flex items-center gap-2 py-px text-xs">
                 <span className="h-0.5 w-3 rounded-full" style={{ background: SLOT_VARS[s.slot] }} />

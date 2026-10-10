@@ -1299,17 +1299,28 @@ test('the settled reading is the one the tools answer in when none is asked for'
   assert.deepEqual((await call(client, 'manage_preferences', { action: 'show' })).json(), {
     reading: 'cash',
     rankingView: 'strip',
+    language: null,
   })
   assert.deepEqual((await august()).json(), { order: 'date desc', reading: 'cash', movements: [] })
 
   assert.deepEqual(
     (await call(client, 'manage_preferences', { action: 'update', reading: 'accrual' })).json(),
-    { reading: 'accrual', rankingView: 'strip' },
+    { reading: 'accrual', rankingView: 'strip', language: null },
   )
   // A display preference settles on its own, and leaves the reading alone.
   assert.deepEqual(
     (await call(client, 'manage_preferences', { action: 'update', rankingView: 'bars' })).json(),
-    { reading: 'accrual', rankingView: 'bars' },
+    { reading: 'accrual', rankingView: 'bars', language: null },
+  )
+  // The language is chosen, then handed back to the browser.
+  assert.deepEqual((await call(client, 'manage_preferences', { action: 'update', language: 'en' })).json(), {
+    reading: 'accrual',
+    rankingView: 'bars',
+    language: 'en',
+  })
+  assert.deepEqual(
+    (await call(client, 'manage_preferences', { action: 'update', language: 'browser' })).json(),
+    { reading: 'accrual', rankingView: 'bars', language: null },
   )
 
   // Same call, no reading passed: August is now the month the salary is about.

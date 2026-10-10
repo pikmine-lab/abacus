@@ -3,6 +3,7 @@
 import type { PeriodUnit } from '@abacus/core/domain'
 import { addPeriod } from '@abacus/core/domain/period'
 import { PencilIcon, RotateCcwIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { CurrencySelect } from '@/components/currency-select'
@@ -10,7 +11,7 @@ import { DateField, Field } from '@/components/forms'
 import { PeriodField } from '@/components/period-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { frDate, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /**
  * A payment plan, stated the way the contract states it: a total over N
@@ -45,6 +46,8 @@ function buildSchedule(total: number, count: number, firstDueOn: string, period:
 }
 
 export function FinancingAmountFields({ today }: { today: string }) {
+  const t = useTranslations('recurring.financing')
+  const format = useFormat()
   const [total, setTotal] = useState('')
   const [count, setCount] = useState('')
   const [firstDueOn, setFirstDueOn] = useState(today)
@@ -52,7 +55,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
   const [lines, setLines] = useState<Line[] | null>(null)
   // The whole plan is written in one currency: total, installments, preview.
   const [currency, setCurrency] = useState('EUR')
-  const fmt = (value: number) => money(value, currency)
+  const fmt = (value: number) => format.money(value, currency)
 
   const totalValue = Number(total)
   const countValue = Number(count)
@@ -68,11 +71,11 @@ export function FinancingAmountFields({ today }: { today: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Montant total" name="totalAmount">
+        <Field label={t('totalAmount')} name="totalAmount">
           <div className="flex gap-2">
             <AmountInput
               name="totalAmount"
-              placeholder="1 000"
+              placeholder={t('totalPlaceholder')}
               onValueChange={(value) => {
                 setTotal(value)
                 setLines(null)
@@ -81,7 +84,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
             <CurrencySelect onValueChange={(v) => setCurrency(v || 'EUR')} />
           </div>
         </Field>
-        <Field label="Nombre d’échéances" name="installmentsTotal">
+        <Field label={t('installments')} name="installmentsTotal">
           <Input
             name="installmentsTotal"
             inputMode="numeric"
@@ -98,7 +101,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
       {/* The first date and the rhythm drive the generated schedule; each line
           can still move after. */}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Première échéance" name="firstDueOn">
+        <Field label={t('firstDue')} name="firstDueOn">
           <DateField
             name="firstDueOn"
             defaultValue={today}
@@ -121,22 +124,22 @@ export function FinancingAmountFields({ today }: { today: string }) {
         <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-faint">
           {preview ? (
             <span>
-              {preview.length} échéances de{' '}
-              <span className="font-mono text-muted-foreground tabular">
-                {fmt(Number(preview[0]!.amount))}
-              </span>
-              {preview[preview.length - 1]!.amount !== preview[0]!.amount && (
-                <>
-                  , la dernière de{' '}
-                  <span className="font-mono text-muted-foreground tabular">
-                    {fmt(Number(preview[preview.length - 1]!.amount))}
-                  </span>
-                </>
+              {t.rich(
+                preview[preview.length - 1]!.amount !== preview[0]!.amount ? 'summaryWithLast' : 'summary',
+                {
+                  count: preview.length,
+                  each: fmt(Number(preview[0]!.amount)),
+                  last: fmt(Number(preview[preview.length - 1]!.amount)),
+                  from: format.date(preview[0]!.dueOn),
+                  to: format.date(preview[preview.length - 1]!.dueOn),
+                  amount: (chunks) => (
+                    <span className="font-mono text-muted-foreground tabular">{chunks}</span>
+                  ),
+                },
               )}
-              , du {frDate(preview[0]!.dueOn)} au {frDate(preview[preview.length - 1]!.dueOn)}.
             </span>
           ) : (
-            <span>Renseigne le total et le nombre d’échéances : le plan se calcule tout seul.</span>
+            <span>{t('hint')}</span>
           )}
           {preview && (
             <Button
@@ -147,16 +150,14 @@ export function FinancingAmountFields({ today }: { today: string }) {
               onClick={() => setLines(preview)}
             >
               <PencilIcon className="size-3.5" />
-              Ajuster chaque échéance
+              {t('adjust')}
             </Button>
           )}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <p className="text-[11.5px] text-muted-foreground">
-              Échéancier : ajuste les dates et les montants qui diffèrent.
-            </p>
+            <p className="text-[11.5px] text-muted-foreground">{t('adjustHint')}</p>
             <Button
               type="button"
               variant="ghost"
@@ -165,7 +166,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
               onClick={() => setLines(null)}
             >
               <RotateCcwIcon className="size-3.5" />
-              Revenir au calcul
+              {t('reset')}
             </Button>
           </div>
 
@@ -188,7 +189,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
                 <AmountInput
                   name="installmentAmount"
                   defaultValue={line.amount}
-                  aria-label={`Montant de l’échéance ${index + 1}`}
+                  aria-label={t('installmentAmount', { index: index + 1 })}
                   className="ml-auto h-7 w-28 text-[12.5px]"
                   onValueChange={(value) =>
                     setLines(lines.map((l, i) => (i === index ? { ...l, amount: value } : l)))
@@ -199,10 +200,11 @@ export function FinancingAmountFields({ today }: { today: string }) {
           </div>
 
           <p className={`text-[11.5px] ${gap === 0 ? 'text-faint' : 'text-destructive'}`}>
-            Total de l’échéancier <span className="font-mono tabular">{fmt(scheduled / 100)}</span>
-            {gap === 0
-              ? ' : il correspond au total dû.'
-              : ` : ${gap > 0 ? 'dépasse' : 'manque'} de ${fmt(Math.abs(gap) / 100)} par rapport au total dû.`}
+            {t.rich(gap === 0 ? 'totalMatches' : gap > 0 ? 'totalOver' : 'totalUnder', {
+              total: fmt(scheduled / 100),
+              gap: fmt(Math.abs(gap) / 100),
+              amount: (chunks) => <span className="font-mono tabular">{chunks}</span>,
+            })}
           </p>
         </div>
       )}

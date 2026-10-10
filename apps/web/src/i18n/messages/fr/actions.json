@@ -1,0 +1,25 @@
+{
+  "fields": {
+    "required": "À renseigner.",
+    "invalidAmount": "Montant invalide.",
+    "positive": "Doit être supérieur à zéro.",
+    "installmentCount": "Au moins 2 échéances.",
+    "invalidDate": "Date invalide.",
+    "percentage": "Entre 0 et 100.",
+    "dayOfMonth": "Entre 1 et 31."
+  },
+  "movement": {
+    "counterpartyMissing": "Indique la contrepartie (commerçant, client, organisme)."
+  },
+  "schedule": {
+    "installmentIncomplete": "Chaque échéance a besoin d’une date et d’un montant supérieur à zéro."
+  },
+  "levy": {
+    "payeeMissing": "Indique qui a été payé."
+  },
+  "preferences": {
+    "unknownReading": "Lecture inconnue.",
+    "unknownRankingView": "Affichage inconnu.",
+    "unknownLanguage": "Langue inconnue."
+  }
+}

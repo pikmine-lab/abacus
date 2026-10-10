@@ -1,0 +1,94 @@
+{
+  "figures": {
+    "spent": "Spent",
+    "received": "Received",
+    "saved": "Saved",
+    "pace": "Pace",
+    "perMonth": "/mo",
+    "grossBeforeRefunds": "{amount} gross before refunds",
+    "savingRate": "{rate}% of what came in",
+    "noIncome": "no income declared",
+    "paceNote": "average spending over {months} months"
+  },
+  "band": "Money in and out by month",
+  "ranking": {
+    "label": "{kind, select, income {Income} other {Expenses}} by {dimension}",
+    "dimensions": {
+      "categoryGroup": "group",
+      "category": "category",
+      "actor": "counterparty",
+      "activity": "activity"
+    },
+    "flow": "Flow direction",
+    "expense": "Expenses",
+    "income": "Income",
+    "split": "Map top level",
+    "byGroup": "By group",
+    "byActivity": "By activity",
+    "groupBy": "Group by",
+    "options": {
+      "categoryGroup": "Group",
+      "category": "Category",
+      "actor": "Counterparty",
+      "activity": "Activity"
+    },
+    "view": "View",
+    "rankingView": "Ranking",
+    "mapView": "Map",
+    "emptyExpense": "No expenses in this period.",
+    "emptyIncome": "No income in this period."
+  },
+  "words": {
+    "movements": "{count, plural, one {# movement} other {# movements}}",
+    "gross": "{amount} gross",
+    "percent": "{value}%",
+    "sliver": "< 1%",
+    "thousands": "{value}k",
+    "others": "{count} more"
+  },
+  "unset": {
+    "category": "No category",
+    "actor": "No counterparty",
+    "activity": "No activity",
+    "categoryGroup": "No group"
+  },
+  "bars": {
+    "empty": "Nothing in this period.",
+    "more": "{count, plural, one {+ # more under Analysis} other {+ # more under Analysis}}",
+    "net": "Net",
+    "spent": "Spent",
+    "gross": "Gross",
+    "refunded": "Refunded",
+    "movementsAndCategories": "{count, plural, one {# movement} other {# movements}} · {categories, plural, one {# category} other {# categories}}"
+  },
+  "map": {
+    "allExpenses": "All expenses",
+    "allIncome": "All income",
+    "canvas": "Map of {kind, select, income {income} other {expenses}}: {total}. Arrow keys to move, plus and minus to zoom, zero to see everything. The ranking gives the same figures as a list.",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fit": "See everything",
+    "chosen": "Chosen block",
+    "seeMovements": "See the movements",
+    "release": "Release the block",
+    "shareOfPeriod": "{share} of the period",
+    "shareOf": "{share} of {parent}"
+  },
+  "flow": {
+    "empty": "Nothing to compare in this period.",
+    "income": "Income",
+    "expensesNet": "Expenses (net)",
+    "expenses": "Expenses",
+    "refunded": "Refunded",
+    "chart": "Income and expenses by month",
+    "axisIn": "in",
+    "axisOut": "out",
+    "in": "In",
+    "out": "Out",
+    "running": "current",
+    "month": "{month}: {income} income, {expenses} expenses",
+    "saved": "Saved",
+    "incomplete": "current month, still incomplete",
+    "scopeHint": "Click: scope the page to this month"
+  }
+}

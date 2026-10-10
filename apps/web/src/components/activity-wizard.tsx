@@ -11,6 +11,7 @@ import type {
   RegimePreview,
 } from '@abacus/core/services/regimes'
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 import { AccountList, ActivityForm, type Option } from '@/components/activity-forms'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -26,16 +27,9 @@ import {
   regimePreviewAction,
   regimeStepAction,
 } from '@/lib/actions'
-import {
-  LEVY_KIND_LABEL,
-  LEVY_MEASURE_LABEL,
-  LEVY_PERIOD_LABEL,
-  LEVY_PERIOD_REF_LABEL,
-  LEVY_STATUS_BADGE,
-  thresholdValue,
-} from '@/lib/levy-words'
+import { type Format, useFormat } from '@/lib/format'
+import { type LevyWords, useLevyWords } from '@/lib/levy-words'
 import { type AnsweredQuestion, answered, answersOf } from '@/lib/regime-tree'
-import { eur, frDate } from '@/lib/utils'
 
 /**
  * Creating an activity by answering what one knows of oneself, rather than
@@ -59,7 +53,8 @@ const ELSEWHERE = '__elsewhere__'
 
 type Phase = 'identity' | 'tree' | 'review' | 'finish' | 'expert'
 
-const BASIS_WORD: Record<string, string> = { cash: 'Encaissement', invoiced: 'Facturation' }
+type WizardT = ReturnType<typeof useTranslations<'regime.wizard'>>
+type AmountT = ReturnType<typeof useTranslations<'regime.amount'>>
 
 export function ActivityWizard({
   jurisdictions,
@@ -73,6 +68,8 @@ export function ActivityWizard({
   accounts: Option[]
   today: string
 }) {
+  const t = useTranslations('regime.wizard')
+  const ts = useTranslations('regime.shared')
   const [phase, setPhase] = useState<Phase>('identity')
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ActivityKind>('business')
@@ -165,7 +162,7 @@ export function ActivityWizard({
       onSuccess={() => {
         // The expert form owns its own name field, which may no longer be the
         // one typed here: the acknowledgement says less rather than wrong.
-        setCreated('Activité créée')
+        setCreated(t('created'))
         reset()
       }}
     />
@@ -177,7 +174,7 @@ export function ActivityWizard({
       onClick={() => setPhase('expert')}
       className="self-start text-[11.5px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
     >
-      Je configure moi-même
+      {t('selfConfigure')}
     </button>
   )
 
@@ -201,7 +198,7 @@ export function ActivityWizard({
   if (phase === 'expert')
     return (
       <div className="flex flex-col gap-4">
-        {back('Retour', () => setPhase('identity'))}
+        {back(t('back'), () => setPhase('identity'))}
         {expert}
       </div>
     )
@@ -212,26 +209,26 @@ export function ActivityWizard({
         {created && <p className="text-xs text-good">✓ {created}</p>}
         {/* Controlled, unlike the fields of a form: this one is read by the
             steps that follow, and creating one activity has to clear it. */}
-        <Field label="Nom" name="name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Freelance" />
+        <Field label={ts('name')} name="name">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('namePlaceholder')} />
         </Field>
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">Type</span>
+          <span className="text-xs text-muted-foreground">{t('type')}</span>
           <Tabs value={kind} onValueChange={(v) => setKind(v as ActivityKind)}>
             <TabsList className="w-full">
-              <TabsTrigger value="business">Indépendante</TabsTrigger>
-              <TabsTrigger value="personal">Personnelle</TabsTrigger>
+              <TabsTrigger value="business">{t('kinds.business')}</TabsTrigger>
+              <TabsTrigger value="personal">{t('kinds.personal')}</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
 
         {kind === 'business' && (
           <div className="flex flex-col gap-1.5">
-            <Field label="Juridiction" name="jurisdiction">
+            <Field label={t('jurisdiction')} name="jurisdiction">
               <FormSelect
                 name="jurisdiction"
                 defaultValue={jurisdictionId}
-                placeholder="Où tu exerces"
+                placeholder={t('jurisdictionPlaceholder')}
                 onValueChange={(id) => {
                   // Answers belong to the jurisdiction that asked them. Keeping
                   // them across a change would carry an answer about one
@@ -242,7 +239,7 @@ export function ActivityWizard({
                 }}
                 options={[
                   ...jurisdictions.map((j) => ({ value: j.id, label: j.name })),
-                  { value: ELSEWHERE, label: 'Ailleurs, je configure moi-même' },
+                  { value: ELSEWHERE, label: t('elsewhere') },
                 ]}
               />
             </Field>
@@ -256,7 +253,7 @@ export function ActivityWizard({
           <PersonalCreate
             name={name}
             onSuccess={() => {
-              setCreated(`« ${name} » créée`)
+              setCreated(t('createdNamed', { name }))
               reset()
             }}
           />
@@ -270,7 +267,7 @@ export function ActivityWizard({
               setPhase(jurisdictionId === ELSEWHERE ? 'expert' : 'tree')
             }}
           >
-            Continuer
+            {t('continue')}
           </Button>
         )}
       </div>
@@ -281,7 +278,7 @@ export function ActivityWizard({
     const current = trail.find((s) => s.question.id === question?.id)?.value
     return (
       <div className="flex flex-col gap-4">
-        {back(name || 'Retour', () => setPhase('identity'))}
+        {back(name || t('back'), () => setPhase('identity'))}
         {trail.length > 0 && (
           <Rows>
             {trail.map((given) => (
@@ -310,10 +307,7 @@ export function ActivityWizard({
         ) : !step ? (
           <p className="text-[12px] text-faint">…</p>
         ) : step.models.length === 0 ? (
-          <p className="text-[12.5px] text-faint">
-            Aucun régime du catalogue ne correspond à ces réponses. Reviens sur une réponse, ou configure
-            l’activité toi-même.
-          </p>
+          <p className="text-[12.5px] text-faint">{t('noModel')}</p>
         ) : (
           <Choose
             models={step.models}
@@ -332,7 +326,7 @@ export function ActivityWizard({
   if (phase === 'review')
     return (
       <div className="flex flex-col gap-4">
-        {back('Revenir aux questions', backToQuestions)}
+        {back(t('backToQuestions'), backToQuestions)}
         {error && <p className="text-xs text-destructive">{error}</p>}
         {!preview ? (
           <p className="text-[12px] text-faint">…</p>
@@ -340,7 +334,7 @@ export function ActivityWizard({
           <>
             <Review preview={preview} />
             <Button type="button" className="self-start" onClick={() => setPhase('finish')}>
-              Continuer
+              {t('continue')}
             </Button>
             {selfExit}
           </>
@@ -350,16 +344,16 @@ export function ActivityWizard({
 
   return (
     <div className="flex flex-col gap-4">
-      {back('Revenir à la relecture', () => setPhase('review'))}
+      {back(t('backToReview'), () => setPhase('review'))}
       <div className="flex flex-col gap-0.5">
         <span className="text-[12.5px]">{name}</span>
         <span className="text-[11px] text-faint">{preview?.model.name}</span>
       </div>
       <ActionForm
         action={createActivityFromRegimeAction}
-        successLabel="Activité créée"
+        successLabel={t('created')}
         onSuccess={() => {
-          setCreated(`« ${name} » créée`)
+          setCreated(t('createdNamed', { name }))
           reset()
         }}
       >
@@ -373,11 +367,11 @@ export function ActivityWizard({
             value={given.value}
           />
         ))}
-        <Field label="Début" name="startedOn">
+        <Field label={t('startedOn')} name="startedOn">
           <DateField name="startedOn" defaultValue={today} />
         </Field>
         {accounts.length > 0 && <AccountList accounts={accounts} />}
-        <SubmitButton className="self-start">Créer l’activité</SubmitButton>
+        <SubmitButton className="self-start">{t('create')}</SubmitButton>
       </ActionForm>
     </div>
   )
@@ -388,11 +382,12 @@ export function ActivityWizard({
  * Everything the regime decides has no object here, so nothing else is asked.
  */
 function PersonalCreate({ name, onSuccess }: { name: string; onSuccess: () => void }) {
+  const t = useTranslations('regime.wizard')
   return (
     <ActionForm action={createActivityAction} onSuccess={onSuccess}>
       <input type="hidden" name="kind" value="personal" />
       <input type="hidden" name="name" value={name} />
-      <SubmitButton className="self-start">Créer l’activité</SubmitButton>
+      <SubmitButton className="self-start">{t('create')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -440,9 +435,10 @@ function Choose({
   models: { id: string; name: string; description: string }[]
   onPick: (id: string) => void
 }) {
+  const t = useTranslations('regime.wizard')
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[13.5px] font-medium">Quel régime ?</p>
+      <p className="text-[13.5px] font-medium">{t('whichRegime')}</p>
       <Rows>
         {models.map((model) => (
           <Pick key={model.id} label={model.name} help={model.description} onPick={() => onPick(model.id)} />
@@ -480,16 +476,16 @@ function Pick({
 }
 
 /** What the rule takes, in the shortest form that is still checkable. */
-function amountWords(levy: RegimeLevy): string {
-  if (levy.amountForm === 'rate') return `${Number(levy.rate ?? 0).toLocaleString('fr-FR')} %`
+function amountWords(levy: RegimeLevy, t: AmountT, format: Format): string {
+  if (levy.amountForm === 'rate') return t('rate', { rate: format.number(Number(levy.rate ?? 0), 3) })
   if (levy.amountForm === 'fixed')
-    return typeof levy.fixedAmount === 'number' ? eur(levy.fixedAmount, 2) : 'montant saisi'
+    return typeof levy.fixedAmount === 'number' ? format.eur(levy.fixedAmount, 2) : t('statedAmount')
   if (levy.amountForm === 'brackets') {
     const rows = (levy.brackets as { rows?: unknown[] } | undefined)?.rows?.length ?? 0
-    return `barème, ${rows} tranche${rows > 1 ? 's' : ''}`
+    return t('brackets', { count: rows })
   }
-  if (levy.amountForm === 'elective_base') return 'base choisie'
-  return 'rien à payer'
+  if (levy.amountForm === 'elective_base') return t('elective')
+  return t('nothing')
 }
 
 /**
@@ -497,14 +493,20 @@ function amountWords(levy: RegimeLevy): string {
  * often it falls, and what it is taken on. Its amount stands on its own
  * beside the name, where a figure that has to be checked belongs.
  */
-function takesWords(levy: RegimeLevy): string {
-  const words = [LEVY_KIND_LABEL[levy.kind] ?? levy.kind, LEVY_PERIOD_LABEL[levy.period] ?? levy.period]
+function takesWords(levy: RegimeLevy, words: LevyWords, over: OverT): string {
+  const parts = [words.kind(levy.kind), words.period(String(levy.period))]
   if (levy.baseMeasure && levy.baseMeasure !== 'none') {
-    const measure = LEVY_MEASURE_LABEL[levy.baseMeasure] ?? levy.baseMeasure
-    words.push(levy.basePeriodRef ? `${measure} sur ${LEVY_PERIOD_REF_LABEL[levy.basePeriodRef]}` : measure)
+    const measure = words.measure(levy.baseMeasure)
+    parts.push(
+      levy.basePeriodRef
+        ? over('measureOver', { measure, period: words.periodRef(levy.basePeriodRef) })
+        : measure,
+    )
   }
-  return words.join(' · ')
+  return parts.join(' · ')
 }
+
+type OverT = ReturnType<typeof useTranslations<'regime.shared'>>
 
 /**
  * The mention a status that is not `confirmed` earns: a figure still applied
@@ -512,7 +514,8 @@ function takesWords(levy: RegimeLevy): string {
  * where it is being accepted. Same badge as everywhere else it is read.
  */
 function Status({ status }: { status?: string }) {
-  const badge = status ? LEVY_STATUS_BADGE[status] : undefined
+  const words = useLevyWords()
+  const badge = status ? words.status(status) : undefined
   if (!badge) return null
   return (
     <Badge variant={badge.variant} className="ml-1.5 text-[10px]">
@@ -523,6 +526,8 @@ function Status({ status }: { status?: string }) {
 
 /** Where a rule comes from, and the day it was read there. */
 function Source({ sourceUrl, verifiedOn }: { sourceUrl?: string | null; verifiedOn?: string | null }) {
+  const t = useTranslations('regime.wizard')
+  const format = useFormat()
   return (
     <span className="text-[11px] text-faint">
       {sourceUrl ? (
@@ -532,34 +537,34 @@ function Source({ sourceUrl, verifiedOn }: { sourceUrl?: string | null; verified
           rel="noreferrer"
           className="underline-offset-2 hover:text-primary hover:underline"
         >
-          source
+          {t('source')}
         </a>
       ) : (
-        'sans source'
+        t('noSource')
       )}
-      {verifiedOn && ` · lue le ${frDate(verifiedOn)}`}
+      {verifiedOn && ` · ${t('readOn', { date: format.date(verifiedOn) })}`}
     </span>
   )
 }
 
 /**
- * A day of the year without its year, as French writes it: the first of a
- * month is "1er", every other day its plain number.
+ * The day a fiscal year opens, without its year. The catalog writes it the way
+ * its language does (French says "1er" for the first of a month), so the
+ * screen hands it the day as a number and the month as a name.
  */
-function openingDay(month: number, day: number): string {
-  const written = new Date(2000, month - 1, day).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-  })
-  return day === 1 ? written.replace(/^1\b/, '1er') : written
+function openingDay(month: number, day: number, t: WizardT, format: Format): string {
+  const iso = `2000-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return t('review.opensOn', { day, month: format.dateAs(iso, { month: 'long' }) })
 }
 
 /** What is about to be written, before a single row of it exists. */
 function Review({ preview }: { preview: RegimePreview }) {
+  const t = useTranslations('regime.wizard')
+  const format = useFormat()
   const { activity } = preview
-  const exercise =
+  const opens =
     activity.fiscalYearStartMonth && activity.fiscalYearStartDay
-      ? openingDay(activity.fiscalYearStartMonth, activity.fiscalYearStartDay)
+      ? openingDay(activity.fiscalYearStartMonth, activity.fiscalYearStartDay, t, format)
       : null
 
   return (
@@ -569,38 +574,37 @@ function Review({ preview }: { preview: RegimePreview }) {
         <p className="text-[11.5px] leading-relaxed text-faint">{preview.model.description}</p>
       </div>
 
-      <Block title="L’activité">
+      <Block title={t('review.activity')}>
         <Rows>
-          <Line label="Juridiction" value={preview.jurisdiction.name} />
+          <Line label={t('jurisdiction')} value={preview.jurisdiction.name} />
           {activity.revenueBasis && (
-            <Line
-              label="Fait générateur"
-              value={BASIS_WORD[activity.revenueBasis] ?? activity.revenueBasis}
-            />
+            <Line label={t('review.basis')} value={t(`review.bases.${activity.revenueBasis}`)} />
           )}
           <Line
-            label="TVA"
+            label={t('review.vat')}
             value={
               activity.vatRegistered
                 ? typeof activity.defaultVatRate === 'number'
-                  ? `Assujettie, ${Number(activity.defaultVatRate).toLocaleString('fr-FR')} % par défaut`
-                  : 'Assujettie'
-                : 'Non assujettie'
+                  ? t('review.vatRegisteredRate', { rate: format.number(Number(activity.defaultVatRate), 3) })
+                  : t('review.vatRegistered')
+                : t('review.vatNotRegistered')
             }
           />
           {activity.deductibleExpenses && (
             <Line
-              label="Charges"
-              value={activity.deductibleExpenses === 'all' ? 'Toutes déductibles' : 'Aucune déductible'}
+              label={t('review.expenses')}
+              value={
+                activity.deductibleExpenses === 'all' ? t('review.allDeductible') : t('review.noneDeductible')
+              }
             />
           )}
-          {exercise && <Line label="Exercice" value={`ouvre le ${exercise}`} />}
-          {activity.currency && <Line label="Devise" value={activity.currency} />}
+          {opens && <Line label={t('review.fiscalYear')} value={opens} />}
+          {activity.currency && <Line label={t('review.currency')} value={activity.currency} />}
         </Rows>
       </Block>
 
       {preview.levies.length > 0 && (
-        <Block title="Les règles" description="ce que l’activité devra, et sur quel texte">
+        <Block title={t('review.rules')} description={t('review.rulesDescription')}>
           <Rows>
             {preview.levies.map((entry) => (
               <LevyLine key={entry.levy.name} entry={entry} />
@@ -610,7 +614,7 @@ function Review({ preview }: { preview: RegimePreview }) {
       )}
 
       {preview.thresholds.length > 0 && (
-        <Block title="Les seuils" description="ce qui change au-delà d’une valeur">
+        <Block title={t('review.thresholds')} description={t('review.thresholdsDescription')}>
           <Rows>
             {preview.thresholds.map((threshold) => (
               <ThresholdLine key={threshold.label} threshold={threshold} />
@@ -620,7 +624,7 @@ function Review({ preview }: { preview: RegimePreview }) {
       )}
 
       {preview.inputs.length > 0 && (
-        <Block title="Les paramètres saisis" description="les chiffres qu’aucun calcul ne donne">
+        <Block title={t('review.inputs')} description={t('review.inputsDescription')}>
           <Rows>
             {preview.inputs.map((input) => (
               <div key={input.name} className="flex items-baseline gap-2 py-2.5">
@@ -629,7 +633,7 @@ function Review({ preview }: { preview: RegimePreview }) {
                   {input.note && <span className="text-[11px] leading-relaxed text-faint">{input.note}</span>}
                 </span>
                 <span className="shrink-0 font-mono text-[12px] tabular">
-                  {Number(input.value).toLocaleString('fr-FR', { maximumFractionDigits: 4 })}
+                  {format.number(Number(input.value), 4)}
                 </span>
               </div>
             ))}
@@ -637,10 +641,7 @@ function Review({ preview }: { preview: RegimePreview }) {
         </Block>
       )}
 
-      <p className="text-[11.5px] leading-relaxed text-faint">
-        Ces règles deviennent les tiennes : tu les corriges quand tu veux, et corriger le catalogue plus tard
-        ne les touchera pas.
-      </p>
+      <p className="text-[11.5px] leading-relaxed text-faint">{t('review.yours')}</p>
     </div>
   )
 }
@@ -675,6 +676,10 @@ function Line({ label, value }: { label: string; value: string }) {
 }
 
 function LevyLine({ entry }: { entry: PreviewLevy }) {
+  const ta = useTranslations('regime.amount')
+  const ts = useTranslations('regime.shared')
+  const words = useLevyWords()
+  const format = useFormat()
   const { levy } = entry
   return (
     <div className="flex flex-col gap-0.5 py-2.5">
@@ -684,10 +689,10 @@ function LevyLine({ entry }: { entry: PreviewLevy }) {
           <Status status={levy.status} />
         </span>
         <span className="shrink-0 font-mono text-[12px] tabular text-muted-foreground">
-          {amountWords(levy)}
+          {amountWords(levy, ta, format)}
         </span>
       </div>
-      <span className="text-[11px] text-faint">{takesWords(levy)}</span>
+      <span className="text-[11px] text-faint">{takesWords(levy, words, ts)}</span>
       <Source sourceUrl={levy.sourceUrl} verifiedOn={levy.verifiedOn} />
       {entry.modifiers.map((modifier) => (
         <span key={modifier.label} className="pt-1 pl-3 text-[11px] leading-relaxed text-muted-foreground">
@@ -700,6 +705,10 @@ function LevyLine({ entry }: { entry: PreviewLevy }) {
 }
 
 function ThresholdLine({ threshold }: { threshold: PreviewThreshold }) {
+  const t = useTranslations('regime.wizard')
+  const ts = useTranslations('regime.shared')
+  const words = useLevyWords()
+  const measure = words.measure(threshold.measure)
   return (
     <div className="flex flex-col gap-0.5 py-2.5">
       <div className="flex items-baseline gap-2">
@@ -708,13 +717,15 @@ function ThresholdLine({ threshold }: { threshold: PreviewThreshold }) {
           <Status status={threshold.status} />
         </span>
         <span className="shrink-0 font-mono text-[12px] tabular">
-          {thresholdValue(threshold.measure, threshold.value)}
+          {words.thresholdValue(threshold.measure, threshold.value)}
         </span>
       </div>
       <span className="text-[11px] text-faint">
-        {LEVY_MEASURE_LABEL[threshold.measure] ?? threshold.measure}
-        {threshold.periodRef && ` sur ${LEVY_PERIOD_REF_LABEL[threshold.periodRef]}`}
-        {threshold.comparison === 'gte' ? ' · au moins' : ' · au plus'}
+        {threshold.periodRef
+          ? ts('measureOver', { measure, period: words.periodRef(threshold.periodRef) })
+          : measure}
+        {' · '}
+        {threshold.comparison === 'gte' ? t('review.atLeast') : t('review.atMost')}
       </span>
       <span className="text-[11px] leading-relaxed text-faint">{threshold.consequence}</span>
       <Source sourceUrl={threshold.sourceUrl} verifiedOn={threshold.verifiedOn} />
@@ -733,12 +744,9 @@ export function NewActivitySheet({
   accounts: Option[]
   today: string
 }) {
+  const t = useTranslations('regime.wizard.sheet')
   return (
-    <EntrySheet
-      label="Activité"
-      title="Nouvelle activité"
-      description="Une sphère économique : indépendante avec son régime, ou personnelle pour l’analyse seule."
-    >
+    <EntrySheet label={t('label')} title={t('title')} description={t('description')}>
       <ActivityWizard
         jurisdictions={jurisdictions}
         categories={categories}

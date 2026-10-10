@@ -1,5 +1,6 @@
 import { CheckIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Logo } from '@/components/logo'
 import { cn } from '@/lib/utils'
 
@@ -69,27 +70,27 @@ export function StepPath({ steps }: { steps: Step[] }) {
 }
 
 export function Onboarding({ steps, mcpHref }: { steps: Step[]; mcpHref: string }) {
+  const t = useTranslations('common.onboarding')
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-8 px-4 py-14">
       <div className="flex flex-col gap-2">
         <Logo className="size-8 text-muted-foreground" />
         <h1 className="text-xl font-semibold tracking-tight">
-          Bienvenue sur abacus<span className="text-primary">_</span>
+          {t.rich('welcome', { accent: (chunks) => <span className="text-primary">{chunks}</span> })}
         </h1>
-        <p className="text-[13px] leading-relaxed text-muted-foreground">
-          Tout ici est déclaré par toi : aucune connexion bancaire, aucun import. En échange, tu vois
-          exactement ce que tu as décidé de suivre. Trois pas et le tableau de bord se remplit.
-        </p>
+        <p className="text-[13px] leading-relaxed text-muted-foreground">{t('intro')}</p>
       </div>
 
       <StepPath steps={steps} />
 
       <p className="text-[12.5px] leading-relaxed text-faint">
-        Tu peux aussi tout déclarer en langage naturel depuis une IA :{' '}
-        <Link href={mcpHref} className="text-primary underline-offset-2 hover:underline">
-          brancher une IA
-        </Link>
-        .
+        {t.rich('aiHint', {
+          link: (chunks) => (
+            <Link href={mcpHref} className="text-primary underline-offset-2 hover:underline">
+              {chunks}
+            </Link>
+          ),
+        })}
       </p>
     </div>
   )

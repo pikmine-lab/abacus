@@ -10,14 +10,15 @@ import { listCommitmentsWithProgress, monthlyEquivalentEur } from '@abacus/core/
 import { listMovements } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { BankCard } from '@/components/bank-card'
 import { CardActions, ValidateStatement } from '@/components/card-forms'
 import { Block, Figure } from '@/components/composition'
 import { MovementRowActions } from '@/components/movement-row-actions'
 import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { StatementFold } from '@/components/statement-fold'
+import { getFormat } from '@/lib/format-server'
 import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
-import { eur, frDate, frMonthLong } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
   const userId = session.user.id
   const { cardId } = await params
   const now = today()
+  const [t, format] = await Promise.all([getTranslations('accounts'), getFormat()])
+  // "le 25", or "en fin de mois" for the 31st, which is how a bank says it.
+  const day = (d: number) => (d === 31 ? t('card.monthEnd') : t('card.day', { day: d }))
 
   const cards = await listCards(userId)
   const card = cards.find((c) => c.id === cardId)
@@ -81,7 +85,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
     const counterparty = actorName.get((income ? m.sourceActorId : m.targetActorId)!) ?? '?'
     return (
       <div key={m.id} className="flex items-center gap-3 py-2.5">
-        <span className="w-20 shrink-0 font-mono text-[11.5px] text-faint">{frDate(purchaseDay(m))}</span>
+        <span className="w-20 shrink-0 font-mono text-[11.5px] text-faint">
+          {format.date(purchaseDay(m))}
+        </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px]">{counterparty}</span>
           {m.note && <span className="truncate text-[11px] text-faint">{m.note}</span>}
@@ -93,12 +99,12 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
           className={`w-24 shrink-0 text-right font-mono text-[13px] tabular ${income ? 'text-good' : ''}`}
         >
           {income ? '+' : '−'}
-          {eur(Number(m.amount), 2)}
+          {format.eur(Number(m.amount), 2)}
         </span>
         <MovementRowActions
           {...options}
           today={now}
-          label={`${frDate(purchaseDay(m))} · ${counterparty} · ${eur(Number(m.amount), 2)}`}
+          label={`${format.date(purchaseDay(m))} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
           draft={movementDraft(m, actorName)}
         />
       </div>
@@ -142,12 +148,14 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
             <div className="flex flex-col gap-0.5 text-[11.5px]">
               {deferred && (
                 <span className="text-faint">
-                  arrêté {dayLabel(card.statementDay!)}, prélevé {dayLabel(card.debitDay!)}
+                  {t('card.schedule', { cutOff: day(card.statementDay!), debit: day(card.debitDay!) })}
                 </span>
               )}
-              {expired && <span className="text-muted-foreground">expirée</span>}
+              {expired && <span className="text-muted-foreground">{t('card.expired')}</span>}
               {expiring && (
-                <span className="text-muted-foreground">expire fin {frMonthLong(card.expiryMonth)}</span>
+                <span className="text-muted-foreground">
+                  {t('card.expiresEnd', { month: format.monthLong(card.expiryMonth) })}
+                </span>
               )}
             </div>
           </div>
@@ -155,7 +163,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
             {deferred && (
               <Figure
                 hero
-                label="À prélever"
+                label={t('cardPage.toDebit')}
                 value={owed}
                 decimals={2}
                 // The total spans every statement still owed: the note dates the
@@ -163,24 +171,29 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                 // Whether it waits on a validation is the statement's to say.
                 note={
                   nextDebit &&
-                  `${card.pending.length > 1 ? `dont ${eur(Number(nextDebit.amount), 2)}, ` : ''}débit attendu le ${frDate(nextDebit.dueOn)}`
+                  (card.pending.length > 1
+                    ? t('cardPage.partOfTotal', {
+                        amount: format.eur(Number(nextDebit.amount), 2),
+                        date: format.date(nextDebit.dueOn),
+                      })
+                    : t('card.debitExpected', { date: format.date(nextDebit.dueOn) }))
                 }
               />
             )}
             <Figure
               hero={!deferred}
-              label={`Payé en ${frMonthLong(month).split(' ')[0]}`}
+              label={t('cardPage.paidIn', { month: format.dateAs(`${month}-01`, { month: 'long' }) })}
               value={paidThisMonth}
               decimals={2}
-              note="par date d’achat"
+              note={t('cardPage.byPurchaseDate')}
             />
           </div>
         </div>
 
         {deferred ? (
-          <Block label="Relevés" rule>
+          <Block label={t('cardPage.statements')} rule>
             {statements.length === 0 ? (
-              <EmptyLine>Aucun achat pour l’instant.</EmptyLine>
+              <EmptyLine>{t('cardPage.noPurchases')}</EmptyLine>
             ) : (
               <div className="flex flex-col divide-y divide-border/70 border-b border-border">
                 {statements.map((statement) => {
@@ -191,12 +204,12 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                   // A cycle still open is named by the day it runs to, as on Comptes;
                   // a closed one by the day it was cut off, then where its debit stands.
                   const state = statement.debitedOn
-                    ? `débité le ${frDate(statement.debitedOn)}`
+                    ? t('cardPage.debitedOn', { date: format.date(statement.debitedOn) })
                     : !closed
                       ? null
                       : statement.dueOn <= now
-                        ? `débit attendu le ${frDate(statement.dueOn)} · à valider`
-                        : `débit attendu le ${frDate(statement.dueOn)}`
+                        ? t('cardPage.debitExpectedToValidate', { date: format.date(statement.dueOn) })
+                        : t('card.debitExpected', { date: format.date(statement.dueOn) })
                   return (
                     <StatementFold
                       key={statement.id}
@@ -205,10 +218,12 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                       header={
                         <>
                           <span className="text-[13.5px] font-medium">
-                            {closed ? 'Arrêté le' : 'En cours jusqu’au'} {frDate(statement.cutOffOn)}
+                            {t(closed ? 'cardPage.cutOffOn' : 'cardPage.runningUntil', {
+                              date: format.date(statement.cutOffOn),
+                            })}
                           </span>
                           <span className="text-[11.5px] text-faint">
-                            {statement.purchases} achat{statement.purchases > 1 ? 's' : ''}
+                            {t('cardPage.purchaseCount', { count: statement.purchases })}
                             {state && ` · ${state}`}
                           </span>
                         </>
@@ -216,7 +231,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                       figures={
                         <>
                           <span className="font-mono text-[14px] font-semibold tabular">
-                            −{eur(Number(statement.amount), 2)}
+                            −{format.eur(Number(statement.amount), 2)}
                           </span>
                           {closed && (
                             <ValidateStatement
@@ -244,9 +259,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
             )}
           </Block>
         ) : (
-          <Block label="Achats" rule>
+          <Block label={t('cardPage.purchases')} rule>
             {movements.length === 0 ? (
-              <EmptyLine>Rien n’a encore été payé avec cette carte.</EmptyLine>
+              <EmptyLine>{t('cardPage.nothingPaid')}</EmptyLine>
             ) : (
               <div className="flex flex-col divide-y divide-border/70 border-b border-border">
                 {[...movements].sort((a, b) => purchaseDay(b).localeCompare(purchaseDay(a))).map(row)}
@@ -258,8 +273,8 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
         {/* What a renewed card has to be given again: said only once a renewal is near. */}
         {billed.length > 0 && (
           <Block
-            label="Dépenses récurrentes"
-            qualifier={expired || expiring ? 'à reporter sur la nouvelle carte' : undefined}
+            label={t('cardPage.recurring')}
+            qualifier={expired || expiring ? t('cardPage.moveToNewCard') : undefined}
             href="/recurring-expenses?from=accounts"
             rule
           >
@@ -269,13 +284,14 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-[13px]">{c.label}</span>
                     <span className="text-[11.5px] text-faint">
-                      prochaine le {frDate(c.nextDueOn)}
-                      {c.progress && ` · ${c.progress.paidInstallments}/${c.installmentsTotal} payées`}
+                      {t('cardPage.nextOn', { date: format.date(c.nextDueOn) })}
+                      {c.progress &&
+                        ` · ${t('cardPage.installmentsPaid', { paid: c.progress.paidInstallments, total: c.installmentsTotal ?? 0 })}`}
                     </span>
                   </div>
                   <span className="ml-auto shrink-0 font-mono text-[13px] tabular">
-                    −{eur(monthlyEquivalentEur(c), 2)}
-                    <span className="text-[11px] text-faint"> /mois</span>
+                    −{format.eur(monthlyEquivalentEur(c), 2)}
+                    <span className="text-[11px] text-faint"> {t('cardPage.perMonth')}</span>
                   </span>
                 </div>
               ))}
@@ -285,9 +301,4 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
       </PageBody>
     </>
   )
-}
-
-/** "le 25", or "en fin de mois" for the 31st, which is how a bank says it. */
-function dayLabel(day: number): string {
-  return day === 31 ? 'en fin de mois' : `le ${day}`
 }

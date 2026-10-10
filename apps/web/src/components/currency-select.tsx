@@ -1,6 +1,7 @@
 'use client'
 
 import { CheckIcon, ChevronDownIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +13,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useFormat } from '@/lib/format'
 
 /**
  * The handful most statements are written in, pinned on top: a plain list of
@@ -21,18 +23,18 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
  */
 const FREQUENT = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'CNY']
 
-const NAMES = new Intl.DisplayNames('fr', { type: 'currency' })
-
 interface Row {
   code: string
   name: string
 }
 
-function rows(): { frequent: Row[]; others: Row[] } {
+/** Each currency named in the interface's language, so it is searched by the name its reader knows. */
+function rows(locale: string): { frequent: Row[]; others: Row[] } {
   const all = Intl.supportedValuesOf('currency')
+  const names = new Intl.DisplayNames(locale, { type: 'currency' })
   const name = (code: string) => {
     try {
-      return NAMES.of(code) ?? code
+      return names.of(code) ?? code
     } catch {
       return code
     }
@@ -53,7 +55,7 @@ function fold(text: string): string {
 
 /**
  * Currency picker: a compact trigger showing the code, opening a searchable
- * list. Typing matches the code and the French name, the code first ("us"
+ * list. Typing matches the code and the name, the code first ("us"
  * ranks USD above "dollar australien"), because a statement gives the code
  * and memory gives the name.
  */
@@ -72,7 +74,9 @@ export function CurrencySelect({
   const [inner, setInner] = useState(defaultValue)
   const value = controlled ?? inner
   const [open, setOpen] = useState(false)
-  const { frequent, others } = useMemo(rows, [])
+  const t = useTranslations('common.currency')
+  const { locale } = useFormat()
+  const { frequent, others } = useMemo(() => rows(locale), [locale])
 
   const pick = (code: string) => {
     setInner(code)
@@ -116,7 +120,7 @@ export function CurrencySelect({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            aria-label="Devise"
+            aria-label={t('label')}
             className="w-full justify-between px-2.5 font-mono text-[12.5px] font-normal"
           >
             {value}
@@ -125,11 +129,11 @@ export function CurrencySelect({
         </PopoverTrigger>
         <PopoverContent align="end" className="w-72 p-0">
           <Command filter={filter}>
-            <CommandInput placeholder="Code ou nom (USD, dollar…)" />
+            <CommandInput placeholder={t('search')} />
             <CommandList>
-              <CommandEmpty>Aucune devise ne correspond.</CommandEmpty>
-              {group('Courantes', frequent)}
-              {group('Toutes', others)}
+              <CommandEmpty>{t('empty')}</CommandEmpty>
+              {group(t('frequent'), frequent)}
+              {group(t('all'), others)}
             </CommandList>
           </Command>
         </PopoverContent>

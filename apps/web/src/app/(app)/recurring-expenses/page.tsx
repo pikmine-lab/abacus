@@ -18,6 +18,7 @@ import {
 } from '@abacus/core/services/commitments'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import type { CommitmentWithProgress } from '@/components/commitment-blocks'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { ActionCard, Figure, FigureRow } from '@/components/composition'
@@ -29,29 +30,19 @@ import { FoldSection } from '@/components/fold-section'
 import { EmptyLine, PageBody, PageHeader, Rows } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
+import { getFormat } from '@/lib/format-server'
 import { cardChoices } from '@/lib/movement-form-data'
 import { type Sorter, sorter } from '@/lib/sort'
-import { daysBetween, eur, frDate } from '@/lib/utils'
+import { daysBetween } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Dépenses récurrentes' }
+export async function generateMetadata() {
+  const t = await getTranslations('shell.screens')
+  return { title: t('recurringExpenses') }
+}
 
 const PATH = '/recurring-expenses'
-
-const SUBSCRIPTION_SORTS: { field: CommitmentSortField; label: string }[] = [
-  { field: 'monthly', label: 'Coût mensuel' },
-  { field: 'amount', label: 'Montant facturé' },
-  { field: 'next', label: 'Prochaine échéance' },
-  { field: 'label', label: 'Nom' },
-]
-
-const FINANCING_SORTS: { field: CommitmentSortField; label: string }[] = [
-  { field: 'next', label: 'Prochaine échéance' },
-  { field: 'remaining', label: 'Restant dû' },
-  { field: 'amount', label: 'Mensualité' },
-  { field: 'label', label: 'Nom' },
-]
 
 export default async function RecurringExpensesPage({
   searchParams,
@@ -63,6 +54,21 @@ export default async function RecurringExpensesPage({
   const userId = session.user.id
   const params = await searchParams
   const { error } = params
+  const t = await getTranslations('recurring')
+  const tScreens = await getTranslations('shell.screens')
+  const format = await getFormat()
+  const subscriptionSorts: { field: CommitmentSortField; label: string }[] = [
+    { field: 'monthly', label: t('sorts.monthlyCost') },
+    { field: 'amount', label: t('sorts.billedAmount') },
+    { field: 'next', label: t('nextDue') },
+    { field: 'label', label: t('name') },
+  ]
+  const financingSorts: { field: CommitmentSortField; label: string }[] = [
+    { field: 'next', label: t('nextDue') },
+    { field: 'remaining', label: t('sorts.remainingDue') },
+    { field: 'amount', label: t('sorts.installment') },
+    { field: 'label', label: t('name') },
+  ]
   // Two kinds, two orders, whatever account a line falls under: subscriptions
   // open on what they cost a month, the question the review exists for, and
   // financings on what falls next, which is how a plan is read.
@@ -135,15 +141,15 @@ export default async function RecurringExpensesPage({
   const savableNote =
     savable > 0
       ? [
-          toCancel.length > 0 ? `${toCancel.length} à résilier` : null,
-          reducible.length > 0 ? `${reducible.length} réductible${reducible.length > 1 ? 's' : ''}` : null,
+          toCancel.length > 0 ? t('expenses.toCancelCount', { count: toCancel.length }) : null,
+          reducible.length > 0 ? t('expenses.reducibleCount', { count: reducible.length }) : null,
         ]
           .filter(Boolean)
           .join(' · ')
       : unjudged > 0
-        ? `${unjudged} abonnement${unjudged > 1 ? 's' : ''} à juger`
+        ? t('expenses.unjudgedCount', { count: unjudged })
         : subscriptions.length > 0
-          ? 'tout est essentiel'
+          ? t('expenses.allEssential')
           : undefined
 
   const row = (c: CommitmentWithProgress) => (
@@ -181,11 +187,11 @@ export default async function RecurringExpensesPage({
 
   return (
     <>
-      <PageHeader title="Dépenses récurrentes">
+      <PageHeader title={tScreens('recurringExpenses')}>
         <EntrySheet
-          label="Ajouter"
-          title="Nouvelle dépense récurrente"
-          description="Un abonnement à durée ouverte, ou un paiement en X fois qui s’éteindra de lui-même."
+          label={t('add')}
+          title={t('expenses.newTitle')}
+          description={t('expenses.newDescription')}
         >
           <NewCommitmentForm
             direction="outgoing"
@@ -213,30 +219,44 @@ export default async function RecurringExpensesPage({
           <div className="flex min-w-0 flex-col gap-4">
             <Figure
               hero
-              label="Coût mensuel"
+              label={t('expenses.monthlyCost')}
               value={monthlyCost}
               decimals={2}
-              per="/mois"
-              note={active.length > 0 ? `soit ${eur(monthlyCost * 12)} par an` : undefined}
+              per={t('perMonth')}
+              note={
+                active.length > 0
+                  ? t('expenses.perYear', { amount: format.eur(monthlyCost * 12) })
+                  : undefined
+              }
             />
             {/* Whole euros keep the three of them on one line beside the card;
                 the cents are in the figure above and in every row below. */}
             <FigureRow compact>
               <Figure
                 compact
-                label="Abonnements"
+                label={t('expenses.subscriptions')}
                 value={cost(subscriptions)}
-                per="/mois"
-                note={`${subscriptions.length} en cours`}
+                per={t('perMonth')}
+                note={t('expenses.activeCount', { count: subscriptions.length })}
               />
               <Figure
                 compact
-                label="Financements"
+                label={t('expenses.financings')}
                 value={cost(financings)}
-                per="/mois"
-                note={financings.length > 0 ? `${eur(remainingDue)} restant dû` : 'aucun en cours'}
+                per={t('perMonth')}
+                note={
+                  financings.length > 0
+                    ? t('expenses.remainingDue', { amount: format.eur(remainingDue) })
+                    : t('expenses.noneActive')
+                }
               />
-              <Figure compact label="Économisable" value={savable} per="/mois" note={savableNote} />
+              <Figure
+                compact
+                label={t('expenses.savable')}
+                value={savable}
+                per={t('perMonth')}
+                note={savableNote}
+              />
             </FigureRow>
           </div>
           {pendingOut.length > 0 && (
@@ -245,7 +265,7 @@ export default async function RecurringExpensesPage({
             // Stacked, it takes the room it needs.
             <div className="relative min-h-0">
               <div className="flex flex-col @4xl:absolute @4xl:inset-x-0 @4xl:top-0 @4xl:max-h-full">
-                <ActionCard label="À confirmer" scrolls>
+                <ActionCard label={t('toConfirm')} scrolls>
                   <PendingOccurrences
                     back={PATH}
                     aheadInPanel
@@ -268,9 +288,7 @@ export default async function RecurringExpensesPage({
         </div>
 
         {active.length === 0 ? (
-          <EmptyLine>
-            Aucune dépense récurrente : « Ajouter » en déclare une, abonnement ou paiement en plusieurs fois.
-          </EmptyLine>
+          <EmptyLine>{t('expenses.empty')}</EmptyLine>
         ) : (
           <div className="flex flex-col gap-12">
             {byAccount.map((account) => {
@@ -286,8 +304,8 @@ export default async function RecurringExpensesPage({
                   monthlyEur={account.monthlyEur}
                   today={now}
                 >
-                  {kind('Abonnements', subs, subscriptionSort, SUBSCRIPTION_SORTS, alone)}
-                  {kind('Financements', plans, financingSort, FINANCING_SORTS, alone)}
+                  {kind(t('expenses.subscriptions'), subs, subscriptionSort, subscriptionSorts, alone)}
+                  {kind(t('expenses.financings'), plans, financingSort, financingSorts, alone)}
                 </AccountExpenses>
               )
             })}
@@ -295,17 +313,19 @@ export default async function RecurringExpensesPage({
         )}
 
         {ended.length > 0 && (
-          <FoldSection title="Terminés" description={endedCount(ended)}>
+          <FoldSection title={t('expenses.ended')} description={endedCount(ended, t)}>
             <Rows>
               {ended.map((c) => (
                 <div key={c.id} className="flex items-baseline gap-3 py-2 text-faint">
                   <span className="text-[13px]">{c.label}</span>
                   <span className="text-[11.5px]">
                     {c.cancelledOn
-                      ? `résilié le ${frDate(c.cancelledOn)}`
-                      : `soldé le ${frDate(c.settledOn!)}`}
+                      ? t('expenses.cancelledOn', { date: format.date(c.cancelledOn) })
+                      : t('expenses.settledOn', { date: format.date(c.settledOn!) })}
                   </span>
-                  <span className="ml-auto font-mono text-[13px] tabular">{eur(Number(c.amount), 2)}</span>
+                  <span className="ml-auto font-mono text-[13px] tabular">
+                    {format.eur(Number(c.amount), 2)}
+                  </span>
                 </div>
               ))}
             </Rows>
@@ -317,12 +337,15 @@ export default async function RecurringExpensesPage({
 }
 
 /** "2 résiliés · 1 soldé": what the fold holds, said before it is opened. */
-function endedCount(ended: CommitmentWithProgress[]): string {
+function endedCount(
+  ended: CommitmentWithProgress[],
+  t: Awaited<ReturnType<typeof getTranslations<'recurring'>>>,
+): string {
   const cancelled = ended.filter((c) => c.cancelledOn).length
   const settled = ended.length - cancelled
   return [
-    cancelled > 0 && `${cancelled} résilié${cancelled > 1 ? 's' : ''}`,
-    settled > 0 && `${settled} soldé${settled > 1 ? 's' : ''}`,
+    cancelled > 0 && t('expenses.cancelledCount', { count: cancelled }),
+    settled > 0 && t('expenses.settledCount', { count: settled }),
   ]
     .filter(Boolean)
     .join(' · ')

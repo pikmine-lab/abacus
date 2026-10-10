@@ -1,6 +1,7 @@
 'use client'
 
 import { MinusIcon, PlusIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { type CardChoice, CardSelect, debitDayFor } from '@/components/card-forms'
@@ -19,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correctMovementAction, declareMovementAction } from '@/lib/actions'
-import { eur, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 interface Option {
   id: string
@@ -48,11 +49,7 @@ export interface OpenInvoiceOption {
   label: string
 }
 
-const TYPES = [
-  { value: 'expense', label: 'Dépense' },
-  { value: 'income', label: 'Revenu' },
-  { value: 'transfer', label: 'Virement' },
-] as const
+const TYPES = ['expense', 'income', 'transfer'] as const
 
 /** An existing movement being corrected, flattened for the form fields. */
 export interface MovementDraft {
@@ -80,8 +77,8 @@ export interface MovementDraft {
   vatAmount?: string
   /** The card that paid it; with a deferred card, happenedOn above is the purchase day. */
   cardId?: string
-  /** Origin the form must not silently break (échéance, ajustement). */
-  origin?: string
+  /** Origin the form must not silently break: a confirmed due payment, a balance check adjustment. */
+  origin?: 'commitment' | 'balanceCheck'
 }
 
 export function MovementForm({
@@ -108,6 +105,8 @@ export function MovementForm({
   /** Present when correcting an existing movement instead of declaring one. */
   draft?: MovementDraft
 }) {
+  const t = useTranslations('movements')
+  const format = useFormat()
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(draft?.type ?? 'expense')
   // The counterparty, watched so an income from a client with open invoices
   // is offered the one it pays.
@@ -149,7 +148,7 @@ export function MovementForm({
   return (
     <ActionForm
       action={editing ? correctMovementAction : declareMovementAction}
-      successLabel={editing ? 'Mouvement corrigé' : 'Mouvement déclaré'}
+      successLabel={editing ? t('form.corrected') : t('form.declared')}
       onSuccess={() => {
         // A success remounts the fields (they clear), but this state lives
         // above the remount: left alone it would keep showing the euros field
@@ -172,7 +171,7 @@ export function MovementForm({
       {draft && <input type="hidden" name="movementId" value={draft.id} />}
       {draft?.origin && (
         <p className="rounded-md border border-border bg-secondary/40 px-2.5 py-2 text-[11.5px] text-muted-foreground">
-          {draft.origin} Corriger le montant ou la date ici ne défait pas ce lien.
+          {t(`form.origin.${draft.origin}`)} {t('form.originKept')}
         </p>
       )}
       <Tabs
@@ -187,25 +186,28 @@ export function MovementForm({
         }}
       >
         <TabsList className="w-full">
-          {TYPES.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
+          {TYPES.map((value) => (
+            <TabsTrigger key={value} value={value}>
+              {t(`form.types.${value}`)}
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label={debitOn ? 'Date d’achat' : 'Date'} name="date">
+        <Field label={debitOn ? t('form.purchaseDate') : t('fields.date')} name="date">
           <DateField name="date" defaultValue={draft?.happenedOn ?? today} onValueChange={setDay} />
           {/* The day the balance moves, which is not the day of the purchase. */}
           {debitOn && (
             <span className="text-[11px] text-muted-foreground">
-              prélèvement prévu le <span className="font-mono tabular">{frDate(debitOn)}</span>
+              {t.rich('form.debitOn', {
+                date: format.date(debitOn),
+                mono: (chunks) => <span className="font-mono tabular">{chunks}</span>,
+              })}
             </span>
           )}
         </Field>
-        <Field label="Montant" name="amount">
+        <Field label={t('fields.amount')} name="amount">
           <div className="flex gap-2">
             <AmountInput
               // The key remounts the field when the unit it shows changes.
@@ -215,7 +217,7 @@ export function MovementForm({
                   : 'amount'
               }
               name="amount"
-              placeholder="12,50"
+              placeholder={format.number(12.5, 2, 2)}
               defaultValue={
                 type === 'transfer' ? (draft?.amount ?? '') : (draft?.originalAmount ?? draft?.amount ?? '')
               }
@@ -238,11 +240,11 @@ export function MovementForm({
 
       {foreign && (
         <div className="grid grid-cols-2 gap-3">
-          <Field label={`En euros (${type === 'income' ? 'crédités' : 'débités'})`} name="eurAmount">
+          <Field label={type === 'income' ? t('form.eurCredited') : t('form.eurDebited')} name="eurAmount">
             <AmountInput
               key={eurCleared ? 'eur-cleared' : 'eur'}
               name="eurAmount"
-              placeholder="au cours du jour"
+              placeholder={t('form.dayRate')}
               defaultValue={!eurCleared && draft?.originalCurrency ? (draft?.amount ?? '') : ''}
               onValueChange={setEurAmount}
             />
@@ -259,23 +261,26 @@ export function MovementForm({
             aria-expanded={monthOpen}
           >
             {monthOpen ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
-            Rattacher à un autre mois
+            {t('form.attachMonth')}
           </button>
           {/* Closing the block detaches the movement: the field stops being
               submitted, and the action reads an absent month as "none". The
               open state is the attachment, exactly as it is for an advance. */}
           {monthOpen && (
-            <Field className="mt-2" label="Compté dans le mois de" name="accrualMonth">
+            <Field className="mt-2" label={t('form.accrualMonth')} name="accrualMonth">
               <MonthField name="accrualMonth" anchor={day} value={month} onValueChange={setMonth} />
             </Field>
           )}
         </div>
       )}
 
-      <Field label={type === 'income' ? 'Compte crédité' : 'Compte débité'} name="accountId">
+      <Field
+        label={type === 'income' ? t('form.accountCredited') : t('form.accountDebited')}
+        name="accountId"
+      >
         <FormSelect
           name="accountId"
-          placeholder="Choisir un compte"
+          placeholder={t('form.chooseAccount')}
           options={accountOptions}
           defaultValue={draft?.accountId ?? ''}
           onValueChange={setAccountId}
@@ -287,19 +292,19 @@ export function MovementForm({
         <CardSelect
           cards={cards}
           accountId={accountId}
-          label={type === 'income' ? 'Remboursé sur la carte' : 'Payé avec'}
-          noneLabel={type === 'income' ? 'aucune carte' : 'aucune carte (prélèvement)'}
+          label={type === 'income' ? t('form.refundedOnCard') : t('form.paidWith')}
+          noneLabel={type === 'income' ? t('form.noCard') : t('form.noCardDirectDebit')}
           defaultValue={draft?.cardId}
           onValueChange={setCardId}
         />
       )}
 
       {type === 'transfer' ? (
-        <Field label="Vers le compte" name="toAccountId">
+        <Field label={t('form.toAccount')} name="toAccountId">
           <FormSelect
             name="toAccountId"
             required
-            placeholder="Choisir un compte"
+            placeholder={t('form.chooseAccount')}
             options={accountOptions}
             defaultValue={draft?.toAccountId ?? ''}
           />
@@ -308,9 +313,9 @@ export function MovementForm({
         <>
           <TextField
             name="actor"
-            label={type === 'expense' ? 'Payé à (acteur)' : 'Reçu de (acteur)'}
+            label={type === 'expense' ? t('form.paidTo') : t('form.receivedFrom')}
             list="actors-list"
-            placeholder="Carrefour, ACME, URSSAF…"
+            placeholder={t('form.actorPlaceholder')}
             autoComplete="off"
             defaultValue={draft?.actorName ?? ''}
             onValueChange={setActorName}
@@ -322,18 +327,18 @@ export function MovementForm({
           </datalist>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Catégorie">
+            <Field label={t('fields.category')}>
               <FormSelect
                 name="categoryId"
-                noneLabel="(aucune)"
+                noneLabel={t('form.none')}
                 options={categories.map((c) => ({ value: c.id, label: c.name }))}
                 defaultValue={draft?.categoryId ?? ''}
               />
             </Field>
-            <Field label="Activité">
+            <Field label={t('fields.activity')}>
               <FormSelect
                 name="activityId"
-                noneLabel={editing ? '(aucune)' : 'héritée de l’acteur'}
+                noneLabel={editing ? t('form.none') : t('form.inheritedFromActor')}
                 options={activities.map((a) => ({ value: a.id, label: a.name }))}
                 defaultValue={draft?.activityId ?? ''}
                 onValueChange={setActivityId}
@@ -358,7 +363,7 @@ export function MovementForm({
         </>
       )}
 
-      <TextField name="note" label="Note (optionnelle)" defaultValue={draft?.note ?? ''} />
+      <TextField name="note" label={t('form.note')} defaultValue={draft?.note ?? ''} />
 
       {/* A binary attribute, so a checkbox rather than a foldable block: there
           is nothing to fill in behind it. Absent on a transfer, which counts
@@ -366,10 +371,7 @@ export function MovementForm({
       {type !== 'transfer' && (
         <Label className="flex items-start gap-2 text-[11.5px] font-normal text-muted-foreground">
           <Checkbox name="ghost" defaultChecked={draft?.ghost} className="mt-px" />
-          <span>
-            mouvement fantôme : compté dans les soldes, dans aucune analyse (sinistre remboursé, don,
-            régularisation)
-          </span>
+          <span>{t('form.ghost')}</span>
         </Label>
       )}
 
@@ -382,15 +384,15 @@ export function MovementForm({
             aria-expanded={advanceOpen}
           >
             {advanceOpen ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
-            {advanceOpen ? 'Avance pour quelqu’un' : 'Avance pour quelqu’un (à rembourser)'}
+            {advanceOpen ? t('form.advance') : t('form.advanceToRefund')}
           </button>
           {advanceOpen && (
             <div className="mt-2 flex flex-col gap-3">
               <TextField
                 name="expectedRefundFrom"
-                label="Qui doit rembourser ?"
+                label={t('form.whoRefunds')}
                 list="actors-list"
-                placeholder="Alex"
+                placeholder={t('form.whoRefundsPlaceholder')}
                 autoComplete="off"
                 defaultValue={draft?.refundFromActorName ?? ''}
               />
@@ -401,7 +403,7 @@ export function MovementForm({
               {!editing && (
                 <Label className="flex items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
                   <Checkbox name="refundedNow" />
-                  <span>déjà remboursé : écrire aussi le revenu</span>
+                  <span>{t('form.refundedNow')}</span>
                 </Label>
               )}
             </div>
@@ -412,30 +414,34 @@ export function MovementForm({
       {/* Declaration only: a correction never touches the link an income has
           with the invoice it paid, as it never touches the other origins. */}
       {type === 'income' && !editing && payable.length > 0 && (
-        <Field label="Règle la facture (optionnel)">
+        <Field label={t('form.settlesInvoice')}>
           <FormSelect
             name="invoiceId"
-            noneLabel="non"
+            noneLabel={t('form.no')}
             options={payable.map((invoice) => ({ value: invoice.id, label: invoice.label }))}
           />
         </Field>
       )}
 
       {type === 'income' && !editing && advances.length > 0 && (
-        <Field label="Rembourse une avance (optionnel)">
+        <Field label={t('form.refundsAdvance')}>
           <FormSelect
             name="refundsMovementId"
-            noneLabel="non"
+            noneLabel={t('form.no')}
             onValueChange={(v) => setRefunding(v !== '')}
             options={advances.map((adv) => ({
               value: adv.id,
-              label: `${adv.happenedOn} · ${eur(adv.amount)} (reste ${eur(adv.remaining)})`,
+              label: t('form.advanceOption', {
+                date: adv.happenedOn,
+                amount: format.eur(adv.amount),
+                remaining: format.eur(adv.remaining),
+              }),
             }))}
           />
         </Field>
       )}
 
-      <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Déclarer'}</SubmitButton>
+      <SubmitButton className="self-start">{editing ? t('form.save') : t('declare')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -451,24 +457,28 @@ export function MovementForm({
  * ordinary case, not the exception, so what is typed is never rewritten.
  */
 function VatField({ amount, rate, defaultValue }: { amount: number; rate?: number; defaultValue?: string }) {
-  const [typed, setTyped] = useState<string | null>(defaultValue ?? null)
+  const t = useTranslations('movements.form')
+  const format = useFormat()
+  // The stored VAT arrives as a machine value ("2.00") and is shown in the language's marks.
+  const [typed, setTyped] = useState<string | null>(
+    defaultValue === undefined ? null : format.editable(Number(defaultValue), 2),
+  )
   // The rate applies to the amount before VAT, and the amount here includes it.
   const proposed =
     rate !== undefined && rate > 0 && Number.isFinite(amount) && amount > 0
       ? Math.round(((amount * rate) / (100 + rate)) * 100) / 100
       : null
-  const cleaned = typed === null ? null : typed.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.')
-  const value = cleaned === null ? proposed : cleaned === '' ? null : Number(cleaned)
+  const value = typed === null ? proposed : typed.trim() === '' ? null : format.parse(typed)
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field label="dont TVA (€)" name="vatAmount">
+      <Field label={t('vat')} name="vatAmount">
         <input type="hidden" name="vatAmount" value={value !== null && Number.isFinite(value) ? value : ''} />
         <Input
           inputMode="decimal"
           autoComplete="off"
           className="text-right font-mono tabular"
-          value={typed ?? (proposed === null ? '' : proposed.toFixed(2).replace('.', ','))}
+          value={typed ?? (proposed === null ? '' : format.editable(proposed, 2))}
           onChange={(e) => setTyped(e.target.value)}
         />
       </Field>
@@ -487,31 +497,26 @@ function VatField({ amount, rate, defaultValue }: { amount: number; rate?: numbe
  * corrected would silently move the claim.
  */
 function RefundShare({ expense, defaultAmount }: { expense: number; defaultAmount?: number }) {
+  const t = useTranslations('movements.form')
+  const format = useFormat()
   const [{ value, unit }, setShare] = useState<{ value: string; unit: 'eur' | 'pct' }>(
     defaultAmount !== undefined
-      ? { value: String(defaultAmount).replace('.', ','), unit: 'eur' }
+      ? { value: format.editable(defaultAmount, 2), unit: 'eur' }
       : { value: '100', unit: 'pct' },
   )
 
-  const typed = Number(value.replace(/[\s\u202f\u00a0]/g, '').replace(',', '.'))
+  const typed = value.trim() === '' ? 0 : format.parse(value)
   const usable = Number.isFinite(expense) && expense > 0 && Number.isFinite(typed)
   const euros = unit === 'eur' ? typed : usable ? Math.round(expense * typed) / 100 : Number.NaN
   const percent = unit === 'pct' ? typed : usable ? (typed / expense) * 100 : Number.NaN
 
   /** The value the user is not editing, without trailing zeros to fight the caret. */
-  const mirror = (n: number, decimals: number) =>
-    Number.isFinite(n)
-      ? n
-          .toFixed(decimals)
-          .replace(/(\.\d*?)0+$/, '$1')
-          .replace(/\.$/, '')
-          .replace('.', ',')
-      : ''
+  const mirror = format.editable
 
   return (
     <div className="grid grid-cols-2 gap-3">
       <input type="hidden" name="expectedRefundAmount" value={Number.isFinite(euros) ? euros : ''} />
-      <Field label="Part attendue (€)">
+      <Field label={t('expectedShare')}>
         <Input
           inputMode="decimal"
           autoComplete="off"
@@ -520,7 +525,7 @@ function RefundShare({ expense, defaultAmount }: { expense: number; defaultAmoun
           onChange={(e) => setShare({ value: e.target.value, unit: 'eur' })}
         />
       </Field>
-      <Field label="ou en %">
+      <Field label={t('orPercent')}>
         <Input
           inputMode="decimal"
           autoComplete="off"

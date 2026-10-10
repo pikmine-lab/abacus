@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import type { BeadState } from '@/components/abacus-gate'
 import { Door } from '@/components/door'
@@ -24,12 +25,15 @@ const LANDING_MS = 450
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Sign-up refusals that belong to one field. Better Auth answers in English
-// for whoever reads the code; the person reads these.
-const SIGNUP_ERRORS: Record<string, { field: string; message: string }> = {
-  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: { field: 'email', message: 'Un compte existe déjà avec cet email.' },
-  INVALID_EMAIL: { field: 'email', message: 'Email invalide.' },
-  PASSWORD_TOO_SHORT: { field: 'password', message: `${MIN_PASSWORD} caractères minimum.` },
-  PASSWORD_TOO_LONG: { field: 'password', message: 'Mot de passe trop long.' },
+// for whoever reads the code; the person reads these (`auth.login.errors`).
+const SIGNUP_ERRORS: Record<
+  string,
+  { field: string; message: 'emailTaken' | 'emailInvalid' | 'passwordTooShort' | 'passwordTooLong' }
+> = {
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: { field: 'email', message: 'emailTaken' },
+  INVALID_EMAIL: { field: 'email', message: 'emailInvalid' },
+  PASSWORD_TOO_SHORT: { field: 'password', message: 'passwordTooShort' },
+  PASSWORD_TOO_LONG: { field: 'password', message: 'passwordTooLong' },
 }
 
 /**
@@ -42,6 +46,7 @@ const SIGNUP_ERRORS: Record<string, { field: string; message: string }> = {
  * leaving on submit and landing only once the server accepts.
  */
 export function LoginForm({ client }: { client: WaitingClient | null }) {
+  const t = useTranslations('auth.login')
   const router = useRouter()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [name, setName] = useState('')
@@ -63,11 +68,12 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
 
   function missing(): Record<string, string> {
     const found: Record<string, string> = {}
-    if (signup && !name.trim()) found.name = 'Prénom requis.'
-    if (!email.trim()) found.email = 'Email requis.'
-    else if (!EMAIL.test(email.trim())) found.email = 'Email invalide.'
-    if (!password) found.password = 'Mot de passe requis.'
-    else if (signup && password.length < MIN_PASSWORD) found.password = `${MIN_PASSWORD} caractères minimum.`
+    if (signup && !name.trim()) found.name = t('errors.firstNameRequired')
+    if (!email.trim()) found.email = t('errors.emailRequired')
+    else if (!EMAIL.test(email.trim())) found.email = t('errors.emailInvalid')
+    if (!password) found.password = t('errors.passwordRequired')
+    else if (signup && password.length < MIN_PASSWORD)
+      found.password = t('errors.passwordTooShort', { min: MIN_PASSWORD })
     return found
   }
 
@@ -97,8 +103,8 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
     if (result.error) {
       setBusy(false)
       const refusal = signup ? SIGNUP_ERRORS[result.error.code ?? ''] : undefined
-      if (refusal) setFields({ [refusal.field]: refusal.message })
-      else setError(signup ? 'Inscription impossible.' : 'Email ou mot de passe incorrect.')
+      if (refusal) setFields({ [refusal.field]: t(`errors.${refusal.message}`, { min: MIN_PASSWORD }) })
+      else setError(signup ? t('errors.signupFailed') : t('errors.signinFailed'))
       return
     }
     setEntered(true)
@@ -115,11 +121,13 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
 
   return (
     <Door beads={beads}>
-      <h1 className="sr-only">{signup ? 'Créer un compte' : 'Connexion'}</h1>
+      <h1 className="sr-only">{signup ? t('createAccount') : t('title')}</h1>
       {client && (
         <p className="mt-5 text-[13px] text-muted-foreground">
-          {signup ? 'Crée ton compte' : 'Connecte-toi'} pour autoriser{' '}
-          <span className="font-medium text-foreground">{client.name}</span>
+          {t.rich(signup ? 'signupToAuthorize' : 'signinToAuthorize', {
+            name: client.name,
+            client: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+          })}
           {client.domain && <span className="block font-mono text-[12px] text-faint">{client.domain}</span>}
         </p>
       )}
@@ -129,11 +137,11 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
       <form noValidate onSubmit={submit} className="mt-6 flex flex-col gap-3">
         <FieldErrors.Provider value={fields}>
           {signup && (
-            <Field label="Prénom" name="name">
+            <Field label={t('firstName')} name="name">
               <Input name="name" value={name} onChange={edit('name', setName)} autoComplete="given-name" />
             </Field>
           )}
-          <Field label="Email" name="email">
+          <Field label={t('email')} name="email">
             <Input
               name="email"
               type="email"
@@ -142,7 +150,7 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
               autoComplete="email"
             />
           </Field>
-          <Field label="Mot de passe" name="password">
+          <Field label={t('password')} name="password">
             <Input
               name="password"
               type="password"
@@ -158,7 +166,7 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
           </p>
         )}
         <Button type="submit" disabled={busy} aria-busy={busy} className="mt-2">
-          {signup ? 'Créer le compte' : 'Se connecter'}
+          {signup ? t('signup') : t('signin')}
         </Button>
       </form>
 
@@ -168,7 +176,7 @@ export function LoginForm({ client }: { client: WaitingClient | null }) {
         disabled={busy}
         className="mt-4 self-start rounded-sm text-[13px] text-muted-foreground underline decoration-faint underline-offset-4 outline-none hover:text-foreground hover:decoration-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
       >
-        {signup ? 'J’ai déjà un compte' : 'Créer un compte'}
+        {signup ? t('haveAccount') : t('createAccount')}
       </button>
     </Door>
   )

@@ -18,6 +18,8 @@ import { ArrowUpRightIcon, ChevronRightIcon, CreditCardIcon } from 'lucide-react
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { AccountFold } from '@/components/account-fold'
 import { AccountRowActions, PendingCheck } from '@/components/account-row-actions'
 import { AmountInput } from '@/components/amount-input'
@@ -31,33 +33,20 @@ import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } fro
 import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { SortMenu } from '@/components/sort'
 import { createAccountAction } from '@/lib/actions'
+import { useFormat } from '@/lib/format'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { cn, daysBetween, eur, frDate, frMonthLong } from '@/lib/utils'
+import { cn, daysBetween } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Comptes' }
+export async function generateMetadata() {
+  const t = await getTranslations('shell.screens')
+  return { title: t('accounts') }
+}
 
 const STALE_CHECK_DAYS = 45
 
-/**
- * One word per kind of account. Only the investment block qualifies its
- * balances, because they are its cash and not what it holds: the holdings
- * are in Placements, where its arrow leads.
- */
-const BEHAVIOR: Record<
-  AccountBehavior,
-  { label: string; qualifier?: string; href?: string; hrefLabel?: string }
-> = {
-  payment: { label: 'Courants' },
-  savings: { label: 'Épargne' },
-  investment: {
-    label: 'Investissement',
-    qualifier: 'espèces',
-    href: '/investments?from=accounts',
-    hrefLabel: 'Placements',
-  },
-}
 const ORDER: AccountBehavior[] = ['payment', 'savings', 'investment']
 
 /**
@@ -77,11 +66,7 @@ const MENU_CELL = 'col-start-3 row-start-1 @xl:col-start-4'
  * every section shows the same order: the control is repeated where the lists
  * are, the order behind it is one.
  */
-const SORT_OPTIONS: { field: AccountSortField; label: string }[] = [
-  { field: 'name', label: 'Nom' },
-  { field: 'balance', label: 'Solde' },
-  { field: 'checked', label: 'Dernier pointage' },
-]
+const SORT_FIELDS: AccountSortField[] = ['name', 'balance', 'checked']
 
 /** What the correction panel needs of a check, and nothing more. */
 function checkEntries(entries: BalanceCheckEntry[]): CheckEntry[] {
@@ -104,6 +89,28 @@ export default async function AccountsPage({
   if (!session) redirect('/login')
   const userId = session.user.id
   const now = today()
+  const [t, screens, format] = await Promise.all([
+    getTranslations('accounts'),
+    getTranslations('shell.screens'),
+    getFormat(),
+  ])
+  const sortOptions = SORT_FIELDS.map((field) => ({ field, label: t(`sort.${field}`) }))
+  /**
+   * One word per kind of account. Only the investment block qualifies its
+   * balances, because they are its cash and not what it holds: the holdings
+   * are in Placements, where its arrow leads.
+   */
+  const section = (
+    behavior: AccountBehavior,
+  ): { label: string; qualifier?: string; href?: string; hrefLabel?: string } =>
+    behavior === 'investment'
+      ? {
+          label: t('sections.investment'),
+          qualifier: t('sections.investmentQualifier'),
+          href: '/investments?from=accounts',
+          hrefLabel: t('sections.investmentLink'),
+        }
+      : { label: t(`sections.${behavior}`) }
   const params = await searchParams
   // One order for every section of the page: the lists are the same objects
   // split by behavior, so ranking them apart would answer "which account holds
@@ -164,35 +171,35 @@ export default async function AccountsPage({
 
   const newAccountForm = (
     <EntrySheet
-      label="Ajouter un compte"
-      title="Nouveau compte"
-      description="Un compte qui existait déjà part de son solde d’ouverture, qui n’est pas un revenu."
+      label={t('newAccount.add')}
+      title={t('newAccount.title')}
+      description={t('newAccount.description')}
     >
-      <ActionForm action={createAccountAction} successLabel="Compte créé">
-        <TextField name="name" label="Nom" placeholder="Courant principal" />
-        <Field label="Type">
+      <ActionForm action={createAccountAction} successLabel={t('newAccount.success')}>
+        <TextField name="name" label={t('fields.name')} placeholder={t('fields.namePlaceholder')} />
+        <Field label={t('fields.type')}>
           <FormSelect
             name="behavior"
             defaultValue="payment"
-            options={[
-              { value: 'payment', label: 'Courant' },
-              { value: 'savings', label: 'Épargne (livret)' },
-              { value: 'investment', label: 'Investissement' },
-            ]}
+            options={ORDER.map((value) => ({ value, label: t(`behaviors.${value}`) }))}
           />
         </Field>
-        <TextField name="institution" label="Établissement (optionnel)" placeholder="Nom de la banque" />
+        <TextField
+          name="institution"
+          label={t('fields.institution')}
+          placeholder={t('fields.institutionPlaceholder')}
+        />
         {/* The opening and the day it holds from travel together: one is
             meaningless without the other, and the service refuses them apart. */}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Solde d’ouverture (€)" name="openingBalance">
-            <AmountInput name="openingBalance" negatable placeholder="0,00" />
+          <Field label={t('fields.openingBalance')} name="openingBalance">
+            <AmountInput name="openingBalance" negatable placeholder={t('fields.amountPlaceholder')} />
           </Field>
-          <Field label="Ouvert le" name="openedOn">
+          <Field label={t('fields.openedOn')} name="openedOn">
             <DateField name="openedOn" />
           </Field>
         </div>
-        <SubmitButton className="self-start">Créer le compte</SubmitButton>
+        <SubmitButton className="self-start">{t('newAccount.submit')}</SubmitButton>
       </ActionForm>
     </EntrySheet>
   )
@@ -217,11 +224,11 @@ export default async function AccountsPage({
 
   return (
     <>
-      <PageHeader title="Comptes">{newAccountForm}</PageHeader>
+      <PageHeader title={screens('accounts')}>{newAccountForm}</PageHeader>
 
       <PageBody>
         {accounts.length === 0 ? (
-          <EmptyLine>Aucun compte pour l’instant : tout part du premier.</EmptyLine>
+          <EmptyLine>{t('empty')}</EmptyLine>
         ) : (
           <>
             {/* The figure that dominates, beside what keeps it honest: the
@@ -229,18 +236,18 @@ export default async function AccountsPage({
             <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-start">
               <Figure
                 hero
-                label="Patrimoine"
+                label={t('wealth.label')}
                 value={wealth}
                 note={
                   missing > 0
-                    ? `${eur(missing)} d’apports non déclarés : pointe les espèces du compte`
+                    ? t('wealth.missingContributions', { amount: format.eur(missing) })
                     : holdings.value > 0
-                      ? `dont ${eur(holdings.value)} de placements, au dernier cours`
+                      ? t('wealth.holdingsIncluded', { amount: format.eur(holdings.value) })
                       : undefined
                 }
               />
               {toCheck.length > 0 && (
-                <ActionCard label="À pointer">
+                <ActionCard label={t('toCheck.label')}>
                   {toCheck.map(({ account, check, checks }) => (
                     <PendingCheck
                       key={account.id}
@@ -252,10 +259,13 @@ export default async function AccountsPage({
                       gap={!!check && check.openGap !== 0}
                       detail={
                         !check
-                          ? 'jamais pointé'
+                          ? t('toCheck.neverChecked')
                           : check.openGap !== 0
-                            ? `écart de ${eur(Math.abs(check.openGap), 2)} au ${frDate(check.check.checkedOn)}`
-                            : `pointé le ${frDate(check.check.checkedOn)}`
+                            ? t('toCheck.gapOn', {
+                                amount: format.eur(Math.abs(check.openGap), 2),
+                                date: format.date(check.check.checkedOn),
+                              })
+                            : t('toCheck.checkedOn', { date: format.date(check.check.checkedOn) })
                       }
                     />
                   ))}
@@ -270,8 +280,8 @@ export default async function AccountsPage({
                   return (
                     <AccountList
                       key={behavior}
-                      {...BEHAVIOR[behavior]}
-                      sort={rows.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+                      {...section(behavior)}
+                      sort={rows.length > 1 && <SortMenu sorter={sort} options={sortOptions} />}
                     >
                       {rows.map((row) => {
                         const { account, checks } = row
@@ -290,14 +300,14 @@ export default async function AccountsPage({
                                 {own.length > 0 && (
                                   <span className="flex items-center gap-1 self-center text-[11.5px] text-muted-foreground">
                                     <CreditCardIcon className="size-3.5" />
-                                    {own.length} carte{own.length > 1 ? 's' : ''}
+                                    {t('row.cardCount', { count: own.length })}
                                     <ChevronRightIcon className="size-3 text-faint transition-transform group-open/account:rotate-90" />
                                   </span>
                                 )}
                                 {/* Said here only while the fold hides the statement that says it. */}
                                 {toValidate && (
                                   <span className="self-center text-[11.5px] text-primary group-open/account:hidden">
-                                    relevé à valider
+                                    {t('row.statementToValidate')}
                                   </span>
                                 )}
                               </div>
@@ -312,7 +322,7 @@ export default async function AccountsPage({
                               />
                             </div>
                             <span className={cn(BALANCE_CELL, 'font-mono text-[14px] font-semibold tabular')}>
-                              {eur(Number(account.balance), 2)}
+                              {format.eur(Number(account.balance), 2)}
                             </span>
                             <div data-keeps-fold className={MENU_CELL}>
                               {menu(row)}
@@ -341,18 +351,18 @@ export default async function AccountsPage({
 
               {closed.length > 0 && (
                 <AccountList
-                  label="Clos"
+                  label={t('sections.closed')}
                   axis={false}
-                  sort={closed.length > 1 && <SortMenu sorter={sort} options={SORT_OPTIONS} />}
+                  sort={closed.length > 1 && <SortMenu sorter={sort} options={sortOptions} />}
                 >
                   {closed.map((row) => (
                     <div key={row.account.id} className={cn(COLUMNS, 'py-2.5 text-faint')}>
                       <span className={cn(NAME_CELL, 'truncate text-[13px]')}>{row.account.name}</span>
                       <span className={cn(RAIL_CELL, 'text-[11.5px]')}>
-                        clos le {frDate(row.account.closedOn!)}
+                        {t('row.closedOn', { date: format.date(row.account.closedOn!) })}
                       </span>
                       <span className={cn(BALANCE_CELL, 'font-mono text-[13px] tabular')}>
-                        {eur(Number(row.account.balance), 2)}
+                        {format.eur(Number(row.account.balance), 2)}
                       </span>
                       <div className={MENU_CELL}>{menu(row, true)}</div>
                     </div>
@@ -440,7 +450,11 @@ function CardGrid({
   accountName: string
   now: string
 }) {
+  const t = useTranslations('accounts.card')
+  const format = useFormat()
   const soon = endOfMonth(addPeriod(now, 'month', 1))
+  // "le 25", or "en fin de mois" for the 31st, which is how a bank says it.
+  const day = (d: number) => (d === 31 ? t('monthEnd') : t('day', { day: d }))
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-6 gap-y-5 pt-1">
       {cards.map((card) => {
@@ -452,7 +466,7 @@ function CardGrid({
             {/* A card leads to its page, as a position does: what it paid lives there. */}
             <Link
               href={`/accounts/cards/${card.id}?from=accounts`}
-              aria-label={`Ouvrir la carte ${card.name}`}
+              aria-label={t('open', { name: card.name })}
               className="rounded-xl transition-transform outline-none hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
             >
               <BankCard
@@ -478,27 +492,31 @@ function CardGrid({
                       className="group -mx-1.5 flex flex-col rounded-md px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-secondary/40"
                     >
                       <span className="flex items-center gap-1 font-mono text-[12.5px] text-foreground tabular">
-                        −{eur(Number(st.amount), 2)}
+                        −{format.eur(Number(st.amount), 2)}
                         <ArrowUpRightIcon className="size-3.5 text-faint group-hover:text-primary" />
                       </span>
                       <span>
                         {closed
-                          ? `débit attendu le ${frDate(st.dueOn)}`
-                          : `en cours jusqu’au ${frDate(st.cutOffOn)}`}
-                        {due && <span className="text-primary"> · à{' '}valider</span>}
+                          ? t('debitExpected', { date: format.date(st.dueOn) })
+                          : t('runningUntil', { date: format.date(st.cutOffOn) })}
+                        {due && <span className="text-primary"> · {t('toValidate')}</span>}
                       </span>
                     </Link>
                   )
                 })}
-                {deferred && card.pending.length === 0 && <span className="text-faint">rien en attente</span>}
+                {deferred && card.pending.length === 0 && (
+                  <span className="text-faint">{t('nothingPending')}</span>
+                )}
                 {deferred && (
                   <span className="text-faint">
-                    arrêté {dayLabel(card.statementDay!)}, prélevé {dayLabel(card.debitDay!)}
+                    {t('schedule', { cutOff: day(card.statementDay!), debit: day(card.debitDay!) })}
                   </span>
                 )}
-                {expired && <span className="text-muted-foreground">expirée</span>}
+                {expired && <span className="text-muted-foreground">{t('expired')}</span>}
                 {expiring && (
-                  <span className="text-muted-foreground">expire fin {frMonthLong(card.expiryMonth)}</span>
+                  <span className="text-muted-foreground">
+                    {t('expiresEnd', { month: format.monthLong(card.expiryMonth) })}
+                  </span>
                 )}
               </div>
               <CardActions
@@ -522,9 +540,4 @@ function CardGrid({
       })}
     </div>
   )
-}
-
-/** "le 25", or "en fin de mois" for the 31st, which is how a bank says it. */
-function dayLabel(day: number): string {
-  return day === 31 ? 'en fin de mois' : `le ${day}`
 }

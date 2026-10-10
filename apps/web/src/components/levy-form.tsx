@@ -1,6 +1,7 @@
 'use client'
 
 import { PlusIcon, XIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
@@ -10,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createLevyAction, editLevyAction, supersedeLevyAction } from '@/lib/actions'
-import { frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { LEVY_PERIOD_REFS, type LevyWords, useLevyWords } from '@/lib/levy-words'
 
 /**
  * A rule of a regime, in the seven blocks it is made of: identity, base,
@@ -73,66 +75,30 @@ export interface LevyDraft {
   note: string | null
 }
 
-const KINDS = [
-  { value: 'social', label: 'Cotisations sociales' },
-  { value: 'income_tax', label: 'Impôt sur le revenu' },
-  { value: 'vat', label: 'TVA' },
-  { value: 'other', label: 'Autre' },
-]
+const KINDS = ['social', 'income_tax', 'vat', 'other'] as const
 
-const STATUSES = [
-  { value: 'confirmed', label: 'Confirmée par un texte' },
-  { value: 'extended_by_default', label: 'Prorogée faute de texte' },
-  { value: 'unconfirmed', label: 'Non confirmée' },
-]
+const STATUSES = ['confirmed', 'extended_by_default', 'unconfirmed'] as const
 
 const MEASURES = [
-  { value: 'revenue', label: 'Recettes HT' },
-  { value: 'revenue_incl_vat', label: 'Recettes TTC' },
-  { value: 'expenses', label: 'Dépenses déductibles' },
-  { value: 'profit', label: 'Bénéfice' },
-  { value: 'vat_balance', label: 'TVA collectée − déductible' },
-  { value: 'withholdings', label: 'Retenues à la source' },
-  { value: 'paid', label: 'Règlements d’une autre règle' },
-  { value: 'amount', label: 'Montant d’une autre règle' },
-  { value: 'input', label: 'Paramètre saisi' },
-  { value: 'none', label: 'Aucune base' },
-]
+  'revenue',
+  'revenue_incl_vat',
+  'expenses',
+  'profit',
+  'vat_balance',
+  'withholdings',
+  'paid',
+  'amount',
+  'input',
+  'none',
+] as const
 
-const PERIOD_REFS = [
-  { value: 'current', label: 'la période' },
-  { value: 'ytd', label: 'l’exercice à ce jour' },
-  { value: 'year', label: 'l’exercice entier' },
-  { value: 'year-1', label: 'l’exercice n−1' },
-  { value: 'year-2', label: 'l’exercice n−2' },
-  { value: 'rolling-12', label: '12 mois glissants' },
-]
+const SCALES = ['none', 'per_month', 'per_period', 'annualized'] as const
 
-const SCALES = [
-  { value: 'none', label: 'telle quelle' },
-  { value: 'per_month', label: 'ramenée au mois' },
-  { value: 'per_period', label: 'ramenée à la période' },
-  { value: 'annualized', label: 'annualisée' },
-]
+const PERIODS = ['month', 'quarter', 'half', 'year'] as const
 
-const PERIODS = [
-  { value: 'month', label: 'mensuelle' },
-  { value: 'quarter', label: 'trimestrielle' },
-  { value: 'half', label: 'semestrielle' },
-  { value: 'year', label: 'annuelle' },
-]
+const REGULARIZATIONS = ['none', 'annual_deadzone', 'provisional_then_settled'] as const
 
-const REGULARIZATIONS = [
-  { value: 'none', label: 'Aucune : chaque période est définitive' },
-  { value: 'annual_deadzone', label: 'Zone morte à la clôture' },
-  { value: 'provisional_then_settled', label: 'Provisoire, puis définitive' },
-]
-
-const CREDIT_SOURCES = [
-  { value: 'withholdings', label: 'Retenues à la source' },
-  { value: 'paid', label: 'Règlements d’une règle' },
-  { value: 'amount', label: 'Montant d’une règle' },
-]
+const CREDIT_SOURCES = ['withholdings', 'paid', 'amount'] as const
 
 /** How many periods a fiscal year holds, for the ones a return absorbs. */
 const PERIODS_IN_YEAR: Record<string, number> = { month: 12, quarter: 4, half: 2, year: 0 }
@@ -182,6 +148,7 @@ function NumberTable({
   initial: Record<string, string>[]
   addLabel: string
 }) {
+  const t = useTranslations('regime.form')
   const empty = () => Object.fromEntries(columns.map((c) => [c.name, '']))
   const [lines, setLines] = useState<{ key: number; values: Record<string, string> }[]>(() =>
     (initial.length > 0 ? initial : [empty()]).map((values, key) => ({ key, values })),
@@ -208,7 +175,7 @@ function NumberTable({
                 inputMode="decimal"
                 autoComplete="off"
                 placeholder={column.placeholder}
-                aria-label={`${column.label}, ligne ${index + 1}`}
+                aria-label={t('cell', { column: column.label, row: index + 1 })}
                 value={line.values[column.name] ?? ''}
                 onChange={(e) =>
                   setLines(
@@ -227,7 +194,7 @@ function NumberTable({
               variant="ghost"
               size="icon"
               className="size-7 shrink-0 text-faint hover:text-destructive"
-              aria-label={`Retirer la ligne ${index + 1}`}
+              aria-label={t('removeRow', { row: index + 1 })}
               onClick={() => setLines(lines.filter((l) => l.key !== line.key))}
             >
               <XIcon className="size-3.5" />
@@ -260,6 +227,8 @@ function CreditTable({
   levies: Option[]
   initial: { source: string; levyId?: string; share?: number; periodRef?: string }[]
 }) {
+  const t = useTranslations('regime.form')
+  const words = useLevyWords()
   const [lines, setLines] = useState(() => initial.map((values, key) => ({ key, ...values })))
   const [next, setNext] = useState(lines.length)
 
@@ -272,8 +241,8 @@ function CreditTable({
               <FormSelect
                 name="creditSource"
                 defaultValue={line.source}
-                placeholder="Ce qui est crédité"
-                options={CREDIT_SOURCES}
+                placeholder={t('creditSource')}
+                options={CREDIT_SOURCES.map((value) => ({ value, label: t(`creditSources.${value}`) }))}
               />
             </div>
             <Input
@@ -281,7 +250,7 @@ function CreditTable({
               inputMode="decimal"
               autoComplete="off"
               defaultValue={line.share === undefined ? '100' : String(line.share)}
-              aria-label={`Part créditée, ligne ${index + 1}`}
+              aria-label={t('creditShare', { row: index + 1 })}
               className="h-9 w-16 text-right font-mono text-[12.5px] tabular"
             />
             <Button
@@ -289,7 +258,7 @@ function CreditTable({
               variant="ghost"
               size="icon"
               className="size-9 shrink-0 text-faint hover:text-destructive"
-              aria-label={`Retirer le crédit ${index + 1}`}
+              aria-label={t('removeCredit', { row: index + 1 })}
               onClick={() => setLines(lines.filter((l) => l.key !== line.key))}
             >
               <XIcon className="size-3.5" />
@@ -300,7 +269,7 @@ function CreditTable({
               <FormSelect
                 name="creditLevyId"
                 defaultValue={line.levyId ?? ''}
-                noneLabel="(aucune règle)"
+                noneLabel={t('noRule')}
                 options={levies.map((l) => ({ value: l.id, label: l.name }))}
               />
             </div>
@@ -308,7 +277,7 @@ function CreditTable({
               <FormSelect
                 name="creditPeriodRef"
                 defaultValue={line.periodRef ?? 'current'}
-                options={PERIOD_REFS}
+                options={periodRefOptions(words)}
               />
             </div>
           </div>
@@ -325,10 +294,15 @@ function CreditTable({
         }}
       >
         <PlusIcon className="size-3.5" />
-        Ajouter un crédit
+        {t('addCredit')}
       </Button>
     </div>
   )
+}
+
+/** The reference periods a measure is read over, in the order the list offers them. */
+function periodRefOptions(words: LevyWords) {
+  return LEVY_PERIOD_REFS.map((value) => ({ value, label: words.periodRef(value) }))
 }
 
 /** A JSON parameter of the row, read back into the fields that wrote it. */
@@ -354,6 +328,11 @@ export function LevyForm({
   mode?: 'create' | 'edit' | 'supersede'
   onDone?: () => void
 }) {
+  const t = useTranslations('regime.form')
+  const ts = useTranslations('regime.shared')
+  const tm = useTranslations('regime.measureOptions')
+  const words = useLevyWords()
+  const format = useFormat()
   const [measure, setMeasure] = useState(draft?.baseMeasure ?? 'revenue')
   const [form, setForm] = useState(draft?.amountForm ?? 'rate')
   const abatement = doc<{
@@ -395,37 +374,52 @@ export function LevyForm({
   const cell = (value: number | null | undefined) =>
     value === null || value === undefined ? '' : String(value)
   const superseding = mode === 'supersede'
+  const periodRefs = periodRefOptions(words)
+  const measureOptions = MEASURES.map((value) => ({ value, label: tm(value) }))
 
   return (
     <ActionForm
       action={superseding ? supersedeLevyAction : mode === 'edit' ? editLevyAction : createLevyAction}
       onSuccess={onDone}
-      successLabel={superseding ? 'Règle remplacée' : mode === 'edit' ? 'Règle corrigée' : 'Règle créée'}
+      successLabel={
+        superseding ? t('success.superseded') : mode === 'edit' ? t('success.edited') : t('success.created')
+      }
     >
       <input type="hidden" name="activityId" value={activityId} />
       {draft && <input type="hidden" name="levyId" value={draft.id} />}
 
       <div className="flex flex-col gap-3">
-        <TextField name="name" label="Nom" defaultValue={draft?.name ?? ''} placeholder="Cotisations" />
+        <TextField
+          name="name"
+          label={ts('name')}
+          defaultValue={draft?.name ?? ''}
+          placeholder={t('namePlaceholder')}
+        />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Nature" name="kind">
-            <FormSelect name="kind" required defaultValue={draft?.kind ?? 'social'} options={KINDS} />
+          <Field label={t('kind')} name="kind">
+            <FormSelect
+              name="kind"
+              required
+              defaultValue={draft?.kind ?? 'social'}
+              options={KINDS.map((value) => ({ value, label: words.kind(value) }))}
+            />
           </Field>
-          <Field label="Statut">
-            <FormSelect name="status" defaultValue={draft?.status ?? 'confirmed'} options={STATUSES} />
+          <Field label={ts('status')}>
+            <FormSelect
+              name="status"
+              defaultValue={draft?.status ?? 'confirmed'}
+              options={STATUSES.map((value) => ({ value, label: t(`statuses.${value}`) }))}
+            />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field
-            label={superseding ? 'Nouvelles valeurs à partir du' : 'En vigueur à partir du'}
-            name="validFrom"
-          >
+          <Field label={superseding ? t('newValuesFrom') : t('validFrom')} name="validFrom">
             <DateField
               name="validFrom"
               defaultValue={superseding ? undefined : (draft?.validFrom ?? today)}
             />
           </Field>
-          <Field label="Jusqu’au (optionnel)" name="validTo">
+          <Field label={t('validTo')} name="validTo">
             <DateField
               name="validTo"
               defaultValue={superseding ? undefined : (draft?.validTo ?? undefined)}
@@ -434,21 +428,20 @@ export function LevyForm({
         </div>
         {superseding && draft && (
           <p className="text-[11.5px] text-faint">
-            La règle en vigueur depuis le {frDate(draft.validFrom)} se clôt la veille de cette date. Le relevé
-            des exercices déjà passés garde ses chiffres.
+            {t('supersedeNote', { date: format.date(draft.validFrom) })}
           </p>
         )}
         <TextField
           name="sourceUrl"
-          label="Source (URL du texte)"
+          label={t('sourceUrl')}
           defaultValue={draft?.sourceUrl ?? ''}
           placeholder="https://…"
         />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Vérifiée le" name="verifiedOn">
+          <Field label={ts('verifiedOn')} name="verifiedOn">
             <DateField name="verifiedOn" defaultValue={superseding ? today : (draft?.verifiedOn ?? today)} />
           </Field>
-          <Field label="À revérifier le" name="reviewOn">
+          <Field label={ts('reviewOn')} name="reviewOn">
             <DateField
               name="reviewOn"
               defaultValue={superseding ? undefined : (draft?.reviewOn ?? undefined)}
@@ -457,31 +450,31 @@ export function LevyForm({
         </div>
       </div>
 
-      <Block title="Base">
+      <Block title={t('blocks.base')}>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Mesure" name="baseMeasure">
+          <Field label={ts('measure')} name="baseMeasure">
             <FormSelect
               name="baseMeasure"
               required
               defaultValue={measure}
-              options={MEASURES}
+              options={measureOptions}
               onValueChange={setMeasure}
             />
           </Field>
-          <Field label="Lue sur">
+          <Field label={ts('readOn')}>
             <FormSelect
               name="basePeriodRef"
               defaultValue={draft?.basePeriodRef ?? 'current'}
-              options={PERIOD_REFS}
+              options={periodRefs}
             />
           </Field>
         </div>
         {(measure === 'paid' || measure === 'amount') && (
-          <Field label="Règle lue" name="baseLevyId">
+          <Field label={t('baseLevy')} name="baseLevyId">
             <FormSelect
               name="baseLevyId"
               required
-              placeholder="Choisir la règle"
+              placeholder={t('pickRule')}
               defaultValue={draft?.baseLevyId ?? ''}
               options={levies.map((l) => ({ value: l.id, label: l.name }))}
             />
@@ -490,7 +483,7 @@ export function LevyForm({
         {measure === 'input' && (
           <TextField
             name="baseInputName"
-            label="Nom du paramètre saisi"
+            label={t('baseInputName')}
             defaultValue={draft?.baseInputName ?? ''}
             placeholder="contribution_base"
           />
@@ -498,23 +491,27 @@ export function LevyForm({
         {measure !== 'none' && (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Coefficient (optionnel)" name="baseCoefficient">
+              <Field label={t('coefficient')} name="baseCoefficient">
                 <Input
                   name="baseCoefficient"
                   inputMode="decimal"
                   autoComplete="off"
-                  placeholder="0,93"
+                  placeholder={t('coefficientPlaceholder')}
                   defaultValue={draft?.baseCoefficient ?? ''}
                   className="text-right font-mono tabular"
                 />
               </Field>
-              <Field label="Lecture de la mesure">
-                <FormSelect name="baseScale" defaultValue={draft?.baseScale ?? 'none'} options={SCALES} />
+              <Field label={t('scale')}>
+                <FormSelect
+                  name="baseScale"
+                  defaultValue={draft?.baseScale ?? 'none'}
+                  options={SCALES.map((value) => ({ value, label: t(`scales.${value}`) }))}
+                />
               </Field>
             </div>
 
             {levies.length > 0 && (
-              <Group label="Réintégrer les règlements de">
+              <Group label={t('addBack')}>
                 <div className="flex flex-col gap-1.5 pt-1">
                   {levies.map((levy) => (
                     <Label
@@ -533,19 +530,19 @@ export function LevyForm({
               </Group>
             )}
 
-            <Group label="Abattement">
+            <Group label={t('abatement')}>
               <Tabs value={abatementMode} onValueChange={setAbatementMode}>
                 <TabsList className="w-full">
-                  <TabsTrigger value="none">Aucun</TabsTrigger>
-                  <TabsTrigger value="rate">Taux fixe</TabsTrigger>
-                  <TabsTrigger value="brackets">Par palier</TabsTrigger>
+                  <TabsTrigger value="none">{t('abatementModes.none')}</TabsTrigger>
+                  <TabsTrigger value="rate">{t('abatementModes.rate')}</TabsTrigger>
+                  <TabsTrigger value="brackets">{t('abatementModes.brackets')}</TabsTrigger>
                 </TabsList>
               </Tabs>
             </Group>
             <input type="hidden" name="abatementMode" value={abatementMode} />
             {abatementMode === 'rate' && (
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Taux (%)" name="abatementRate">
+                <Field label={t('rate')} name="abatementRate">
                   <Input
                     name="abatementRate"
                     inputMode="decimal"
@@ -555,7 +552,7 @@ export function LevyForm({
                     className="text-right font-mono tabular"
                   />
                 </Field>
-                <Field label="Minimum (€)" name="abatementMinAmount">
+                <Field label={t('minimum')} name="abatementMinAmount">
                   <AmountInput name="abatementMinAmount" defaultValue={cell(abatement?.minAmount)} />
                 </Field>
               </div>
@@ -563,70 +560,72 @@ export function LevyForm({
             {abatementMode === 'brackets' && (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Palier lu sur" name="abatementMeasure">
+                  <Field label={t('tierReadOn')} name="abatementMeasure">
                     <FormSelect
                       name="abatementMeasure"
                       defaultValue={abatement?.on?.measure ?? 'profit'}
-                      options={MEASURES.filter((m) => !['paid', 'amount', 'input', 'none'].includes(m.value))}
+                      options={measureOptions.filter(
+                        (m) => !['paid', 'amount', 'input', 'none'].includes(m.value),
+                      )}
                     />
                   </Field>
-                  <Field label="De la période">
+                  <Field label={t('ofPeriod')}>
                     <FormSelect
                       name="abatementPeriodRef"
                       defaultValue={abatement?.on?.periodRef ?? 'year-1'}
-                      options={PERIOD_REFS}
+                      options={periodRefs}
                     />
                   </Field>
                 </div>
                 <NumberTable
                   columns={[
-                    { name: 'abatementUpTo', label: 'Jusqu’à', placeholder: 'ouvert' },
-                    { name: 'abatementBracketRate', label: 'Taux %', width: 'w-20' },
+                    { name: 'abatementUpTo', label: t('upTo'), placeholder: t('open') },
+                    { name: 'abatementBracketRate', label: t('ratePercent'), width: 'w-20' },
                   ]}
                   initial={(abatement?.brackets ?? []).map((row) => ({
                     abatementUpTo: cell(row.upTo),
                     abatementBracketRate: cell(row.rate),
                   }))}
-                  addLabel="Ajouter un palier"
+                  addLabel={t('addTier')}
                 />
               </>
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Plancher (€)" name="baseFloor">
+              <Field label={t('floor')} name="baseFloor">
                 <AmountInput name="baseFloor" defaultValue={draft?.baseFloor ?? ''} />
               </Field>
-              <Field label="Plafond (€)" name="baseCap">
+              <Field label={t('cap')} name="baseCap">
                 <AmountInput name="baseCap" defaultValue={draft?.baseCap ?? ''} />
               </Field>
             </div>
 
-            <Group label="Crédits sur la base">
+            <Group label={t('credits')}>
               <CreditTable levies={levies} initial={credits} />
             </Group>
           </>
         )}
       </Block>
 
-      <Block title="Montant">
+      <Block title={t('blocks.amount')}>
         <Tabs value={form} onValueChange={setForm}>
           <TabsList className="w-full">
-            <TabsTrigger value="rate">Taux</TabsTrigger>
-            <TabsTrigger value="brackets">Barème</TabsTrigger>
-            <TabsTrigger value="elective_base">Base choisie</TabsTrigger>
-            <TabsTrigger value="fixed">Fixe</TabsTrigger>
-            <TabsTrigger value="none">Rien</TabsTrigger>
+            <TabsTrigger value="rate">{t('amountForms.rate')}</TabsTrigger>
+            <TabsTrigger value="brackets">{t('amountForms.brackets')}</TabsTrigger>
+            <TabsTrigger value="elective_base">{t('amountForms.elective_base')}</TabsTrigger>
+            <TabsTrigger value="fixed">{t('amountForms.fixed')}</TabsTrigger>
+            <TabsTrigger value="none">{t('amountForms.none')}</TabsTrigger>
           </TabsList>
         </Tabs>
         <input type="hidden" name="amountForm" value={form} />
 
         {form === 'rate' && (
-          <Field label="Taux (%)" name="rate">
+          <Field label={t('rate')} name="rate">
             <Input
               name="rate"
               inputMode="decimal"
               autoComplete="off"
-              placeholder="21,2"
+              placeholder={t('ratePlaceholder')}
               defaultValue={draft?.rate ?? ''}
               className="text-right font-mono tabular"
             />
@@ -635,28 +634,28 @@ export function LevyForm({
 
         {form === 'brackets' && (
           <>
-            <Field label="Lecture du barème">
+            <Field label={t('bracketsMode')}>
               <FormSelect
                 name="bracketsMode"
                 defaultValue={brackets?.mode ?? 'progressive'}
                 options={[
-                  { value: 'progressive', label: 'Progressif : chaque tranche à son taux' },
-                  { value: 'step', label: 'Par palier : la tranche atteinte s’applique en entier' },
+                  { value: 'progressive', label: t('bracketsModes.progressive') },
+                  { value: 'step', label: t('bracketsModes.step') },
                 ]}
               />
             </Field>
             <NumberTable
               columns={[
-                { name: 'bracketUpTo', label: 'Jusqu’à', placeholder: 'ouvert' },
-                { name: 'bracketRate', label: 'Taux %', width: 'w-20' },
-                { name: 'bracketAmount', label: 'ou € ', width: 'w-24' },
+                { name: 'bracketUpTo', label: t('upTo'), placeholder: t('open') },
+                { name: 'bracketRate', label: t('ratePercent'), width: 'w-20' },
+                { name: 'bracketAmount', label: t('orEuro'), width: 'w-24' },
               ]}
               initial={(brackets?.rows ?? []).map((row) => ({
                 bracketUpTo: cell(row.upTo),
                 bracketRate: cell(row.rate),
                 bracketAmount: cell(row.amount),
               }))}
-              addLabel="Ajouter une tranche"
+              addLabel={t('addBracket')}
             />
           </>
         )}
@@ -665,25 +664,25 @@ export function LevyForm({
           <>
             <NumberTable
               columns={[
-                { name: 'electiveUpTo', label: 'Jusqu’à', placeholder: 'ouvert' },
-                { name: 'electiveMinBase', label: 'Base mini' },
-                { name: 'electiveMaxBase', label: 'Base maxi' },
+                { name: 'electiveUpTo', label: t('upTo'), placeholder: t('open') },
+                { name: 'electiveMinBase', label: t('minBase') },
+                { name: 'electiveMaxBase', label: t('maxBase') },
               ]}
               initial={(elective?.rows ?? []).map((row) => ({
                 electiveUpTo: cell(row.upTo),
                 electiveMinBase: cell(row.minBase),
                 electiveMaxBase: cell(row.maxBase),
               }))}
-              addLabel="Ajouter un tramo"
+              addLabel={t('addTramo')}
             />
             <div className="grid grid-cols-2 gap-3">
               <TextField
                 name="electiveInputName"
-                label="Paramètre de la base choisie"
+                label={t('electiveInput')}
                 defaultValue={elective?.inputName ?? ''}
                 placeholder="contribution_base"
               />
-              <Field label="Taux (%)" name="electiveRate">
+              <Field label={t('rate')} name="electiveRate">
                 <Input
                   name="electiveRate"
                   inputMode="decimal"
@@ -698,12 +697,12 @@ export function LevyForm({
 
         {form === 'fixed' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Montant par période (€)" name="fixedAmount">
+            <Field label={t('fixedAmount')} name="fixedAmount">
               <AmountInput name="fixedAmount" defaultValue={draft?.fixedAmount ?? ''} />
             </Field>
             <TextField
               name="fixedInputName"
-              label="ou paramètre saisi"
+              label={t('orInput')}
               defaultValue={draft?.fixedInputName ?? ''}
               placeholder="local_tax_notice"
             />
@@ -712,12 +711,12 @@ export function LevyForm({
 
         {form !== 'none' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Crédit fixe (€)" name="fixedCredit">
+            <Field label={t('fixedCredit')} name="fixedCredit">
               <AmountInput name="fixedCredit" defaultValue={draft?.fixedCredit ?? ''} />
             </Field>
             <TextField
               name="creditInputName"
-              label="Paramètre de crédits"
+              label={t('creditInput')}
               defaultValue={draft?.creditInputName ?? ''}
               placeholder="personal_credits"
             />
@@ -725,29 +724,29 @@ export function LevyForm({
         )}
       </Block>
 
-      <Block title="Calendrier">
-        <Field label="Périodicité" name="period">
+      <Block title={t('blocks.schedule')}>
+        <Field label={t('period')} name="period">
           <FormSelect
             name="period"
             required
             defaultValue={period}
-            options={PERIODS}
+            options={PERIODS.map((value) => ({ value, label: words.period(value) }))}
             onValueChange={setPeriod}
           />
         </Field>
-        <Group label="Échéance">
+        <Group label={t('due')}>
           <Tabs value={dueType} onValueChange={setDueType}>
             <TabsList className="w-full">
-              <TabsTrigger value="end_of_next_month">Fin du mois suivant</TabsTrigger>
-              <TabsTrigger value="after_period">Fenêtre</TabsTrigger>
-              <TabsTrigger value="fixed_dates">Dates fixes</TabsTrigger>
+              <TabsTrigger value="end_of_next_month">{t('dueTypes.end_of_next_month')}</TabsTrigger>
+              <TabsTrigger value="after_period">{t('dueTypes.after_period')}</TabsTrigger>
+              <TabsTrigger value="fixed_dates">{t('dueTypes.fixed_dates')}</TabsTrigger>
             </TabsList>
           </Tabs>
         </Group>
         <input type="hidden" name="dueType" value={dueType} />
         {dueType === 'after_period' && (
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Mois après" name="dueMonthOffset">
+            <Field label={t('monthsAfter')} name="dueMonthOffset">
               <Input
                 name="dueMonthOffset"
                 inputMode="numeric"
@@ -757,7 +756,7 @@ export function LevyForm({
                 className="text-right font-mono tabular"
               />
             </Field>
-            <Field label="Du jour" name="dueFromDay">
+            <Field label={t('fromDay')} name="dueFromDay">
               <Input
                 name="dueFromDay"
                 inputMode="numeric"
@@ -767,7 +766,7 @@ export function LevyForm({
                 className="text-right font-mono tabular"
               />
             </Field>
-            <Field label="Au jour" name="dueToDay">
+            <Field label={t('toDay')} name="dueToDay">
               <Input
                 name="dueToDay"
                 inputMode="numeric"
@@ -782,20 +781,20 @@ export function LevyForm({
         {dueType === 'fixed_dates' && (
           <NumberTable
             columns={[
-              { name: 'dueDateMonth', label: 'Mois' },
-              { name: 'dueDateDay', label: 'Jour' },
-              { name: 'dueDateYearOffset', label: 'Exercice +' },
+              { name: 'dueDateMonth', label: t('month') },
+              { name: 'dueDateDay', label: t('day') },
+              { name: 'dueDateYearOffset', label: t('yearOffset') },
             ]}
             initial={(due?.dates ?? []).map((date) => ({
               dueDateMonth: cell(date.month),
               dueDateDay: cell(date.day),
               dueDateYearOffset: cell(date.yearOffset),
             }))}
-            addLabel="Ajouter une date"
+            addLabel={t('addDate')}
           />
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Paiement décalé de (mois)" name="declarationLagMonths">
+          <Field label={t('lag')} name="declarationLagMonths">
             <Input
               name="declarationLagMonths"
               inputMode="numeric"
@@ -804,7 +803,7 @@ export function LevyForm({
               className="text-right font-mono tabular"
             />
           </Field>
-          <Field label="Première échéance après (jours)" name="firstDueAfterDays">
+          <Field label={t('firstDue')} name="firstDueAfterDays">
             <Input
               name="firstDueAfterDays"
               inputMode="numeric"
@@ -815,7 +814,7 @@ export function LevyForm({
           </Field>
         </div>
         {PERIODS_IN_YEAR[period]! > 0 && (
-          <Group label="Périodes absorbées par une autre déclaration">
+          <Group label={t('skipped')}>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
               {Array.from({ length: PERIODS_IN_YEAR[period]! }, (_, i) => i + 1).map((index) => (
                 <Label
@@ -831,18 +830,18 @@ export function LevyForm({
         )}
       </Block>
 
-      <Block title="Régularisation">
-        <Field label="Mode">
+      <Block title={t('blocks.regularization')}>
+        <Field label={t('regularizationMode')}>
           <FormSelect
             name="regularization"
             defaultValue={regularization}
-            options={REGULARIZATIONS}
+            options={REGULARIZATIONS.map((value) => ({ value, label: t(`regularizations.${value}`) }))}
             onValueChange={setRegularization}
           />
         </Field>
         {regularization !== 'none' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Régularisée (mois après l’exercice)" name="settleMonthOffset">
+            <Field label={t('settleOffset')} name="settleMonthOffset">
               <Input
                 name="settleMonthOffset"
                 inputMode="numeric"
@@ -851,7 +850,7 @@ export function LevyForm({
                 className="text-right font-mono tabular"
               />
             </Field>
-            <Field label="Remboursée (mois après)" name="refundMonthOffset">
+            <Field label={t('refundOffset')} name="refundMonthOffset">
               <Input
                 name="refundMonthOffset"
                 inputMode="numeric"
@@ -864,11 +863,11 @@ export function LevyForm({
         )}
       </Block>
 
-      <Block title="Règlement">
-        <Field label="Catégorie qui la règle">
+      <Block title={t('blocks.settlement')}>
+        <Field label={t('settlementCategory')}>
           <FormSelect
             name="settlementCategoryId"
-            noneLabel="(aucune)"
+            noneLabel={t('noCategory')}
             defaultValue={draft?.settlementCategoryId ?? ''}
             options={categories.map((c) => ({ value: c.id, label: c.name }))}
           />
@@ -876,26 +875,22 @@ export function LevyForm({
         <Label className="flex items-start gap-2 text-[12.5px] font-normal text-foreground">
           <Checkbox name="deductible" defaultChecked={draft?.deductible} className="mt-px" />
           <span>
-            La payer réduit le bénéfice
-            <span className="block text-[11px] text-faint">
-              une cotisation sociale souvent, un impôt sur le revenu jamais
-            </span>
+            {t('deductible')}
+            <span className="block text-[11px] text-faint">{t('deductibleHint')}</span>
           </span>
         </Label>
         <Label className="flex items-start gap-2 text-[12.5px] font-normal text-foreground">
           <Checkbox name="passThrough" defaultChecked={draft?.passThrough} className="mt-px" />
           <span>
-            Collectée pour le compte de l’État
-            <span className="block text-[11px] text-faint">
-              la TVA n’est ni une recette ni une charge, elle sort du net
-            </span>
+            {t('passThrough')}
+            <span className="block text-[11px] text-faint">{t('passThroughHint')}</span>
           </span>
         </Label>
-        <TextField name="note" label="Note (optionnelle)" defaultValue={draft?.note ?? ''} />
+        <TextField name="note" label={t('note')} defaultValue={draft?.note ?? ''} />
       </Block>
 
       <SubmitButton className="self-start">
-        {superseding ? 'Remplacer la règle' : mode === 'edit' ? 'Enregistrer' : 'Créer la règle'}
+        {superseding ? t('supersede') : mode === 'edit' ? ts('save') : t('create')}
       </SubmitButton>
     </ActionForm>
   )

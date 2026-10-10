@@ -1,0 +1,108 @@
+{
+  "period": {
+    "presets": {
+      "month": "Month",
+      "year": "Year",
+      "90d": "90 days",
+      "12m": "12 months",
+      "all": "All",
+      "range": "Period"
+    },
+    "previous": "Previous period",
+    "next": "Next period",
+    "range": "from {from} to {to}",
+    "current": "{name} (in progress)",
+    "last90": "last 90 days",
+    "last12": "last 12 months",
+    "sinceStart": "since the start",
+    "versus": "vs {name}",
+    "versusPrevious90": "vs previous 90 days",
+    "versusPrevious12": "vs previous 12 months",
+    "versusPrevious": "vs previous period",
+    "accrual": "accrual",
+    "accrualOver": "accrual, {months}"
+  },
+  "fields": {
+    "pickDate": "Pick a date",
+    "pickMonth": "Pick a month",
+    "monthOfDate": "The month of the date",
+    "monthOfDateNamed": "{month} · the month of the date",
+    "previousYear": "Previous year",
+    "nextYear": "Next year",
+    "pickDay": "Pick a day",
+    "monthEnd": "end of month",
+    "monthEndShort": "end",
+    "dayOfMonth": "on the {day, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"
+  },
+  "sort": {
+    "ways": {
+      "asc": "ascending",
+      "desc": "descending"
+    },
+    "active": "{label}, sorted {way}. Sort {next}",
+    "by": "Sort by {label}, {way}",
+    "reverse": "{label}, sorted {way}. Reverse",
+    "menu": "Sort: {label}"
+  },
+  "currency": {
+    "label": "Currency",
+    "search": "Code or name (USD, dollar…)",
+    "empty": "No currency matches.",
+    "frequent": "Common",
+    "all": "All"
+  },
+  "recurrence": {
+    "label": "Frequency",
+    "single": {
+      "week": "every week",
+      "month": "every month",
+      "year": "every year"
+    },
+    "multiple": {
+      "week": "every {count} weeks",
+      "month": "every {count} months",
+      "year": "every {count} years"
+    }
+  },
+  "fiscalYear": {
+    "previous": "Previous fiscal year",
+    "next": "Next fiscal year"
+  },
+  "reading": {
+    "label": "Reading",
+    "cash": "Actual date",
+    "accrual": "Accrual month"
+  },
+  "rowMenu": {
+    "label": "Actions for {name}"
+  },
+  "list": {
+    "search": "Search"
+  },
+  "preferences": {
+    "reading": {
+      "example": "October’s rent, paid on September 30, counts in <strong>{month}</strong>.",
+      "countedIn": {
+        "cash": "September",
+        "accrual": "October"
+      }
+    },
+    "rankingView": {
+      "label": "Analysis ranking",
+      "strip": "Strip",
+      "bars": "Bars"
+    }
+  },
+  "onboarding": {
+    "welcome": "Welcome to abacus<accent>_</accent>",
+    "intro": "Everything here is declared by you: no bank connection, no import. In return, you see exactly what you chose to track. Three steps and the dashboard fills up.",
+    "aiHint": "You can also declare everything in plain language from an AI: <link>connect an AI</link>."
+  },
+  "progress": {
+    "allPaid": "All {total} installments are paid",
+    "paid": "{done} of {total} installments paid, {left} left"
+  },
+  "stats": {
+    "stable": "unchanged {label}"
+  }
+}

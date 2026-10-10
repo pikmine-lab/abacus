@@ -1,0 +1,108 @@
+{
+  "period": {
+    "presets": {
+      "month": "Mois",
+      "year": "Année",
+      "90d": "90 jours",
+      "12m": "12 mois",
+      "all": "Tout",
+      "range": "Période"
+    },
+    "previous": "Période précédente",
+    "next": "Période suivante",
+    "range": "du {from} au {to}",
+    "current": "{name} (en cours)",
+    "last90": "90 derniers jours",
+    "last12": "12 derniers mois",
+    "sinceStart": "depuis le début",
+    "versus": "vs {name}",
+    "versusPrevious90": "vs 90 jours avant",
+    "versusPrevious12": "vs 12 mois avant",
+    "versusPrevious": "vs la période précédente",
+    "accrual": "rattachement",
+    "accrualOver": "rattachement, {months}"
+  },
+  "fields": {
+    "pickDate": "Choisir une date",
+    "pickMonth": "Choisir un mois",
+    "monthOfDate": "Le mois de la date",
+    "monthOfDateNamed": "{month} · le mois de la date",
+    "previousYear": "Année précédente",
+    "nextYear": "Année suivante",
+    "pickDay": "Choisir un jour",
+    "monthEnd": "fin de mois",
+    "monthEndShort": "fin",
+    "dayOfMonth": "le {day}"
+  },
+  "sort": {
+    "ways": {
+      "asc": "croissant",
+      "desc": "décroissant"
+    },
+    "active": "{label}, tri {way}. Trier {next}",
+    "by": "Trier par {label}, {way}",
+    "reverse": "{label}, tri {way}. Inverser",
+    "menu": "Trier : {label}"
+  },
+  "currency": {
+    "label": "Devise",
+    "search": "Code ou nom (USD, dollar…)",
+    "empty": "Aucune devise ne correspond.",
+    "frequent": "Courantes",
+    "all": "Toutes"
+  },
+  "recurrence": {
+    "label": "Périodicité",
+    "single": {
+      "week": "chaque semaine",
+      "month": "chaque mois",
+      "year": "chaque année"
+    },
+    "multiple": {
+      "week": "toutes les {count} semaines",
+      "month": "tous les {count} mois",
+      "year": "tous les {count} ans"
+    }
+  },
+  "fiscalYear": {
+    "previous": "Exercice précédent",
+    "next": "Exercice suivant"
+  },
+  "reading": {
+    "label": "Mois compté",
+    "cash": "Date réelle",
+    "accrual": "Mois concerné"
+  },
+  "rowMenu": {
+    "label": "Actions sur {name}"
+  },
+  "list": {
+    "search": "Chercher"
+  },
+  "preferences": {
+    "reading": {
+      "example": "Le loyer d’octobre, payé le 30 septembre, compte en <strong>{month}</strong>.",
+      "countedIn": {
+        "cash": "septembre",
+        "accrual": "octobre"
+      }
+    },
+    "rankingView": {
+      "label": "Classement de l’Analyse",
+      "strip": "Ruban",
+      "bars": "Barres"
+    }
+  },
+  "onboarding": {
+    "welcome": "Bienvenue sur abacus<accent>_</accent>",
+    "intro": "Tout ici est déclaré par toi : aucune connexion bancaire, aucun import. En échange, tu vois exactement ce que tu as décidé de suivre. Trois pas et le tableau de bord se remplit.",
+    "aiHint": "Tu peux aussi tout déclarer en langage naturel depuis une IA : <link>brancher une IA</link>."
+  },
+  "progress": {
+    "allPaid": "Les {total} échéances sont payées",
+    "paid": "{done} échéances payées sur {total}, {left, plural, one {# restante} other {# restantes}}"
+  },
+  "stats": {
+    "stable": "stable {label}"
+  }
+}

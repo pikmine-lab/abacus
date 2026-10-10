@@ -6,10 +6,12 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { activityLevies, activityStatement } from '@abacus/core/services/activityStatement'
 import { listActors } from '@abacus/core/services/actors'
 import { listActivities, listActivityAccounts } from '@abacus/core/services/catalog'
-import { type InvoiceState, listInvoices, outstandingInvoices } from '@abacus/core/services/invoices'
+import { listInvoices, outstandingInvoices } from '@abacus/core/services/invoices'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import type { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { ActivityMonths } from '@/components/activity-months'
 import { ActivityPayout } from '@/components/activity-payout'
 import { ActivityRanks, type RankRow } from '@/components/activity-ranks'
@@ -33,29 +35,41 @@ import { StatRow, StatTile } from '@/components/stats'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { UrlTabs } from '@/components/url-tabs'
-import {
-  LEVY_MEASURE_LABEL,
-  LEVY_PERIOD_REF_LABEL,
-  LEVY_STATUS_BADGE,
-  thresholdValue,
-} from '@/lib/levy-words'
+import { type Format, useFormat } from '@/lib/format'
+import { getFormat } from '@/lib/format-server'
+import { getLevyWords } from '@/lib/levy-words-server'
 import { rangeRef } from '@/lib/period'
-import { eur, frDate, frMonth, frMonthLong, idParam } from '@/lib/utils'
+import { idParam } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Activité' }
+export async function generateMetadata() {
+  const t = await getTranslations('activity')
+  return { title: t('title') }
+}
 
 const PATH = '/activity'
+
+type ActivityT = ReturnType<typeof useTranslations<'activity'>>
+
+/** The words and formatters the helpers below write with, in the request's language. */
+interface Words {
+  t: ActivityT
+  format: Format
+}
 
 /**
  * A fiscal year says its year when it is the calendar one, and its two dates
  * otherwise: "exercice 2026" is unambiguous on 1 January, and says nothing
  * true where the year opens on 6 April.
  */
-function fiscalYearLabel({ from, to }: { from: string; to: string }): string {
-  if (from.endsWith('-01-01')) return `exercice ${from.slice(0, 4)}`
-  return `exercice ${frDate(from)} → ${frDate(to)}`
+function fiscalYearSpan({ t, format }: Words, { from, to }: { from: string; to: string }): string {
+  if (from.endsWith('-01-01')) return from.slice(0, 4)
+  return t('fiscalYear.span', { from: format.date(from), to: format.date(to) })
+}
+
+function fiscalYearLabel(words: Words, range: { from: string; to: string }): string {
+  return words.t('fiscalYear.named', { span: fiscalYearSpan(words, range) })
 }
 
 /**
@@ -63,28 +77,13 @@ function fiscalYearLabel({ from, to }: { from: string; to: string }): string {
  * The app's own cash/accrual reading does not apply on this page: the taxable
  * event does, and the screen names it rather than letting it be assumed.
  */
-const BASIS: Record<RevenueBasis, { tile: string; word: string; sentence: string }> = {
-  cash: {
-    tile: 'Chiffre d’affaires encaissé',
-    word: 'Encaissé',
-    sentence: 'recettes comptées à l’encaissement',
-  },
-  invoiced: {
-    tile: 'Chiffre d’affaires facturé',
-    word: 'Facturé',
-    sentence: 'recettes comptées à la facturation',
-  },
-}
-
-const STATE_LABEL: Record<InvoiceState, string> = {
-  pending: 'en attente',
-  overdue: 'en retard',
-  paid: 'encaissée',
-  cancelled: 'annulée',
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count > 1 ? many : one}`
+function basisWords(t: ActivityT, basis: RevenueBasis) {
+  return {
+    tile: t(`basis.${basis}.tile`),
+    word: t(`basis.${basis}.word`),
+    lower: t(`basis.${basis}.lower`),
+    sentence: t(`basis.${basis}.sentence`),
+  }
 }
 
 /**
@@ -105,10 +104,18 @@ function periodQuery(from: string, to: string): string {
  * exercise when it is the whole year, its two dates otherwise. A quarter has
  * no name that would not borrow a regime's vocabulary, so it keeps its dates.
  */
-function periodName(range: { from: string; to: string }, year: { from: string; to: string }): string {
-  if (range.from === year.from && range.to === year.to) return fiscalYearLabel(year)
-  if (range.from.endsWith('-01') && range.to === endOfMonth(range.from)) return frMonthLong(range.from)
-  return `${frDate(range.from)} → ${frDate(range.to)}`
+function periodName(
+  words: Words,
+  range: { from: string; to: string },
+  year: { from: string; to: string },
+): string {
+  if (range.from === year.from && range.to === year.to) return fiscalYearLabel(words, year)
+  if (range.from.endsWith('-01') && range.to === endOfMonth(range.from))
+    return words.format.monthLong(range.from)
+  return words.t('fiscalYear.span', {
+    from: words.format.date(range.from),
+    to: words.format.date(range.to),
+  })
 }
 
 /**
@@ -128,6 +135,8 @@ export default async function ActivityPage({
   const params = await searchParams
   const { error } = params
   const now = today()
+  const [t, format] = await Promise.all([getTranslations('activity'), getFormat()])
+  const words: Words = { t, format }
 
   const [activities, actors, accounts, links] = await Promise.all([
     listActivities(userId),
@@ -144,15 +153,17 @@ export default async function ActivityPage({
   if (personal)
     return (
       <>
-        <PageHeader title="Activité" description={personal.name} />
+        <PageHeader title={t('title')} description={personal.name} />
         <PageBody>
           <EmptyLine>
-            « {personal.name} » est une activité perso : elle n’a pas de régime, donc pas de relevé. Elle
-            découpe les flux dans{' '}
-            <Link href="/analysis?by=activity&from=activity" className="text-primary hover:underline">
-              Analyse
-            </Link>
-            .
+            {t.rich('personal', {
+              name: personal.name,
+              link: (chunks) => (
+                <Link href="/analysis?by=activity&from=activity" className="text-primary hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </EmptyLine>
         </PageBody>
       </>
@@ -161,14 +172,16 @@ export default async function ActivityPage({
   if (businesses.length === 0)
     return (
       <>
-        <PageHeader title="Activité" description="factures, encaissements et relevé d’exercice" />
+        <PageHeader title={t('title')} description={t('noBusiness.description')} />
         <PageBody>
           <EmptyLine>
-            Aucune activité indépendante déclarée. Dans{' '}
-            <Link href="/settings?part=activities&from=activity" className="text-primary hover:underline">
-              Réglages
-            </Link>
-            , passe une activité en « indépendante » pour lui donner son exercice, ses factures et ses règles.
+            {t.rich('noBusiness.body', {
+              link: (chunks) => (
+                <Link href="/settings?part=activities&from=activity" className="text-primary hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </EmptyLine>
         </PageBody>
       </>
@@ -199,20 +212,20 @@ export default async function ActivityPage({
   if (rules.length === 0) {
     const steps: Step[] = [
       {
-        title: 'Ses règles',
-        why: 'Ce qu’elle doit, avec sa source et son calendrier : c’est ce qui remplit les provisions, la réserve et l’échéancier.',
+        title: t('setup.rules.title'),
+        why: t('setup.rules.why'),
         href: `/settings/activities/${activity.id}?from=activity`,
-        cta: 'Réglages de l’activité',
+        cta: t('setup.rules.cta'),
         done: false,
       },
       ...(links.some((l) => l.activityId === activity.id)
         ? []
         : [
             {
-              title: 'Ses comptes',
-              why: 'Les comptes sur lesquels elle vit font sa trésorerie, donc ce qu’elle peut te verser.',
+              title: t('setup.accounts.title'),
+              why: t('setup.accounts.why'),
               href: `/settings?part=activities&entry=${activity.id}&from=activity`,
-              cta: 'Réglages',
+              cta: t('setup.accounts.cta'),
               done: false,
             },
           ]),
@@ -220,7 +233,7 @@ export default async function ActivityPage({
     return (
       <>
         <PageHeader
-          title="Activité"
+          title={t('title')}
           description={[activity.name, activity.jurisdiction, activity.regimeLabel]
             .filter(Boolean)
             .join(' · ')}
@@ -230,7 +243,7 @@ export default async function ActivityPage({
             <UrlTabs
               param="activity"
               fallback={businesses[0]!.id}
-              ariaLabel="Activité"
+              ariaLabel={t('title')}
               options={businesses.map((a) => ({ value: a.id, label: a.name }))}
             />
           </FilterBar>
@@ -238,7 +251,7 @@ export default async function ActivityPage({
         <PageBody>
           <div className="flex max-w-xl flex-col gap-3">
             <p className="text-[13px] text-muted-foreground">
-              {steps.length === 1 ? 'Un pas' : 'Deux pas'} et le relevé se remplit.
+              {steps.length === 1 ? t('setup.oneStep') : t('setup.twoSteps')}
             </p>
             <StepPath steps={steps} />
           </div>
@@ -247,8 +260,8 @@ export default async function ActivityPage({
     )
   }
   const { totals, payableToSelf } = statement
-  const basis = BASIS[statement.basis]
-  const otherBasis = BASIS[totals.revenueOtherBasis.basis]
+  const basis = basisWords(t, statement.basis)
+  const otherBasis = totals.revenueOtherBasis.basis
   const period = statement.activity.period
   const running = year === runningYear
 
@@ -283,9 +296,9 @@ export default async function ActivityPage({
   const extended = statement.levies.filter((l) => l.status === 'extended_by_default').length
   const unconfirmed = statement.levies.filter((l) => l.status === 'unconfirmed').length
   const caveats = [
-    toReview > 0 && `${plural(toReview, 'règle', 'règles')} à revérifier`,
-    extended > 0 && `${plural(extended, 'prorogée', 'prorogées')} faute de texte`,
-    unconfirmed > 0 && plural(unconfirmed, 'non confirmée', 'non confirmées'),
+    toReview > 0 && t('caveats.toReview', { count: toReview }),
+    extended > 0 && t('caveats.extended', { count: extended }),
+    unconfirmed > 0 && t('caveats.unconfirmed', { count: unconfirmed }),
   ].filter((line): line is string => line !== false)
 
   const schedule: DueEntry[] = statement.schedule.map((entry) => ({
@@ -297,15 +310,21 @@ export default async function ActivityPage({
     instalmentNumber: entry.instalment,
     what:
       entry.entry === 'regularization'
-        ? `régularisation de l’${fiscalYearLabel(entry.period)}`
-        : periodName(entry.period, period),
-    window: `dépôt du ${frDate(entry.declaration.from)} au ${frDate(entry.declaration.to)}`,
+        ? t('fiscalYear.regularization', { span: fiscalYearSpan(words, entry.period) })
+        : periodName(words, entry.period, period),
+    window: t('schedule.window', {
+      from: format.date(entry.declaration.from),
+      to: format.date(entry.declaration.to),
+    }),
     opensOn: entry.declaration.from,
     dueOn: entry.payment.to,
     amount: entry.amount,
     status: entry.status,
     absorbed: entry.absorbed,
-    instalment: entry.instalments > 1 ? `${entry.instalment} sur ${entry.instalments}` : undefined,
+    instalment:
+      entry.instalments > 1
+        ? t('schedule.instalment', { number: entry.instalment, total: entry.instalments })
+        : undefined,
     paidOn: entry.paidOn,
     paidAmount: entry.paidAmount,
     missingInputs: entry.missingInputs,
@@ -314,30 +333,32 @@ export default async function ActivityPage({
 
   const revenueRows: RankRow[] = statement.revenueByClient.map((row) => ({
     key: row.key ?? 'none',
-    label: row.label ?? 'Sans client',
+    label: row.label ?? t('noClient'),
     amount: row.amount,
     href: row.key ? ledger(period.from, period.to, `&actor=${row.key}`) : undefined,
   }))
   const chargeRows: RankRow[] = statement.expensesByCategory.map((row) => ({
     key: row.key ?? 'none',
-    label: row.label ?? 'Sans catégorie',
+    label: row.label ?? t('noCategory'),
     amount: row.amount,
     settlement: row.settlesLevy,
     href: row.key ? ledger(period.from, period.to, `&category=${row.key}`) : undefined,
   }))
+
+  const levy = await getLevyWords()
 
   const ofTheYear = invoices.filter((i) => i.issuedOn >= period.from && i.issuedOn <= period.to)
 
   return (
     <>
       <PageHeader
-        title="Activité"
+        title={t('title')}
         description={[activity.name, activity.regimeLabel, basis.sentence].filter(Boolean).join(' · ')}
       >
         <EntrySheet
-          label="Facture"
-          title="Enregistrer une facture"
-          description="Ce que la facture dit : facturé n’est pas encaissé, l’encaissement s’écrit quand l’argent arrive."
+          label={t('newInvoice.label')}
+          title={t('newInvoice.title')}
+          description={t('newInvoice.description')}
         >
           <InvoiceForm
             activities={businesses.map((a) => ({ id: a.id, name: a.name }))}
@@ -352,14 +373,14 @@ export default async function ActivityPage({
       </PageHeader>
 
       <FilterBar>
-        <FiscalYearPicker year={year} label={fiscalYearLabel(period)} first={first} last={last} />
+        <FiscalYearPicker year={year} label={fiscalYearLabel(words, period)} first={first} last={last} />
         {businesses.length > 1 && (
           <>
             <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
             <UrlTabs
               param="activity"
               fallback={businesses[0]!.id}
-              ariaLabel="Activité"
+              ariaLabel={t('title')}
               options={businesses.map((a) => ({ value: a.id, label: a.name }))}
             />
           </>
@@ -378,7 +399,7 @@ export default async function ActivityPage({
             href={`/settings/activities/${activity.id}?from=activity`}
             className="text-[11.5px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
           >
-            {caveats.join(' · ')} : leurs montants sont les moins sûrs de l’écran.
+            {t('caveats.tail', { caveats: caveats.join(' · ') })}
           </Link>
         )}
 
@@ -386,42 +407,41 @@ export default async function ActivityPage({
           <StatTile
             hero
             label={basis.tile}
-            value={eur(totals.revenue)}
+            value={format.eur(totals.revenue)}
             hint={
               totals.revenueOtherBasis.revenue > 0
-                ? `${otherBasis.word.toLowerCase()} ${eur(totals.revenueOtherBasis.revenue)}`
+                ? t(`basis.${otherBasis}.other`, { amount: format.eur(totals.revenueOtherBasis.revenue) })
                 : undefined
             }
             spark={elapsed.map((m) => m.revenue)}
             href={ledger(period.from, period.to)}
           />
           <StatTile
-            label="Charges"
-            value={eur(totals.expenses + totals.provisions)}
-            hint={`${eur(totals.provisions)} provisionnés · ${eur(totals.expenses)} sortis des comptes`}
+            label={t('stats.charges')}
+            value={format.eur(totals.expenses + totals.provisions)}
+            hint={t('stats.chargesHint', {
+              provisions: format.eur(totals.provisions),
+              expenses: format.eur(totals.expenses),
+            })}
           />
-          <StatTile label="Net" value={eur(totals.net)} hint="recettes − charges − provisions" />
+          <StatTile label={t('stats.net')} value={format.eur(totals.net)} hint={t('stats.netHint')} />
           {running ? (
             <StatTile
-              label="Disponible à me verser"
-              value={eur(payableToSelf.amount)}
-              hint={
-                payableToSelf.shared.length > 0
-                  ? 'trésorerie − tout ce qui est dû sur ces comptes − échéances'
-                  : 'trésorerie − réserve − échéances du mois'
-              }
+              label={t('stats.payable')}
+              value={format.eur(payableToSelf.amount)}
+              hint={payableToSelf.shared.length > 0 ? t('stats.payableHintShared') : t('stats.payableHint')}
               href="#payable"
             />
           ) : (
             <StatTile
-              label="Versé"
-              value={eur(totals.paidToSelf)}
-              hint="virements vers un compte hors activité"
+              label={t('stats.paid')}
+              value={format.eur(totals.paidToSelf)}
+              hint={t('stats.paidHint')}
             />
           )}
         </StatRow>
 
-        <Section title="Par mois" description="ce qui est entré, et ce qu’il en reste">
+        <Section title={t('months.title')} description={t('months.description')}>
           <ActivityMonths
             rows={statement.months.map((m) => ({
               month: m.month,
@@ -436,12 +456,12 @@ export default async function ActivityPage({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-32">Mois</TableHead>
+                <TableHead className="w-32">{t('months.month')}</TableHead>
                 <TableHead className="text-right">{basis.word}</TableHead>
-                <TableHead className="text-right">Provisions</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Charges</TableHead>
-                <TableHead className="text-right">Net</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Versé</TableHead>
+                <TableHead className="text-right">{t('months.provisions')}</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">{t('months.charges')}</TableHead>
+                <TableHead className="text-right">{t('months.net')}</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">{t('months.paid')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -452,9 +472,11 @@ export default async function ActivityPage({
                       href={ledger(fiscalMonths[i]!.from, fiscalMonths[i]!.to)}
                       className="hover:text-primary"
                     >
-                      {frMonth(m.month)}
+                      {format.month(m.month)}
                     </Link>
-                    {m.running && <span className="pl-1.5 text-[11px] text-faint">en cours</span>}
+                    {m.running && (
+                      <span className="pl-1.5 text-[11px] text-faint">{t('months.running')}</span>
+                    )}
                   </TableCell>
                   <Money value={m.revenue} />
                   <Money value={m.provisions} muted />
@@ -464,9 +486,7 @@ export default async function ActivityPage({
                 </TableRow>
               ))}
               <TableRow className="font-semibold hover:bg-transparent">
-                <TableCell className="text-[12.5px]">
-                  {fiscalYearLabel(period).replace('exercice ', '')}
-                </TableCell>
+                <TableCell className="text-[12.5px]">{fiscalYearSpan(words, period)}</TableCell>
                 <Money value={totals.revenue} />
                 <Money value={totals.provisions} />
                 <Money value={totals.expenses} className="hidden sm:table-cell" />
@@ -480,23 +500,25 @@ export default async function ActivityPage({
         <Section
           id="payable"
           className="scroll-mt-28"
-          title="À me verser"
-          description="trésorerie de l’activité, moins ce qui est dû et pas encore payé"
-          action={<SectionLink href="/accounts?from=activity">Comptes</SectionLink>}
+          title={t('payable.title')}
+          description={t('payable.description')}
+          action={<SectionLink href="/accounts?from=activity">{t('payable.accounts')}</SectionLink>}
         >
           {running ? (
             <>
               <Rows>
                 <MoneyRow
-                  label="Trésorerie"
-                  hint={treasuryHint(payableToSelf.accounts)}
+                  label={t('payable.treasury')}
+                  hint={treasuryHint(t, payableToSelf.accounts)}
                   amount={payableToSelf.treasury}
                 />
                 <div className="py-2.5">
                   <div className="flex items-baseline gap-3">
-                    <p className="text-[13px]">− Réserve</p>
-                    <p className="min-w-0 truncate text-[11px] text-faint">ce qui est dû, règle par règle</p>
-                    <p className="ml-auto font-mono text-[13px] tabular">{eur(payableToSelf.reserve)}</p>
+                    <p className="text-[13px]">{t('payable.reserve')}</p>
+                    <p className="min-w-0 truncate text-[11px] text-faint">{t('payable.reserveHint')}</p>
+                    <p className="ml-auto font-mono text-[13px] tabular">
+                      {format.eur(payableToSelf.reserve)}
+                    </p>
                   </div>
                   {statement.levies.length > 0 && (
                     // The rules sit tight under the total they make: a rail and
@@ -508,29 +530,39 @@ export default async function ActivityPage({
                       />
                       {[...statement.levies]
                         .sort((a, b) => b.reserve - a.reserve)
-                        .map((levy) => {
-                          const badge = LEVY_STATUS_BADGE[levy.status]
+                        .map((rule) => {
+                          const badge = levy.status(rule.status)
                           return (
-                            <div key={levy.id} className="flex items-baseline gap-2">
+                            <div key={rule.id} className="flex items-baseline gap-2">
                               <p className="flex shrink-0 items-baseline gap-1.5 text-[12px] text-muted-foreground">
-                                {levy.name}
+                                {rule.name}
                                 {badge && (
                                   <Badge variant={badge.variant} className="text-[10px]">
                                     {badge.label}
                                   </Badge>
                                 )}
-                                {levy.reviewDue && (
-                                  <span className="text-[10.5px] text-destructive">à revérifier</span>
+                                {rule.reviewDue && (
+                                  <span className="text-[10.5px] text-destructive">
+                                    {t('payable.review')}
+                                  </span>
                                 )}
                               </p>
                               <p className="min-w-0 truncate text-[11px] text-faint">
-                                {`dues ${eur(levy.accrued, 2)} · payées ${eur(levy.paid, 2)}`}
-                                {levy.overpaid > 0 && ` · trop-payé ${eur(levy.overpaid, 2)}`}
-                                {levy.passThrough && ' · collectée pour être reversée'}
-                                {levy.assumedElectiveBase && ' · base non saisie, minimum retenu'}
+                                {[
+                                  t('payable.owedPaid', {
+                                    accrued: format.eur(rule.accrued, 2),
+                                    paid: format.eur(rule.paid, 2),
+                                  }),
+                                  rule.overpaid > 0 &&
+                                    t('payable.overpaid', { amount: format.eur(rule.overpaid, 2) }),
+                                  rule.passThrough && t('payable.passThrough'),
+                                  rule.assumedElectiveBase && t('payable.assumedBase'),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
                               </p>
                               <p className="ml-auto font-mono text-[12px] tabular text-muted-foreground">
-                                {eur(levy.reserve, 2)}
+                                {format.eur(rule.reserve, 2)}
                               </p>
                             </div>
                           )
@@ -543,24 +575,28 @@ export default async function ActivityPage({
                   // the same euro cannot be promised twice: the line names
                   // them rather than letting the total look wrong.
                   <MoneyRow
-                    label={`− Réserve de ${payableToSelf.shared.map((o) => o.activityName).join(', ')}`}
+                    label={t('payable.sharedReserve', {
+                      names: payableToSelf.shared.map((o) => o.activityName).join(', '),
+                    })}
                     hint={
                       payableToSelf.shared.some((o) => o.unreadable)
-                        ? `ce qui est dû sur les comptes partagés, sauf ${payableToSelf.shared
-                            .filter((o) => o.unreadable)
-                            .map((o) => o.activityName)
-                            .join(', ')} dont une règle est illisible`
-                        : 'ce qui est dû sur les comptes partagés'
+                        ? t('payable.sharedReserveUnreadable', {
+                            names: payableToSelf.shared
+                              .filter((o) => o.unreadable)
+                              .map((o) => o.activityName)
+                              .join(', '),
+                          })
+                        : t('payable.sharedReserveHint')
                     }
                     amount={payableToSelf.sharedReserve}
                   />
                 )}
                 <MoneyRow
-                  label={`− Échéances d’ici le ${frDate(endOfMonth(now))}`}
-                  hint="engagements de l’activité"
+                  label={t('payable.commitments', { date: format.date(endOfMonth(now)) })}
+                  hint={t('payable.commitmentsHint')}
                   amount={payableToSelf.commitments}
                 />
-                <MoneyRow label="Disponible" amount={payableToSelf.amount} strong />
+                <MoneyRow label={t('payable.available')} amount={payableToSelf.amount} strong />
               </Rows>
               <ActivityPayout
                 activityId={activity.id}
@@ -571,14 +607,11 @@ export default async function ActivityPage({
               />
             </>
           ) : (
-            <EmptyLine>
-              Le versable se lit sur l’exercice en cours : la trésorerie est celle d’aujourd’hui, pas celle de
-              cet exercice. Sur cet exercice, {eur(totals.paidToSelf)} ont été versés.
-            </EmptyLine>
+            <EmptyLine>{t('payable.pastYear', { amount: format.eur(totals.paidToSelf) })}</EmptyLine>
           )}
         </Section>
 
-        <Section title="Échéancier" description="ce qu’il faut déclarer et payer, en retard d’abord">
+        <Section title={t('schedule.title')} description={t('schedule.description')}>
           <LevySchedule
             entries={schedule}
             accounts={ownAccounts.length > 0 ? ownAccounts : settlementAccounts}
@@ -588,12 +621,9 @@ export default async function ActivityPage({
           />
         </Section>
 
-        <Section
-          title="Factures en attente"
-          description="« Encaissée » écrit le revenu sur le compte qui a reçu l’argent"
-        >
+        <Section title={t('outstanding.title')} description={t('outstanding.description')}>
           {open.length === 0 ? (
-            <EmptyLine>Rien en attente : tout ce qui a été facturé est encaissé.</EmptyLine>
+            <EmptyLine>{t('outstanding.empty')}</EmptyLine>
           ) : (
             <OutstandingInvoices
               invoices={open.map((invoice) => ({
@@ -630,36 +660,38 @@ export default async function ActivityPage({
         </Section>
 
         <div className="grid min-w-0 gap-8 lg:grid-cols-2">
-          <Section title="Recettes par client" description={basis.word.toLowerCase()}>
-            <ActivityRanks rows={revenueRows} emptyLabel="Aucune recette sur cet exercice." />
+          <Section title={t('ranks.revenueTitle')} description={basis.lower}>
+            <ActivityRanks rows={revenueRows} emptyLabel={t('ranks.revenueEmpty')} />
           </Section>
-          <Section title="Charges par catégorie" description="sorti des comptes de l’activité">
+          <Section title={t('ranks.chargesTitle')} description={t('ranks.chargesDescription')}>
             <ActivityRanks
               rows={chargeRows}
-              emptyLabel="Aucune charge sur cet exercice."
-              note="en pointillé : règle une provision, déjà comptée dans les charges"
+              emptyLabel={t('ranks.chargesEmpty')}
+              note={t('ranks.settlementNote')}
             />
           </Section>
         </div>
 
         {statement.thresholds.length > 0 && (
-          <Section title="Seuils surveillés" description="où en est l’activité, et ce qui change au-delà">
+          <Section title={t('thresholds.title')} description={t('thresholds.description')}>
             <Rows>
               {statement.thresholds.map((threshold) => (
                 <div key={threshold.id} className="flex flex-col gap-1.5 py-2.5">
                   <div className="flex flex-wrap items-baseline gap-2">
                     <p className="text-[13px] font-medium">{threshold.label}</p>
                     <p className="text-[11px] text-faint">
-                      {LEVY_MEASURE_LABEL[threshold.measure]} sur {LEVY_PERIOD_REF_LABEL[threshold.periodRef]}{' '}
-                      · {threshold.comparison === 'lte' ? 'au plus' : 'au moins'}{' '}
-                      {thresholdValue(threshold.measure, threshold.value)}
+                      {t(threshold.comparison === 'lte' ? 'thresholds.atMost' : 'thresholds.atLeast', {
+                        measure: levy.measure(threshold.measure),
+                        periodRef: levy.periodRef(threshold.periodRef),
+                        value: levy.thresholdValue(threshold.measure, threshold.value),
+                      })}
                     </p>
                     <p
                       className={`ml-auto font-mono text-[12.5px] tabular ${threshold.breached ? 'text-destructive' : ''}`}
                     >
-                      {thresholdValue(threshold.measure, threshold.current)}
+                      {levy.thresholdValue(threshold.measure, threshold.current)}
                       <span className="pl-1.5 text-[11px] text-faint">
-                        {Math.round(threshold.progress * 100)} %
+                        {t('thresholds.progress', { percent: Math.round(threshold.progress * 100) })}
                       </span>
                     </p>
                   </div>
@@ -675,7 +707,7 @@ export default async function ActivityPage({
                   <p
                     className={`text-[11.5px] ${threshold.breached ? 'text-destructive' : 'text-muted-foreground'}`}
                   >
-                    {threshold.breached ? 'Dépassé. ' : ''}
+                    {threshold.breached ? `${t('thresholds.breached')} ` : ''}
                     {threshold.consequence}
                   </p>
                 </div>
@@ -685,49 +717,53 @@ export default async function ActivityPage({
         )}
 
         <FoldSection
-          title="Factures de l’exercice"
-          description={`${plural(ofTheYear.length, 'facture émise', 'factures émises')}`}
+          title={t('invoices.title')}
+          description={t('invoices.count', { count: ofTheYear.length })}
         >
           {ofTheYear.length === 0 ? (
-            <EmptyLine>Aucune facture sur cet exercice.</EmptyLine>
+            <EmptyLine>{t('invoices.empty')}</EmptyLine>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-20">Date</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead className="hidden sm:table-cell">Référence</TableHead>
-                  <TableHead className="w-24 text-right">HT</TableHead>
-                  <TableHead className="hidden w-24 text-right md:table-cell">TVA</TableHead>
-                  <TableHead className="hidden w-24 text-right md:table-cell">Retenue</TableHead>
-                  <TableHead className="w-24 text-right">Net</TableHead>
-                  <TableHead className="w-24 text-right">État</TableHead>
+                  <TableHead className="w-20">{t('invoices.date')}</TableHead>
+                  <TableHead>{t('invoices.client')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t('invoices.reference')}</TableHead>
+                  <TableHead className="w-24 text-right">{t('invoices.base')}</TableHead>
+                  <TableHead className="hidden w-24 text-right md:table-cell">{t('invoices.vat')}</TableHead>
+                  <TableHead className="hidden w-24 text-right md:table-cell">
+                    {t('invoices.withholding')}
+                  </TableHead>
+                  <TableHead className="w-24 text-right">{t('invoices.net')}</TableHead>
+                  <TableHead className="w-24 text-right">{t('invoices.state')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {ofTheYear.map((invoice) => (
                   <TableRow key={invoice.id}>
                     <TableCell className="font-mono text-[11.5px] text-faint">
-                      {frDate(invoice.issuedOn)}
+                      {format.date(invoice.issuedOn)}
                     </TableCell>
                     <TableCell className="text-[12.5px]">{actorName.get(invoice.actorId) ?? '?'}</TableCell>
                     <TableCell className="hidden text-[12px] text-muted-foreground sm:table-cell">
                       {invoice.reference ?? ''}
                     </TableCell>
                     <TableCell className="text-right font-mono text-[12.5px] tabular">
-                      {eur(Number(invoice.baseAmount), 2)}
+                      {format.eur(Number(invoice.baseAmount), 2)}
                     </TableCell>
                     <TableCell className="hidden text-right font-mono text-[12.5px] tabular text-muted-foreground md:table-cell">
-                      {eur(Number(invoice.vatAmount), 2)}
+                      {format.eur(Number(invoice.vatAmount), 2)}
                     </TableCell>
                     <TableCell className="hidden text-right font-mono text-[12.5px] tabular text-muted-foreground md:table-cell">
-                      {eur(Number(invoice.withholdingAmount), 2)}
+                      {format.eur(Number(invoice.withholdingAmount), 2)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-[13px] tabular">
-                      {eur(Number(invoice.receivableAmount), 2)}
+                      {format.eur(Number(invoice.receivableAmount), 2)}
                       {Number(invoice.paidAmount) > 0 && invoice.state !== 'paid' && (
                         <span className="block text-[11px] font-normal text-faint">
-                          reste {eur(Number(invoice.remainingAmount), 2)}
+                          {t('invoices.remaining', {
+                            amount: format.eur(Number(invoice.remainingAmount), 2),
+                          })}
                         </span>
                       )}
                     </TableCell>
@@ -740,7 +776,7 @@ export default async function ActivityPage({
                             : 'text-muted-foreground'
                       }`}
                     >
-                      {STATE_LABEL[invoice.state]}
+                      {t(`invoiceState.${invoice.state}`)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -754,11 +790,12 @@ export default async function ActivityPage({
 }
 
 function Money({ value, muted, className }: { value: number; muted?: boolean; className?: string }) {
+  const format = useFormat()
   return (
     <TableCell
       className={`text-right font-mono text-[12.5px] tabular ${muted ? 'text-muted-foreground' : ''} ${className ?? ''}`}
     >
-      {eur(value)}
+      {format.eur(value)}
     </TableCell>
   )
 }
@@ -767,10 +804,14 @@ function Money({ value, muted, className }: { value: number; muted?: boolean; cl
  * The accounts the treasury is made of, and the ones another activity lives on
  * too: a balance read whole while a neighbour draws on it would be read wrong.
  */
-function treasuryHint(accounts: { name: string; sharedWith: string[] }[]): string {
-  if (accounts.length === 0) return 'aucun compte déclaré sur cette activité'
+function treasuryHint(t: ActivityT, accounts: { name: string; sharedWith: string[] }[]): string {
+  if (accounts.length === 0) return t('payable.noAccount')
   return accounts
-    .map((a) => (a.sharedWith.length > 0 ? `${a.name} (partagé avec ${a.sharedWith.join(', ')})` : a.name))
+    .map((a) =>
+      a.sharedWith.length > 0
+        ? t('payable.sharedAccount', { name: a.name, others: a.sharedWith.join(', ') })
+        : a.name,
+    )
     .join(' · ')
 }
 
@@ -785,12 +826,13 @@ function MoneyRow({
   amount: number
   strong?: boolean
 }) {
+  const format = useFormat()
   return (
     <div className="flex items-baseline gap-3 py-2.5">
       <p className={`text-[13px] ${strong ? 'font-semibold' : ''}`}>{label}</p>
       {hint && <p className="min-w-0 truncate text-[11px] text-faint">{hint}</p>}
       <p className={`ml-auto font-mono text-[13px] tabular ${strong ? 'font-semibold' : ''}`}>
-        {eur(amount)}
+        {format.eur(amount)}
       </p>
     </div>
   )

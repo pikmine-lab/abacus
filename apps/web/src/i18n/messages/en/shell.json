@@ -1,0 +1,28 @@
+{
+  "description": "Personal finance, declared by hand.",
+  "groups": {
+    "tracking": "Tracking",
+    "commitments": "Commitments",
+    "wealth": "Wealth"
+  },
+  "screens": {
+    "overview": "Overview",
+    "movements": "Movements",
+    "analysis": "Analysis",
+    "activity": "Activity",
+    "recurringExpenses": "Recurring expenses",
+    "recurringIncome": "Recurring income",
+    "accounts": "Accounts",
+    "investments": "Investments",
+    "settings": "Settings",
+    "connectAi": "Connect an AI"
+  },
+  "soon": "{screen} (coming in V2)",
+  "signOut": "Sign out",
+  "expandNavigation": "Expand navigation",
+  "collapseNavigation": "Collapse navigation",
+  "toggleNavigation": "Expand or collapse navigation",
+  "navigation": "Navigation",
+  "navigationDescription": "The screens of the app.",
+  "close": "Close"
+}

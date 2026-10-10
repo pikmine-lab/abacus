@@ -3,9 +3,11 @@
 import { type HierarchyRectangularNode, hierarchy, treemap } from 'd3-hierarchy'
 import { select } from 'd3-selection'
 import 'd3-transition'
+import type { FlowKind } from '@abacus/core/services/reports'
 import { type ZoomBehavior, type ZoomTransform, zoom as zoomBehavior, zoomIdentity } from 'd3-zoom'
 import { ArrowRightIcon, ChevronRightIcon, MinusIcon, PlusIcon, ScanIcon, XIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -13,13 +15,14 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
-import { share } from '@/components/breakdown-bars'
+import { type Share, useShare } from '@/components/breakdown-bars'
 import { Button } from '@/components/ui/button'
+import { type Format, useFormat } from '@/lib/format'
 import { drawn, FOCUS_PARAM, type MapNode, VIEW_PARAM } from '@/lib/money-map'
-import { eur, frDate } from '@/lib/utils'
 
 /*
  * The period as a map: every block as large as the net it weighs, nested from
@@ -62,6 +65,12 @@ interface Hover {
   y: number
 }
 
+/** How the canvas writes its figures, in the language being spoken. */
+interface Words {
+  format: Format
+  share: Share
+}
+
 /** The band that names a block, on screen. */
 const HEADER = 36
 /** A block is named once it is this big on screen: its band, and room under it. */
@@ -74,7 +83,12 @@ const MOVE_MS = 450
 /** What the path over a chosen block takes at the top of the frame. */
 const PATH_H = 48
 
-export function MoneyMap({ root }: { root: MapNode }) {
+export function MoneyMap({ root, kind }: { root: MapNode; kind: FlowKind }) {
+  const say = useTranslations('analysis.map')
+  const format = useFormat()
+  const share = useShare()
+  // Stable while the language is, so a render does not lay the map out again.
+  const words = useMemo<Words>(() => ({ format, share }), [format, share])
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState<Size>({ w: 0, h: 0 })
@@ -112,9 +126,9 @@ export function MoneyMap({ root }: { root: MapNode }) {
       const laid = laidRef.current
       if (!canvas || !laid) return
       const t = transformRef.current
-      draw(canvas, laid, t, size, hoverRef.current, chosenRef.current)
+      draw(canvas, laid, t, size, hoverRef.current, chosenRef.current, words)
     })
-  }, [size])
+  }, [size, words])
 
   // Laid out again whenever the data or the frame changes; the view keeps
   // looking at the same place.
@@ -294,7 +308,6 @@ export function MoneyMap({ root }: { root: MapNode }) {
     paint()
   }
 
-  const kind = root.label === 'Tous les revenus' ? 'revenus' : 'dépenses'
   return (
     <div className="flex flex-col gap-3">
       {/* The frame is sized by CSS, not by the measure that follows: a map
@@ -314,7 +327,7 @@ export function MoneyMap({ root }: { root: MapNode }) {
           ref={canvasRef}
           tabIndex={0}
           role="img"
-          aria-label={`Carte des ${kind} : ${eur(root.net)}. Flèches pour se déplacer, plus et moins pour zoomer, zéro pour tout voir. Le classement donne les mêmes chiffres en liste.`}
+          aria-label={say('canvas', { kind, total: format.eur(root.net) })}
           onKeyDown={onKey}
           onClick={onClick}
           onPointerMove={onPointerMove}
@@ -323,16 +336,21 @@ export function MoneyMap({ root }: { root: MapNode }) {
           style={{ width: size.w, height: size.h }}
         />
         <div className="absolute right-2 bottom-2 flex flex-col gap-1">
-          <Button variant="secondary" size="icon-sm" aria-label="Zoomer" onClick={() => scaleBy(1.6)}>
+          <Button variant="secondary" size="icon-sm" aria-label={say('zoomIn')} onClick={() => scaleBy(1.6)}>
             <PlusIcon />
           </Button>
-          <Button variant="secondary" size="icon-sm" aria-label="Dézoomer" onClick={() => scaleBy(1 / 1.6)}>
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            aria-label={say('zoomOut')}
+            onClick={() => scaleBy(1 / 1.6)}
+          >
             <MinusIcon />
           </Button>
           <Button
             variant="secondary"
             size="icon-sm"
-            aria-label="Tout voir"
+            aria-label={say('fit')}
             onClick={() => choose(laidRef.current)}
           >
             <ScanIcon />
@@ -502,6 +520,7 @@ function draw(
   size: Size,
   hovered: Laid | null,
   chosen: Laid | null,
+  words: Words,
 ) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -510,7 +529,7 @@ function draw(
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, size.w, size.h)
   const frame = { x: 0, y: 0, w: size.w, h: size.h }
-  for (const child of laid.children ?? []) drawBlock(ctx, p, child, t, frame)
+  for (const child of laid.children ?? []) drawBlock(ctx, p, child, t, frame, words)
 
   // The chosen block keeps its light and the interface copper around it, the
   // rest of the map steps back. A pointed block wears the same line, thinner.
@@ -559,7 +578,15 @@ function screenRect(n: Laid, t: ZoomTransform): Rect {
   return { x: x0 + g, y: y0 + g, w: t.applyX(n.x1) - x0 - 2 * g, h: t.applyY(n.y1) - y0 - 2 * g }
 }
 
-function drawBlock(ctx: CanvasRenderingContext2D, p: Palette, n: Laid, t: ZoomTransform, clip: Rect) {
+function drawBlock(
+  ctx: CanvasRenderingContext2D,
+  p: Palette,
+  n: Laid,
+  t: ZoomTransform,
+  clip: Rect,
+  words: Words,
+) {
+  const { format, share } = words
   const x0 = t.applyX(n.x0)
   const y0 = t.applyY(n.y0)
   const x1 = t.applyX(n.x1)
@@ -573,7 +600,7 @@ function drawBlock(ctx: CanvasRenderingContext2D, p: Palette, n: Laid, t: ZoomTr
   if (!n.children) {
     ctx.fillStyle = n.data.level === 'rest' ? p.rest : shade(p, n)
     ctx.fillRect(r.x, r.y, r.w, r.h)
-    leafLabel(ctx, p, n, r)
+    leafLabel(ctx, p, n, r, words)
     return
   }
   ctx.fillStyle = p.seam
@@ -590,26 +617,26 @@ function drawBlock(ctx: CanvasRenderingContext2D, p: Palette, n: Laid, t: ZoomTr
       ctx,
       p,
       n.data.label,
-      [`${eur(n.data.net)} · ${share(n.data.net, parent)}`, eur(n.data.net)],
+      [`${format.eur(n.data.net)} · ${share(n.data.net, parent)}`, format.eur(n.data.net)],
       band,
       p.ink,
     )
   }
-  for (const child of n.children) drawBlock(ctx, p, child, t, r)
+  for (const child of n.children) drawBlock(ctx, p, child, t, r, words)
 }
 
 function shade(p: Palette, n: Laid): string {
   return p.copper[Math.min(n.depth, p.copper.length) - 1] ?? p.copper[0]!
 }
 
-function leafLabel(ctx: CanvasRenderingContext2D, p: Palette, n: Laid, r: Rect) {
+function leafLabel(ctx: CanvasRenderingContext2D, p: Palette, n: Laid, r: Rect, { format, share }: Words) {
   const node = n.data
   const ink = node.level === 'rest' ? p.restInk : p.ink
-  const amount = eur(node.net)
+  const amount = format.eur(node.net)
   if (r.w >= LEAF.two.w && r.h >= LEAF.two.h) {
     const lead =
       node.level === 'movement' && node.date
-        ? `${frDate(node.date)} · ${amount}`
+        ? `${format.date(node.date)} · ${amount}`
         : `${amount} · ${share(node.net, n.parent?.data.net ?? node.net)}`
     text(ctx, p, node.label, [lead, amount], r, ink)
   } else if (r.w >= LEAF.one.w && r.h >= LEAF.one.h) {
@@ -680,11 +707,13 @@ function intersect(a: Rect, b: Rect): Rect {
  * long for it, and a chosen block keeps the same words it had before.
  */
 function Path({ chosen, onChoose }: { chosen: Laid; onChoose: (n: Laid | null) => void }) {
+  const t = useTranslations('analysis.map')
+  const format = useFormat()
   const steps = chosen.ancestors().reverse()
   const ledger = chosen.data.href
   return (
     <nav
-      aria-label="Bloc choisi"
+      aria-label={t('chosen')}
       className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-lg border border-border bg-popover/95 py-1 pr-1 pl-2.5 text-popover-foreground shadow-lg"
     >
       <ol className="flex min-w-0 flex-wrap items-baseline gap-x-1 gap-y-0.5">
@@ -700,7 +729,7 @@ function Path({ chosen, onChoose }: { chosen: Laid; onChoose: (n: Laid | null) =
                 className="flex min-w-0 items-baseline gap-1.5 rounded-sm px-0.5 text-[12.5px] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-[current]:text-foreground"
               >
                 <span className={current ? 'truncate font-medium' : 'truncate'}>{n.data.label}</span>
-                {current && <span className="font-mono text-[12px] tabular">{eur(n.data.net)}</span>}
+                {current && <span className="font-mono text-[12px] tabular">{format.eur(n.data.net)}</span>}
               </button>
             </li>
           )
@@ -711,11 +740,11 @@ function Path({ chosen, onChoose }: { chosen: Laid; onChoose: (n: Laid | null) =
           href={chosen.data.href!}
           className="ml-2 flex shrink-0 items-center gap-1 rounded-sm border-l border-border pl-2.5 text-[12px] text-muted-foreground hover:text-foreground"
         >
-          Voir dans les mouvements
+          {t('seeMovements')}
           <ArrowRightIcon className="size-3" />
         </Link>
       )}
-      <Button variant="ghost" size="icon-xs" aria-label="Relâcher le bloc" onClick={() => onChoose(null)}>
+      <Button variant="ghost" size="icon-xs" aria-label={t('release')} onClick={() => onChoose(null)}>
         <XIcon />
       </Button>
     </nav>
@@ -726,6 +755,10 @@ const TIP = { w: 232, h: 104 }
 
 /** What a pointed block is, where it sits and what it weighs, by the pointer. */
 function HoverCard({ hover }: { hover: Hover }) {
+  const t = useTranslations('analysis.map')
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
+  const share = useShare()
   const { node, x, y } = hover
   const data = node.data
   const parent = node.parent
@@ -748,12 +781,14 @@ function HoverCard({ hover }: { hover: Hover }) {
       <p className="flex items-baseline gap-2 py-px text-xs">
         <span className="text-muted-foreground">
           {data.level === 'movement' && data.date
-            ? frDate(data.date)
+            ? format.date(data.date)
             : parent
-              ? `${share(data.net, parent.data.net)} de ${parent.depth === 0 ? 'la période' : parent.data.label}`
+              ? parent.depth === 0
+                ? t('shareOfPeriod', { share: share(data.net, parent.data.net) })
+                : t('shareOf', { share: share(data.net, parent.data.net), parent: parent.data.label })
               : ''}
         </span>
-        <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(data.net)}</span>
+        <span className="ml-auto pl-3 font-mono font-semibold tabular">{format.eur(data.net)}</span>
       </p>
       {data.level === 'movement' ? (
         data.note && (
@@ -761,7 +796,7 @@ function HoverCard({ hover }: { hover: Hover }) {
         )
       ) : (
         <p className="mt-1 border-t border-border pt-1 text-[10.5px] text-faint">
-          {data.count} mouvement{data.count > 1 ? 's' : ''}
+          {words('movements', { count: data.count })}
         </p>
       )}
     </div>

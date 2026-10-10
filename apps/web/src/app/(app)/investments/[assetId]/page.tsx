@@ -12,14 +12,15 @@ import {
 } from '@abacus/core/services/investments'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { OperationRows } from '@/components/investment-forms'
 import { EmptyLine, PageBody, PageHeader, Section } from '@/components/page-shell'
 import { StatRow, StatTile } from '@/components/stats'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { eur, eurSigned } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,8 @@ export default async function AssetPage({
   const userId = session.user.id
   const { assetId } = await params
   const query = await searchParams
+  const t = await getTranslations('investments')
+  const format = await getFormat()
 
   const assets = await listAssets(userId)
   const asset = assets.find((a) => a.id === assetId)
@@ -68,7 +71,7 @@ export default async function AssetPage({
       <PageHeader
         title={asset.name}
         description={
-          [asset.instrument?.isin, asset.instrument?.priceSourceRef ?? 'cours saisi à la main']
+          [asset.instrument?.isin, asset.instrument?.priceSourceRef ?? t('words.manualPrice')]
             .filter(Boolean)
             .join(' · ') || undefined
         }
@@ -78,32 +81,35 @@ export default async function AssetPage({
           <StatRow>
             <StatTile
               hero
-              label="Valorisation"
-              value={position.value === null ? '—' : eur(Number(position.value))}
-              hint={`${Number(position.quantity).toLocaleString('fr-FR', { maximumFractionDigits: 8 })} × ${
-                position.price === null ? '—' : eur(Number(position.price), 2)
+              label={t('words.value')}
+              value={position.value === null ? '—' : format.eur(position.value)}
+              hint={`${format.number(position.quantity, 8)} × ${
+                position.price === null ? '—' : format.eur(position.price, 2)
               }`}
-              delta={gain === null ? undefined : { value: gain, label: 'contre le prix de revient' }}
+              delta={gain === null ? undefined : { value: gain, label: t('detail.againstCost') }}
             />
             <StatTile
-              label="Prix de revient"
-              value={eur(Number(position.costBasis))}
-              hint={`PRU ${eur(Number(position.averageCost), 2)}, frais d’ordre compris`}
+              label={t('detail.costBasis')}
+              value={format.eur(position.costBasis)}
+              hint={t('detail.costBasisHint', { amount: format.eur(position.averageCost, 2) })}
             />
           </StatRow>
         ) : (
           <EmptyLine>
-            Suivi, pas détenu :{' '}
             {history.length > 0
-              ? `dernier cours ${eur(Number(history[history.length - 1]!.price), 2)}.`
-              : 'aucun cours connu pour l’instant.'}
+              ? t('detail.watchedLastPrice', { price: format.eur(history[history.length - 1]!.price, 2) })
+              : t('detail.watchedNoPrice')}
           </EmptyLine>
         )}
 
         {history.length > 1 && (
-          <Section title="Cours" description={`${shown.length} séances connues`} action={<WindowTabs />}>
+          <Section
+            title={t('words.price')}
+            description={t('detail.sessions', { count: shown.length })}
+            action={<WindowTabs />}
+          >
             <BalanceChart
-              lines={[{ id: 'price', name: 'Cours' }]}
+              lines={[{ id: 'price', name: t('words.price') }]}
               rows={shown.map((point) => ({
                 day: point.quotedOn,
                 lineId: 'price',
@@ -113,14 +119,14 @@ export default async function AssetPage({
               // A price is not read against zero: forcing it in draws a share
               // at 709 € as a flat line and hides the very move being looked at.
               zeroBased={false}
-              ariaLabel={`Cours de ${asset.name}`}
+              ariaLabel={t('detail.priceAria', { name: asset.name })}
             />
           </Section>
         )}
 
-        <Section title="Opérations" description="sur cet actif">
+        <Section title={t('words.operations')} description={t('detail.onThisAsset')}>
           {mine.length === 0 ? (
-            <EmptyLine>Aucune opération : cet actif est suivi, pas détenu.</EmptyLine>
+            <EmptyLine>{t('detail.noOperation')}</EmptyLine>
           ) : (
             <OperationRows
               sorter={operationSort}
@@ -144,8 +150,7 @@ export default async function AssetPage({
 
         {gain !== null && (
           <p className="text-[11.5px] text-faint">
-            Plus-value latente {eurSigned(gain, 2)} : valorisation moins prix de revient, hors dividendes
-            reçus et frais payés, qui sont passés par les espèces du compte.
+            {t('detail.unrealizedNote', { gain: format.eurSigned(gain, 2) })}
           </p>
         )}
       </PageBody>

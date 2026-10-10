@@ -3,9 +3,11 @@
 import type { FlowKind } from '@abacus/core/services/reports'
 import { ChevronRightIcon } from 'lucide-react'
 import Link from 'next/link'
-import { type PointerEvent, useState } from 'react'
+import { useTranslations } from 'next-intl'
+import { type PointerEvent, useCallback, useState } from 'react'
+import { useFormat } from '@/lib/format'
 import { type Period, periodParams } from '@/lib/period'
-import { eur, NONE } from '@/lib/utils'
+import { NONE } from '@/lib/utils'
 
 /**
  * Ranked magnitudes: one bar per category, actor, activity or category group.
@@ -48,11 +50,14 @@ export interface BreakdownItem {
 export type BreakdownDimension = 'category' | 'actor' | 'activity' | 'categoryGroup'
 
 /** What an unset dimension is called, in the words of that dimension. */
-export const UNSET_LABEL: Record<BreakdownDimension, string> = {
-  category: 'Sans catégorie',
-  actor: 'Sans acteur',
-  activity: 'Hors activité',
-  categoryGroup: 'Sans groupe',
+export function useUnsetLabels(): Record<BreakdownDimension, string> {
+  const t = useTranslations('analysis.unset')
+  return {
+    category: t('category'),
+    actor: t('actor'),
+    activity: t('activity'),
+    categoryGroup: t('categoryGroup'),
+  }
 }
 
 /** What a row needs to name the movements it counts. */
@@ -159,7 +164,7 @@ export function BreakdownBars({
   /** The dimension ranked here; a group unfolds, the others link. */
   dimension,
   link,
-  emptyLabel = 'Rien sur cette période.',
+  emptyLabel,
   max: maxRows,
   size = 'compact',
   onMark,
@@ -172,9 +177,11 @@ export function BreakdownBars({
   size?: Size
   onMark?: (mark: Mark | null) => void
 }) {
+  const t = useTranslations('analysis.bars')
+  const unset = useUnsetLabels()
   const [hovered, setHovered] = useState<Hovered | null>(null)
 
-  if (rows.length === 0) return <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
+  if (rows.length === 0) return <p className="py-3 text-[13px] text-faint">{emptyLabel ?? t('empty')}</p>
 
   const shown = maxRows ? rows.slice(0, maxRows) : rows
   // One scale for the whole section, unfolded rows included: a length means an
@@ -209,7 +216,7 @@ export function BreakdownBars({
   return (
     <div className="flex flex-col">
       {shown.map((item) => {
-        const label = item.label ?? UNSET_LABEL[dimension]
+        const label = item.label ?? unset[dimension]
         const id = item.key ?? 'none'
         return item.categories ? (
           // What says "these belong to that" is distance, not a box: the
@@ -242,7 +249,7 @@ export function BreakdownBars({
                 <Cells
                   key={child.key ?? 'none'}
                   row={child}
-                  label={child.label ?? UNSET_LABEL.category}
+                  label={child.label ?? unset.category}
                   href={movementsHref('category', child.key, link)}
                   peak={peak}
                   total={total}
@@ -271,9 +278,7 @@ export function BreakdownBars({
         )
       })}
       {maxRows && rows.length > maxRows && (
-        <p className="pt-2 text-[11.5px] text-faint">
-          + {rows.length - maxRows} autre{rows.length - maxRows > 1 ? 's' : ''} sous Analyse
-        </p>
+        <p className="pt-2 text-[11.5px] text-faint">{t('more', { count: rows.length - maxRows })}</p>
       )}
       {hovered && <HoverCard {...hovered} size={size} />}
     </div>
@@ -291,6 +296,9 @@ const CARD_HEIGHT = 96
  * flicker as the pointer chases it.
  */
 function HoverCard({ item, label, x, y, size }: Hovered & { size: Size }) {
+  const t = useTranslations('analysis.bars')
+  const words = useTranslations('analysis.words')
+  const format = useFormat()
   const refund = Math.round((item.gross - item.net) * 100) / 100
   // Under a strip the row already gives its name, share and net: the card
   // keeps only what the row cannot hold.
@@ -310,20 +318,20 @@ function HoverCard({ item, label, x, y, size }: Hovered & { size: Size }) {
         <>
           <p className="truncate text-[11px] text-faint">{label}</p>
           <p className="flex items-baseline gap-2 py-px text-xs">
-            <span className="text-muted-foreground">{refund > 0 ? 'Net' : 'Dépensé'}</span>
-            <span className="ml-auto pl-3 font-mono font-semibold tabular">{eur(item.net)}</span>
+            <span className="text-muted-foreground">{refund > 0 ? t('net') : t('spent')}</span>
+            <span className="ml-auto pl-3 font-mono font-semibold tabular">{format.eur(item.net)}</span>
           </p>
         </>
       )}
       {refund > 0 && (
         <>
           <p className="flex items-baseline gap-2 py-px text-xs">
-            <span className="text-muted-foreground">Brut</span>
-            <span className="ml-auto pl-3 font-mono tabular">{eur(item.gross)}</span>
+            <span className="text-muted-foreground">{t('gross')}</span>
+            <span className="ml-auto pl-3 font-mono tabular">{format.eur(item.gross)}</span>
           </p>
           <p className="flex items-baseline gap-2 py-px text-[11px] text-faint">
-            <span>Remboursé</span>
-            <span className="ml-auto pl-3 font-mono tabular">{eur(refund)}</span>
+            <span>{t('refunded')}</span>
+            <span className="ml-auto pl-3 font-mono tabular">{format.eur(refund)}</span>
           </p>
         </>
       )}
@@ -334,10 +342,9 @@ function HoverCard({ item, label, x, y, size }: Hovered & { size: Size }) {
             : 'mt-1 border-t border-border pt-1 text-[10.5px] text-faint'
         }
       >
-        {item.count} mouvement{item.count > 1 ? 's' : ''}
         {item.categories
-          ? ` · ${item.categories.length} catégorie${item.categories.length > 1 ? 's' : ''}`
-          : ''}
+          ? t('movementsAndCategories', { count: item.count, categories: item.categories.length })
+          : words('movements', { count: item.count })}
       </p>
     </div>
   )
@@ -377,6 +384,8 @@ function Cells({
   /** Handlers that tell a strip drawn from the same rows which one is pointed at. */
   marking?: Marking
 }) {
+  const format = useFormat()
+  const share = useShare()
   const level = indent ? 1 : 0
   const { text, ink, track, bar } = SIZES[size]
   const netPart = (item.net / peak) * 100
@@ -407,7 +416,9 @@ function Cells({
           )}
         </span>
       )}
-      <span className={`text-right font-mono ${text[level]} font-semibold tabular`}>{eur(item.net)}</span>
+      <span className={`text-right font-mono ${text[level]} font-semibold tabular`}>
+        {format.eur(item.net)}
+      </span>
     </>
   )
 
@@ -428,8 +439,17 @@ function Cells({
 }
 
 /** A part of a whole in whole percents; a sliver is said to be one, not zero. */
-export function share(part: number, total: number): string {
-  if (total <= 0) return '–'
-  const pct = (part / total) * 100
-  return pct > 0 && pct < 1 ? '< 1 %' : `${Math.round(pct)} %`
+export type Share = (part: number, total: number) => string
+
+/** `Share` in the language being spoken; stable as long as the language is. */
+export function useShare(): Share {
+  const t = useTranslations('analysis.words')
+  return useCallback(
+    (part: number, total: number) => {
+      if (total <= 0) return '–'
+      const pct = (part / total) * 100
+      return pct > 0 && pct < 1 ? t('sliver') : t('percent', { value: Math.round(pct) })
+    },
+    [t],
+  )
 }

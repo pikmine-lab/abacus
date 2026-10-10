@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { eur } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /**
  * Ranked magnitudes of an activity: revenue by client, charges by category.
@@ -36,6 +36,7 @@ export function ActivityRanks({
   emptyLabel: string
   note?: string
 }) {
+  const format = useFormat()
   if (rows.length === 0) return <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
 
   const peak = Math.max(...rows.map((r) => Math.abs(r.amount)), 1)
@@ -59,7 +60,7 @@ export function ActivityRanks({
               />
             </span>
             <span className="text-right font-mono text-[12.5px] font-semibold tabular">
-              {eur(row.amount)}
+              {format.eur(row.amount)}
             </span>
           </>
         )

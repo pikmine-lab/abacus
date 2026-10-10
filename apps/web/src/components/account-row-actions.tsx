@@ -1,5 +1,6 @@
 'use client'
 
+import type { AccountBehavior } from '@abacus/core/domain'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -8,6 +9,7 @@ import {
   PencilIcon,
   ScaleIcon,
 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { BalanceCheckHistory, type CheckEntry, type SettleOptions } from '@/components/balance-check-history'
@@ -33,13 +35,10 @@ import {
   recordBalanceCheckAction,
   reopenAccountAction,
 } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
-const BEHAVIORS = [
-  { value: 'payment', label: 'Courant' },
-  { value: 'savings', label: 'Épargne (livret)' },
-  { value: 'investment', label: 'Investissement' },
-]
+/** The kinds of account, in the order the choice lists them. */
+const BEHAVIORS: AccountBehavior[] = ['payment', 'savings', 'investment']
 
 /**
  * Actions on an account, folded into one menu. Pointing a balance opens a
@@ -79,6 +78,7 @@ export function AccountRowActions({
    */
   newCard?: { accounts: { id: string; name: string }[]; today: string }
 }) {
+  const t = useTranslations('accounts')
   const [checking, setChecking] = useState(false)
   const [editing, setEditing] = useState(false)
   const [history, setHistory] = useState(false)
@@ -101,32 +101,32 @@ export function AccountRowActions({
         {!closed && (
           <DropdownMenuItem onSelect={() => setChecking(true)}>
             <ScaleIcon />
-            Pointer le solde
+            {t('menu.checkBalance')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onSelect={() => setEditing(true)}>
           <PencilIcon />
-          Modifier
+          {t('actions.edit')}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setHistory(true)}>
           <HistoryIcon />
-          Pointages
+          {t('menu.checks')}
         </DropdownMenuItem>
         {newCard && !closed && (
           <DropdownMenuItem onSelect={() => setAddingCard(true)}>
             <CreditCardIcon />
-            Ajouter une carte
+            {t('menu.addCard')}
           </DropdownMenuItem>
         )}
         {closed ? (
           <DropdownMenuItem onSelect={() => setReopening(true)}>
             <ArchiveRestoreIcon />
-            Réouvrir
+            {t('menu.reopen')}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem variant="destructive" onSelect={() => setClosing(true)}>
             <ArchiveIcon />
-            Clore le compte
+            {t('menu.close')}
           </DropdownMenuItem>
         )}
       </RowMenu>
@@ -143,36 +143,38 @@ export function AccountRowActions({
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-[15px]">{name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Son solde part de l’ouverture, puis suit ses mouvements.
-            </DialogDescription>
+            <DialogDescription className="text-[12px]">{t('edit.description')}</DialogDescription>
           </DialogHeader>
           <ActionForm action={editAccountAction} onSuccess={() => setEditing(false)}>
             <input type="hidden" name="accountId" value={accountId} />
-            <TextField name="name" label="Nom" defaultValue={name} />
+            <TextField name="name" label={t('fields.name')} defaultValue={name} />
             <TextField
               name="institution"
-              label="Établissement (optionnel)"
+              label={t('fields.institution')}
               defaultValue={institution}
-              placeholder="Nom de la banque"
+              placeholder={t('fields.institutionPlaceholder')}
             />
-            <Field label="Type">
-              <FormSelect name="behavior" defaultValue={behavior} options={BEHAVIORS} />
+            <Field label={t('fields.type')}>
+              <FormSelect
+                name="behavior"
+                defaultValue={behavior}
+                options={BEHAVIORS.map((value) => ({ value, label: t(`behaviors.${value}`) }))}
+              />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Solde d’ouverture (€)" name="openingBalance">
+              <Field label={t('fields.openingBalance')} name="openingBalance">
                 <AmountInput
                   name="openingBalance"
                   negatable
                   defaultValue={Number(openingBalance) === 0 ? '' : openingBalance}
-                  placeholder="0,00"
+                  placeholder={t('fields.amountPlaceholder')}
                 />
               </Field>
-              <Field label="Ouvert le" name="openedOn">
+              <Field label={t('fields.openedOn')} name="openedOn">
                 <DateField name="openedOn" defaultValue={openedOn ?? undefined} />
               </Field>
             </div>
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
+            <SubmitButton className="self-start">{t('actions.save')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
@@ -189,10 +191,8 @@ export function AccountRowActions({
         <Sheet open={addingCard} onOpenChange={setAddingCard}>
           <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
             <SheetHeader className="border-b border-border">
-              <SheetTitle className="text-[15px]">Nouvelle carte</SheetTitle>
-              <SheetDescription className="text-[12px]">
-                Un nom suffit à la reconnaître, jamais son numéro.
-              </SheetDescription>
+              <SheetTitle className="text-[15px]">{t('cardForm.newTitle')}</SheetTitle>
+              <SheetDescription className="text-[12px]">{t('cardForm.newDescription')}</SheetDescription>
             </SheetHeader>
             <div className="p-4">
               <NewCardForm accounts={newCard.accounts} accountId={accountId} today={newCard.today} />
@@ -204,18 +204,16 @@ export function AccountRowActions({
       <AlertDialog open={closing} onOpenChange={setClosing}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clore « {name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Plus aucun mouvement après aujourd’hui. Son historique reste entier, et tu peux le réouvrir.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('close.title', { name })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('close.description')}</AlertDialogDescription>
           </AlertDialogHeader>
           {closeState.error && <p className="text-xs text-destructive">{closeState.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <form action={close}>
               <input type="hidden" name="accountId" value={accountId} />
               <Button type="submit" variant="destructive" disabled={closePending}>
-                {closePending ? '…' : 'Clore'}
+                {closePending ? '…' : t('close.confirm')}
               </Button>
             </form>
           </AlertDialogFooter>
@@ -225,18 +223,16 @@ export function AccountRowActions({
       <AlertDialog open={reopening} onOpenChange={setReopening}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Réouvrir « {name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Le compte accepte de nouveau des mouvements. Son historique ne change pas.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('reopen.title', { name })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('reopen.description')}</AlertDialogDescription>
           </AlertDialogHeader>
           {reopenState.error && <p className="text-xs text-destructive">{reopenState.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <form action={reopen}>
               <input type="hidden" name="accountId" value={accountId} />
               <Button type="submit" disabled={reopenPending}>
-                {reopenPending ? '…' : 'Réouvrir'}
+                {reopenPending ? '…' : t('menu.reopen')}
               </Button>
             </form>
           </AlertDialogFooter>
@@ -264,21 +260,23 @@ function CheckDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useTranslations('accounts')
+  const format = useFormat()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Pointer {name}</DialogTitle>
+          <DialogTitle className="text-[15px]">{t('check.title', { name })}</DialogTitle>
           <DialogDescription className="text-[12px]">
-            Le solde que ta banque affiche, face au calculé : {eur(computedBalance, 2)}.
+            {t('check.description', { amount: format.eur(computedBalance, 2) })}
           </DialogDescription>
         </DialogHeader>
         <ActionForm action={recordBalanceCheckAction} onSuccess={() => onOpenChange(false)}>
           <input type="hidden" name="accountId" value={accountId} />
-          <Field label="Solde réel (€)" name="balance">
-            <AmountInput name="balance" placeholder="0,00" />
+          <Field label={t('fields.realBalance')} name="balance">
+            <AmountInput name="balance" placeholder={t('fields.amountPlaceholder')} />
           </Field>
-          <SubmitButton className="self-start">Pointer</SubmitButton>
+          <SubmitButton className="self-start">{t('check.submit')}</SubmitButton>
         </ActionForm>
       </DialogContent>
     </Dialog>
@@ -299,14 +297,13 @@ function CheckHistorySheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useTranslations('accounts.history')
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
         <SheetHeader className="border-b border-border">
-          <SheetTitle className="text-[15px]">Pointages de {name}</SheetTitle>
-          <SheetDescription className="text-[12px]">
-            Le solde lu, face au calculé ce jour-là.
-          </SheetDescription>
+          <SheetTitle className="text-[15px]">{t('title', { name })}</SheetTitle>
+          <SheetDescription className="text-[12px]">{t('description')}</SheetDescription>
         </SheetHeader>
         <div className="p-4">
           <BalanceCheckHistory checks={checks} options={settleOptions} />
@@ -341,6 +338,7 @@ export function PendingCheck({
   detail: string
   gap: boolean
 }) {
+  const t = useTranslations('accounts')
   const [open, setOpen] = useState(false)
   return (
     <div className="flex items-center gap-3 py-2.5">
@@ -352,10 +350,10 @@ export function PendingCheck({
         size="sm"
         variant="outline"
         className="h-7 shrink-0"
-        aria-label={gap ? `Voir l’écart de ${name}` : `Pointer ${name}`}
+        aria-label={gap ? t('toCheck.seeGapOf', { name }) : t('check.title', { name })}
         onClick={() => setOpen(true)}
       >
-        {gap ? 'Voir l’écart' : 'Pointer'}
+        {gap ? t('toCheck.seeGap') : t('check.submit')}
       </Button>
       {gap ? (
         <CheckHistorySheet

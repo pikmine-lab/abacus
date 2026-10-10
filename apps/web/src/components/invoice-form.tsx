@@ -1,11 +1,12 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Input } from '@/components/ui/input'
 import { correctInvoiceAction, declareInvoiceAction } from '@/lib/actions'
-import { eur } from '@/lib/utils'
+import { type Format, useFormat } from '@/lib/format'
 
 interface Option {
   id: string
@@ -33,35 +34,27 @@ export interface InvoiceDraft {
   note?: string
 }
 
-/** Turns a typed figure into a number, whatever the grouped input wrote. */
-function typed(value: string): number {
-  return Number(value.replace(/[\s  ]/g, '').replace(',', '.'))
-}
-
-/** The value the user is not editing, without trailing zeros to fight the caret. */
-function mirror(n: number, decimals: number): string {
-  if (!Number.isFinite(n)) return ''
-  return n
-    .toFixed(decimals)
-    .replace(/(\.\d*?)0+$/, '$1')
-    .replace(/\.$/, '')
-    .replace('.', ',')
-}
-
 /** What the user typed on a rate/amount pair, and which of the two it was. */
 interface Share {
   value: string
   unit: 'rate' | 'amount'
 }
 
-function initialShare(rate?: string, amount?: string): Share {
-  if (rate === undefined && amount !== undefined) return { value: mirror(Number(amount), 2), unit: 'amount' }
-  return { value: rate !== undefined ? mirror(Number(rate), 2) : '', unit: 'rate' }
+/** What a pair opens on, written the way the interface's language writes a number. */
+function initialShare(format: Format, rate?: string, amount?: string): Share {
+  if (rate === undefined && amount !== undefined)
+    return { value: format.editable(Number(amount), 2), unit: 'amount' }
+  return { value: rate !== undefined ? format.editable(Number(rate), 2) : '', unit: 'rate' }
+}
+
+/** What was typed in the pair, read with the language's marks; an empty field is zero. */
+function typed(format: Format, value: string): number {
+  return value.trim() === '' ? 0 : format.parse(value)
 }
 
 /** The euros a share means against a base, whichever side was typed. */
-function euros(share: Share, base: number): number {
-  const entered = typed(share.value)
+function euros(format: Format, share: Share, base: number): number {
+  const entered = typed(format, share.value)
   if (!Number.isFinite(entered)) return 0
   if (share.unit === 'amount') return entered
   if (!(Number.isFinite(base) && base > 0)) return 0
@@ -69,8 +62,8 @@ function euros(share: Share, base: number): number {
 }
 
 /** And the percentage it means, which is what the other field shows. */
-function percent(share: Share, base: number): number {
-  const entered = typed(share.value)
+function percent(format: Format, share: Share, base: number): number {
+  const entered = typed(format, share.value)
   if (share.unit === 'rate') return entered
   if (!(Number.isFinite(base) && base > 0 && Number.isFinite(entered))) return Number.NaN
   return (entered / base) * 100
@@ -109,38 +102,43 @@ export function InvoiceForm({
   draft?: InvoiceDraft
   today: string
 }) {
+  const t = useTranslations('activity.invoiceForm')
+  const format = useFormat()
   const editing = draft !== undefined
   const [base, setBase] = useState(draft?.baseAmount ?? '')
   // Both pairs live here rather than in the field: the net to receive is made
   // of all three figures, and it moves when the base moves too.
-  const [vat, setVat] = useState<Share>(initialShare(draft?.vatRate ?? defaults?.vatRate, draft?.vatAmount))
+  const [vat, setVat] = useState<Share>(
+    initialShare(format, draft?.vatRate ?? defaults?.vatRate, draft?.vatAmount),
+  )
   const [withholding, setWithholding] = useState<Share>(
-    initialShare(draft?.withholdingRate, draft?.withholdingAmount),
+    initialShare(format, draft?.withholdingRate, draft?.withholdingAmount),
   )
 
-  const baseAmount = typed(base)
-  const vatAmount = euros(vat, baseAmount)
-  const withheldAmount = euros(withholding, baseAmount)
+  // The base comes from AmountInput as a machine value ("1234.50").
+  const baseAmount = Number(base)
+  const vatAmount = euros(format, vat, baseAmount)
+  const withheldAmount = euros(format, withholding, baseAmount)
   const net = baseAmount + vatAmount - withheldAmount
 
   return (
     <ActionForm
       action={editing ? correctInvoiceAction : declareInvoiceAction}
-      successLabel={editing ? 'Facture corrigée' : 'Facture enregistrée'}
+      successLabel={editing ? t('corrected') : t('recorded')}
       onSuccess={() => {
         setBase('')
-        setVat(initialShare(defaults?.vatRate))
-        setWithholding(initialShare())
+        setVat(initialShare(format, defaults?.vatRate))
+        setWithholding(initialShare(format))
       }}
     >
       {editing && <input type="hidden" name="invoiceId" value={draft.id} />}
 
       {!editing &&
         (activities && activities.length > 1 ? (
-          <Field label="Activité" name="activityId">
+          <Field label={t('activity')} name="activityId">
             <FormSelect
               name="activityId"
-              placeholder="Choisir une activité"
+              placeholder={t('activityPlaceholder')}
               options={activities.map((a) => ({ value: a.id, label: a.name }))}
               defaultValue={defaults?.activityId ?? ''}
             />
@@ -151,9 +149,9 @@ export function InvoiceForm({
 
       <TextField
         name="client"
-        label="Client"
+        label={t('client')}
         list="invoice-clients"
-        placeholder="Nom du client"
+        placeholder={t('clientPlaceholder')}
         autoComplete="off"
         defaultValue={draft?.client ?? ''}
         onValueChange={(name) => {
@@ -162,8 +160,8 @@ export function InvoiceForm({
           // client is named.
           const known = actors.find((a) => a.name.toLowerCase() === name.trim().toLowerCase())
           if (!known) return
-          setVat(initialShare(known.vatRate ?? defaults?.vatRate))
-          setWithholding(initialShare(known.withholdingRate))
+          setVat(initialShare(format, known.vatRate ?? defaults?.vatRate))
+          setWithholding(initialShare(format, known.withholdingRate))
         }}
       />
       <datalist id="invoice-clients">
@@ -175,17 +173,17 @@ export function InvoiceForm({
       <div className="grid grid-cols-2 gap-3">
         <TextField
           name="reference"
-          label="Référence"
+          label={t('reference')}
           placeholder="F-2026-014"
           autoComplete="off"
           defaultValue={draft?.reference ?? ''}
         />
-        <Field label="Base HT" name="baseAmount">
+        <Field label={t('base')} name="baseAmount">
           {/* The stored value, not the live one: a success remounts the form,
               and a live default would restore what was just submitted. */}
           <AmountInput
             name="baseAmount"
-            placeholder="1 200,00"
+            placeholder={t('basePlaceholder')}
             defaultValue={draft?.baseAmount ?? ''}
             onValueChange={setBase}
           />
@@ -193,16 +191,16 @@ export function InvoiceForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Émise le" name="issuedOn">
+        <Field label={t('issuedOn')} name="issuedOn">
           <DateField name="issuedOn" defaultValue={draft?.issuedOn ?? today} />
         </Field>
-        <Field label="Échéance" name="dueOn">
+        <Field label={t('dueOn')} name="dueOn">
           <DateField name="dueOn" defaultValue={draft?.dueOn} />
         </Field>
       </div>
 
       <RateAndAmount
-        legend="TVA collectée"
+        legend={t('vat')}
         rateName="vatRate"
         amountName="vatAmount"
         base={baseAmount}
@@ -210,7 +208,7 @@ export function InvoiceForm({
         onChange={setVat}
       />
       <RateAndAmount
-        legend="Retenue à la source"
+        legend={t('withholding')}
         rateName="withholdingRate"
         amountName="withholdingAmount"
         base={baseAmount}
@@ -220,13 +218,16 @@ export function InvoiceForm({
 
       {baseAmount > 0 && (
         <p className="text-[12px] text-muted-foreground">
-          net à recevoir <span className="font-mono tabular text-foreground">{eur(net, 2)}</span>
+          {t.rich('net', {
+            amount: format.eur(net, 2),
+            value: (chunks) => <span className="font-mono tabular text-foreground">{chunks}</span>,
+          })}
         </p>
       )}
 
-      <TextField name="note" label="Note (optionnelle)" defaultValue={draft?.note ?? ''} />
+      <TextField name="note" label={t('note')} defaultValue={draft?.note ?? ''} />
 
-      <SubmitButton className="self-start">{editing ? 'Enregistrer' : 'Enregistrer la facture'}</SubmitButton>
+      <SubmitButton className="self-start">{editing ? t('save') : t('submit')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -250,9 +251,11 @@ function RateAndAmount({
   share: Share
   onChange: (share: Share) => void
 }) {
+  const t = useTranslations('activity.invoiceForm')
+  const format = useFormat()
   const empty = share.value.trim() === ''
-  const rate = percent(share, base)
-  const amount = euros(share, base)
+  const rate = percent(format, share, base)
+  const amount = euros(format, share, base)
   // The mirrored field stays empty until it means something: a zero shown
   // under an empty base reads as "no VAT" while nothing has been typed.
   const mirrored = empty || !(Number.isFinite(base) && base > 0) ? '' : undefined
@@ -264,21 +267,21 @@ function RateAndAmount({
           what gets recorded. */}
       <input type="hidden" name={rateName} value={!empty && Number.isFinite(rate) ? rate : 0} />
       <input type="hidden" name={amountName} value={empty ? 0 : amount} />
-      <Field label="Taux (%)">
+      <Field label={t('rate')}>
         <Input
           inputMode="decimal"
           autoComplete="off"
           className="text-right font-mono tabular"
-          value={share.unit === 'rate' ? share.value : (mirrored ?? mirror(rate, 2))}
+          value={share.unit === 'rate' ? share.value : (mirrored ?? format.editable(rate, 2))}
           onChange={(e) => onChange({ value: e.target.value, unit: 'rate' })}
         />
       </Field>
-      <Field label="ou en €">
+      <Field label={t('orAmount')}>
         <Input
           inputMode="decimal"
           autoComplete="off"
           className="text-right font-mono tabular"
-          value={share.unit === 'amount' ? share.value : (mirrored ?? mirror(amount, 2))}
+          value={share.unit === 'amount' ? share.value : (mirrored ?? format.editable(amount, 2))}
           onChange={(e) => onChange({ value: e.target.value, unit: 'amount' })}
         />
       </Field>

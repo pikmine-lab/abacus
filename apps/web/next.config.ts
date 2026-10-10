@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import createNextIntlPlugin from 'next-intl/plugin'
 
 const nextConfig: NextConfig = {
   // The core package ships raw TypeScript; Next compiles it with the app.
@@ -21,4 +22,5 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+// Points next-intl at src/i18n/request.ts, where a request's language is resolved.
+export default createNextIntlPlugin()(nextConfig)

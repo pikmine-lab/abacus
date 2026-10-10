@@ -1,8 +1,10 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import type { CheckEntry } from '@/components/balance-check-history'
-import { cn, daysBetween, eur, frDate, freshness } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { cn, daysBetween } from '@/lib/utils'
 
 /** How far back a rail reads, in days: twice the age past which a check is stale. */
 const RAIL_DAYS = 90
@@ -32,6 +34,8 @@ export function CheckRail({
   today: string
   staleDays: number
 }) {
+  const t = useTranslations('accounts.rail')
+  const format = useFormat()
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const latest = checks[0]
@@ -47,17 +51,17 @@ export function CheckRail({
     setAnchor({ x: box.left, y: box.bottom - 8 })
   }
 
-  const summary = !latest
-    ? 'jamais pointé'
-    : `pointé le ${frDate(latest.checkedOn)}, ${
-        open !== 0 ? `écart de ${eur(Math.abs(open), 2)} non soldé` : 'aucun écart ouvert'
-      }`
+  const label = !latest
+    ? t('ariaNever', { name })
+    : open !== 0
+      ? t('ariaGap', { name, date: format.date(latest.checkedOn), amount: format.eur(Math.abs(open), 2) })
+      : t('ariaNoGap', { name, date: format.date(latest.checkedOn) })
   const shown = cursor ?? anchor
 
   return (
     <button
       type="button"
-      aria-label={`${name} : ${summary}`}
+      aria-label={label}
       className="relative block h-4 w-full cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onPointerMove={(e) => e.pointerType === 'mouse' && setCursor({ x: e.clientX, y: e.clientY })}
       onPointerLeave={() => setCursor(null)}
@@ -112,16 +116,17 @@ export function CheckRail({
 
 /** The rail's scale, set once in the header of each list, over the column of rails. */
 export function CheckRailAxis({ staleDays }: { staleDays: number }) {
+  const t = useTranslations('accounts.rail')
   return (
     <div aria-hidden className="relative h-3 font-mono text-[10px] leading-none text-faint">
-      <span className="absolute left-0">{RAIL_DAYS} j</span>
+      <span className="absolute left-0">{t('days', { days: RAIL_DAYS })}</span>
       <span className="absolute -translate-x-1/2" style={{ left: `${(1 - staleDays / RAIL_DAYS) * 100}%` }}>
-        {staleDays} j
+        {t('days', { days: staleDays })}
       </span>
       {/* Under the name, the rail is half as wide: the word would run into the mark. */}
       <span className="absolute right-0">
-        <span className="@xl:hidden">auj.</span>
-        <span className="hidden @xl:inline">aujourd’hui</span>
+        <span className="@xl:hidden">{t('todayShort')}</span>
+        <span className="hidden @xl:inline">{t('today')}</span>
       </span>
     </div>
   )
@@ -148,6 +153,9 @@ function RailTooltip({
   open: number
   count: number
 }) {
+  const t = useTranslations('accounts.rail')
+  const history = useTranslations('accounts.history')
+  const format = useFormat()
   const flipX = x + CARD_WIDTH + 20 > window.innerWidth
   const flipY = y + CARD_HEIGHT + 24 > window.innerHeight
   return (
@@ -160,23 +168,25 @@ function RailTooltip({
       {latest ? (
         <>
           <p className="py-px text-xs">
-            Pointé le {frDate(latest.checkedOn)}
+            {t('checkedOn', { date: format.date(latest.checkedOn) })}
             {/* Wraps whole, dot first, rather than leave the dot or half a phrase behind. */}{' '}
-            <span className="whitespace-nowrap text-faint">· {freshness(latest.checkedOn, today)}</span>
+            <span className="whitespace-nowrap text-faint">
+              · {format.freshness(latest.checkedOn, today)}
+            </span>
           </p>
           <p className={cn('py-px text-xs', open !== 0 ? 'text-destructive' : 'text-muted-foreground')}>
             {open !== 0
-              ? `écart de ${eur(Math.abs(open), 2)}, non soldé`
+              ? t('gapOpen', { amount: format.eur(Math.abs(open), 2) })
               : latest.gap !== 0
-                ? 'écart soldé'
-                : 'aucun écart'}
+                ? t('gapSettled')
+                : history('noGap')}
           </p>
           <p className="mt-1 border-t border-border pt-1 text-[10.5px] text-faint">
-            {count} pointage{count > 1 ? 's' : ''} en {RAIL_DAYS} jours
+            {t('count', { count, days: RAIL_DAYS })}
           </p>
         </>
       ) : (
-        <p className="py-px text-xs">Jamais pointé</p>
+        <p className="py-px text-xs">{t('never')}</p>
       )}
     </div>
   )

@@ -1,13 +1,15 @@
 'use client'
 
 import { PlusIcon, XIcon } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { ActionForm, DateField, SubmitButton } from '@/components/forms'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { reviseScheduleAction } from '@/lib/actions'
-import { addMonths, eur, money } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
+import { addMonths } from '@/lib/utils'
 
 /** One installment as the panel edits it: existing (an id) or added (none). */
 interface Line {
@@ -54,7 +56,9 @@ export function FinancingScheduleForm({
   today: string
   onDone?: () => void
 }) {
-  const fmt = (value: number) => (currency === 'EUR' ? eur(value, 2) : money(value, currency))
+  const t = useTranslations('recurring')
+  const format = useFormat()
+  const fmt = (value: number) => (currency === 'EUR' ? format.eur(value, 2) : format.money(value, currency))
   const [lines, setLines] = useState<Line[]>(() =>
     installments.map((i) => ({ key: i.id, id: i.id, dueOn: i.dueOn, amount: i.amount, paid: i.paid })),
   )
@@ -70,7 +74,7 @@ export function FinancingScheduleForm({
   const droppedPaid = installments.filter((i) => i.paid && !kept.has(i.id)).length
 
   return (
-    <ActionForm action={reviseScheduleAction} onSuccess={onDone} successLabel="Échéancier révisé">
+    <ActionForm action={reviseScheduleAction} onSuccess={onDone} successLabel={t('schedule.revised')}>
       <input type="hidden" name="commitmentId" value={commitmentId} />
 
       <div className="flex flex-col divide-y divide-border/70 border-y border-border">
@@ -85,11 +89,11 @@ export function FinancingScheduleForm({
                 onValueChange={(day) => update(line.key, { dueOn: day })}
               />
             </div>
-            {line.paid && <Badge variant="secondary">payée</Badge>}
+            {line.paid && <Badge variant="secondary">{t('schedule.paid')}</Badge>}
             <AmountInput
               name="installmentAmount"
               defaultValue={line.amount}
-              aria-label={`Montant de l’échéance ${index + 1}`}
+              aria-label={t('financing.installmentAmount', { index: index + 1 })}
               className="ml-auto h-7 w-24 text-[12.5px]"
               onValueChange={(value) => update(line.key, { amount: value })}
             />
@@ -98,7 +102,7 @@ export function FinancingScheduleForm({
               variant="ghost"
               size="icon"
               className="size-7 shrink-0 text-faint hover:text-destructive"
-              aria-label={`Retirer l’échéance ${index + 1}`}
+              aria-label={t('schedule.remove', { index: index + 1 })}
               onClick={() => setLines(lines.filter((l) => l.key !== line.key))}
             >
               <XIcon className="size-3.5" />
@@ -109,9 +113,11 @@ export function FinancingScheduleForm({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11.5px] text-faint">
-          Total du plan <span className="font-mono text-muted-foreground tabular">{fmt(total / 100)}</span>
-          {' · reste dû '}
-          <span className="font-mono text-muted-foreground tabular">{fmt(remaining / 100)}</span>
+          {t.rich('schedule.totals', {
+            total: fmt(total / 100),
+            remaining: fmt(remaining / 100),
+            amount: (chunks) => <span className="font-mono text-muted-foreground tabular">{chunks}</span>,
+          })}
         </p>
         <Button
           type="button"
@@ -134,19 +140,15 @@ export function FinancingScheduleForm({
           }}
         >
           <PlusIcon className="size-3.5" />
-          Ajouter une échéance
+          {t('schedule.addInstallment')}
         </Button>
       </div>
 
       {droppedPaid > 0 && (
-        <p className="text-[11.5px] text-destructive">
-          {droppedPaid === 1
-            ? 'Une échéance déjà payée est retirée : son mouvement sera supprimé.'
-            : `${droppedPaid} échéances déjà payées sont retirées : leurs mouvements seront supprimés.`}
-        </p>
+        <p className="text-[11.5px] text-destructive">{t('schedule.droppedPaid', { count: droppedPaid })}</p>
       )}
 
-      <SubmitButton className="self-start">Enregistrer l’échéancier</SubmitButton>
+      <SubmitButton className="self-start">{t('schedule.save')}</SubmitButton>
     </ActionForm>
   )
 }

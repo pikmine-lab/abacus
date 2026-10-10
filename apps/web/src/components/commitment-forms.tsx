@@ -1,6 +1,7 @@
 'use client'
 
 import type { Judgment } from '@abacus/core/domain'
+import { useTranslations } from 'next-intl'
 import { useOptimistic, useState, useTransition } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { type CardChoice, CardSelect } from '@/components/card-forms'
@@ -18,6 +19,9 @@ import {
   setJudgmentAction,
 } from '@/lib/actions'
 import { cn } from '@/lib/utils'
+
+/** The judgments a subscription can carry, in the order they are offered. */
+export const JUDGMENTS: Judgment[] = ['essential', 'reducible', 'to_cancel']
 
 export interface Option {
   id: string
@@ -73,6 +77,7 @@ function CommitmentIdentityFields({
   /** For a form offering what depends on the account, such as its cards. */
   onAccountChange?: (accountId: string) => void
 }) {
+  const t = useTranslations('recurring.form')
   return (
     <>
       <datalist id="commitment-actors">
@@ -83,18 +88,18 @@ function CommitmentIdentityFields({
       <div className="grid grid-cols-2 gap-3">
         <TextField
           name="actor"
-          label={outgoing ? 'Acteur (qui prélève)' : 'Acteur (qui verse)'}
+          label={outgoing ? t('actorOutgoing') : t('actorIncoming')}
           defaultValue={defaults?.actor ?? ''}
           list="commitment-actors"
-          placeholder={outgoing ? 'Netflix' : 'ACME SAS'}
+          placeholder={outgoing ? t('actorPlaceholderOutgoing') : t('actorPlaceholderIncoming')}
           autoComplete="off"
         />
         {withAccount && (
-          <Field label={outgoing ? 'Compte prélevé' : 'Compte crédité'} name="accountId">
+          <Field label={outgoing ? t('accountOutgoing') : t('accountIncoming')} name="accountId">
             <FormSelect
               name="accountId"
               required
-              placeholder="Choisir"
+              placeholder={t('choose')}
               defaultValue={defaults?.accountId}
               options={accounts.map((a) => ({ value: a.id, label: a.name }))}
               onValueChange={onAccountChange}
@@ -104,20 +109,20 @@ function CommitmentIdentityFields({
       </div>
       <div className="grid grid-cols-2 gap-3">
         {beforeCategory}
-        <Field label="Catégorie">
+        <Field label={t('category')}>
           <FormSelect
             name="categoryId"
-            noneLabel="(aucune)"
+            noneLabel={t('noCategory')}
             defaultValue={defaults?.categoryId}
             options={categories.map((c) => ({ value: c.id, label: c.name }))}
           />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Activité">
+        <Field label={t('activity')}>
           <FormSelect
             name="activityId"
-            noneLabel="(perso)"
+            noneLabel={t('personal')}
             defaultValue={defaults?.activityId}
             options={activities.map((a) => ({ value: a.id, label: a.name }))}
           />
@@ -150,6 +155,7 @@ export function NewCommitmentForm({
   // Watched so an expense is offered the cards of the account it hits.
   const [accountId, setAccountId] = useState('')
   const outgoing = direction === 'outgoing'
+  const t = useTranslations('recurring')
 
   const shared = (options: { withFirstDue: boolean; withLockIn?: boolean }) => (
     <CommitmentIdentityFields
@@ -161,14 +167,14 @@ export function NewCommitmentForm({
       onAccountChange={setAccountId}
       beforeCategory={
         options.withFirstDue ? (
-          <Field label="Première échéance" name="firstDueOn">
+          <Field label={t('form.firstDue')} name="firstDueOn">
             <DateField name="firstDueOn" defaultValue={today} />
           </Field>
         ) : undefined
       }
       afterActivity={
         options.withLockIn ? (
-          <Field label="Engagé jusqu’au (optionnel)">
+          <Field label={t('form.engagedUntil')}>
             <DateField name="engagedUntil" />
           </Field>
         ) : undefined
@@ -178,20 +184,20 @@ export function NewCommitmentForm({
 
   if (!outgoing)
     return (
-      <ActionForm action={createSubscriptionAction} successLabel="Revenu récurrent créé">
+      <ActionForm action={createSubscriptionAction} successLabel={t('form.incomeCreated')}>
         <input type="hidden" name="direction" value="incoming" />
-        <TextField name="label" label="Nom" placeholder="Salaire, loyer perçu…" />
+        <TextField name="label" label={t('name')} placeholder={t('form.incomeNamePlaceholder')} />
         {shared({ withFirstDue: true })}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Montant par période" name="amount">
+          <Field label={t('form.amountPerPeriod')} name="amount">
             <div className="flex gap-2">
-              <AmountInput name="amount" placeholder="2 400" />
+              <AmountInput name="amount" placeholder={t('form.incomeAmountPlaceholder')} />
               <CurrencySelect />
             </div>
           </Field>
           <PeriodField defaultValue="month:1" />
         </div>
-        <SubmitButton className="self-start">Créer</SubmitButton>
+        <SubmitButton className="self-start">{t('form.create')}</SubmitButton>
       </ActionForm>
     )
 
@@ -206,8 +212,8 @@ export function NewCommitmentForm({
         }}
       >
         <TabsList className="w-full">
-          <TabsTrigger value="subscription">Abonnement</TabsTrigger>
-          <TabsTrigger value="financing">Paiement en X fois</TabsTrigger>
+          <TabsTrigger value="subscription">{t('form.subscription')}</TabsTrigger>
+          <TabsTrigger value="financing">{t('form.financing')}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -215,57 +221,53 @@ export function NewCommitmentForm({
         <ActionForm
           action={createSubscriptionAction}
           className="mt-3"
-          successLabel="Abonnement créé"
+          successLabel={t('form.subscriptionCreated')}
           onSuccess={() => setAccountId('')}
         >
           <input type="hidden" name="direction" value="outgoing" />
-          <TextField name="label" label="Nom" placeholder="Netflix" />
+          <TextField name="label" label={t('name')} placeholder={t('form.subscriptionNamePlaceholder')} />
           {shared({ withFirstDue: true, withLockIn: true })}
           <CardSelect
             cards={cards}
             accountId={accountId}
-            label="Payé avec"
-            noneLabel="aucune carte (prélèvement)"
+            label={t('form.paidWith')}
+            noneLabel={t('form.noCard')}
           />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Montant par période" name="amount">
+            <Field label={t('form.amountPerPeriod')} name="amount">
               <div className="flex gap-2">
-                <AmountInput name="amount" placeholder="15,99" />
+                <AmountInput name="amount" placeholder={t('form.subscriptionAmountPlaceholder')} />
                 <CurrencySelect />
               </div>
             </Field>
             <PeriodField defaultValue="month:1" />
           </div>
-          <Field label="Jugement">
+          <Field label={t('judgment')}>
             <FormSelect
               name="judgment"
-              noneLabel="à juger plus tard"
-              options={[
-                { value: 'essential', label: 'essentiel' },
-                { value: 'reducible', label: 'réductible' },
-                { value: 'to_cancel', label: 'à résilier' },
-              ]}
+              noneLabel={t('form.judgeLater')}
+              options={JUDGMENTS.map((value) => ({ value, label: t(`judgments.${value}`) }))}
             />
           </Field>
-          <SubmitButton className="self-start">Créer l’abonnement</SubmitButton>
+          <SubmitButton className="self-start">{t('form.createSubscription')}</SubmitButton>
         </ActionForm>
       ) : (
         <ActionForm
           action={createFinancingAction}
           className="mt-3"
-          successLabel="Financement créé"
+          successLabel={t('form.financingCreated')}
           onSuccess={() => setAccountId('')}
         >
-          <TextField name="label" label="Ce qui est financé" placeholder="Canapé en 4x" />
+          <TextField name="label" label={t('form.financed')} placeholder={t('form.financedPlaceholder')} />
           {shared({ withFirstDue: false })}
           <CardSelect
             cards={cards}
             accountId={accountId}
-            label="Payé avec"
-            noneLabel="aucune carte (prélèvement)"
+            label={t('form.paidWith')}
+            noneLabel={t('form.noCard')}
           />
           <FinancingAmountFields today={today} />
-          <SubmitButton className="self-start">Créer le financement</SubmitButton>
+          <SubmitButton className="self-start">{t('form.createFinancing')}</SubmitButton>
         </ActionForm>
       )}
     </div>
@@ -308,10 +310,11 @@ export function EditCommitmentForm({
 }) {
   // Only an expense is billed to a card: an outgoing subscription or a financing.
   const billable = !incoming && defaults.accountId !== undefined
+  const t = useTranslations('recurring')
   return (
-    <ActionForm action={editCommitmentAction} onSuccess={onDone} successLabel="Engagement corrigé">
+    <ActionForm action={editCommitmentAction} onSuccess={onDone} successLabel={t('form.edited')}>
       <input type="hidden" name="commitmentId" value={commitmentId} />
-      <TextField name="label" label="Nom" defaultValue={defaults.label} />
+      <TextField name="label" label={t('name')} defaultValue={defaults.label} />
       <CommitmentIdentityFields
         outgoing={!incoming}
         withAccount={false}
@@ -323,7 +326,7 @@ export function EditCommitmentForm({
         afterActivity={
           // A financing ends at its last installment: it has no lock-in to end.
           kind === 'subscription' ? (
-            <Field label="Engagé jusqu’au (optionnel)">
+            <Field label={t('form.engagedUntil')}>
               <DateField name="engagedUntil" defaultValue={defaults.engagedUntil || undefined} />
             </Field>
           ) : undefined
@@ -337,17 +340,14 @@ export function EditCommitmentForm({
           <CardSelect
             cards={options.cards ?? []}
             accountId={defaults.accountId!}
-            label="Payé avec"
-            noneLabel="aucune carte (prélèvement)"
+            label={t('form.paidWith')}
+            noneLabel={t('form.noCard')}
             defaultValue={defaults.cardId}
           />
         </>
       )}
-      <p className="text-[11.5px] text-faint">
-        La correction vaut pour les échéances à venir. Les mouvements déjà déclarés gardent leur acteur : ils
-        disent ce qui s’est passé.
-      </p>
-      <SubmitButton className="self-start">Enregistrer</SubmitButton>
+      <p className="text-[11.5px] text-faint">{t('form.editNote')}</p>
+      <SubmitButton className="self-start">{t('form.save')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -372,22 +372,23 @@ export function MoveAccountForm({
   today: string
   onDone?: () => void
 }) {
+  const t = useTranslations('recurring.form')
   return (
-    <ActionForm action={changeCommitmentAccountAction} onSuccess={onDone} successLabel="Compte changé">
+    <ActionForm action={changeCommitmentAccountAction} onSuccess={onDone} successLabel={t('accountChanged')}>
       <input type="hidden" name="commitmentId" value={commitmentId} />
-      <Field label={incoming ? 'Nouveau compte crédité' : 'Nouveau compte prélevé'} name="accountId">
+      <Field label={incoming ? t('newAccountIncoming') : t('newAccountOutgoing')} name="accountId">
         <FormSelect
           name="accountId"
           required
-          placeholder="Choisir"
+          placeholder={t('choose')}
           defaultValue={currentAccountId}
           options={accounts.map((a) => ({ value: a.id, label: a.name }))}
         />
       </Field>
-      <Field label="À partir du" name="effectiveOn">
+      <Field label={t('effectiveOn')} name="effectiveOn">
         <DateField name="effectiveOn" defaultValue={today} />
       </Field>
-      <SubmitButton className="self-start">Enregistrer</SubmitButton>
+      <SubmitButton className="self-start">{t('save')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -408,6 +409,7 @@ export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; 
   // the stored one on its own: on success that is the same value, on failure
   // it is the truth the message next to it explains.
   const [judgment, showJudgment] = useOptimistic(value ?? '')
+  const t = useTranslations('recurring')
 
   return (
     <div className="flex items-center gap-2">
@@ -429,14 +431,16 @@ export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; 
             'h-7 rounded-full px-2.5 text-[11px]',
             judgment === 'to_cancel' && 'border-primary/60 text-primary',
           )}
-          aria-label="Jugement"
+          aria-label={t('judgment')}
         >
-          <SelectValue placeholder="à juger" />
+          <SelectValue placeholder={t('form.toJudge')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="essential">essentiel</SelectItem>
-          <SelectItem value="reducible">réductible</SelectItem>
-          <SelectItem value="to_cancel">à résilier</SelectItem>
+          {JUDGMENTS.map((value) => (
+            <SelectItem key={value} value={value}>
+              {t(`judgments.${value}`)}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>

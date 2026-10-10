@@ -4,6 +4,7 @@ import type { DayShift, DebitMode } from '@abacus/core/domain'
 import { debitDateOf } from '@abacus/core/domain/card'
 import { PencilIcon, Trash2Icon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import {
   ActionForm,
@@ -36,7 +37,7 @@ import {
   editCardAction,
   undoStatementAction,
 } from '@/lib/actions'
-import { eur, frDate } from '@/lib/utils'
+import { useFormat } from '@/lib/format'
 
 /** A card as the forms that pay with it need it: whose account, and when it debits. */
 export interface CardChoice {
@@ -78,6 +79,7 @@ export function CardSelect({
   defaultValue?: string
   onValueChange?: (cardId: string) => void
 }) {
+  const t = useTranslations('accounts.card')
   const own = cards.filter((c) => c.accountId === accountId)
   if (own.length === 0) return null
   return (
@@ -89,7 +91,7 @@ export function CardSelect({
         defaultValue={own.some((c) => c.id === defaultValue) ? defaultValue : ''}
         options={own.map((c) => ({
           value: c.id,
-          label: `${c.name} · ${c.debitMode === 'deferred' ? 'différé' : 'immédiat'}`,
+          label: `${c.name} · ${t(`modesShort.${c.debitMode}`)}`,
         }))}
         onValueChange={onValueChange}
       />
@@ -97,11 +99,11 @@ export function CardSelect({
   )
 }
 
-const SHIFTS = [
-  { value: 'none', label: 'reste en place' },
-  { value: 'previous', label: 'avancé au vendredi' },
-  { value: 'next', label: 'reporté au lundi' },
-]
+/** How a day that falls on a weekend moves, in the order the choice lists them. */
+const SHIFTS: DayShift[] = ['none', 'previous', 'next']
+
+/** The two ways a card debits, in the order the tabs show them. */
+const MODES: DebitMode[] = ['immediate', 'deferred']
 
 interface CardDefaults {
   name: string
@@ -130,6 +132,9 @@ function CardFields({
   today: string
   defaults?: CardDefaults
 }) {
+  const t = useTranslations('accounts')
+  const format = useFormat()
+  const shifts = SHIFTS.map((value) => ({ value, label: t(`card.shifts.${value}`) }))
   const [mode, setMode] = useState<DebitMode>(defaults?.debitMode ?? 'deferred')
   const [expiry, setExpiry] = useState<string | null>(defaults?.expiryMonth ?? null)
   const [statementDay, setStatementDay] = useState(defaults?.statementDay)
@@ -144,61 +149,72 @@ function CardFields({
   return (
     <>
       <input type="hidden" name="debitMode" value={mode} />
-      <TextField name="name" label="Nom" placeholder="Visa Premier" defaultValue={defaults?.name ?? ''} />
+      <TextField
+        name="name"
+        label={t('fields.name')}
+        placeholder={t('cardForm.namePlaceholder')}
+        defaultValue={defaults?.name ?? ''}
+      />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Compte débité" name="accountId">
+        <Field label={t('cardForm.debitedAccount')} name="accountId">
           <FormSelect
             name="accountId"
-            placeholder="Choisir"
+            placeholder={t('cardForm.choose')}
             defaultValue={defaults?.accountId ?? ''}
             options={accounts.map((a) => ({ value: a.id, label: a.name }))}
           />
         </Field>
-        <Field label="Expire fin" name="expiryMonth">
+        <Field label={t('cardForm.expiresEnd')} name="expiryMonth">
           <MonthField name="expiryMonth" value={expiry} onValueChange={setExpiry} />
         </Field>
       </div>
       <Tabs value={mode} onValueChange={(v) => setMode(v as DebitMode)}>
         <TabsList className="w-full">
-          <TabsTrigger value="immediate">Débit immédiat</TabsTrigger>
-          <TabsTrigger value="deferred">Débit différé</TabsTrigger>
+          {MODES.map((value) => (
+            <TabsTrigger key={value} value={value}>
+              {t(`card.modes.${value}`)}
+            </TabsTrigger>
+          ))}
         </TabsList>
       </Tabs>
       {mode === 'deferred' && (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Arrêté des achats" name="statementDay">
+            <Field label={t('cardForm.statementDay')} name="statementDay">
               <DayOfMonthField
                 name="statementDay"
                 defaultValue={statementDay}
                 onValueChange={setStatementDay}
               />
             </Field>
-            <Field label="S’il tombe un week-end">
+            <Field label={t('cardForm.ifWeekend')}>
               <FormSelect
                 name="statementShift"
                 defaultValue={statementShift}
-                options={SHIFTS}
+                options={shifts}
                 onValueChange={(v) => setStatementShift(v as DayShift)}
               />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Prélèvement" name="debitDay">
+            <Field label={t('cardForm.debitDay')} name="debitDay">
               <DayOfMonthField name="debitDay" defaultValue={debitDay} onValueChange={setDebitDay} />
             </Field>
-            <Field label="S’il tombe un week-end">
+            <Field label={t('cardForm.ifWeekend')}>
               <FormSelect
                 name="debitShift"
                 defaultValue={debitShift}
-                options={SHIFTS}
+                options={shifts}
                 onValueChange={(v) => setDebitShift(v as DayShift)}
               />
             </Field>
           </div>
           {example && (
             <p className="text-[11.5px] text-muted-foreground">
-              Acheté aujourd’hui → prélevé le <span className="font-mono tabular">{frDate(example)}</span>
+              {t.rich('cardForm.example', {
+                date: format.date(example),
+                day: (chunks) => <span className="font-mono tabular">{chunks}</span>,
+              })}
             </p>
           )}
         </>
@@ -217,14 +233,15 @@ export function NewCardForm({
   accountId: string
   today: string
 }) {
+  const t = useTranslations('accounts.cardForm')
   return (
-    <ActionForm action={createCardAction} successLabel="Carte ajoutée">
+    <ActionForm action={createCardAction} successLabel={t('added')}>
       <CardFields
         accounts={accounts}
         today={today}
         defaults={{ name: '', accountId, expiryMonth: null, debitMode: 'deferred' }}
       />
-      <SubmitButton className="self-start">Ajouter la carte</SubmitButton>
+      <SubmitButton className="self-start">{t('submit')}</SubmitButton>
     </ActionForm>
   )
 }
@@ -260,6 +277,8 @@ export function ValidateStatement({
   /** Past its expected day: the button carries the weight of work to do. */
   urgent?: boolean
 }) {
+  const t = useTranslations('accounts')
+  const format = useFormat()
   const [open, setOpen] = useState(false)
   const [undoState, undo, undoing] = useActionState(undoStatementAction, {})
   const validated = statement.debitedOn !== null
@@ -278,31 +297,35 @@ export function ValidateStatement({
         className="h-7 px-2.5 text-[12px]"
         onClick={() => setOpen(true)}
       >
-        {validated ? 'Corriger' : 'Valider'}
+        {validated ? t('actions.correct') : t('statement.validate')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">Relevé de {cardName}</DialogTitle>
+            <DialogTitle className="text-[15px]">{t('statement.title', { name: cardName })}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              {statement.purchases} achat{statement.purchases > 1 ? 's' : ''} arrêté
-              {statement.purchases > 1 ? 's' : ''} le {frDate(statement.cutOffOn)}, soit{' '}
-              <span className="font-mono text-foreground tabular">{eur(statement.amount, 2)}</span>. Ils
-              passent au jour du débit et entrent dans le solde.
+              {t.rich('statement.description', {
+                count: statement.purchases,
+                date: format.date(statement.cutOffOn),
+                amount: format.eur(statement.amount, 2),
+                money: (chunks) => <span className="font-mono text-foreground tabular">{chunks}</span>,
+              })}
             </DialogDescription>
           </DialogHeader>
           <ActionForm action={confirmStatementAction} onSuccess={() => setOpen(false)}>
             <input type="hidden" name="statementId" value={statement.id} />
-            <Field label="Débité le" name="debitedOn">
+            <Field label={t('statement.debitedOn')} name="debitedOn">
               <DateField name="debitedOn" defaultValue={day} />
             </Field>
-            <SubmitButton className="self-start">{validated ? 'Enregistrer' : 'Valider'}</SubmitButton>
+            <SubmitButton className="self-start">
+              {validated ? t('actions.save') : t('statement.validate')}
+            </SubmitButton>
           </ActionForm>
           {validated && (
             <form action={undo} className="flex flex-col gap-1 border-t border-border pt-3">
               <input type="hidden" name="statementId" value={statement.id} />
               <Button type="submit" variant="ghost" size="sm" className="self-start" disabled={undoing}>
-                {undoing ? '…' : 'Annuler la validation'}
+                {undoing ? '…' : t('statement.undo')}
               </Button>
               {undoState.error && <p className="text-xs text-destructive">{undoState.error}</p>}
             </form>
@@ -333,6 +356,7 @@ export function CardActions({
   /** Where to go once deleted, from a page that was the card's own. */
   afterDelete?: string
 }) {
+  const t = useTranslations('accounts')
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -349,11 +373,11 @@ export function CardActions({
       <RowMenu label={defaults.name}>
         <DropdownMenuItem onSelect={() => setEditing(true)}>
           <PencilIcon />
-          Modifier
+          {t('actions.edit')}
         </DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
           <Trash2Icon />
-          Supprimer
+          {t('actions.delete')}
         </DropdownMenuItem>
       </RowMenu>
 
@@ -361,15 +385,12 @@ export function CardActions({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-[15px]">{defaults.name}</DialogTitle>
-            <DialogDescription className="text-[12px]">
-              Un nouveau calendrier déplace les achats des relevés pas encore validés. Ceux d’un relevé validé
-              restent au jour de son débit.
-            </DialogDescription>
+            <DialogDescription className="text-[12px]">{t('cardForm.editDescription')}</DialogDescription>
           </DialogHeader>
           <ActionForm action={editCardAction} onSuccess={() => setEditing(false)}>
             <input type="hidden" name="cardId" value={cardId} />
             <CardFields accounts={accounts} today={today} defaults={defaults} />
-            <SubmitButton className="self-start">Enregistrer</SubmitButton>
+            <SubmitButton className="self-start">{t('actions.save')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
@@ -377,19 +398,16 @@ export function CardActions({
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer « {defaults.name} » ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Seule une carte qui n’a rien payé se supprime. Une carte qui a servi reste : son expiration dit
-              qu’elle ne marche plus.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('cardForm.deleteTitle', { name: defaults.name })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('cardForm.deleteDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <form action={remove}>
               <input type="hidden" name="cardId" value={cardId} />
               <Button type="submit" variant="destructive" disabled={pending}>
-                {pending ? '…' : 'Supprimer'}
+                {pending ? '…' : t('actions.delete')}
               </Button>
             </form>
           </AlertDialogFooter>

@@ -1,0 +1,94 @@
+{
+  "onboarding": {
+    "title": "Welcome",
+    "accounts": {
+      "title": "Declare your accounts",
+      "why": "A current account is enough to start. It holds the balances and makes everything else computable.",
+      "cta": "Add an account"
+    },
+    "movements": {
+      "title": "Declare a few movements",
+      "why": "Expenses, income, transfers between your accounts. From the first one, balances and charts appear.",
+      "cta": "Declare"
+    },
+    "commitments": {
+      "title": "Declare your recurring commitments",
+      "why": "Subscriptions and salary: the app works out your committed monthly cost and suggests the due payments to confirm.",
+      "cta": "Add"
+    }
+  },
+  "wealth": {
+    "label": "Net worth",
+    "missingContributions": "{amount} of undeclared contributions: check the account’s cash balance",
+    "priced": "investments at latest price",
+    "pricedWithUnpriced": "investments at latest price, {count} without a price"
+  },
+  "balances": {
+    "label": "Balances",
+    "realDate": "actual date"
+  },
+  "figures": {
+    "saved": "Saved",
+    "spent": "Spent",
+    "grossBeforeRefunds": "{amount} gross before refunds",
+    "committed": "Committed",
+    "perMonth": "/mo",
+    "subscriptions": "{subscriptions, plural, one {# subscription} other {# subscriptions}}",
+    "subscriptionsAndFinancings": "{subscriptions, plural, one {# subscription} other {# subscriptions}} · {financings, plural, one {# financing} other {# financings}}"
+  },
+  "todo": {
+    "label": "To do",
+    "debits": "{count, plural, one {# direct debit to confirm} other {# direct debits to confirm}}",
+    "incomes": "{count, plural, one {# incoming payment to confirm} other {# incoming payments to confirm}}",
+    "contributions": "{count, plural, one {# scheduled contribution to confirm} other {# scheduled contributions to confirm}}",
+    "since": "since {date}",
+    "statements": "{count, plural, one {{card} statement to confirm} other {# {card} statements to confirm}}",
+    "statementsDetail": "{amount} since {date}",
+    "checks": "{count, plural, one {# account to check} other {# accounts to check}}",
+    "checkGap": "{account}: gap of {amount}",
+    "checkedAgo": "{account}: checked {when}",
+    "neverChecked": "{account}: never checked",
+    "claims": "{amount} to recover",
+    "advances": "{count, plural, one {# advance} other {# advances}}",
+    "activity": "Activity"
+  },
+  "alerts": {
+    "thresholdCrossed": "{subject} crossed",
+    "thresholdNear": "{subject} nearly reached",
+    "ruleReviewDue": "{subject} due for review",
+    "ruleUnconfirmed": "{subject} unconfirmed",
+    "activityUnreadable": "{subject}: unreadable statement",
+    "ceiling": "{current} against a ceiling of {limit}",
+    "floor": "{current} against a floor of {limit}",
+    "reviewSince": "due for review since {date}",
+    "noText": "no official text sets this value",
+    "verifiedOn": "verified on {date}",
+    "unreadable": "a rule has unreadable parameters: edit it to get the activity’s figures back"
+  },
+  "flows": "Money in and out, last twelve months",
+  "spending": {
+    "label": "Expenses",
+    "empty": "No expenses declared in this period."
+  },
+  "upcoming": {
+    "label": "Upcoming",
+    "link": "All due payments",
+    "empty": "No commitments declared.",
+    "installments": "{paid}/{total} installments",
+    "judgments": {
+      "essential": "essential",
+      "reducible": "reducible",
+      "to_cancel": "to cancel"
+    }
+  },
+  "donut": {
+    "empty": "Nothing in this period.",
+    "others": "Others ({count})",
+    "chart": "Expenses by group: {slices}. Total {total}."
+  },
+  "balanceChart": {
+    "label": "Balances by account over time",
+    "notEnough": "Not enough history yet to draw a curve.",
+    "projection": "projection"
+  }
+}

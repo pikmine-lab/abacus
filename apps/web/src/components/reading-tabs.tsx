@@ -2,14 +2,12 @@
 
 import type { Reading } from '@abacus/core/domain'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useOptimistic, useTransition } from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-/** The two ways a month can be counted, named on every screen that shows flows. */
-export const READING_LABEL: Record<Reading, string> = {
-  cash: 'Date réelle',
-  accrual: 'Mois concerné',
-}
+/** The two ways a month can be counted, named on every screen that shows flows (`common.reading`). */
+export const READINGS = ['cash', 'accrual'] as const satisfies readonly Reading[]
 
 /**
  * Which month the figures below count a movement in: the day the money moved,
@@ -27,6 +25,7 @@ export const READING_LABEL: Record<Reading, string> = {
  * is settled in Réglages and nowhere else (lib/reading.ts, proxy.ts).
  */
 export function ReadingTabs({ value }: { value: Reading }) {
+  const t = useTranslations('common.reading')
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -50,10 +49,10 @@ export function ReadingTabs({ value }: { value: Reading }) {
         })
       }
     >
-      <TabsList className="h-7" aria-label="Mois compté">
-        {(['cash', 'accrual'] as const).map((option) => (
+      <TabsList className="h-7" aria-label={t('label')}>
+        {READINGS.map((option) => (
           <TabsTrigger key={option} value={option} className="px-2 text-[12px]">
-            {READING_LABEL[option]}
+            {t(option)}
           </TabsTrigger>
         ))}
       </TabsList>

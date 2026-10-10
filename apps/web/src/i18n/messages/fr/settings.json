@@ -1,0 +1,110 @@
+{
+  "language": {
+    "label": "Langue de l’interface",
+    "browser": "Navigateur"
+  },
+  "parts": {
+    "label": "Parties des réglages",
+    "categories": "Catégories",
+    "activities": "Activités",
+    "actors": "Acteurs",
+    "preferences": "Préférences"
+  },
+  "sort": {
+    "group": "Groupe",
+    "name": "Nom"
+  },
+  "newEntry": {
+    "category": "Catégorie",
+    "actor": "Acteur"
+  },
+  "form": {
+    "name": "Nom",
+    "save": "Enregistrer",
+    "add": "Ajouter",
+    "cancel": "Annuler"
+  },
+  "categories": {
+    "search": "Chercher une catégorie ou un groupe",
+    "empty": "Aucune catégorie. Sans elles, l’analyse par catégorie reste vide.",
+    "noMatch": "Aucune catégorie ne porte ce nom.",
+    "noGroup": "Sans groupe",
+    "new": "Nouvelle catégorie",
+    "created": "Catégorie créée",
+    "edited": "Catégorie corrigée",
+    "group": "Groupe (optionnel)",
+    "groupPlaceholder": "Vie courante"
+  },
+  "actors": {
+    "search": "Chercher un acteur ou un alias",
+    "empty": "Aucun acteur. Le premier mouvement déclaré en crée un.",
+    "noMatch": "Aucun acteur ne porte ce nom.",
+    "also": "aussi",
+    "new": "Nouvel acteur",
+    "created": "Acteur créé",
+    "edited": "Acteur corrigé",
+    "activity": "Activité",
+    "personal": "(perso)",
+    "note": "Note (optionnelle)",
+    "vatRate": "TVA par défaut (%)",
+    "withholdingRate": "Retenue par défaut (%)",
+    "leftBehind": "{count, plural, one {# mouvement déjà déclaré ne suit pas} other {# mouvements déjà déclarés ne suivent pas}} : <link>rattacher l’historique</link> les reprend, maintenant ou plus tard.",
+    "aliases": {
+      "label": "Alias",
+      "added": "Alias ajouté",
+      "new": "Nouvel alias",
+      "placeholder": "Macdo"
+    },
+    "history": {
+      "label": "Historique",
+      "reattach": "Rattacher l’historique à {activity}"
+    },
+    "merge": {
+      "label": "Fusionner",
+      "description": "Tout ce qui est déclaré sous « {name} » bascule sur l’acteur choisi, et « {name} » devient un de ses alias. C’est le seul geste ici qui réécrit des mouvements déjà déclarés.",
+      "into": "Fusionner dans",
+      "placeholder": "Choisir l’acteur à garder",
+      "submit": "Fusionner"
+    },
+    "reattach": {
+      "title": "Rattacher l’historique de {actor} à {activity} ?",
+      "nothing": "Rien à rattacher : l’historique de {actor} est déjà sous {activity}, ou classé dans une autre activité.",
+      "count": "{count, plural, one {# mouvement passera} other {# mouvements passeront}} sous {activity}. Un mouvement classé dans une autre activité ne bouge pas.",
+      "countSince": "{count, plural, one {# mouvement, depuis le {since}, passera} other {# mouvements, depuis le {since}, passeront}} sous {activity}. Un mouvement classé dans une autre activité ne bouge pas.",
+      "from": "À partir du (optionnel)",
+      "submit": "Rattacher"
+    }
+  },
+  "connectAi": {
+    "addServer": "Ajoute le serveur",
+    "clientTabs": "Client à brancher",
+    "claudeApp": "App Claude",
+    "otherClient": "Autre client",
+    "hints": {
+      "claudeApp": "connecteurs de l’app › connecteur personnalisé",
+      "claudeCode": "dans ton terminal",
+      "cursor": "dans {path}",
+      "other": "l’adresse, ou ce bloc dans le fichier MCP de ton client",
+      "copilot": "Microsoft 365 Copilot : identifiant client <id>{clientId}</id>, sans secret"
+    },
+    "missingUrl": "Adresse du serveur MCP absente (<code>{variable}</code>).",
+    "copy": "Copier",
+    "copied": "Copié",
+    "authorize": "Autorise l’accès",
+    "authorizeHint": "Ton IA ouvre abacus dans le navigateur : connecte-toi, puis autorise.",
+    "applications": "Applications",
+    "noApplication": "Aucune application.",
+    "granted": "Autorisée",
+    "lastUsed": "Dernier usage",
+    "dates": "autorisée le {granted}",
+    "datesUsed": "autorisée le {granted} · utilisée le {used}",
+    "revoke": {
+      "menuLabel": "l’accès de {name}",
+      "action": "Révoquer l’accès",
+      "title": "Révoquer l’accès de « {name} » ?",
+      "description": "Il perd l’accès d’ici dix minutes au plus. Pour le rebrancher, il faudra l’autoriser à nouveau.",
+      "cancel": "Annuler",
+      "submit": "Révoquer"
+    }
+  }
+}

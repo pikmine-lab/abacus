@@ -28,6 +28,8 @@ import {
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { CommitmentRow } from '@/components/commitment-blocks'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -49,34 +51,37 @@ import { StatRow, StatTile } from '@/components/stats'
 import { UrlTabs } from '@/components/url-tabs'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
-import { NATURE_LABEL } from '@/lib/nature'
+import { type Format, useFormat } from '@/lib/format'
+import { getFormat } from '@/lib/format-server'
 import { sorter } from '@/lib/sort'
-import { eur, eurSigned, frDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'Placements' }
+export async function generateMetadata() {
+  const t = await getTranslations('investments')
+  return { title: t('title') }
+}
 
 /** How much of the journal the page shows at once. */
 const OPERATION_PAGE = 30
-
-/** Quantities are not money: they keep their own precision, trailing zeros cut. */
-function quantity(value: string): string {
-  return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 8 })
-}
 
 /**
  * When the price was made, to the minute. Euronext is 15 minutes delayed at
  * best, imposed by its licence, so freshness cannot be gained: it is declared
  * instead, and a number without its hour would be read as "now".
  */
-function priceStamp(at: Date | null, manual: boolean): string | null {
+function priceStamp(
+  at: Date | null,
+  manual: boolean,
+  format: Format,
+  enteredOn: (day: string) => string,
+): string | null {
   if (!at) return null
-  const day = at.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-  if (manual) return `saisi le ${day}`
+  const day = at.toLocaleDateString(format.locale, { day: '2-digit', month: '2-digit' })
+  if (manual) return enteredOn(day)
   // Bare day and hour: it sits under the name, beside the Cours column, so the
   // word "cours" would only cost the room the hour needs.
-  return `${day} ${at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+  return `${day} ${at.toLocaleTimeString(format.locale, { hour: '2-digit', minute: '2-digit' })}`
 }
 
 /**
@@ -85,7 +90,11 @@ function priceStamp(at: Date | null, manual: boolean): string | null {
  * for (its value, what it made) are the ones that always fit.
  */
 function PositionRow({ position }: { position: Position }) {
-  const stamp = priceStamp(position.pricedAt, position.manualPrice)
+  const t = useTranslations('investments')
+  const format = useFormat()
+  const stamp = priceStamp(position.pricedAt, position.manualPrice, format, (day) =>
+    t('page.manualStamp', { day }),
+  )
   const gain = position.gain === null ? null : Number(position.gain)
   return (
     <div className="group flex items-center gap-3 py-2">
@@ -95,20 +104,20 @@ function PositionRow({ position }: { position: Position }) {
       >
         <span className="truncate text-[12.5px] group-hover:text-primary">{position.assetName}</span>
         <span className="truncate text-[11px] text-faint">
-          PRU {eur(Number(position.averageCost), 2)}
-          {stamp ? ` · ${stamp}` : ' · aucun cours connu'}
+          {t('words.averageCost', { amount: format.eur(position.averageCost, 2) })}
+          {` · ${stamp ?? t('page.noPrice')}`}
         </span>
       </Link>
-      <span className="tabular w-14 text-right text-[12.5px]">{quantity(position.quantity)}</span>
+      <span className="tabular w-14 text-right text-[12.5px]">{format.number(position.quantity, 8)}</span>
       <span className="tabular w-[4.5rem] text-right text-[12.5px] text-muted-foreground">
-        {position.price === null ? '—' : eur(Number(position.price), 2)}
+        {position.price === null ? '—' : format.eur(position.price, 2)}
       </span>
       <span className="tabular w-[5.5rem] text-right text-[12.5px]">
-        {position.value === null ? '—' : eur(Number(position.value), 2)}
+        {position.value === null ? '—' : format.eur(position.value, 2)}
       </span>
       <span className={`tabular w-[5.5rem] text-right text-[12.5px] ${gainInk(gain)}`}>
         {/* The arrow carries the direction; color reinforces it. */}
-        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
+        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${format.eurSigned(gain, 2)}`}
       </span>
       <RowArrow />
       <AssetMenu id={position.assetId} name={position.assetName} />
@@ -127,6 +136,7 @@ function gainInk(gain: number | null): string {
  * something false.
  */
 function MassFigures({ mass }: { mass: PositionMass }) {
+  const format = useFormat()
   const gain = mass.gain === null ? null : Number(mass.gain)
   // Nothing here has a price: a zero would read as "this mass is worth
   // nothing", where the header's note says what is actually the case.
@@ -136,10 +146,10 @@ function MassFigures({ mass }: { mass: PositionMass }) {
       <span className="w-14" />
       <span className="w-[4.5rem]" />
       <span className="tabular w-[5.5rem] text-right text-[12.5px] font-semibold">
-        {blind ? '—' : eur(Number(mass.value), 2)}
+        {blind ? '—' : format.eur(mass.value, 2)}
       </span>
       <span className={`tabular w-[5.5rem] text-right text-[12.5px] font-semibold ${gainInk(gain)}`}>
-        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${eurSigned(gain, 2)}`}
+        {gain === null ? '—' : `${gain >= 0 ? '↑' : '↓'} ${format.eurSigned(gain, 2)}`}
       </span>
       <span className="w-11" />
     </>
@@ -154,6 +164,8 @@ export default async function InvestmentsPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect('/login')
   const userId = session.user.id
+  const t = await getTranslations('investments')
+  const format = await getFormat()
 
   // Prices come from the read, never from a scheduler: whoever opens this page
   // gets them as fresh as the sources allow. It never throws, and a source that
@@ -241,25 +253,25 @@ export default async function InvestmentsPage({
   const entry = (
     <>
       <EntrySheet
-        label="Suivre"
-        title="Suivre un actif"
-        description="Sans le détenir : son cours s’affichera, et le jour où tu en achètes il devient une position."
+        label={t('page.follow.label')}
+        title={t('page.follow.title')}
+        description={t('page.follow.description')}
         variant="outline"
       >
         <FollowForm />
       </EntrySheet>
       <EntrySheet
-        label="Programmer un versement"
-        title="Versement programmé"
-        description="Une somme qui part d’un compte vers un compte d’investissement à intervalle régulier, et y achète. Le virement et l’achat s’écrivent ensemble à chaque échéance."
+        label={t('page.plan.label')}
+        title={t('page.plan.title')}
+        description={t('page.plan.description')}
         variant="outline"
       >
         <InvestmentPlanForm options={placementOptions} today={now} />
       </EntrySheet>
       <EntrySheet
-        label="Déclarer une opération"
-        title="Opération"
-        description="Ce qui se passe dans le compte. Alimenter le compte ou en sortir de l’argent est un virement, à déclarer dans les mouvements."
+        label={t('page.operation.label')}
+        title={t('page.operation.title')}
+        description={t('page.operation.description')}
       >
         <OperationForm
           accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
@@ -272,59 +284,57 @@ export default async function InvestmentsPage({
 
   return (
     <>
-      <PageHeader title="Placements" description="ce que tu détiens, et ce que ça vaut">
+      <PageHeader title={t('title')} description={t('page.description')}>
         {investmentAccounts.length > 0 && entry}
       </PageHeader>
 
       <PageBody>
         {investmentAccounts.length === 0 ? (
           <EmptyLine>
-            Aucun compte d’investissement. Crée-le dans{' '}
-            <Link href="/accounts" className="text-primary hover:underline">
-              Comptes
-            </Link>
-            , puis déclare ici ce que tu y détiens.
+            {t.rich('page.noAccount', {
+              link: (chunks) => (
+                <Link href="/accounts" className="text-primary hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </EmptyLine>
         ) : firstOperation === null && assets.length === 0 && plans.length === 0 ? (
           // One line, and the two panels the header already carries: a title, a
           // description and a sentence all saying "nothing yet" said it thrice.
-          <EmptyLine>
-            Déclare ton premier achat : le panneau cherche l’ETF, l’action ou la crypto par son nom, son ISIN
-            ou son fournisseur.
-          </EmptyLine>
+          <EmptyLine>{t('page.firstBuy')}</EmptyLine>
         ) : (
           <>
             <StatRow>
               <StatTile
                 hero
-                label="Valorisation"
-                value={eur(value)}
-                hint={
-                  unpriced > 0
-                    ? `espèces + positions cotées ; ${unpriced} sans cours`
-                    : 'espèces + positions au dernier cours'
-                }
-                delta={positionCount > 0 ? { value: unrealized, label: 'de plus-value latente' } : undefined}
+                label={t('words.value')}
+                value={format.eur(value)}
+                hint={unpriced > 0 ? t('page.valueHintUnpriced', { count: unpriced }) : t('page.valueHint')}
+                delta={positionCount > 0 ? { value: unrealized, label: t('page.unrealized') } : undefined}
               />
               <StatTile
-                label="Performance"
-                value={totalReturn === null ? '—' : eurSigned(totalReturn)}
+                label={t('words.performance')}
+                value={totalReturn === null ? '—' : format.eurSigned(totalReturn)}
                 // The method is the number: what it includes, and what it is
                 // measured against. Naming the contributions is what makes it
                 // checkable by hand.
                 hint={
                   totalReturn === null
-                    ? 'un cours manque : le calcul serait sous-estimé'
-                    : `dividendes et frais compris, contre ${eur(contributions)} d’apports`
+                    ? t('page.performanceMissing')
+                    : t('page.performanceHint', { amount: format.eur(contributions) })
                 }
               />
               {/* Counted apart, never beside the committed costs: this money
                   stays the user's, it only changes form. */}
               {plans.length > 0 && (
                 <StatTile
-                  label="Épargne programmée"
-                  value={`${eur(monthlyInvested, 2)}/mois`}
-                  hint={`${eur(monthlyInvested * 12)} par an · ${plans.length} versement${plans.length > 1 ? 's' : ''}`}
+                  label={t('page.scheduled')}
+                  value={t('page.scheduledValue', { amount: format.eur(monthlyInvested, 2) })}
+                  hint={t('page.scheduledHint', {
+                    yearly: format.eur(monthlyInvested * 12),
+                    count: plans.length,
+                  })}
                 />
               )}
             </StatRow>
@@ -333,10 +343,7 @@ export default async function InvestmentsPage({
                 to be confirmed is work to do, and folding the plans away must
                 not take it out of sight. */}
             {pendingPlacements.length > 0 && (
-              <Section
-                title="Échéances à confirmer"
-                description="le virement et l’achat s’écrivent ensemble, la quantité reçue en plus"
-              >
+              <Section title={t('page.pending.title')} description={t('page.pending.description')}>
                 <PendingOccurrences
                   back="/investments"
                   items={pendingPlacements.map((p) => ({
@@ -360,17 +367,17 @@ export default async function InvestmentsPage({
 
             {plans.length > 0 && (
               <FoldSection
-                title="Versements programmés"
-                description="ce qui part tout seul vers un compte d’investissement"
+                title={t('page.plans.title')}
+                description={t('page.plans.description')}
                 action={
                   plans.length > 1 && (
                     <SortMenu
                       sorter={planSort}
                       options={[
-                        { field: 'monthly', label: 'Épargne mensuelle' },
-                        { field: 'amount', label: 'Montant versé' },
-                        { field: 'next', label: 'Prochaine échéance' },
-                        { field: 'label', label: 'Nom' },
+                        { field: 'monthly', label: t('page.plans.sorts.monthly') },
+                        { field: 'amount', label: t('page.plans.sorts.amount') },
+                        { field: 'next', label: t('page.plans.sorts.next') },
+                        { field: 'label', label: t('words.name') },
                       ]}
                     />
                   )
@@ -399,11 +406,11 @@ export default async function InvestmentsPage({
                 // The selected tab names the reading, so the title does not
                 // repeat it: "Performance" as a title, as an active tab and as
                 // a tile above said one thing three times.
-                title="Évolution"
+                title={t('page.evolution.title')}
                 description={
                   reading === 'performance'
-                    ? `valorisation − apports, depuis le ${frDate(from)}`
-                    : `contre les apports, depuis le ${frDate(from)}`
+                    ? t('page.evolution.performanceSince', { date: format.date(from) })
+                    : t('page.evolution.valueSince', { date: format.date(from) })
                 }
                 action={
                   <div className="flex flex-wrap items-center justify-end gap-2">
@@ -411,10 +418,10 @@ export default async function InvestmentsPage({
                     <UrlTabs
                       param="chart"
                       fallback="value"
-                      ariaLabel="Lecture du graphe"
+                      ariaLabel={t('page.evolution.readingLabel')}
                       options={[
-                        { value: 'value', label: 'Valorisation' },
-                        { value: 'performance', label: 'Performance' },
+                        { value: 'value', label: t('words.value') },
+                        { value: 'performance', label: t('words.performance') },
                       ]}
                     />
                   </div>
@@ -425,21 +432,21 @@ export default async function InvestmentsPage({
                   // not jump when money comes in (both series rise by the same
                   // amount), so every move it makes is one the market made.
                   <BalanceChart
-                    lines={[{ id: 'performance', name: 'Performance' }]}
+                    lines={[{ id: 'performance', name: t('words.performance') }]}
                     rows={series.map((point) => ({
                       day: point.day,
                       lineId: 'performance',
                       balance: Number(point.cash) + Number(point.holdings) - Number(point.contributions),
                     }))}
                     today={now}
-                    baseline={{ value: 0, name: 'Apports' }}
-                    ariaLabel="Performance des placements contre les apports"
+                    baseline={{ value: 0, name: t('words.contributions') }}
+                    ariaLabel={t('page.evolution.performanceAria')}
                   />
                 ) : (
                   <BalanceChart
                     lines={[
-                      { id: 'value', name: 'Valorisation' },
-                      { id: 'contributions', name: 'Apports' },
+                      { id: 'value', name: t('words.value') },
+                      { id: 'contributions', name: t('words.contributions') },
                     ]}
                     rows={series.flatMap((point) => [
                       {
@@ -450,7 +457,7 @@ export default async function InvestmentsPage({
                       { day: point.day, lineId: 'contributions', balance: Number(point.contributions) },
                     ])}
                     today={now}
-                    ariaLabel="Valorisation des placements et apports"
+                    ariaLabel={t('page.evolution.valueAria')}
                   />
                 )}
               </Section>
@@ -460,14 +467,20 @@ export default async function InvestmentsPage({
               <Section
                 key={account.id}
                 title={account.name}
-                description={`${eur(Number(accountValue), 2)} · ${
+                description={
                   Number(accountCash) < 0
-                    ? `${eur(-Number(accountCash), 2)} à alimenter`
-                    : `${eur(Number(accountCash), 2)} en espèces`
-                }`}
+                    ? t('page.accountToFund', {
+                        value: format.eur(accountValue, 2),
+                        cash: format.eur(-Number(accountCash), 2),
+                      })
+                    : t('page.accountCash', {
+                        value: format.eur(accountValue, 2),
+                        cash: format.eur(accountCash, 2),
+                      })
+                }
               >
                 {positions.length === 0 ? (
-                  <EmptyLine>Aucune position : rien n’a encore été acheté sur ce compte.</EmptyLine>
+                  <EmptyLine>{t('page.noPosition')}</EmptyLine>
                 ) : (
                   <div className="overflow-x-auto">
                     {/* Five columns, not six: the average cost and the hour of
@@ -479,34 +492,34 @@ export default async function InvestmentsPage({
                         <SortColumn
                           sorter={positionSort}
                           field="name"
-                          label="Actif"
+                          label={t('words.asset')}
                           className="min-w-0 flex-1"
                         />
                         <SortColumn
                           sorter={positionSort}
                           field="quantity"
-                          label="Quantité"
+                          label={t('words.quantity')}
                           align="right"
                           className="w-14 shrink-0"
                         />
                         <SortColumn
                           sorter={positionSort}
                           field="price"
-                          label="Cours"
+                          label={t('words.price')}
                           align="right"
                           className="w-[4.5rem] shrink-0"
                         />
                         <SortColumn
                           sorter={positionSort}
                           field="value"
-                          label="Valorisation"
+                          label={t('words.value')}
                           align="right"
                           className="w-[5.5rem] shrink-0"
                         />
                         <SortColumn
                           sorter={positionSort}
                           field="gain"
-                          label="+/− value"
+                          label={t('page.gainColumn')}
                           align="right"
                           className="w-[5.5rem] shrink-0"
                         />
@@ -521,10 +534,10 @@ export default async function InvestmentsPage({
                         : masses.map((mass) => (
                             <MassFold
                               key={mass.nature}
-                              label={NATURE_LABEL[mass.nature]}
+                              label={t(`natures.${mass.nature}`)}
                               note={
                                 mass.unpriced > 0
-                                  ? `${mass.unpriced} sans cours, non valorisée${mass.unpriced > 1 ? 's' : ''}`
+                                  ? t('page.massUnpriced', { count: mass.unpriced })
                                   : undefined
                               }
                               figures={<MassFigures mass={mass} />}
@@ -541,23 +554,23 @@ export default async function InvestmentsPage({
             ))}
 
             {followed.length > 0 && (
-              <Section title="Suivis" description="pas encore détenus">
+              <Section title={t('page.followed.title')} description={t('page.followed.description')}>
                 <AssetRows assets={followed} />
               </Section>
             )}
 
             <Section
-              title="Opérations"
+              title={t('words.operations')}
               // What the slice holds depends on the order it was cut in, so it
               // is named rather than left to be assumed.
               description={
                 operationSort.current.field === 'date' && operationSort.current.direction === 'desc'
-                  ? `les ${OPERATION_PAGE} dernières`
-                  : `${OPERATION_PAGE} au plus, dans cet ordre`
+                  ? t('page.latest', { count: OPERATION_PAGE })
+                  : t('page.atMost', { count: OPERATION_PAGE })
               }
             >
               {operations.length === 0 ? (
-                <EmptyLine>Rien de déclaré pour l’instant.</EmptyLine>
+                <EmptyLine>{t('page.noOperation')}</EmptyLine>
               ) : (
                 <OperationRows
                   sorter={operationSort}
