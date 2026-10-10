@@ -986,6 +986,130 @@ test('spending reads back by category group through the MCP surface', async () =
   ])
 })
 
+test('an analysis narrows to an activity or a category and drills to the movements that make a row', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Marché' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Boulangerie' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Ami' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Matériel', group: 'Travail' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Atelier' })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      movements: [
+        {
+          date: '2026-08-02',
+          amount: 80,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Courses',
+          expectedRefundFrom: 'Ami',
+          expectedRefundAmount: 40,
+        },
+        {
+          date: '2026-08-04',
+          amount: 50,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Boulangerie',
+          category: 'Courses',
+        },
+        {
+          date: '2026-08-05',
+          amount: 20,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Courses',
+        },
+        {
+          date: '2026-08-06',
+          amount: 300,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Matériel',
+          activity: 'Atelier',
+        },
+      ],
+    })
+  ).json() as { results: { movementId: string }[] }
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 40,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Ami',
+        refundsMovementId: declared.results[0]!.movementId,
+      },
+    ],
+  })
+
+  // Narrowed to the activity, the masses are only its own.
+  const own = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'categoryGroup',
+    activity: 'Atelier',
+  })
+  const ownJson = own.json() as { activity: string; rows: { categoryGroup: string; net: number }[] }
+  assert.equal(ownJson.activity, 'Atelier')
+  assert.deepEqual(
+    ownJson.rows.map((r) => [r.categoryGroup, r.net]),
+    [['Travail', 300]],
+  )
+
+  // The movements of a category, net of what came back, add up to its row;
+  // past the limit, the rest is one sum.
+  const leaves = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'movement',
+    category: 'Courses',
+    limit: 2,
+  })
+  const leavesJson = leaves.json() as {
+    category: string
+    rows: { movementId: string; date: string; actor: string; gross: number; net: number }[]
+    rest: { movements: number; gross: number; net: number }
+  }
+  assert.equal(leavesJson.category, 'Courses')
+  assert.deepEqual(
+    leavesJson.rows.map((r) => [r.date, r.actor, r.gross, r.net]),
+    [
+      ['2026-08-04', 'Boulangerie', 50, 50],
+      ['2026-08-02', 'Marché', 80, 40],
+    ],
+  )
+  assert.equal(leavesJson.rows[1]!.movementId, declared.results[0]!.movementId)
+  assert.deepEqual(leavesJson.rest, { movements: 1, gross: 20, net: 20 })
+  const [courses] = (
+    (
+      await call(client, 'analyze_flows', {
+        from: '2026-08-01',
+        to: '2026-08-31',
+        groupBy: 'category',
+        category: 'Courses',
+      })
+    ).json() as { rows: { net: number }[] }
+  ).rows
+  assert.equal(courses!.net, 110)
+
+  const unknown = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'movement',
+    category: 'Loisirs',
+  })
+  assert.match(unknown.text, /No category "Loisirs"/)
+})
+
 test('the uncategorised row of an analysis drills into its movements', async () => {
   const user = await seedUser()
   const client = await clientFor(user)
