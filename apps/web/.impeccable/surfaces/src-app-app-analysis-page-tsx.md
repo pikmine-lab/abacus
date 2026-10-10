@@ -2,13 +2,14 @@
 version: 1
 slug: "src-app-app-analysis-page-tsx"
 primary_target: "src/app/(app)/analysis/page.tsx"
-related_targets: ["src/components/flow-chart.tsx","src/components/breakdown-bars.tsx","src/components/share-strip.tsx"]
+related_targets: ["src/components/flow-chart.tsx","src/components/breakdown-bars.tsx","src/components/share-strip.tsx","src/components/money-map.tsx"]
 ---
 
 Écran : Analyse (`src/app/(app)/analysis/page.tsx`). Mode : Operate. Desktop et téléphone.
 Question à laquelle il répond : où part l'argent, d'où il vient, sur la période et d'un mois à l'autre.
 Usages, dans l'ordre : lire le classement (où est parti l'argent) ; passer d'un mois à l'autre pour comparer ; lire les totaux qui le cadrent.
 Contenu et gestes : ceux de l'écran avant refonte (#117), plus deux choses tranchées avec l'utilisateur : sur un mois, la frise montre douze mois, alors que le graphe n'y apparaissait pas ; le classement se dessine en ruban ou en barres, au choix de la personne dans Réglages (et par `manage_preferences` côté MCP).
+Carte : le classement a une seconde lecture, la carte, choisie par deux icônes au bout de son en-tête (le dessin du classement de Réglages, et une carte). Elle se lit comme une carte géographique : un canevas où l'on zoome à la molette ou au pincement et se déplace au glisser, et où le détail vient avec le zoom, chaque bloc nommé dès qu'il a la place, chaque mouvement avec son acteur, sa date et son montant sans survol ; les textes gardent leur taille. Pas de liste dessous. Un niveau plus bas est un cran de cuivre plus clair. Survolé, un bloc s'éclaire et prend un anneau cuivre d'interface ; choisi d'un clic, il est cadré, le reste s'assombrit, et une barre dans la carte dit son chemin, mène aux mouvements et le relâche. « Par groupe | Par activité » choisit le premier niveau. Mouvement de la carte : 450 ms pour cadrer un bloc ou tout revoir, 200 ms par cran de zoom, rien quand le système demande moins de mouvement.
 Tranché avec l'utilisateur : pas de chiffre héros, le classement domine ; les chiffres passent avant la frise ; sur un mois, la frise couvre douze mois glissants par blocs fixes comptés depuis le mois courant, le mois choisi lavé, pour qu'un clic dans la frise ne la décale jamais ; le ruban est le dessin par défaut ; un flux (sankey) a été essayé et écarté.
 
 ## Direction contract

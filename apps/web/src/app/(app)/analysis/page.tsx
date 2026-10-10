@@ -14,11 +14,15 @@ import { redirect } from 'next/navigation'
 import { BreakdownBars } from '@/components/breakdown-bars'
 import { Figure, FigureRow } from '@/components/composition'
 import { FlowChart } from '@/components/flow-chart'
+import { MoneyMap } from '@/components/money-map'
 import { PageBody } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
 import { ShareRanking } from '@/components/share-strip'
 import { UrlTabs } from '@/components/url-tabs'
+import { BarsIcon, MapIcon, StripIcon } from '@/components/view-icons'
 import { flowBandWindow } from '@/lib/flow-band'
+import { FOCUS_PARAM, VIEW_PARAM } from '@/lib/money-map'
+import { moneyMap } from '@/lib/money-map-tree'
 import { paceMonths } from '@/lib/pace'
 import { previousWindow, readingQualifier, resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
@@ -55,6 +59,8 @@ export default async function AnalysisPage({
     by?: string
     flow?: string
     reading?: string
+    view?: string
+    split?: string
   }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -74,17 +80,23 @@ export default async function AnalysisPage({
     ? (params.by as Ranked)
     : DEFAULT_GROUP
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
+  // The map is another reading of the same money, opened for a visit: it
+  // lives in the URL with its zoom, unlike the way the ranking is drawn.
+  const map = params.view === 'map'
+  const split = params.split === 'activity'
 
   const firstDay = await firstDeclaredDay(userId)
   const band = flowBandWindow(period, firstDay, now.slice(0, 7))
   // A group comes back with the categories it merges, the other dimensions
   // with a flat row: one type covering both, so the rows are read once below.
-  const ranking: Promise<(BreakdownRow | BreakdownMass)[]> =
-    groupBy === 'categoryGroup'
+  const ranking: Promise<(BreakdownRow | BreakdownMass)[]> = map
+    ? Promise.resolve([])
+    : groupBy === 'categoryGroup'
       ? spendingByCategoryGroup(userId, period.from, period.to, kind, reading)
       : spendingBreakdown(userId, period.from, period.to, groupBy, kind, reading)
-  const [breakdown, view, totals, previousTotals, monthly] = await Promise.all([
+  const [breakdown, tree, view, totals, previousTotals, monthly] = await Promise.all([
     ranking,
+    map ? moneyMap({ userId, period, kind, reading, split }) : null,
     // How the ranking is drawn is the person's to settle, in Réglages.
     rankingViewPreference(userId),
     flowTotals(userId, period.from, period.to, reading),
@@ -200,6 +212,7 @@ export default async function AnalysisPage({
             <UrlTabs
               param="flow"
               fallback="expense"
+              clears={[VIEW_PARAM, FOCUS_PARAM]}
               ariaLabel="Sens des flux"
               options={[
                 { value: 'expense', label: 'Dépenses' },
@@ -207,22 +220,62 @@ export default async function AnalysisPage({
               ]}
             />
             {flowQualifier && <span className="-ml-2 text-[11.5px] text-faint">{flowQualifier}</span>}
-            <div className="sm:ml-auto">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto">
+              {/* The map always reads masses down to movements: the dimension
+                  sorts the ranking only, and what the map opens on, its masses
+                  or the activities above them, is the one choice it adds. */}
+              {map ? (
+                <UrlTabs
+                  param="split"
+                  fallback="group"
+                  clears={[VIEW_PARAM, FOCUS_PARAM]}
+                  ariaLabel="Premier niveau de la carte"
+                  options={[
+                    { value: 'group', label: 'Par groupe' },
+                    { value: 'activity', label: 'Par activité' },
+                  ]}
+                />
+              ) : (
+                <UrlTabs
+                  param="by"
+                  fallback={DEFAULT_GROUP}
+                  ariaLabel="Regrouper par"
+                  options={[
+                    { value: 'categoryGroup', label: 'Groupe' },
+                    { value: 'category', label: 'Catégorie' },
+                    { value: 'actor', label: 'Acteur' },
+                    { value: 'activity', label: 'Activité' },
+                  ]}
+                />
+              )}
               <UrlTabs
-                param="by"
-                fallback={DEFAULT_GROUP}
-                ariaLabel="Regrouper par"
+                param="view"
+                fallback="ranking"
+                clears={[VIEW_PARAM, FOCUS_PARAM]}
+                ariaLabel="Vue"
+                // The ranking is drawn the way Réglages says, so its icon is
+                // that drawing.
                 options={[
-                  { value: 'categoryGroup', label: 'Groupe' },
-                  { value: 'category', label: 'Catégorie' },
-                  { value: 'actor', label: 'Acteur' },
-                  { value: 'activity', label: 'Activité' },
+                  {
+                    value: 'ranking',
+                    label: 'Classement',
+                    icon: view === 'strip' ? <StripIcon /> : <BarsIcon />,
+                  },
+                  { value: 'map', label: 'Carte', icon: <MapIcon /> },
                 ]}
               />
             </div>
           </div>
           <div className="pt-3">
-            {view === 'strip' ? (
+            {tree ? (
+              tree.net > 0 ? (
+                // A new reading is a new map: it opens where its URL says,
+                // not where the previous one was left.
+                <MoneyMap key={`${period.from}|${period.to}|${kind}|${reading}|${split}`} root={tree} />
+              ) : (
+                <p className="py-3 text-[13px] text-faint">{emptyLabel}</p>
+              )
+            ) : view === 'strip' ? (
               <ShareRanking
                 rows={rows}
                 dimension={groupBy}

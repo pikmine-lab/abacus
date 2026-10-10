@@ -7,6 +7,8 @@ import { createLevy } from '../src/services/levies.ts'
 import { declareMovement } from '../src/services/movements.ts'
 import {
   firstDeclaredDay,
+  flowLeaves,
+  flowMovements,
   flowTotals,
   monthlyFlows,
   spendingBreakdown,
@@ -540,4 +542,198 @@ test("only a settlement of the activity's own rules changes side, net of what ca
   assert.equal(totals.expenseNet, '10.00')
   // 100 - 10 - 25 + 5, as before the charges changed side.
   assert.equal(Number(totals.income) - Number(totals.expenseNet), 70)
+})
+
+test('the movements behind a row add up to it, each counted as the row counts it', async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency } = await freelance(user)
+  const groceries = await createCategory(user, 'Groceries')
+  const fees = await createCategory(user, 'Fees')
+  const market = await createActor(user, { name: 'Market' })
+  const bakery = await createActor(user, { name: 'Bakery' })
+  const friend = await createActor(user, { name: 'Friend' })
+  const first = await createActor(user, { name: 'First client' })
+  const second = await createActor(user, { name: 'Second client' })
+
+  // An advance half refunded, a plain purchase, and a ghost the row ignores.
+  const advance = await declareMovement(user, {
+    happenedOn: '2026-06-02',
+    amount: 80,
+    sourceAccountId: personal.id,
+    targetActorId: market.id,
+    categoryId: groceries.id,
+    expectedRefundFromActorId: friend.id,
+    expectedRefundAmount: 40,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-15',
+    amount: 40,
+    sourceActorId: friend.id,
+    targetAccountId: personal.id,
+    refundsMovementId: advance.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-04',
+    amount: 50,
+    sourceAccountId: personal.id,
+    targetActorId: bakery.id,
+    categoryId: groceries.id,
+    note: 'Cake',
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-06',
+    amount: 900,
+    sourceAccountId: personal.id,
+    targetActorId: market.id,
+    categoryId: groceries.id,
+    ghost: true,
+  })
+  // Two incomes of the activity, a quarter of which its charges take back.
+  for (const [client, amount] of [
+    [first, 60],
+    [second, 40],
+  ] as const)
+    await declareMovement(user, {
+      happenedOn: '2026-06-05',
+      amount,
+      sourceActorId: client.id,
+      targetAccountId: business.id,
+      categoryId: fees.id,
+      activityId: activity.id,
+    })
+  await declareMovement(user, {
+    happenedOn: '2026-06-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+  })
+
+  const spent = await flowMovements(
+    user,
+    '2026-06-01',
+    '2026-06-30',
+    'expense',
+    'cash',
+    { categoryId: groceries.id },
+    10,
+  )
+  assert.deepEqual(spent, {
+    movements: [
+      {
+        id: spent.movements[0]!.id,
+        happenedOn: '2026-06-04',
+        actorId: bakery.id,
+        actor: 'Bakery',
+        note: 'Cake',
+        gross: '50.00',
+        net: '50.00',
+      },
+      {
+        id: advance.id,
+        happenedOn: '2026-06-02',
+        actorId: market.id,
+        actor: 'Market',
+        note: null,
+        gross: '80.00',
+        net: '40.00',
+      },
+    ],
+    rest: null,
+  })
+  const [row] = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'category', 'expense', 'cash', {
+    categoryId: groceries.id,
+  })
+  assert.equal(row!.net, '90.00')
+  assert.equal(row!.gross, '130.00')
+
+  const earned = await flowMovements(
+    user,
+    '2026-06-01',
+    '2026-06-30',
+    'income',
+    'cash',
+    { categoryId: fees.id },
+    10,
+  )
+  assert.deepEqual(
+    earned.movements.map((m) => [m.actor, m.net]),
+    [
+      ['First client', '45.00'],
+      ['Second client', '30.00'],
+    ],
+  )
+
+  // Cut after the first, the rest still accounts for the whole row.
+  const cut = await flowMovements(
+    user,
+    '2026-06-01',
+    '2026-06-30',
+    'expense',
+    'cash',
+    { categoryId: groceries.id },
+    1,
+  )
+  assert.equal(cut.movements.length, 1)
+  assert.deepEqual(cut.rest, { count: '1', gross: '80.00', net: '40.00' })
+
+  // Every category at once keeps its own biggest and its own rest.
+  const all = await flowLeaves(user, '2026-06-01', '2026-06-30', 'income', 'cash', 1, ['category'])
+  assert.deepEqual(
+    all.movements.map((m) => [m.categoryId, m.actor, m.net]),
+    [[fees.id, 'First client', '45.00']],
+  )
+  assert.deepEqual(all.rests, [
+    { categoryId: fees.id, activityId: null, count: '1', gross: '30.00', net: '30.00' },
+  ])
+})
+
+test('a row narrowed to an activity is the row the full ranking shows for it', async () => {
+  const user = await seedUser()
+  const { personal, business, activity, contributions, agency, employer } = await freelance(user)
+  const client = await createActor(user, { name: 'Client' })
+  const fees = await createCategory(user, 'Fees', 'Work')
+  const salary = await createCategory(user, 'Salary', 'Work')
+
+  await declareMovement(user, {
+    happenedOn: '2026-06-01',
+    amount: 2000,
+    sourceActorId: employer.id,
+    targetAccountId: personal.id,
+    categoryId: salary.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-03',
+    amount: 100,
+    sourceActorId: client.id,
+    targetAccountId: business.id,
+    categoryId: fees.id,
+    activityId: activity.id,
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-06-10',
+    amount: 25,
+    sourceAccountId: business.id,
+    targetActorId: agency.id,
+    categoryId: contributions.id,
+    activityId: activity.id,
+  })
+
+  // The charges are settled over the whole window before the filter applies,
+  // so the activity keeps its net of 75 rather than its 100 gross.
+  const own = await spendingByCategoryGroup(user, '2026-06-01', '2026-06-30', 'income', 'cash', {
+    activityId: activity.id,
+  })
+  assert.deepEqual(
+    own.map((g) => [g.label, g.net, g.categories.map((c) => [c.label, c.net])]),
+    [['Work', '75.00', [['Fees', '75.00']]]],
+  )
+  const none = await spendingByCategoryGroup(user, '2026-06-01', '2026-06-30', 'income', 'cash', {
+    activityId: null,
+  })
+  assert.deepEqual(
+    none.map((g) => [g.label, g.net, g.categories.map((c) => [c.label, c.net])]),
+    [['Work', '2000.00', [['Salary', '2000.00']]]],
+  )
 })

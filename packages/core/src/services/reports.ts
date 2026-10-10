@@ -5,9 +5,15 @@ import {
   type BreakdownGroup,
   type BreakdownRow,
   balanceSeries as balanceSeriesDs,
+  type FlowCut,
   type FlowKind,
+  type FlowMovement,
+  type FlowPlace,
+  type FlowRest,
+  type FlowScope,
   type FlowTotals,
   firstDeclaredDay as firstDeclaredDayDs,
+  flowMovements as flowMovementsDs,
   flowTotals as flowTotalsDs,
   type MonthlyFlow,
   monthlyFlows as monthlyFlowsDs,
@@ -15,7 +21,20 @@ import {
 } from '../db/datasources/reports.ts'
 import type { Reading } from '../domain/types.ts'
 
-export type { BalancePoint, BreakdownGroup, BreakdownRow, FlowKind, FlowTotals, MonthlyFlow, Reading }
+export type {
+  BalancePoint,
+  BreakdownGroup,
+  BreakdownRow,
+  FlowCut,
+  FlowKind,
+  FlowMovement,
+  FlowPlace,
+  FlowRest,
+  FlowScope,
+  FlowTotals,
+  MonthlyFlow,
+  Reading,
+}
 
 export async function spendingBreakdown(
   userId: string,
@@ -24,8 +43,9 @@ export async function spendingBreakdown(
   groupBy: BreakdownGroup,
   kind: FlowKind = 'expense',
   reading: Reading = 'cash',
+  scope: FlowScope = {},
 ): Promise<BreakdownRow[]> {
-  return await spendingBreakdownDs(db(), userId, from, to, groupBy, kind, reading)
+  return await spendingBreakdownDs(db(), userId, from, to, groupBy, kind, reading, scope)
 }
 
 /**
@@ -54,9 +74,10 @@ export async function spendingByCategoryGroup(
   to: string,
   kind: FlowKind = 'expense',
   reading: Reading = 'cash',
+  scope: FlowScope = {},
 ): Promise<BreakdownMass[]> {
   const [rows, categories] = await Promise.all([
-    spendingBreakdownDs(db(), userId, from, to, 'category', kind, reading),
+    spendingBreakdownDs(db(), userId, from, to, 'category', kind, reading, scope),
     listCategoriesDs(db(), userId),
   ])
   const groupOf = new Map(categories.map((c) => [c.id, c.groupLabel]))
@@ -82,6 +103,48 @@ export async function spendingByCategoryGroup(
       categories: mass.rows,
     }))
     .sort((a, b) => Number(b.net) - Number(a.net) || Number(b.gross) - Number(a.gross))
+}
+
+/**
+ * The movements that make one row of the analysis, biggest first and counted
+ * as the row counts them, so that drilling from a total down to what explains
+ * it never changes the figures on the way. Past `limit`, the rest comes back
+ * as one sum.
+ */
+export async function flowMovements(
+  userId: string,
+  from: string,
+  to: string,
+  kind: FlowKind,
+  reading: Reading,
+  scope: FlowScope,
+  limit: number,
+): Promise<{ movements: FlowMovement[]; rest: FlowRest | null }> {
+  const { movements, rests } = await flowMovementsDs(db(), userId, from, to, kind, reading, scope, limit)
+  // Uncut, every row sits nowhere in particular: the place says nothing.
+  const [rest] = rests
+  return {
+    movements: movements.map(({ categoryId: _c, activityId: _a, ...m }) => m),
+    rest: rest ? { count: rest.count, gross: rest.gross, net: rest.net } : null,
+  }
+}
+
+/**
+ * Every movement of the period at once, the biggest `limit` of each category
+ * (of each category within each activity, `per` activity too) and the rest of
+ * each as one sum: what a reading that zooms anywhere needs, bounded however
+ * long the period.
+ */
+export async function flowLeaves(
+  userId: string,
+  from: string,
+  to: string,
+  kind: FlowKind,
+  reading: Reading,
+  limit: number,
+  per: FlowCut[],
+): Promise<{ movements: (FlowMovement & FlowPlace)[]; rests: (FlowRest & FlowPlace)[] }> {
+  return await flowMovementsDs(db(), userId, from, to, kind, reading, {}, limit, per)
 }
 
 export async function balanceSeries(userId: string, from: string, to: string): Promise<BalancePoint[]> {

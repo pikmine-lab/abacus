@@ -143,7 +143,8 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 | Grille de graphe | `#1c212c` | `--grid` | : |
 
 1. **Accent unique, réservé à l'actif** : sélection, focus, bouton primaire, ce qui attend
-   une action, le jugement « à résilier », en badge comme en sélecteur. Jamais décoratif.
+   une action, le jugement « à résilier », en badge comme en sélecteur, bloc pointé ou
+   choisi d'une carte. Jamais décoratif.
 2. **Le cuivre a deux pas** : `--primary` `#e2a04c` est une encre d'interface (contrainte
    WCAG), `--chart-1` `#c58229` la marque de graphe (bande de luminance L 0,48–0,67).
 3. **Six séries**, validées en toutes paires sur `#14171f` : `#c58229` cuivre · `#3987e5`
@@ -156,8 +157,14 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 6. **Le sens n'est jamais porté par la couleur seule** : flèche ↑↓ sur tout écart, position
    de part et d'autre de zéro sur les flux, libellé sur tout badge.
 7. **Pas de couleur par catégorie** : une barre se nomme par son libellé et se mesure par
-   sa longueur, toutes les barres et toutes les parts d'un ruban sont cuivre. Seul l'arc
-   d'un donut prend une teinte, par groupe, sur un jeu fermé de cinq plus un reste.
+   sa longueur, toutes les barres, toutes les parts d'un ruban et tous les blocs d'une
+   carte sont cuivre. Seul l'arc d'un donut prend une teinte, par groupe, sur un jeu fermé
+   de cinq plus un reste.
+10. **Sur une carte, la profondeur se lit au cuivre** : chaque niveau plus bas est un cran
+    plus clair (masse au cuivre de graphe, puis catégorie, puis mouvement, chacun mêlé
+    d'un peu plus d'encre principale), les blocs sont séparés par une couture de cuivre
+    plus sombre, et le reste d'une catégorie (ses plus petits mouvements additionnés) est
+    un bloc neutre, estompé sur le fond, à l'encre principale.
 8. **Le thème sombre est le seul** : la palette est mesurée contre `#14171f`.
 9. **Une valeur saisie est à l'encre principale**, l'indication d'un champ vide à l'encre
    secondaire : 13,9:1 contre 6,4:1 sur le fond du champ (`#1a1e27`). Une valeur ne se
@@ -167,7 +174,11 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 
 - **Les contrôles qui cadrent un écran sont en haut et écrivent dans l'URL** : une vue
   cadrée se partage, se recharge et se défait au bouton retour. Dans l'en-tête quand
-  l'écran se lit sur une période, sinon dans une rangée sous lui.
+  l'écran se lit sur une période, sinon dans une rangée sous lui. **Où regarde une carte,
+  et le bloc choisi dessus, s'écrivent en place** : un lien ou un rechargement y ramène,
+  mais le retour ne défait ni un déplacement ni un zoom, une carte ne se remonte pas pas à
+  pas. Ses contrôles de cadrage (la vue, le premier niveau) passent, eux, par
+  l'historique.
 - **Un contrôle se pose là où porte sa portée.** Quand seul un graphe a une période
   (Placements, où le reste est instantané), ses durées se posent sur lui ; quand le sens
   (Dépenses | Revenus) et la dimension ne cadrent que le classement, ils se posent sur son
@@ -214,7 +225,10 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   un vrai contrôle (rôle, tabulation, Entrée/Espace) qui recadre la période de l'écran
   dessus, et elle seule : ce qui cadre l'écran par ailleurs (sens, dimension) reste.
 - **Une infobulle suit le curseur**, jamais un `title` de navigateur ; elle se retourne au
-  bord, ne passe pas sous la main, et ne répète pas ce que la ligne montre.
+  bord, ne passe pas sous la main, et ne répète pas ce que la ligne montre. **Sauf sur une
+  carte** : un bloc trop petit pour son libellé n'en montre rien, donc l'infobulle nomme
+  toujours le bloc entier (chemin, nom, montant, puis sa part ou, pour un mouvement, sa
+  date et sa note).
 - **Le label de fin est mesuré, pas estimé** : la marge est taillée sur sa largeur réelle,
   plafonnée au tiers du cadre ; un nom se raccourcit, un montant jamais.
 - **Une sélection par défaut dit quelque chose** : les soldes s'ouvrent sur les comptes les
@@ -222,7 +236,10 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
 - **Le donut répond par masses** : une part par groupe ; au-delà de cinq, la queue fusionne
   en un reste estompé. Le survol relie l'arc à sa ligne.
 - **Un classement se lit en ruban ou en barres, au choix de la personne** (Réglages, rien
-  dans l'URL : c'est une façon de lire, pas un cadrage). Le ruban pose la période en une
+  dans l'URL : c'est une façon de lire, pas un cadrage), **ou en carte**, une lecture
+  qu'on ouvre pour une visite et qui s'écrit dans l'URL. Deux icônes au bout de l'en-tête
+  du classement choisissent : le dessin du classement de la personne, et une carte. Un
+  onglet dessiné par une icône dit son nom dans une infobulle. Le ruban pose la période en une
   barre découpée en parts, vingt puis un reste, séparées de 2 px (tout cuivre, rien ne le
   borne aux cinq teintes du donut) ; il porte
   l'écran, donc il monte à 44 px quand une barre de graphe s'arrête à 24. Les noms se
@@ -231,6 +248,21 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   pointée dans la liste allume sa part, et une catégorie d'un groupe déplié allume la sienne
   dans la part du groupe, à sa place dans l'ordre de la liste. Les barres donnent une barre
   par ligne (`lead` : lignes plus hautes, libellés plus larges, masses en encre pleine).
+- **La carte se lit comme une carte géographique** : des blocs aussi grands que ce qu'ils
+  pèsent, emboîtés des masses aux mouvements, où l'on zoome à la molette ou au pincement
+  et se déplace au glisser. Le détail vient avec le zoom : un bloc se nomme dès qu'il a la
+  place, un mouvement montre son acteur, sa date et son montant sans survol. Les textes
+  gardent leur taille à l'écran à tout zoom (noms en Geist 13 px, chiffres en Geist Mono
+  12 px), et les interstices leur largeur. Un nom se raccourcit avant un montant, et un nom
+  réduit à un moignon disparaît : le montant seul se lit, « Bi… » non.
+- **Un bloc pointé se soulève et un bloc choisi se cadre** : survolé, il s'éclaire un peu
+  et prend un anneau de cuivre d'interface (`--primary`) hors d'un filet sombre, puisque
+  du cuivre sur du cuivre ne se lirait pas ; choisi d'un clic, il est cadré, le reste de
+  la carte s'assombrit, et l'anneau s'épaissit. Une barre dans la carte, en haut à gauche,
+  dit où il se trouve, mène aux mouvements et le relâche.
+- **La carte bouge sans se faire remarquer** : cadrer un bloc ou revenir à la carte
+  entière prend 450 ms en décélération, un pas de zoom (+ / −) 200 ms ; sous
+  `prefers-reduced-motion`, rien ne glisse.
 - **Marques** : lignes 2 px, points de fin r4 avec anneau du fond, barres ≤ 24 px à bout
   arrondi, grille en filet discret, ticks au format français (`13,5k`).
 

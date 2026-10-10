@@ -62,8 +62,8 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
       : tx`date_trunc('month', m.happened_on)::date`
   return tx`
     counted as (
-      select m.kind, m.amount, m.activity_id, m.category_id, m.source_actor_id, m.target_actor_id,
-             m.refunds_movement_id,
+      select m.id, m.happened_on, m.note, m.kind, m.amount, m.activity_id, m.category_id,
+             m.source_actor_id, m.target_actor_id, m.refunds_movement_id,
              ${windowStart} as window_start,
              coalesce(r.total, 0) as refunded,
              m.kind = 'expense' and exists (
@@ -199,6 +199,27 @@ export interface BreakdownRow {
 }
 
 /**
+ * Narrows a flow analysis to one activity and/or one category, without
+ * touching how its figures are computed: the filter applies to the rows of
+ * `flow`, after each movement's share is settled over the whole window. A
+ * business activity's income therefore keeps the net it has in the unfiltered
+ * reading, and a filtered row is the very row the full ranking shows.
+ *
+ * Absent selects everything, `null` selects what carries none.
+ */
+export interface FlowScope {
+  activityId?: string | null
+  categoryId?: string | null
+}
+
+function inScope(tx: Executor, scope: FlowScope) {
+  return tx`
+    ${scope.activityId === null ? tx`and m.activity_id is null` : scope.activityId ? tx`and m.activity_id = ${scope.activityId}` : tx``}
+    ${scope.categoryId === null ? tx`and m.category_id is null` : scope.categoryId ? tx`and m.category_id = ${scope.categoryId}` : tx``}
+  `
+}
+
+/**
  * Spending (or income) over a period, grouped by category, actor, activity or
  * category group. Both readings are always returned: gross is the reality of
  * outflows, net only diverges once a linked refund has been received.
@@ -228,6 +249,7 @@ export async function spendingBreakdown(
   groupBy: BreakdownGroup,
   kind: FlowKind = 'expense',
   reading: Reading = 'cash',
+  scope: FlowScope = {},
 ): Promise<BreakdownRow[]> {
   const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
   const entity = tx`left join category g on g.id = m.category_id`
@@ -254,10 +276,127 @@ export async function spendingBreakdown(
            count(*) as count
     from flow m
     ${dimension.join}
-    where m.side = ${kind} and m.scale > 0
+    where m.side = ${kind} and m.scale > 0 ${inScope(tx, scope)}
     group by 1, 2
     order by net desc, gross desc
   `
+}
+
+/** One movement as a flow analysis counts it: its share, net of what came back. */
+export interface FlowMovement {
+  id: string
+  happenedOn: string
+  /** The counterparty: who was paid on the expense side, who paid on the income side. */
+  actorId: string | null
+  actor: string | null
+  note: string | null
+  gross: string
+  net: string
+}
+
+/** What the movements left out of a cut list weigh together. */
+export interface FlowRest {
+  count: string
+  gross: string
+  net: string
+}
+
+/** Where a movement or a rest sits, when the list is cut per category (and activity). */
+export interface FlowPlace {
+  categoryId: string | null
+  activityId: string | null
+}
+
+/** The rows a flow analysis can cut its movement list by, each cut on its own. */
+export type FlowCut = 'category' | 'activity'
+
+/**
+ * The movements behind a row of the analysis, biggest net first, each counted
+ * exactly as the row counts it: ghosts left out, linked refunds deducted, a
+ * business activity's income for its share of what its charges leave. Their
+ * nets add up to the row's net, give or take the rounding of each share to
+ * the cent.
+ *
+ * The list stops at `limit`, and what it leaves out comes back as one rest,
+ * so the whole row is still accounted for: the cut happens here rather than in
+ * the caller, which would otherwise load a category's entire history to show
+ * its biggest few. Cut `per` category (and activity), every one of them keeps
+ * its own biggest and its own rest, in one query.
+ */
+export async function flowMovements(
+  tx: Executor,
+  userId: string,
+  from: string,
+  to: string,
+  kind: FlowKind,
+  reading: Reading,
+  scope: FlowScope,
+  limit: number,
+  per: FlowCut[] = [],
+): Promise<{ movements: (FlowMovement & FlowPlace)[]; rests: (FlowRest & FlowPlace)[] }> {
+  const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
+  const byCategory = per.includes('category')
+  const byActivity = per.includes('activity')
+  const partition =
+    byCategory && byActivity
+      ? tx`partition by m.category_id, m.activity_id`
+      : byCategory
+        ? tx`partition by m.category_id`
+        : byActivity
+          ? tx`partition by m.activity_id`
+          : tx``
+  const rows = await tx<(FlowMovement & FlowPlace & { rank: string; restCount: string | null })[]>`
+    with ${ledger(tx, userId, from, to, reading)},
+    ranked as (
+      select m.id, m.happened_on, m.note, g.id as actor_id, g.name as actor,
+             ${byCategory ? tx`m.category_id` : tx`null::uuid`} as category_id,
+             ${byActivity ? tx`m.activity_id` : tx`null::uuid`} as activity_id,
+             m.amount * m.scale as gross,
+             (m.amount - m.refunded) * m.scale as net,
+             row_number() over (${partition}
+                                order by (m.amount - m.refunded) * m.scale desc,
+                                         m.amount * m.scale desc, m.happened_on desc, m.id) as rank
+      from flow m
+      left join actor g on g.id = ${actorColumn}
+      where m.side = ${kind} and m.scale > 0 ${inScope(tx, scope)}
+    )
+    select id::text, happened_on::text, note, actor_id::text, actor,
+           category_id::text, activity_id::text,
+           gross::numeric(14,2)::text as gross, net::numeric(14,2)::text as net,
+           rank, null as rest_count
+    from ranked where rank <= ${limit}
+    union all
+    select null, null, null, null, null, category_id::text, activity_id::text,
+           sum(gross)::numeric(14,2)::text, sum(net)::numeric(14,2)::text,
+           null, count(*)::text
+    from ranked where rank > ${limit}
+    group by category_id, activity_id
+    order by rank nulls last
+  `
+  return {
+    movements: rows
+      .filter((r) => r.restCount === null)
+      .map(({ id, happenedOn, actorId, actor, note, gross, net, categoryId, activityId }) => ({
+        id,
+        happenedOn,
+        actorId,
+        actor,
+        note,
+        gross,
+        net,
+        categoryId,
+        activityId,
+      })),
+    rests: rows
+      .filter((r) => r.restCount !== null)
+      .map((r) => ({
+        count: r.restCount!,
+        gross: r.gross,
+        net: r.net,
+        categoryId: r.categoryId,
+        activityId: r.activityId,
+      })),
+  }
 }
 
 export interface FlowTotals {
