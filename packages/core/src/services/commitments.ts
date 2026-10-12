@@ -28,6 +28,7 @@ import {
   updateInstallmentPlan,
 } from '../db/datasources/installments.ts'
 import { getAsset } from '../db/datasources/investments.ts'
+import { checkRefundShare } from '../domain/advance.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, endOfMonth, today } from '../domain/period.ts'
 import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
@@ -121,6 +122,30 @@ async function requireCardFor(
     )
 }
 
+/**
+ * The share of each occurrence someone pays back. Every occurrence becomes an
+ * ordinary advance (see movements.ts), so the share obeys the same rule as one
+ * stated on a single expense, against the price of one period. Only an
+ * outgoing subscription carries it: a revenue is not owed back, a placement
+ * pays nobody, and a financing's installments are a written plan of their own.
+ */
+async function requireRefundShare(
+  tx: Executor,
+  userId: string,
+  commitment: { kind: Commitment['kind']; direction: Commitment['direction']; amount: number },
+  debtor: string | null | undefined,
+  share: number | null | undefined,
+): Promise<void> {
+  if (!debtor && (share === undefined || share === null)) return
+  if (commitment.kind !== 'subscription' || commitment.direction !== 'outgoing')
+    throw new DomainError(
+      'advance_is_expense',
+      'Only an outgoing subscription can be partly refunded: its occurrences are expenses',
+    )
+  if (debtor) await requireActor(tx, userId, debtor)
+  checkRefundShare(debtor, share, commitment.amount)
+}
+
 async function requireAsset(tx: Executor, userId: string, assetId: string): Promise<void> {
   if (!(await getAsset(tx, userId, assetId)))
     throw new DomainError('asset_not_found', `No asset ${assetId} for this user`)
@@ -154,6 +179,10 @@ export interface SubscriptionInput {
   engagedUntil?: string
   /** Outgoing only: the card it is billed to, which must debit `accountId`. */
   cardId?: string
+  /** Outgoing only: who pays part of each occurrence back. Requires `expectedRefundAmount`. */
+  expectedRefundFromActorId?: string
+  /** The share of each occurrence owed back, in the billing currency, at most `amount`. */
+  expectedRefundAmount?: number
 }
 
 export async function createSubscription(
@@ -170,6 +199,13 @@ export async function createSubscription(
         direction: input.direction ?? 'outgoing',
         accountId: input.accountId,
       })
+    await requireRefundShare(
+      tx,
+      userId,
+      { kind: 'subscription', direction: input.direction ?? 'outgoing', amount: input.amount },
+      input.expectedRefundFromActorId,
+      input.expectedRefundAmount,
+    )
     const currency = await resolveCurrency(tx, input.currency, history)
     const commitment = await insertCommitment(tx, {
       userId,
@@ -189,6 +225,8 @@ export async function createSubscription(
       judgment: input.judgment ?? null,
       judgmentNote: input.judgmentNote ?? null,
       engagedUntil: input.engagedUntil ?? null,
+      expectedRefundFromActorId: input.expectedRefundFromActorId ?? null,
+      expectedRefundAmount: input.expectedRefundAmount ?? null,
     })
     await insertCommitmentEvent(tx, commitment.id, today(), 'created', input.amount, null, null, currency)
     return commitment
@@ -414,8 +452,10 @@ export async function createInvestmentPlan(userId: string, input: InvestmentPlan
  * `amount` stays in the billing currency (it is what the provider states);
  * `amountEur` is what forecast sums add up, equal to it on a EUR commitment
  * and null in the one case no rate was ever fetched for the pair.
+ * `refundEur` is the share someone pays back on each occurrence, re-said the
+ * same way, null when nobody does.
  */
-export type CommitmentWithEur = Commitment & { amountEur: string | null }
+export type CommitmentWithEur = Commitment & { amountEur: string | null; refundEur: string | null }
 
 /** The latest known rate of every foreign currency these commitments bill in. */
 async function latestRates(
@@ -440,9 +480,16 @@ async function withEurAmounts<T extends Commitment>(
   tx: Executor,
   commitments: T[],
   history: HistoryFetcher,
-): Promise<(T & { amountEur: string | null })[]> {
+): Promise<(T & { amountEur: string | null; refundEur: string | null })[]> {
   const rates = await latestRates(tx, commitments, history)
-  return commitments.map((c) => ({ ...c, amountEur: eurOf(c.amount, c.currency, rates) }))
+  return commitments.map((c) => ({ ...c, ...eurAmounts(c, rates) }))
+}
+
+function eurAmounts(c: Commitment, rates: Map<string, string | null>) {
+  return {
+    amountEur: eurOf(c.amount, c.currency, rates),
+    refundEur: c.expectedRefundAmount === null ? null : eurOf(c.expectedRefundAmount, c.currency, rates),
+  }
 }
 
 export async function listCommitments(
@@ -476,14 +523,14 @@ export async function listCommitmentsWithProgress(
   const rates = await latestRates(sql, raw, history)
   return await Promise.all(
     raw.map(async (c) => {
-      const amountEur = eurOf(c.amount, c.currency, rates)
-      if (c.kind !== 'financing') return { ...c, amountEur, progress: null }
+      const eur = eurAmounts(c, rates)
+      if (c.kind !== 'financing') return { ...c, ...eur, progress: null }
       const progress = await scheduleProgress(sql, c.id)
-      if (!progress) return { ...c, amountEur, progress: null }
+      if (!progress) return { ...c, ...eur, progress: null }
       const remainingDueEur = eurOf(progress.remainingDue, c.currency, rates)
       return {
         ...c,
-        amountEur,
+        ...eur,
         progress: {
           paidInstallments: progress.paid,
           paidTotal: progress.paidAmount,
@@ -528,6 +575,21 @@ export async function changeAmount(
       throw new DomainError(
         'financing_keeps_currency',
         'A financing schedule is written in its currency: it does not change mid-plan',
+      )
+    // The share owed back is stated in the billing currency and in euros of
+    // it, never as a percentage: a new price leaves it as it is, so a price
+    // that falls below it, or a currency that changes under it, would leave
+    // every next occurrence claiming what was never paid.
+    const share = commitment.expectedRefundAmount === null ? null : Number(commitment.expectedRefundAmount)
+    if (share !== null && currency !== commitment.currency)
+      throw new DomainError(
+        'refund_share_keeps_currency',
+        'The share refunded is stated in the current currency: change or drop it before changing the currency',
+      )
+    if (share !== null && newAmount < share)
+      throw new DomainError(
+        'refund_share_above_price',
+        `The new price (${newAmount}) is below the share refunded on each occurrence (${share}): lower that share first`,
       )
     const updated = await updateCommitment(tx, userId, id, { amount: newAmount, currency })
     await insertCommitmentEvent(
@@ -612,6 +674,13 @@ export interface CommitmentEdit {
    * confirmed keep what paid them.
    */
   cardId?: string | null
+  /**
+   * Outgoing subscription only: who pays part of each occurrence back, null to
+   * drop the claim. The two are stated together, like on an advance. The
+   * occurrences already confirmed keep the claim they were written with.
+   */
+  expectedRefundFromActorId?: string | null
+  expectedRefundAmount?: number | null
 }
 
 const EDITABLE = [
@@ -625,6 +694,8 @@ const EDITABLE = [
   'targetAccountId',
   'assetId',
   'cardId',
+  'expectedRefundFromActorId',
+  'expectedRefundAmount',
 ] as const
 
 /**
@@ -667,6 +738,27 @@ export async function editCommitment(userId: string, id: string, input: Commitme
     }
     if (input.assetId !== undefined) await requireAsset(tx, userId, input.assetId)
     if (input.cardId) await requireCardFor(tx, userId, input.cardId, commitment)
+    if (input.expectedRefundFromActorId !== undefined || input.expectedRefundAmount !== undefined) {
+      // Dropping the debtor drops the share with it: a claim on nobody is no claim.
+      if (input.expectedRefundFromActorId === null) input = { ...input, expectedRefundAmount: null }
+      const debtor =
+        input.expectedRefundFromActorId !== undefined
+          ? input.expectedRefundFromActorId
+          : commitment.expectedRefundFromActorId
+      const share =
+        input.expectedRefundAmount !== undefined
+          ? input.expectedRefundAmount
+          : commitment.expectedRefundAmount === null
+            ? null
+            : Number(commitment.expectedRefundAmount)
+      await requireRefundShare(
+        tx,
+        userId,
+        { ...commitment, amount: Number(commitment.amount) },
+        debtor,
+        share,
+      )
+    }
 
     const patch: Record<string, unknown> = {}
     for (const key of EDITABLE) if (input[key] !== undefined) patch[key] = input[key]
@@ -739,12 +831,25 @@ export function monthlyEquivalent(c: Pick<Commitment, 'amount' | 'periodUnit' | 
 }
 
 /**
- * Same figure in euros at the latest rate, which is what every sum across
- * commitments must use: a USD line added as-is would count dollars as euros.
+ * What a commitment costs a month in euros at the latest rate, net of the
+ * share someone pays back: that is what it costs, the way every expense figure
+ * reads net of its refunds, and what every sum across commitments must use (a
+ * USD line added as-is would count dollars as euros). The gross, what leaves
+ * the account before the refund comes back, is `monthlyGrossEur`.
+ *
  * A commitment whose pair was never priced contributes nothing rather than a
  * guess; the row itself still shows its own currency.
  */
 export function monthlyEquivalentEur(
+  c: Pick<CommitmentWithEur, 'amountEur' | 'refundEur' | 'periodUnit' | 'periodCount'>,
+): number {
+  if (c.amountEur === null) return 0
+  const net = Number(c.amountEur) - Number(c.refundEur ?? 0)
+  return monthlyEquivalent({ amount: net.toFixed(2), periodUnit: c.periodUnit, periodCount: c.periodCount })
+}
+
+/** The monthly equivalent before any refund: what leaves the account. */
+export function monthlyGrossEur(
   c: Pick<CommitmentWithEur, 'amountEur' | 'periodUnit' | 'periodCount'>,
 ): number {
   if (c.amountEur === null) return 0
@@ -1114,6 +1219,11 @@ export async function confirmNextOccurrence(
         commitmentId: commitment.id,
         accrualMonth,
         cardId,
+        // A subscription partly paid back by someone: every occurrence is an
+        // ordinary advance on that share, refunded and closed like any other.
+        expectedRefundFromActorId: commitment.expectedRefundFromActorId ?? undefined,
+        expectedRefundAmount:
+          commitment.expectedRefundAmount === null ? undefined : Number(commitment.expectedRefundAmount),
       },
       history,
     )

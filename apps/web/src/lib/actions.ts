@@ -281,6 +281,24 @@ async function actorIdFromName(userId: string, name: string): Promise<string> {
 }
 
 /**
+ * The share of each occurrence someone pays back, as the subscription panels
+ * send it: who, by name, and the euros the share fields settled on. Nothing
+ * when the block was left closed.
+ */
+async function refundShareOf(
+  userId: string,
+  formData: FormData,
+  n: Awaited<ReturnType<typeof numbersOf>>,
+): Promise<{ expectedRefundFromActorId: string; expectedRefundAmount: number } | undefined> {
+  const debtor = opt(formData, 'expectedRefundFrom')
+  if (!debtor) return undefined
+  return {
+    expectedRefundFromActorId: await actorIdFromName(userId, debtor),
+    expectedRefundAmount: n.num('expectedRefundAmount'),
+  }
+}
+
+/**
  * Every declaration moves a balance, a total or a due date, so every view is
  * stale afterwards. Listing the routes beats revalidating a tag per entity for
  * an app of this size: but it does have to list them all.
@@ -732,6 +750,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       judgment: opt(formData, 'judgment') as Judgment | undefined,
       engagedUntil: opt(formData, 'engagedUntil'),
       cardId: str(formData, 'direction') === 'incoming' ? undefined : opt(formData, 'cardId'),
+      ...(await refundShareOf(userId, formData, n)),
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -944,6 +963,12 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
       ...every,
       // Only where the panel offered one: an empty choice then means a direct debit.
       ...(formData.get('cardField') !== null && { cardId: opt(formData, 'cardId') ?? null }),
+      // Only where the panel offered it: a closed block then drops the claim.
+      ...(formData.get('refundField') !== null &&
+        ((await refundShareOf(userId, formData, await numbersOf(formData))) ?? {
+          expectedRefundFromActorId: null,
+          expectedRefundAmount: null,
+        })),
     })
   } catch (e) {
     return { error: await refusal(e) }

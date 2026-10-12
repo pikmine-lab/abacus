@@ -252,6 +252,13 @@ export interface Commitment {
   totalAmount: string | null
   /** Outgoing subscription only: the card it is billed to. */
   cardId: string | null
+  /**
+   * Outgoing subscription only: who pays part of it back. Each confirmed
+   * occurrence is an advance on this actor for `expectedRefundAmount`.
+   */
+  expectedRefundFromActorId: string | null
+  /** The share owed back per occurrence, in the commitment's currency. */
+  expectedRefundAmount: string | null
 }
 
 export type CommitmentEventType =

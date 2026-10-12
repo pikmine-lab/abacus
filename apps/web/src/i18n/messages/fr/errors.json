@@ -65,6 +65,8 @@
   "advance_amount_invalid": "La part attendue doit être supérieure à zéro.",
   "advance_amount_too_large": "La part attendue ne peut pas dépasser le montant de la dépense.",
   "advance_is_expense": "Seule une dépense peut être avancée pour quelqu’un.",
+  "refund_share_above_price": "Le nouveau prix serait inférieur à la part remboursée à chaque échéance : baisse d’abord cette part dans « Modifier ».",
+  "refund_share_keeps_currency": "La part remboursée est exprimée dans la devise actuelle : retire-la ou corrige-la avant de changer de devise.",
   "advance_has_refund": "Un remboursement est déjà lié à cette avance : supprime-le avant de retirer la créance.",
   "advance_below_refunds": "La part attendue est déjà dépassée par ce qui a été remboursé.",
   "advance_settled": "Cette avance est déjà remboursée en entier.",

@@ -6,7 +6,7 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { cardStatements, listCards } from '@abacus/core/services/cards'
 import { listActivities, listCategories } from '@abacus/core/services/catalog'
-import { listCommitmentsWithProgress, monthlyEquivalentEur } from '@abacus/core/services/commitments'
+import { listCommitmentsWithProgress, monthlyGrossEur } from '@abacus/core/services/commitments'
 import { listMovements } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
@@ -289,8 +289,9 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
                         ` · ${t('cardPage.installmentsPaid', { paid: c.progress.paidInstallments, total: c.installmentsTotal ?? 0 })}`}
                     </span>
                   </div>
+                  {/* What the card is charged: the gross, a refund comes back to the account. */}
                   <span className="ml-auto shrink-0 font-mono text-[13px] tabular">
-                    −{format.eur(monthlyEquivalentEur(c), 2)}
+                    −{format.eur(monthlyGrossEur(c), 2)}
                     <span className="text-[11px] text-faint"> {t('cardPage.perMonth')}</span>
                   </span>
                 </div>

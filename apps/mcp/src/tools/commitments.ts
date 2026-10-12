@@ -1,6 +1,7 @@
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
+import { listActors } from '@abacus/core/services/actors'
 import { listCards } from '@abacus/core/services/cards'
 import {
   COMMITMENT_SORTS,
@@ -16,6 +17,7 @@ import {
   groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
+  monthlyGrossEur,
   moveAccount,
   reviseSchedule,
   setJudgment,
@@ -41,7 +43,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'manage_subscription',
     {
       description:
-        'Manages subscriptions and recurring incomes (open-ended commitments). Actions: create (new subscription, or a salary with direction incoming), change_price (the price changed: the dated history is kept, which is how raises become visible), set_judgment (essential / reducible / to_cancel, with a note), cancel (no more occurrences). For an installment purchase use declare_financing. To correct what the commitment says about itself (label, actor, account, category, periodicity), use update_commitment: a mistyped label is a correction, not a price change. The actual debit of each occurrence is confirmed through confirm_due_movements, never through declare_movements.',
+        'Manages subscriptions and recurring incomes (open-ended commitments). Actions: create (new subscription, or a salary with direction incoming), change_price (the price changed: the dated history is kept, which is how raises become visible), set_judgment (essential / reducible / to_cancel, with a note), cancel (no more occurrences). A subscription partly paid back by someone else (an employer covering half a transport pass) states it once at create, with expectedRefundFrom and expectedRefundAmount: every confirmed occurrence is then an advance on that share, listed by list_outstanding_advances and refunded like any other. For an installment purchase use declare_financing. To correct what the commitment says about itself (label, actor, account, category, periodicity), use update_commitment: a mistyped label is a correction, not a price change. The actual debit of each occurrence is confirmed through confirm_due_movements, never through declare_movements.',
       inputSchema: z.object({
         action: z.enum(['create', 'change_price', 'set_judgment', 'cancel']),
         commitment: z
@@ -89,6 +91,19 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .describe(
             'create, outgoing only: the card it is billed to (manage_cards), which must debit the account. Each occurrence is then a purchase on it: on a deferred-debit card, it leaves the account on the debit day. Leave it out for a direct debit',
           ),
+        expectedRefundFrom: z
+          .string()
+          .optional()
+          .describe(
+            'create, outgoing only: name of the actor who pays part of each occurrence back (an employer). Requires expectedRefundAmount',
+          ),
+        expectedRefundAmount: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            'create: how much of each occurrence is owed back, in the billing currency, at most amount. A share stated in percent is converted by you ("half of 80" is 40). It stays as stated when the price changes: a price below it is refused until the share is lowered with update_commitment',
+          ),
         effectiveOn: isoDate.optional().describe('change_price/cancel: effective date, defaults to today'),
       }),
     },
@@ -113,6 +128,10 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             judgmentNote: a.judgmentNote,
             engagedUntil: a.engagedUntil,
             cardId: a.card ? (await requireCardByName(userId, a.card)).id : undefined,
+            expectedRefundFromActorId: a.expectedRefundFrom
+              ? (await requireActorByName(userId, a.expectedRefundFrom, { createIfUnknown: true })).actor.id
+              : undefined,
+            expectedRefundAmount: a.expectedRefundAmount,
           })
           return ok({ commitmentId: commitment.id, label: commitment.label, nextDueOn: commitment.nextDueOn })
         }
@@ -148,7 +167,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'update_commitment',
     {
       description:
-        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, a subscription lock-in date and the card it is billed to, and for an investment plan the asset it buys and the account it feeds. Works on subscriptions, recurring incomes, financings and investment plans alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
+        'Corrects what an existing commitment says about itself: its label, who bills it, how it is filed (category, activity), how often it falls, a subscription lock-in date, the card it is billed to and the share someone pays back on each occurrence, and for an investment plan the asset it buys and the account it feeds. Works on subscriptions, recurring incomes, financings and investment plans alike, and is the tool for "it is not called that", "wrong category". What it never touches: the movements already recorded, which state what happened on the account it happened on, so the correction applies from the next occurrence onwards. Three things have their own tool: the amount and the currency it is billed in, because a price change is dated history (manage_subscription change_price), the account, because a debit that moves does so on a date (change_commitment_account), and the schedule of a financing (manage_financing_schedule). Turning an outgoing commitment into an incoming one is not a correction: cancel it and declare the right one, because its own past movements would contradict a flipped direction.',
       inputSchema: z.object({
         commitment: z.string().describe('Label (or id) of the commitment to correct'),
         label: z.string().optional().describe('New label'),
@@ -180,6 +199,19 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .describe(
             'Outgoing subscription or financing only: the card it is billed to from the next occurrence (manage_cards), which must debit its account, or "none" for a direct debit',
           ),
+        expectedRefundFrom: z
+          .string()
+          .optional()
+          .describe(
+            'Outgoing subscription only: the actor who pays part of each occurrence back from now on, or "none" to drop the claim. Occurrences already confirmed keep the advance they were written with',
+          ),
+        expectedRefundAmount: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            'Outgoing subscription only: the share of each occurrence owed back, in the billing currency, at most its price. Required when expectedRefundFrom names a debtor and none was set',
+          ),
       }),
     },
     async (u) =>
@@ -188,6 +220,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
         const category = clearable(u.category)
         const activity = clearable(u.activity)
         const card = clearable(u.card)
+        const debtor = clearable(u.expectedRefundFrom)
         const updated = await editCommitment(userId, target.id, {
           label: u.label,
           actorId: u.actor ? (await requireActorByName(userId, u.actor)).actor.id : undefined,
@@ -201,6 +234,8 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             ? (await requireAccountByName(userId, u.targetAccount)).id
             : undefined,
           cardId: card ? (await requireCardByName(userId, card)).id : card,
+          expectedRefundFromActorId: debtor ? (await requireActorByName(userId, debtor)).actor.id : debtor,
+          expectedRefundAmount: debtor === null ? null : u.expectedRefundAmount,
         })
         return ok({
           commitmentId: updated.id,
@@ -448,7 +483,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is net of the share someone pays back on a subscription (refundedBy, refundedShare per occurrence), the way expenses read net of their refunds; monthlyGross on such a line is what leaves the account before the refund comes back.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
         sortBy: z
@@ -478,6 +513,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
         })
         const assetNames = new Map((await listAssets(userId)).map((a) => [a.id, a.name]))
         const cardNames = new Map((await listCards(userId)).map((card) => [card.id, card.name]))
+        const actorNames = new Map((await listActors(userId)).map((a) => [a.id, a.name]))
         const view = commitments.map((c) => {
           if (c.kind === 'investment_plan') {
             return {
@@ -524,8 +560,15 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             amount: Number(c.amount),
             ...(c.currency !== 'EUR' ? { currency: c.currency } : {}),
             every: `${c.periodCount} ${c.periodUnit}`,
+            ...(c.expectedRefundAmount !== null
+              ? {
+                  refundedBy: actorNames.get(c.expectedRefundFromActorId!),
+                  refundedShare: Number(c.expectedRefundAmount),
+                  monthlyGross: monthlyGrossEur(c),
+                }
+              : {}),
             // Always in euros (latest rate on a foreign commitment), so the
-            // caller can add these up.
+            // caller can add these up. Net of a refunded share, like the totals.
             monthlyEquivalent: monthlyEquivalentEur(c),
             judgment: c.judgment ?? 'not judged',
             judgmentNote: c.judgmentNote ?? undefined,
