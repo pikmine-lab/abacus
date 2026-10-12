@@ -125,7 +125,8 @@ créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de prod e
 nr db:up         # démarre la base (port local 5544)
 nr migrate:dev   # applique les migrations dessus
 nr data:seed     # réécrit le compte de démo dans la base qu'ouvre l'app
-nr db:reset      # base neuve, migrée et semée (détruit le volume, bases des worktrees comprises)
+nr db:reset      # recrée, migre et sème la base qu'ouvre l'app, celle de ce worktree seulement
+nr db:down -v    # détruit le volume et toutes les bases, worktrees compris
 ```
 
 **Un compte de démo remplit chaque écran** : `demo@abacus.local`, mot de passe
