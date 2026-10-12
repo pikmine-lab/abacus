@@ -6,10 +6,10 @@ import { type Format, useFormat } from '@/lib/format'
 
 /**
  * What one fiscal month of an activity came to: what came in under the
- * regime's basis, what it owes on it, and what is left. One bar per month,
+ * regime's basis, what it paid out of it, and what is left. One bar per month,
  * read as DESIGN.md has it, full plus translucent: the solid part is the net,
- * the translucent part accolée is the charges and provisions that were taken
- * out of it, so the whole bar is what came in.
+ * the translucent part accolée is the charges paid out of it, so the whole bar
+ * is what came in.
  *
  * The month being lived through is hatched behind its flag rather than drawn
  * smaller: unfinished is not small.
@@ -19,7 +19,7 @@ export interface ActivityMonth {
   /** First day of the month, as the statement gives it. */
   month: string
   revenue: number
-  /** Real charges plus the provisions of the rules: what the month owes. */
+  /** Expenses plus what the rules were paid: what left the activity that month. */
   charges: number
   net: number
   paidToSelf: number
@@ -98,7 +98,7 @@ export function ActivityMonths({
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)', opacity: 0.32 }} />
-          {t('chargesAndProvisions')}
+          {t('paidCharges')}
         </span>
       </div>
 
@@ -243,7 +243,7 @@ export function ActivityMonths({
           >
             <p className="text-[11px] text-faint">{format.monthLong(rows[hover].month)}</p>
             <Line label={revenueWord} value={rows[hover].revenue} />
-            <Line label={t('chargesAndProvisions')} value={rows[hover].charges} />
+            <Line label={t('paidCharges')} value={rows[hover].charges} />
             <Line label={t('net')} value={rows[hover].net} strong />
             <Line label={t('paid')} value={rows[hover].paidToSelf} />
             {rows[hover].running && <p className="text-[10.5px] text-faint">{t('runningNote')}</p>}

@@ -138,7 +138,7 @@
   "invoice_overpaid": "Ce montant dépasse le reste à recevoir sur la facture.",
   "invoice_settled": "Cette facture est déjà encaissée en entier.",
   "invoice_has_payments": "Des revenus règlent déjà cette facture : détache-les d’abord.",
-  "invoice_below_payments": "Le net à recevoir ne peut pas passer sous ce qui a déjà été encaissé.",
+  "invoice_below_payments": "Le montant à recevoir ne peut pas passer sous ce qui a déjà été encaissé.",
   "invoice_already_cancelled": "Cette facture est déjà annulée.",
   "invoice_not_open": "Cette facture est encaissée ou annulée : rien à relancer.",
   "duplicateName": "Ce nom existe déjà."

@@ -334,7 +334,10 @@ test('a flat-rate regime: rates on the receipts, a flat amount, and the reserve 
   assert.equal(levyNamed(statement, 'Local business tax').accrued, 186.58)
 
   assert.equal(statement.totals.provisions, 3210.58)
-  assert.equal(statement.totals.net, 10789.42)
+  // The net deducts what the rules were paid, never what they accrued: the
+  // 1674.58 still owed is kept back through the reserve, not taken off it.
+  assert.equal(statement.totals.leviesPaid, 1536)
+  assert.equal(statement.totals.net, 12464)
   assert.equal(statement.totals.paidToSelf, 3000)
 
   // 14000 in, 500 of supplies, 1536 of contributions, 3000 taken out.
@@ -365,6 +368,10 @@ test('a flat-rate regime: rates on the receipts, a flat amount, and the reserve 
   const july = statement.months.find((m) => m.month === '2026-07-01')
   assert.equal(july?.revenue, 2000)
   assert.equal(july?.running, false)
+  // The month the first quarter was paid carries that payment, not its accrual.
+  const april = statement.months.find((m) => m.month === '2026-04-01')
+  assert.equal(april?.leviesPaid, 1536)
+  assert.equal(april?.net, -1536)
   assert.equal(statement.months.find((m) => m.month === '2026-08-01')?.running, true)
   assert.equal(statement.months.find((m) => m.month === '2026-06-01')?.paidToSelf, 3000)
   // Nothing has happened after the day read, and nothing is guessed there.
@@ -944,8 +951,9 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
   // half paid, so a quarter of the last invoice's base is missing there.
   assert.deepEqual(statement.totals.revenueOtherBasis, { basis: 'cash', revenue: 52500 })
   assert.equal(statement.totals.revenueInclVat, 72600)
-  // 5000 of supplies before VAT, and the contributions, which this regime deducts.
-  assert.equal(statement.totals.expenses, 8600)
+  // 5000 of supplies before VAT. The contributions this regime deducts are paid
+  // to a rule, so they count once, among what the rules were paid.
+  assert.equal(statement.totals.expenses, 5000)
   assert.equal(statement.totals.vatCollected, 12600)
   assert.equal(statement.totals.vatDeductible, 1050)
   assert.equal(statement.totals.withholdings, 4200)
@@ -989,7 +997,10 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
     Math.abs(spreadVat - statement.totals.provisionsPassThrough) < 0.1,
     `${spreadVat} against the year`,
   )
-  assert.equal(statement.totals.net, 39454.2)
+  // What the rules were paid comes off the net, VAT apart and the deductible
+  // contributions once: 60000 less 5000 of supplies less 3600 of contributions.
+  assert.equal(statement.totals.leviesPaid, 3600)
+  assert.equal(statement.totals.net, 51400)
   assert.equal(statement.reserve, 11495.8)
   assert.equal(statement.payableToSelf.treasury, 41800)
   assert.equal(statement.payableToSelf.amount, 30304.2)
@@ -1038,7 +1049,9 @@ test('a direct-assessment regime: a chosen base, an allowance by step, a schedul
   const january = statement.months.find((m) => m.month === '2027-01-01')
   assert.equal(january?.revenue, 15000)
   assert.equal(statement.months.find((m) => m.month === '2027-02-01')?.revenue, 0)
-  assert.equal(statement.months.find((m) => m.month === '2027-02-01')?.expenses, 5300)
+  const february = statement.months.find((m) => m.month === '2027-02-01')
+  assert.equal(february?.expenses, 5000)
+  assert.equal(february?.leviesPaid, 300)
   assert.equal(statement.months.length, 12)
 
   assert.deepEqual(

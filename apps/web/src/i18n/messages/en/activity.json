@@ -66,10 +66,10 @@
     "description": "What the invoice says: invoiced is not collected, the collection is recorded when the money arrives."
   },
   "stats": {
-    "charges": "Expenses",
-    "chargesHint": "{provisions} provisioned · {expenses} out of the accounts",
+    "charges": "Charges",
+    "chargesHint": "{expenses} of deductible expenses · {levies} of contributions and taxes paid",
     "net": "Net",
-    "netHint": "revenue − expenses − provisions",
+    "netHint": "revenue − charges paid · {reserve} still owed",
     "payable": "Available to pay yourself",
     "payableHintShared": "cash − everything owed on these accounts − due payments",
     "payableHint": "cash − reserve − this month’s due payments",
@@ -80,15 +80,16 @@
     "title": "By month",
     "description": "what came in, and what is left of it",
     "month": "Month",
-    "provisions": "Provisions",
-    "charges": "Expenses",
+    "charges": "Deductible expenses",
+    "levies": "Contributions and taxes",
     "net": "Net",
     "paid": "Paid out",
     "running": "current",
     "empty": "Nothing this fiscal year.",
-    "chargesAndProvisions": "Expenses and provisions",
-    "chartLabel": "By month: what came in, the expenses and provisions, the net",
-    "runningNote": "current month, still incomplete"
+    "paidCharges": "Charges paid",
+    "chartLabel": "By month: what came in, the charges paid, the net",
+    "runningNote": "current month, still incomplete",
+    "noDeductibleExpenses": "This regime deducts no actual expense: what left the accounts is in Expenses by category."
   },
   "payable": {
     "title": "To pay yourself",
@@ -161,7 +162,7 @@
     "chargesTitle": "Expenses by category",
     "chargesDescription": "out of the activity’s accounts",
     "chargesEmpty": "No expenses this fiscal year.",
-    "settlementNote": "dashed: settles a provision, already counted in the expenses"
+    "settlementNote": "dashed: paid to a rule, deducted from the net except what is collected to be passed on"
   },
   "thresholds": {
     "title": "Watched thresholds",
@@ -181,7 +182,7 @@
     "base": "Excl. VAT",
     "vat": "VAT",
     "withholding": "Withholding",
-    "net": "Net",
+    "receivable": "To receive",
     "state": "Status",
     "remaining": "{amount} left"
   },
@@ -201,7 +202,7 @@
     "withholding": "Withholding",
     "rate": "Rate (%)",
     "orAmount": "or in €",
-    "net": "net to receive <value>{amount}</value>",
+    "receivable": "to receive <value>{amount}</value>",
     "note": "Note (optional)",
     "save": "Save",
     "submit": "Record the invoice"

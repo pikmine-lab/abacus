@@ -103,10 +103,14 @@ import { declareMovementIn } from './movements.ts'
  * other activity living on those same accounts owes, less the commitments of
  * the month), while the net is a flow.
  *
- * A payment against a rule is never a charge of its own: it settles the
- * provision. `deductible` says whether it also reduces the profit, and
- * `pass_through` (VAT collected for the state) leaves the net entirely while
- * staying in the reserve, because it is owed.
+ * The net deducts what the rules were actually paid, never what they accrued:
+ * a net only deducts money that has moved (AGENTS.md), so it reads like the
+ * analysis reads the activity, and a contribution owed but not yet paid lowers
+ * what may be taken out (through the reserve), not the net. `deductible` says
+ * whether a payment also reduces the profit the rules are computed on, which
+ * is a question of the regime and not of the net; `pass_through` (VAT
+ * collected for the state) leaves the net entirely while staying in the
+ * reserve, because it is owed.
  */
 
 // ---------------------------------------------------------------------------
@@ -138,11 +142,13 @@ export interface StatementTotals {
   revenueInclVat: number
   /** Deductible charges, settlements of rules excluded. */
   expenses: number
-  /** Accrued provisions of the rules that are a charge (pass-through excluded). */
+  /** What the rules that are a charge were paid (pass-through excluded), by the day the money left. */
+  leviesPaid: number
+  /** Accrued provisions of the rules that are a charge (pass-through excluded): owed, paid or not. */
   provisions: number
   /** Accrued provisions of the pass-through rules: owed, but never a charge. */
   provisionsPassThrough: number
-  /** `revenue − expenses − provisions`. */
+  /** `revenue − expenses − leviesPaid`. */
   net: number
   paidToSelf: number
   vatCollected: number
@@ -159,6 +165,7 @@ export interface StatementMonth {
   /** Accrued provisions of the pass-through rules: owed, but never a charge. */
   provisionsPassThrough: number
   expenses: number
+  leviesPaid: number
   net: number
   paidToSelf: number
   /** The month the statement was read in: its figures are partial. */
@@ -899,8 +906,29 @@ async function buildStatement(
   const ledger = new Ledger(sql, scope)
   const engine = new StatementEngine(ledger, levies, inputs, cal, activity, asOf, settlements)
 
+  // What the rules that are a charge took out of the activity in a window, and
+  // the charges left once their payments are set apart: the measures count a
+  // deductible rule's payment among the expenses, because it reduces the
+  // profit the rules are computed on, and the net would otherwise deduct it
+  // twice.
+  const chargeCategories = new Set(
+    rows.filter((r) => !r.passThrough && r.settlementCategoryId).map((r) => r.settlementCategoryId),
+  )
+  const deductibleCategories = new Set(scope.deductibleSettlementCategoryIds)
+  const outflows = (window: DateRange, measured: Measures) => {
+    const paid = settlements.filter(
+      (s) => chargeCategories.has(s.categoryId) && s.happenedOn >= window.from && s.happenedOn <= window.to,
+    )
+    const deducted = paid.filter((s) => deductibleCategories.has(s.categoryId))
+    return {
+      expenses: measured.expenses - deducted.reduce((sum, s) => sum + s.amount, 0),
+      leviesPaid: paid.reduce((sum, s) => sum + s.amount, 0),
+    }
+  }
+
   // --- the year's own figures -------------------------------------------------
   const measures = await ledger.measures(soFar)
+  const yearOutflows = outflows(soFar, measures)
   const otherBasis: RevenueBasis = activity.revenueBasis === 'cash' ? 'invoiced' : 'cash'
   const [otherRevenue, paidToSelfYear, accounts, clients, categories] = await Promise.all([
     readRevenue(sql, scope, soFar, otherBasis),
@@ -966,7 +994,7 @@ async function buildStatement(
       // reading of a quarterly rule is not one spike every three months.
       // Months the activity was actually open: a yearly rule spread over the
       // whole year would otherwise provision in months that came before the
-      // activity existed, and show a net in the red for each of them.
+      // activity existed.
       const begun = months.filter(
         (m) =>
           m.from >= period.from &&
@@ -1095,14 +1123,15 @@ async function buildStatement(
     const window = { from: month.from, to: month.to > asOf ? asOf : month.to }
     const empty = month.from > asOf
     const monthly = empty ? null : await ledger.measures(window)
-    const provisions = provisionPerMonth[month.index - 1]!
+    const out = monthly ? outflows(window, monthly) : { expenses: 0, leviesPaid: 0 }
     monthLines.push({
       month: `${month.from.slice(0, 7)}-01`,
       revenue: round2(monthly?.revenue ?? 0),
-      provisions: round2(provisions),
+      provisions: round2(provisionPerMonth[month.index - 1]!),
       provisionsPassThrough: round2(passThroughPerMonth[month.index - 1]!),
-      expenses: round2(monthly?.expenses ?? 0),
-      net: round2((monthly?.revenue ?? 0) - (monthly?.expenses ?? 0) - provisions),
+      expenses: round2(out.expenses),
+      leviesPaid: round2(out.leviesPaid),
+      net: round2((monthly?.revenue ?? 0) - out.expenses - out.leviesPaid),
       paidToSelf: empty ? 0 : round2(await paidToSelfDs(sql, scope, window)),
       running: month.from <= today && today <= month.to,
     })
@@ -1167,10 +1196,11 @@ async function buildStatement(
       revenue: round2(measures.revenue),
       revenueOtherBasis: { basis: otherBasis, revenue: round2(otherRevenue) },
       revenueInclVat: round2(measures.revenueInclVat),
-      expenses: round2(measures.expenses),
+      expenses: round2(yearOutflows.expenses),
+      leviesPaid: round2(yearOutflows.leviesPaid),
       provisions: round2(provisions),
       provisionsPassThrough: round2(provisionsPassThrough),
-      net: round2(measures.revenue - measures.expenses - provisions),
+      net: round2(measures.revenue - yearOutflows.expenses - yearOutflows.leviesPaid),
       paidToSelf: round2(paidToSelfYear),
       vatCollected: round2(measures.vatCollected),
       vatDeductible: round2(measures.vatDeductible),

@@ -138,7 +138,7 @@
   "invoice_overpaid": "This amount exceeds what is left to collect on the invoice.",
   "invoice_settled": "This invoice is already fully collected.",
   "invoice_has_payments": "Income already pays this invoice: detach it first.",
-  "invoice_below_payments": "The net receivable cannot drop below what has already been collected.",
+  "invoice_below_payments": "The amount to receive cannot drop below what has already been collected.",
   "invoice_already_cancelled": "This invoice is already canceled.",
   "invoice_not_open": "This invoice is collected or canceled: nothing to send a reminder for.",
   "duplicateName": "This name already exists."

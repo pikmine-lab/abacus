@@ -173,8 +173,9 @@ export function ExpenseRow({
     foreign ? format.money(value, c.currency, decimals) : format.eur(value, decimals)
   const accountName = (id: string) => options.accounts.find((a) => a.id === id)?.name ?? ''
   const actorName = (id: string) => options.actors.find((a) => a.id === id)?.name ?? ''
-  // Partly paid back by someone: the row reads net, like every expense figure,
-  // and says the gross and who owes the rest under the name.
+  // Partly paid back by someone: the row keeps what leaves the account and says
+  // under the name what is expected back, since a net only deducts money that
+  // has moved.
   const share = c.expectedRefundAmount === null ? 0 : Number(c.expectedRefundAmount)
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
@@ -200,10 +201,9 @@ export function ExpenseRow({
     ),
     share > 0 && (
       <span key="refund">
-        {t('refundedBy', {
+        {t('expectedBackFrom', {
           share: inCurrency(share, 2),
           debtor: actorName(c.expectedRefundFromActorId!),
-          gross: inCurrency(Number(c.amount), 2),
         })}
       </span>
     ),
@@ -262,7 +262,7 @@ export function ExpenseRow({
         <ExpenseRail name={c.label} marks={marks} today={today} />
       </div>
       <span className={cn(AMOUNT_CELL, 'font-mono text-[13.5px] font-semibold whitespace-nowrap tabular')}>
-        −{inCurrency(Number(c.amount) - share, 2)}
+        −{inCurrency(Number(c.amount), 2)}
       </span>
       {!financing && (
         <div
