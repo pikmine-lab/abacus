@@ -218,7 +218,7 @@ export function InvoiceForm({
 
       {baseAmount > 0 && (
         <p className="text-[12px] text-muted-foreground">
-          {t.rich('net', {
+          {t.rich('receivable', {
             amount: format.eur(net, 2),
             value: (chunks) => <span className="font-mono tabular text-foreground">{chunks}</span>,
           })}

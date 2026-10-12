@@ -418,13 +418,19 @@ export default async function ActivityPage({
           />
           <StatTile
             label={t('stats.charges')}
-            value={format.eur(totals.expenses + totals.provisions)}
+            value={format.eur(totals.expenses + totals.leviesPaid)}
             hint={t('stats.chargesHint', {
-              provisions: format.eur(totals.provisions),
               expenses: format.eur(totals.expenses),
+              levies: format.eur(totals.leviesPaid),
             })}
           />
-          <StatTile label={t('stats.net')} value={format.eur(totals.net)} hint={t('stats.netHint')} />
+          {/* A net only deducts what was paid: what the rules are owed and not
+              yet paid is said beside it, and taken off what may be paid out. */}
+          <StatTile
+            label={t('stats.net')}
+            value={format.eur(totals.net)}
+            hint={t('stats.netHint', { reserve: format.eur(statement.reserve) })}
+          />
           {running ? (
             <StatTile
               label={t('stats.payable')}
@@ -446,7 +452,7 @@ export default async function ActivityPage({
             rows={statement.months.map((m) => ({
               month: m.month,
               revenue: m.revenue,
-              charges: m.expenses + m.provisions,
+              charges: m.expenses + m.leviesPaid,
               net: m.net,
               paidToSelf: m.paidToSelf,
               running: m.running,
@@ -458,8 +464,8 @@ export default async function ActivityPage({
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-32">{t('months.month')}</TableHead>
                 <TableHead className="text-right">{basis.word}</TableHead>
-                <TableHead className="text-right">{t('months.provisions')}</TableHead>
                 <TableHead className="hidden text-right sm:table-cell">{t('months.charges')}</TableHead>
+                <TableHead className="text-right">{t('months.levies')}</TableHead>
                 <TableHead className="text-right">{t('months.net')}</TableHead>
                 <TableHead className="hidden text-right sm:table-cell">{t('months.paid')}</TableHead>
               </TableRow>
@@ -479,8 +485,8 @@ export default async function ActivityPage({
                     )}
                   </TableCell>
                   <Money value={m.revenue} />
-                  <Money value={m.provisions} muted />
                   <Money value={m.expenses} muted className="hidden sm:table-cell" />
+                  <Money value={m.leviesPaid} muted />
                   <Money value={m.net} />
                   <Money value={m.paidToSelf} muted className="hidden sm:table-cell" />
                 </TableRow>
@@ -488,13 +494,18 @@ export default async function ActivityPage({
               <TableRow className="font-semibold hover:bg-transparent">
                 <TableCell className="text-[12.5px]">{fiscalYearSpan(words, period)}</TableCell>
                 <Money value={totals.revenue} />
-                <Money value={totals.provisions} />
                 <Money value={totals.expenses} className="hidden sm:table-cell" />
+                <Money value={totals.leviesPaid} />
                 <Money value={totals.net} />
                 <Money value={totals.paidToSelf} className="hidden sm:table-cell" />
               </TableRow>
             </TableBody>
           </Table>
+          {/* The column holds what the regime deducts: under a regime that
+              deducts nothing, a row of zeros has to say where the money went. */}
+          {statement.activity.deductibleExpenses === 'none' && (
+            <p className="text-[11px] text-faint">{t('months.noDeductibleExpenses')}</p>
+          )}
         </Section>
 
         <Section
@@ -734,7 +745,7 @@ export default async function ActivityPage({
                   <TableHead className="hidden w-24 text-right md:table-cell">
                     {t('invoices.withholding')}
                   </TableHead>
-                  <TableHead className="w-24 text-right">{t('invoices.net')}</TableHead>
+                  <TableHead className="w-24 text-right">{t('invoices.receivable')}</TableHead>
                   <TableHead className="w-24 text-right">{t('invoices.state')}</TableHead>
                 </TableRow>
               </TableHeader>

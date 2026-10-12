@@ -17,7 +17,6 @@ import {
   groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
-  monthlyGrossEur,
   moveAccount,
   reviseSchedule,
   setJudgment,
@@ -483,7 +482,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is net of the share someone pays back on a subscription (refundedBy, refundedShare per occurrence), the way expenses read net of their refunds; monthlyGross on such a line is what leaves the account before the refund comes back.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is what leaves the account: a share someone is expected to pay back on a subscription (expectedRefundFrom, expectedRefundAmount per occurrence, in the billing currency) is never taken off it, because a net only deducts money that has actually come back. Once a refund lands, analyze_flows reads that expense net of it.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
         sortBy: z
@@ -562,13 +561,12 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             every: `${c.periodCount} ${c.periodUnit}`,
             ...(c.expectedRefundAmount !== null
               ? {
-                  refundedBy: actorNames.get(c.expectedRefundFromActorId!),
-                  refundedShare: Number(c.expectedRefundAmount),
-                  monthlyGross: monthlyGrossEur(c),
+                  expectedRefundFrom: actorNames.get(c.expectedRefundFromActorId!),
+                  expectedRefundAmount: Number(c.expectedRefundAmount),
                 }
               : {}),
             // Always in euros (latest rate on a foreign commitment), so the
-            // caller can add these up. Net of a refunded share, like the totals.
+            // caller can add these up. What leaves the account, like the totals.
             monthlyEquivalent: monthlyEquivalentEur(c),
             judgment: c.judgment ?? 'not judged',
             judgmentNote: c.judgmentNote ?? undefined,

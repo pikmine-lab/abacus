@@ -261,16 +261,20 @@ test('a subscription partly refunded by someone through the MCP surface', async 
     expectedRefundFrom: 'Employeur',
     expectedRefundAmount: 43.2,
   })
+  const listed = await call(client, 'list_commitments')
   const [line] = rows<{
-    refundedBy: string
-    refundedShare: number
+    expectedRefundFrom: string
+    expectedRefundAmount: number
     monthlyEquivalent: number
-    monthlyGross: number
-  }>(await call(client, 'list_commitments'), 'commitments')
-  assert.equal(line!.refundedBy, 'Employeur')
-  assert.equal(line!.refundedShare, 43.2)
-  assert.equal(line!.monthlyEquivalent, 43.2)
-  assert.equal(line!.monthlyGross, 86.4)
+  }>(listed, 'commitments')
+  assert.equal(line!.expectedRefundFrom, 'Employeur')
+  assert.equal(line!.expectedRefundAmount, 43.2)
+  // The share is still to come back: the cost is what leaves the account.
+  assert.equal(line!.monthlyEquivalent, 86.4)
+  const [cost] = (listed.json() as { costByAccount: { monthlyCost: number }[] }).costByAccount
+  assert.equal(cost!.monthlyCost, 86.4)
+  const overview = (await call(client, 'get_overview')).json() as { monthlyCommittedCost: number }
+  assert.equal(overview.monthlyCommittedCost, 86.4)
 
   // The confirmed occurrence is an ordinary advance on the share.
   await call(client, 'confirm_due_movements', { items: [{ commitment: 'Navigo', action: 'confirm' }] })
@@ -290,11 +294,11 @@ test('a subscription partly refunded by someone through the MCP surface', async 
   assert.match(below.text, /update_commitment/)
 
   await call(client, 'update_commitment', { commitment: 'Navigo', expectedRefundFrom: 'none' })
-  const [dropped] = rows<{ refundedBy?: string; monthlyEquivalent: number }>(
+  const [dropped] = rows<{ expectedRefundFrom?: string; monthlyEquivalent: number }>(
     await call(client, 'list_commitments'),
     'commitments',
   )
-  assert.equal(dropped!.refundedBy, undefined)
+  assert.equal(dropped!.expectedRefundFrom, undefined)
   assert.equal(dropped!.monthlyEquivalent, 86.4)
 })
 

@@ -831,29 +831,29 @@ export function monthlyEquivalent(c: Pick<Commitment, 'amount' | 'periodUnit' | 
 }
 
 /**
- * What a commitment costs a month in euros at the latest rate, net of the
- * share someone pays back: that is what it costs, the way every expense figure
- * reads net of its refunds, and what every sum across commitments must use (a
- * USD line added as-is would count dollars as euros). The gross, what leaves
- * the account before the refund comes back, is `monthlyGrossEur`.
+ * What a commitment costs a month in euros at the latest rate: what every sum
+ * across commitments must use (a USD line added as-is would count dollars as
+ * euros). It is the gross, what leaves the account: a share someone pays back
+ * on each occurrence is still to come, and a net only deducts money that has
+ * moved (AGENTS.md). That share is `monthlyExpectedRefundEur`, said beside the
+ * cost, never taken off it; once it lands, the analysis reads the expense net.
  *
  * A commitment whose pair was never priced contributes nothing rather than a
  * guess; the row itself still shows its own currency.
  */
 export function monthlyEquivalentEur(
-  c: Pick<CommitmentWithEur, 'amountEur' | 'refundEur' | 'periodUnit' | 'periodCount'>,
-): number {
-  if (c.amountEur === null) return 0
-  const net = Number(c.amountEur) - Number(c.refundEur ?? 0)
-  return monthlyEquivalent({ amount: net.toFixed(2), periodUnit: c.periodUnit, periodCount: c.periodCount })
-}
-
-/** The monthly equivalent before any refund: what leaves the account. */
-export function monthlyGrossEur(
   c: Pick<CommitmentWithEur, 'amountEur' | 'periodUnit' | 'periodCount'>,
 ): number {
   if (c.amountEur === null) return 0
   return monthlyEquivalent({ amount: c.amountEur, periodUnit: c.periodUnit, periodCount: c.periodCount })
+}
+
+/** What someone is expected to pay back a month on a subscription, in euros; 0 when nobody does. */
+export function monthlyExpectedRefundEur(
+  c: Pick<CommitmentWithEur, 'refundEur' | 'periodUnit' | 'periodCount'>,
+): number {
+  if (c.refundEur === null) return 0
+  return monthlyEquivalent({ amount: c.refundEur, periodUnit: c.periodUnit, periodCount: c.periodCount })
 }
 
 /**

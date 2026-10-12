@@ -67,9 +67,9 @@
   },
   "stats": {
     "charges": "Charges",
-    "chargesHint": "{provisions} provisionnés · {expenses} sortis des comptes",
+    "chargesHint": "{expenses} de frais déductibles · {levies} de cotisations et impôts payés",
     "net": "Net",
-    "netHint": "recettes − charges − provisions",
+    "netHint": "recettes − charges payées · {reserve} encore dus",
     "payable": "Disponible à me verser",
     "payableHintShared": "trésorerie − tout ce qui est dû sur ces comptes − échéances",
     "payableHint": "trésorerie − réserve − échéances du mois",
@@ -80,15 +80,16 @@
     "title": "Par mois",
     "description": "ce qui est entré, et ce qu’il en reste",
     "month": "Mois",
-    "provisions": "Provisions",
-    "charges": "Charges",
+    "charges": "Frais déductibles",
+    "levies": "Cotisations et impôts",
     "net": "Net",
     "paid": "Versé",
     "running": "en cours",
     "empty": "Rien sur cet exercice.",
-    "chargesAndProvisions": "Charges et provisions",
-    "chartLabel": "Par mois : ce qui est entré, les charges et provisions, le net",
-    "runningNote": "mois en cours, encore incomplet"
+    "paidCharges": "Charges payées",
+    "chartLabel": "Par mois : ce qui est entré, les charges payées, le net",
+    "runningNote": "mois en cours, encore incomplet",
+    "noDeductibleExpenses": "Ce régime ne déduit aucun frais réel : ce qui est sorti des comptes se lit dans Charges par catégorie."
   },
   "payable": {
     "title": "À me verser",
@@ -161,7 +162,7 @@
     "chargesTitle": "Charges par catégorie",
     "chargesDescription": "sorti des comptes de l’activité",
     "chargesEmpty": "Aucune charge sur cet exercice.",
-    "settlementNote": "en pointillé : règle une provision, déjà comptée dans les charges"
+    "settlementNote": "en pointillé : payé à une règle, déduit du net sauf ce qui est collecté pour être reversé"
   },
   "thresholds": {
     "title": "Seuils surveillés",
@@ -181,7 +182,7 @@
     "base": "HT",
     "vat": "TVA",
     "withholding": "Retenue",
-    "net": "Net",
+    "receivable": "À recevoir",
     "state": "État",
     "remaining": "reste {amount}"
   },
@@ -201,7 +202,7 @@
     "withholding": "Retenue à la source",
     "rate": "Taux (%)",
     "orAmount": "ou en €",
-    "net": "net à recevoir <value>{amount}</value>",
+    "receivable": "à recevoir <value>{amount}</value>",
     "note": "Note (optionnelle)",
     "save": "Enregistrer",
     "submit": "Enregistrer la facture"

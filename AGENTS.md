@@ -37,6 +37,11 @@ produit, et chaque écran a son brief dans `apps/web/.impeccable/surfaces/`.
 - **Fiabilité par pointage.** Une comptabilité entièrement déclarative dérive si rien ne la
   rapproche du réel : le pointage de solde est le garde-fou de première classe du modèle,
   pas une commodité. Ce qui l'affaiblit affaiblit tout le reste.
+- **Un net ne déduit que l'argent qui a bougé.** Une dépense se lit nette des
+  remboursements reçus, jamais de ceux qui sont attendus ; un revenu d'activité se lit net
+  des cotisations et impôts payés, jamais de ceux qui sont dus. Ce qui est attendu ou dû se
+  dit à côté du chiffre, nommé, sans le changer : le chiffre bouge quand l'argent bouge, et
+  « net » veut dire la même chose sur chaque écran et dans le MCP.
 - **La propriété est une colonne, pas une architecture.** Chaque entité du domaine
   appartient à un utilisateur et n'est visible que de lui ; une colonne de propriété et une
   authentification sérieuse suffisent. Seule exception, qui découle du premier principe :
