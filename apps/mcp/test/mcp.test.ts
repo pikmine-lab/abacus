@@ -914,6 +914,27 @@ test('an advance and its refund through the MCP surface', async () => {
   })
   assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
 
+  // Settled, it is still read back: the claim and the refunds that closed it.
+  const history = (await call(client, 'list_movements', { advances: 'settled' })).json() as {
+    movements: { id: string; claim?: Record<string, unknown> }[]
+  }
+  assert.deepEqual(
+    history.movements.map((m) => [m.id, m.claim]),
+    [
+      [
+        open[0]!.movementId,
+        { debtor: 'Alex', owed: 90, refunded: 90, state: 'settled', lastRefundedOn: '2026-08-13' },
+      ],
+    ],
+  )
+  const refunds = (
+    await call(client, 'list_movements', { advances: 'refunds', from: '2026-08-13', to: '2026-08-13' })
+  ).json() as { movements: { amount: number; refunds?: string }[] }
+  assert.deepEqual(
+    refunds.movements.map((m) => [m.amount, m.refunds]),
+    [[50, open[0]!.movementId]],
+  )
+
   // Refunded on the spot: both movements, no claim left behind.
   const sameDay = await call(client, 'declare_movements', {
     movements: [

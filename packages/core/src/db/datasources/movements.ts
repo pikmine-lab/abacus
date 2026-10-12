@@ -1,5 +1,5 @@
 import type { SortChoice } from '../../domain/sort.ts'
-import type { LevyDue, Movement, MovementKind, Reading } from '../../domain/types.ts'
+import type { AdvanceFilter, LevyDue, Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 import { debitedOnly } from './cards.ts'
 
@@ -107,8 +107,13 @@ export interface MovementFilters {
   cardId?: string
   /** Free text, matched on the note and on the counterparty's name. */
   search?: string
-  /** Only expenses still awaiting a refund. */
-  advancesOnly?: boolean
+  /**
+   * One side of the advance mechanism: the advanced expenses in one state of
+   * their claim, or the incomes refunding one. Each row stays dated on its own
+   * day, so the window selects an advance on the day it was paid and a refund
+   * on the day the money came back.
+   */
+  advances?: AdvanceFilter
   limit?: number
   /** How the selection is ordered; the date, newest first, by default. */
   sort?: SortChoice<MovementSortField>
@@ -157,6 +162,24 @@ function movementOrder(tx: Executor, sort: SortChoice<MovementSortField>) {
 }
 
 /**
+ * Where a claim stands, read from the refunds linked to it: settled once its
+ * share is back, whatever was declared after; written off when it was closed
+ * short of that; open otherwise. `claimState` in the domain reads the same
+ * three cases off a listed row, and the two must agree.
+ */
+function advanceWhere(tx: Executor, filter: AdvanceFilter) {
+  if (filter === 'refunds') return tx`and m.refunds_movement_id is not null`
+  const refunded = tx`coalesce((select sum(r.amount) from movement r where r.refunds_movement_id = m.id), 0)`
+  const state =
+    filter === 'settled'
+      ? tx`m.expected_refund_amount <= ${refunded}`
+      : filter === 'written_off'
+        ? tx`m.refund_closed and m.expected_refund_amount > ${refunded}`
+        : tx`not m.refund_closed and m.expected_refund_amount > ${refunded}`
+  return tx`and m.expected_refund_from_actor_id is not null and ${state}`
+}
+
+/**
  * The filter clauses, written once: the list and its count must agree on what
  * "the current selection" means, and two copies of this would drift.
  */
@@ -180,13 +203,7 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.activityId === null ? tx`and m.activity_id is null` : f.activityId ? tx`and m.activity_id = ${f.activityId}` : tx``}
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
     ${f.cardId ? tx`and m.card_id = ${f.cardId}` : tx``}
-    ${
-      f.advancesOnly
-        ? tx`and m.expected_refund_from_actor_id is not null and m.refund_closed = false
-             and m.expected_refund_amount > coalesce(
-               (select sum(r.amount) from movement r where r.refunds_movement_id = m.id), 0)`
-        : tx``
-    }
+    ${f.advances ? advanceWhere(tx, f.advances) : tx``}
     ${
       term
         ? tx`and (m.note ilike ${term} or exists (
@@ -210,8 +227,15 @@ export async function listMovements(
     select m.*,
       exists (
         select 1 from card_statement cs where cs.id = m.card_statement_id and cs.debited_on is null
-      ) as awaiting_debit
+      ) as awaiting_debit,
+      rf.total as refunded,
+      rf.last_on as last_refunded_on
     from movement m
+    -- Only an advance has refunds to sum: every other row reads null there.
+    left join lateral (
+      select coalesce(sum(r.amount), 0)::numeric(14,2) as total, max(r.happened_on) as last_on
+      from movement r where r.refunds_movement_id = m.id
+    ) rf on m.expected_refund_from_actor_id is not null
     ${
       named
         ? tx`left join actor sa on sa.id = m.source_actor_id

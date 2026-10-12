@@ -366,7 +366,7 @@ export default async function OverviewPage({
             )}
             {claims > 0 && (
               <ActionRow
-                href="/movements?advances=1&from=overview"
+                href="/movements?advances=open&from=overview"
                 icon={<CircleAlertIcon className="size-4 text-faint" />}
                 title={t('todo.claims', { amount: format.eur(claims, 2) })}
                 detail={t('todo.advances', { count: advances.length })}

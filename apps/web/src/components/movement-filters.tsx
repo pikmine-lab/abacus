@@ -1,5 +1,6 @@
 'use client'
 
+import { ADVANCE_FILTERS } from '@abacus/core/domain/advance'
 import { ListFilterIcon, SearchIcon, XIcon } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -10,7 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Toggle } from '@/components/ui/toggle'
 import { NONE } from '@/lib/utils'
 
 interface Option {
@@ -107,9 +107,17 @@ export function MovementFilters({
     const name = d.none && raw === NONE ? d.none : d.options.find((o) => o.id === raw)?.name
     return name ? [{ key: d.key, label: t('filters.chip', { dimension: d.name, name }), name }] : []
   })
-  const advancesOnly = searchParams.get('advances') === '1'
-  if (advancesOnly)
-    chosen.push({ key: 'advances', label: t('filters.advancesPending'), name: t('filters.advancesPending') })
+  // Which side of the advances: a claim state, or the refunds that came back.
+  // The chip names its dimension, unlike the others: "Pending" alone says
+  // nothing of what is pending, where an account's name says what it is.
+  const advances = ADVANCE_FILTERS.find((v) => v === searchParams.get('advances'))
+  if (advances) {
+    const label = t('filters.chip', {
+      dimension: t('filters.advances.label'),
+      name: t(`filters.advances.${advances}`),
+    })
+    chosen.push({ key: 'advances', label, name: label })
+  }
 
   const active = FILTER_KEYS.some((k) => searchParams.get(k))
 
@@ -181,15 +189,24 @@ export function MovementFilters({
                 </div>
               )
             })}
-            <Toggle
-              variant="outline"
-              size="sm"
-              pressed={advancesOnly}
-              onPressedChange={(on) => push((p) => (on ? p.set('advances', '1') : p.delete('advances')))}
-              className="h-8 justify-start px-2 text-[12.5px] font-normal text-muted-foreground data-[state=on]:text-primary"
-            >
-              {t('filters.advancesPending')}
-            </Toggle>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`${ids}-advances`} className="text-[12px] font-normal text-muted-foreground">
+                {t('filters.advances.label')}
+              </Label>
+              <Select value={advances ?? ALL} onValueChange={set('advances')}>
+                <SelectTrigger id={`${ids}-advances`} size="sm" className="h-8 w-full text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>{t('filters.advances.all')}</SelectItem>
+                  {ADVANCE_FILTERS.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {t(`filters.advances.${v}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </PopoverContent>
         </Popover>
       )}

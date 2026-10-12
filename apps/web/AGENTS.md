@@ -195,6 +195,12 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   le solde calculé et le pointage mentir. La ligne nomme ce compte (« revient sur … »),
   pour que le revenu ne soit pas déclaré une seconde fois à la main. Renoncer au reste est
   l'autre geste, dans le menu de la ligne, et il ne dit pas la même chose.
+- **Une créance refermée reste de l'histoire, et se relit dans la liste.** Le filtre
+  « Avances » choisit un état (en attente, remboursées, abandonnées) ou les remboursements
+  reçus, et la période porte sur la date de chaque ligne : une avance se trouve au jour où
+  elle a été payée, un remboursement au jour où l'argent est revenu. Une avance refermée dit
+  sous son montant qui a remboursé quoi et quand, ou ce qui a été abandonné, en discret :
+  ce n'est plus un travail à faire.
 - **Ce qui est dû a sa colonne**, à côté du montant, pas la ligne de la note : deux faits
   différents ne partagent pas une place. Elle n'apparaît que si la sélection porte une
   créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien. Quand la

@@ -1,5 +1,6 @@
 import { auth } from '@abacus/core/auth'
 import type { MovementKind } from '@abacus/core/domain'
+import { ADVANCE_FILTERS, claimState } from '@abacus/core/domain/advance'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
@@ -99,7 +100,7 @@ export default async function MovementsPage({
     actorId: known(idParam(params.actor), actors),
     activityId: knownOrNone(params.activity, activities),
     search: params.q,
-    advancesOnly: params.advances === '1',
+    advances: ADVANCE_FILTERS.find((v) => v === params.advances),
     sort: sort.current,
   }
 
@@ -325,6 +326,26 @@ export default async function MovementsPage({
                     // What is still owed, which is not the same as "was an advance":
                     // a claim that came back in full has nothing left to announce.
                     const owed = stillOwed.get(m.id)
+                    // A claim no longer live is history: told under the amount,
+                    // quieter than one still owed, which is work to do.
+                    const claim = claimState(m)
+                    const debtor = m.expectedRefundFromActorId
+                      ? (actorName.get(m.expectedRefundFromActorId) ?? '?')
+                      : ''
+                    const closedClaim =
+                      claim === 'settled'
+                        ? t('list.claimSettled', {
+                            debtor,
+                            amount: format.eur(Number(m.refunded), 2),
+                            date: format.date(m.lastRefundedOn!),
+                          })
+                        : claim === 'written_off'
+                          ? t('list.claimWrittenOff', {
+                              debtor,
+                              refunded: format.eur(Number(m.refunded), 2),
+                              owed: format.eur(Number(m.expectedRefundAmount), 2),
+                            })
+                          : null
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
@@ -425,6 +446,11 @@ export default async function MovementsPage({
                                 debtor: actorName.get(m.expectedRefundFromActorId!) ?? '?',
                                 amount: format.eur(owed, 2),
                               })}
+                            </span>
+                          )}
+                          {closedClaim && (
+                            <span className="block font-sans text-[11px] font-normal text-faint">
+                              {closedClaim}
                             </span>
                           )}
                           {/* Under the amount, because that is what it qualifies:

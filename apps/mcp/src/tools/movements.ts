@@ -1,3 +1,4 @@
+import { ADVANCE_FILTERS, claimState } from '@abacus/core/domain/advance'
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
@@ -289,7 +290,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claim (who owes, the share owed, what came back so far, its state, and the day of the last refund), and an income refunding one carries refunds, the id of that advance. list_outstanding_advances only lists the claims still open.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -313,6 +314,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .optional()
           .describe('Activity name, or "none" for what belongs to no activity, transfers included'),
         card: z.string().optional().describe('Card name: what it paid, or was credited back'),
+        advances: z
+          .enum(ADVANCE_FILTERS)
+          .optional()
+          .describe(
+            'Keeps one side of the advance mechanism. open: advanced expenses still owed; settled: back in full; written_off: closed with part of the share never refunded; refunds: the incomes that brought an advance back. from/to apply to each row\'s own date: an advance is selected on the day it was paid, a refund on the day the money landed, so "what X paid me back in September" is refunds with actor X over September',
+          ),
         limit: z.number().int().min(1).max(500).optional().describe('Default 100'),
         sortBy: z
           .enum(['date', 'counterparty', 'account', 'category', 'amount'])
@@ -339,6 +346,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           cardId: f.card ? (await requireCardByName(userId, f.card)).id : undefined,
+          advances: f.advances,
           limit: f.limit,
           sort,
         })
@@ -382,6 +390,19 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             card: m.cardId ? cardName.get(m.cardId) : undefined,
             // Absent unless a VAT was stated inside the amount.
             ...(m.vatAmount !== null ? { vatAmount: Number(m.vatAmount) } : {}),
+            // Absent unless the movement is an advance, or the refund of one.
+            ...(m.expectedRefundFromActorId
+              ? {
+                  claim: {
+                    debtor: actorName.get(m.expectedRefundFromActorId) ?? '?',
+                    owed: Number(m.expectedRefundAmount),
+                    refunded: Number(m.refunded ?? 0),
+                    state: claimState(m),
+                    ...(m.lastRefundedOn ? { lastRefundedOn: m.lastRefundedOn } : {}),
+                  },
+                }
+              : {}),
+            ...(m.refundsMovementId ? { refunds: m.refundsMovementId } : {}),
             note: m.note ?? undefined,
           })),
         })
@@ -392,7 +413,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_outstanding_advances',
     {
       description:
-        'Open claims: expenses advanced on someone\'s behalf, awaiting a refund. Each one says what left the account (paid) and what is owed back (owed), which are the same figure only when the whole expense was advanced. When a refund arrives, declare it with declare_movements as an income of the amount received, on the listed account, from the listed debtor, with refundsMovementId set to this movementId: the claim then closes itself, in one go or refund after refund. An abandoned claim ("they will never pay the rest") is closed with close_advance instead: it leaves this list and the expense stays whole.',
+        'Open claims: expenses advanced on someone\'s behalf, awaiting a refund. The ones already refunded or written off are read with list_movements and its advances filter. Each one says what left the account (paid) and what is owed back (owed), which are the same figure only when the whole expense was advanced. When a refund arrives, declare it with declare_movements as an income of the amount received, on the listed account, from the listed debtor, with refundsMovementId set to this movementId: the claim then closes itself, in one go or refund after refund. An abandoned claim ("they will never pay the rest") is closed with close_advance instead: it leaves this list and the expense stays whole.',
       inputSchema: z.object({}),
     },
     async () => run(async () => ok(await advancesView(userId))),
