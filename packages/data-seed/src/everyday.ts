@@ -1,5 +1,5 @@
 import { closeAccount } from '@abacus/core/services/accounts'
-import { declareMovement, refundAdvance } from '@abacus/core/services/movements'
+import { closeAdvance, declareMovement, refundAdvance } from '@abacus/core/services/movements'
 import {
   addDays,
   amountBetween,
@@ -89,6 +89,14 @@ export async function everyday(userId: string, { accounts, categories, actors }:
     expectedRefundFromActorId: actors.friend,
     expectedRefundAmount: 60,
   })
+  // A pizza night three months ago: half of the share came back, the rest was
+  // let go, so the claim reads as written off.
+  const forgiven = await spend(dayOfMonthAgo(3, 14), actors.pizzeria, categories.restaurants, 64, {
+    expectedRefundFromActorId: actors.friend,
+    expectedRefundAmount: 32,
+  })
+  await refundAdvance(userId, forgiven.id, { amount: 16, on: dayOfMonthAgo(3, 20) })
+  await closeAdvance(userId, forgiven.id)
 
   // A birthday gift: it reached the account but says nothing about the flows.
   await declareMovement(userId, {

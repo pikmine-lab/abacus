@@ -167,7 +167,17 @@ export interface Movement {
    * expected one and in no balance.
    */
   awaitingDebit?: boolean
+  /** Read by the movement list, on an advance only: what came back so far. */
+  refunded?: string | null
+  /** Read by the movement list, on an advance only: the day the last refund landed. */
+  lastRefundedOn?: string | null
 }
+
+/** Where a claim stands: still owed, back in full, or closed short of that. */
+export type ClaimState = 'open' | 'settled' | 'written_off'
+
+/** What the movement list keeps of the advance mechanism: one claim state, or the refunds. */
+export type AdvanceFilter = ClaimState | 'refunds'
 
 /**
  * One cycle of a deferred card: the cut-off that closes it, the debit its
