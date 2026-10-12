@@ -57,9 +57,13 @@ export const GUIDANCE: Record<string, string> = {
     'An expected refund needs the actor who owes it: pass expectedRefundFrom alongside expectedRefundAmount.',
   advance_amount_invalid: 'The amount expected back must be a positive number of euros.',
   advance_amount_too_large:
-    'You cannot be owed back more than what left the account: the expected refund must not exceed the movement amount.',
+    'You cannot be owed back more than what left the account: the expected refund must not exceed the movement amount, or the price of one period on a subscription.',
   advance_is_expense:
-    'Only an expense can be advanced for someone: a transfer between owned accounts or an income cannot be owed back.',
+    'Only an expense can be advanced for someone: a transfer between owned accounts or an income cannot be owed back. On a commitment, only an outgoing subscription can be partly refunded.',
+  refund_share_above_price:
+    'The subscription carries a share refunded on each occurrence, and the new price would be below it. Lower that share first with update_commitment (expectedRefundAmount), or drop it, then change the price.',
+  refund_share_keeps_currency:
+    'The share refunded on each occurrence is stated in the current billing currency. Drop it or restate it with update_commitment before changing the currency, then set it again in the new one.',
   advance_has_refund:
     'A refund is already linked to this advance, so the claim cannot be dropped: delete that refund movement first if it never happened.',
   advance_below_refunds:

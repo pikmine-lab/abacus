@@ -65,6 +65,8 @@
   "advance_amount_invalid": "The expected share must be greater than zero.",
   "advance_amount_too_large": "The expected share cannot exceed the expense amount.",
   "advance_is_expense": "Only an expense can be advanced for someone.",
+  "refund_share_above_price": "The new price would be below the share refunded on each occurrence: lower that share first under \"Edit\".",
+  "refund_share_keeps_currency": "The refunded share is stated in the current currency: drop or restate it before changing the currency.",
   "advance_has_refund": "A refund is already linked to this advance: delete it before removing the amount owed to you.",
   "advance_below_refunds": "What has been refunded already exceeds the expected share.",
   "advance_settled": "This advance is already fully refunded.",

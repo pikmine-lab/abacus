@@ -246,6 +246,58 @@ test('subscription lifecycle through the MCP surface', async () => {
   assert.match((unknown.json() as { results: { error: string }[] }).results[0]!.error, /No commitment/)
 })
 
+test('a subscription partly refunded by someone through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Navigo',
+    actor: 'RATP',
+    account: 'Courant',
+    amount: 86.4,
+    firstDueOn: '2026-08-01',
+    expectedRefundFrom: 'Employeur',
+    expectedRefundAmount: 43.2,
+  })
+  const [line] = rows<{
+    refundedBy: string
+    refundedShare: number
+    monthlyEquivalent: number
+    monthlyGross: number
+  }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(line!.refundedBy, 'Employeur')
+  assert.equal(line!.refundedShare, 43.2)
+  assert.equal(line!.monthlyEquivalent, 43.2)
+  assert.equal(line!.monthlyGross, 86.4)
+
+  // The confirmed occurrence is an ordinary advance on the share.
+  await call(client, 'confirm_due_movements', { items: [{ commitment: 'Navigo', action: 'confirm' }] })
+  const [claim] = (await call(client, 'list_outstanding_advances')).json() as {
+    owed: number
+    debtor: string
+  }[]
+  assert.equal(claim!.owed, 43.2)
+  assert.equal(claim!.debtor, 'Employeur')
+
+  const below = await call(client, 'manage_subscription', {
+    action: 'change_price',
+    commitment: 'Navigo',
+    amount: 40,
+  })
+  assert.equal(below.isError, true)
+  assert.match(below.text, /update_commitment/)
+
+  await call(client, 'update_commitment', { commitment: 'Navigo', expectedRefundFrom: 'none' })
+  const [dropped] = rows<{ refundedBy?: string; monthlyEquivalent: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(dropped!.refundedBy, undefined)
+  assert.equal(dropped!.monthlyEquivalent, 86.4)
+})
+
 test('financing tracked to settlement through the MCP surface', async () => {
   const user = await seedUser()
   const client = await clientFor(user)

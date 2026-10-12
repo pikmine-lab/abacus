@@ -1,6 +1,7 @@
 'use client'
 
 import type { Judgment } from '@abacus/core/domain'
+import { MinusIcon, PlusIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useOptimistic, useState, useTransition } from 'react'
 import { AmountInput } from '@/components/amount-input'
@@ -9,6 +10,7 @@ import { CurrencySelect } from '@/components/currency-select'
 import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { PeriodField } from '@/components/period-field'
+import { RefundShare } from '@/components/refund-share'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -133,6 +135,51 @@ function CommitmentIdentityFields({
   )
 }
 
+/**
+ * The share of each occurrence someone pays back, an employer covering half a
+ * transport pass. Each confirmed occurrence becomes an advance on it, so it is
+ * stated the way an advance is: who, and the share in euros or in percent of
+ * the price, whichever is typed holding. Closed, it states no claim, and on a
+ * correction it drops the one there was.
+ */
+function RefundFields({
+  amount,
+  defaults,
+}: {
+  amount: number
+  defaults?: { debtor?: string; share?: number }
+}) {
+  const t = useTranslations('recurring.form')
+  const [open, setOpen] = useState(defaults?.debtor !== undefined)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        aria-expanded={open}
+      >
+        {open ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
+        {t('refundedInPart')}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-3">
+          <TextField
+            name="expectedRefundFrom"
+            label={t('whoRefunds')}
+            list="commitment-actors"
+            placeholder={t('whoRefundsPlaceholder')}
+            autoComplete="off"
+            defaultValue={defaults?.debtor ?? ''}
+          />
+          <RefundShare expense={amount} defaultAmount={defaults?.share} />
+          <p className="text-[11.5px] text-faint">{t('refundNote')}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function NewCommitmentForm({
   direction,
   accounts,
@@ -154,6 +201,8 @@ export function NewCommitmentForm({
   const [kind, setKind] = useState<'subscription' | 'financing'>('subscription')
   // Watched so an expense is offered the cards of the account it hits.
   const [accountId, setAccountId] = useState('')
+  // Watched because a refunded share reads as a percentage of it, live.
+  const [amount, setAmount] = useState('')
   const outgoing = direction === 'outgoing'
   const t = useTranslations('recurring')
 
@@ -222,7 +271,10 @@ export function NewCommitmentForm({
           action={createSubscriptionAction}
           className="mt-3"
           successLabel={t('form.subscriptionCreated')}
-          onSuccess={() => setAccountId('')}
+          onSuccess={() => {
+            setAccountId('')
+            setAmount('')
+          }}
         >
           <input type="hidden" name="direction" value="outgoing" />
           <TextField name="label" label={t('name')} placeholder={t('form.subscriptionNamePlaceholder')} />
@@ -236,12 +288,17 @@ export function NewCommitmentForm({
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('form.amountPerPeriod')} name="amount">
               <div className="flex gap-2">
-                <AmountInput name="amount" placeholder={t('form.subscriptionAmountPlaceholder')} />
+                <AmountInput
+                  name="amount"
+                  placeholder={t('form.subscriptionAmountPlaceholder')}
+                  onValueChange={setAmount}
+                />
                 <CurrencySelect />
               </div>
             </Field>
             <PeriodField defaultValue="month:1" />
           </div>
+          <RefundFields amount={Number(amount)} />
           <Field label={t('judgment')}>
             <FormSelect
               name="judgment"
@@ -304,6 +361,10 @@ export function EditCommitmentForm({
     /** The account it hits today, whose cards it can be billed to. */
     accountId?: string
     cardId?: string
+    /** Outgoing subscription only: the price, and who pays part of it back. */
+    amount?: number
+    refundFrom?: string
+    refundAmount?: number
   }
   options: CommitmentOptions
   onDone?: () => void
@@ -343,6 +404,16 @@ export function EditCommitmentForm({
             label={t('form.paidWith')}
             noneLabel={t('form.noCard')}
             defaultValue={defaults.cardId}
+          />
+        </>
+      )}
+      {kind === 'subscription' && !incoming && defaults.amount !== undefined && (
+        <>
+          {/* Says the block was offered, so a closed one drops the claim. */}
+          <input type="hidden" name="refundField" value="1" />
+          <RefundFields
+            amount={defaults.amount}
+            defaults={{ debtor: defaults.refundFrom, share: defaults.refundAmount }}
           />
         </>
       )}

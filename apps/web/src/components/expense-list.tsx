@@ -172,6 +172,10 @@ export function ExpenseRow({
   const inCurrency = (value: number, decimals = 0) =>
     foreign ? format.money(value, c.currency, decimals) : format.eur(value, decimals)
   const accountName = (id: string) => options.accounts.find((a) => a.id === id)?.name ?? ''
+  const actorName = (id: string) => options.actors.find((a) => a.id === id)?.name ?? ''
+  // Partly paid back by someone: the row reads net, like every expense figure,
+  // and says the gross and who owes the rest under the name.
+  const share = c.expectedRefundAmount === null ? 0 : Number(c.expectedRefundAmount)
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
   const defaults = {
@@ -183,12 +187,24 @@ export function ExpenseRow({
     engagedUntil: c.engagedUntil ?? '',
     accountId: c.accountId,
     cardId: c.cardId ?? undefined,
+    amount: Number(c.amount),
+    refundFrom: c.expectedRefundFromActorId ? actorName(c.expectedRefundFromActorId) : undefined,
+    refundAmount: share > 0 ? share : undefined,
   }
   const attributes = [
     cardName && (
       <span key="card" className="inline-flex items-center gap-1">
         <CreditCardIcon aria-hidden className="size-3" />
         {cardName}
+      </span>
+    ),
+    share > 0 && (
+      <span key="refund">
+        {t('refundedBy', {
+          share: inCurrency(share, 2),
+          debtor: actorName(c.expectedRefundFromActorId!),
+          gross: inCurrency(Number(c.amount), 2),
+        })}
       </span>
     ),
     (!monthly || foreign) && (
@@ -246,7 +262,7 @@ export function ExpenseRow({
         <ExpenseRail name={c.label} marks={marks} today={today} />
       </div>
       <span className={cn(AMOUNT_CELL, 'font-mono text-[13.5px] font-semibold whitespace-nowrap tabular')}>
-        −{inCurrency(Number(c.amount), 2)}
+        −{inCurrency(Number(c.amount) - share, 2)}
       </span>
       {!financing && (
         <div

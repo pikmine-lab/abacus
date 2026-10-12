@@ -6,6 +6,7 @@
   "perMonth": "/mois",
   "amountPerMonth": "{amount}/mois",
   "monthlyApprox": "≈ {amount}/mois",
+  "refundedBy": "{share} remboursés par {debtor} · brut {gross}",
   "nextOn": "prochaine le {date}",
   "movesTo": "passe sur {account} le {date}",
   "rhythm": "{unit, select, week {{count, plural, =1 {chaque semaine} other {toutes les # semaines}}} month {{count, plural, =1 {chaque mois} other {tous les # mois}}} other {{count, plural, =1 {chaque année} other {tous les # ans}}}}",
@@ -28,6 +29,7 @@
     "newDescription": "Un abonnement à durée ouverte, ou un paiement en X fois qui s’éteindra de lui-même.",
     "monthlyCost": "Coût mensuel",
     "perYear": "soit {amount} par an",
+    "grossBeforeRefunds": "brut {amount} avant remboursements",
     "subscriptions": "Abonnements",
     "financings": "Financements",
     "activeCount": "{count} en cours",
@@ -103,7 +105,11 @@
     "newAccountIncoming": "Nouveau compte crédité",
     "newAccountOutgoing": "Nouveau compte prélevé",
     "effectiveOn": "À partir du",
-    "toJudge": "à juger"
+    "toJudge": "à juger",
+    "refundedInPart": "Remboursé en partie par un tiers",
+    "whoRefunds": "Qui rembourse ?",
+    "whoRefundsPlaceholder": "Employeur",
+    "refundNote": "Chaque échéance confirmée devient une avance sur cette part, à suivre dans les mouvements."
   },
   "row": {
     "perPeriod": "par {unit, select, week {{count, plural, =1 {semaine} other {# semaines}}} month {{count, plural, =1 {mois} other {# mois}}} other {{count, plural, =1 {an} other {# ans}}}}",

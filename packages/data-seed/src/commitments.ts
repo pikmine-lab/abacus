@@ -5,6 +5,7 @@ import {
   createSubscription,
   defaultSchedule,
 } from '@abacus/core/services/commitments'
+import { outstandingAdvances, refundAdvance } from '@abacus/core/services/movements'
 import { addDays, dayOfMonthAgo, daysAgo, firstMonthlyDue, TODAY } from './calendar.ts'
 import type { Cards } from './cards.ts'
 import type { Ledger } from './ledger.ts'
@@ -97,8 +98,17 @@ export async function commitments(userId: string, { accounts, categories, actors
     amount: 75.2,
     firstDueOn: transitFirst,
     judgment: 'essential',
+    // Half paid back by the employer with the salary, as a transport pass is.
+    expectedRefundFromActorId: actors.employer,
+    expectedRefundAmount: 37.6,
   })
   await confirmEach(userId, transit, dueDates(transitFirst, 'month', 1, yesterday))
+  // Each month's half comes back on payday; the current month's is still owed.
+  for (const advance of await outstandingAdvances(userId)) {
+    const payday = `${advance.happenedOn.slice(0, 8)}28`
+    if (advance.commitmentId === transit && payday <= yesterday)
+      await refundAdvance(userId, advance.id, { on: payday })
+  }
 
   for (const [label, actorId, amount, day, judgment] of [
     ['CinéStream', actors.streaming, 13.49, 12, 'reducible'],

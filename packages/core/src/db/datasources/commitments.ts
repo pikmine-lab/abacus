@@ -30,6 +30,9 @@ export interface NewCommitment {
   totalAmount?: number | null
   /** Outgoing subscription only: the card it is billed to. */
   cardId?: string | null
+  /** Outgoing subscription only: who owes a share of each occurrence back. */
+  expectedRefundFromActorId?: string | null
+  expectedRefundAmount?: number | null
 }
 
 /**

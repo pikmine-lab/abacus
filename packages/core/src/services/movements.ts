@@ -23,6 +23,7 @@ import {
   setRefundClosed,
   updateMovementRow,
 } from '../db/datasources/movements.ts'
+import { checkRefundShare } from '../domain/advance.ts'
 import { cycleOf, isValidOn } from '../domain/card.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
@@ -465,11 +466,7 @@ async function checkInvoiceLink(
   return invoice
 }
 
-/**
- * An advance says who owes and how much: the two travel together, because a
- * claim without an amount would silently mean "the whole expense", which is
- * exactly the guess that made splitting a bill inexpressible.
- */
+/** Only an expense can be an advance; the share itself follows checkRefundShare. */
 function checkAdvanceShare(input: DeclareMovementInput): void {
   const { expectedRefundFromActorId: debtor, expectedRefundAmount: share } = input
   if ((debtor || share !== undefined) && !(input.sourceAccountId && input.targetActorId))
@@ -477,18 +474,7 @@ function checkAdvanceShare(input: DeclareMovementInput): void {
       'advance_is_expense',
       'Only an expense can be an advance: a transfer or an income cannot be owed back',
     )
-  if (debtor && share === undefined)
-    throw new DomainError('advance_needs_amount', 'An advance needs the amount expected back')
-  if (share !== undefined && !debtor)
-    throw new DomainError('advance_needs_actor', 'An expected refund needs the actor who owes it')
-  if (share === undefined) return
-  if (!(share > 0))
-    throw new DomainError('advance_amount_invalid', 'The amount expected back must be positive')
-  if (share > input.amount)
-    throw new DomainError(
-      'advance_amount_too_large',
-      `The amount expected back (${share}) cannot exceed the expense (${input.amount})`,
-    )
+  checkRefundShare(debtor, share, input.amount)
 }
 
 export async function declareMovement(

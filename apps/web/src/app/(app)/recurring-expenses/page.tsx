@@ -13,6 +13,7 @@ import {
   groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
+  monthlyGrossEur,
   pendingOccurrences,
   sortCommitments,
 } from '@abacus/core/services/commitments'
@@ -136,6 +137,9 @@ export default async function RecurringExpensesPage({
   const reducible = subscriptions.filter((c) => c.judgment === 'reducible')
   const unjudged = subscriptions.filter((c) => !c.judgment).length
   const monthlyCost = cost(active)
+  // Net of what someone pays back, like every expense figure; the gross is
+  // what leaves the account before the refunds come back.
+  const monthlyGross = active.reduce((sum, c) => sum + monthlyGrossEur(c), 0)
   const savable = cost([...toCancel, ...reducible])
   // What the possible saving rests on, or why there is none yet.
   const savableNote =
@@ -225,7 +229,13 @@ export default async function RecurringExpensesPage({
               per={t('perMonth')}
               note={
                 active.length > 0
-                  ? t('expenses.perYear', { amount: format.eur(monthlyCost * 12) })
+                  ? [
+                      t('expenses.perYear', { amount: format.eur(monthlyCost * 12) }),
+                      Math.abs(monthlyGross - monthlyCost) >= 0.005 &&
+                        t('expenses.grossBeforeRefunds', { amount: format.eur(monthlyGross, 2) }),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
                   : undefined
               }
             />
