@@ -209,5 +209,7 @@
     "droppedPaid": "{count, plural, one {Une échéance déjà payée est retirée : son mouvement sera supprimé.} other {# échéances déjà payées sont retirées : leurs mouvements seront supprimés.}}",
     "save": "Enregistrer l’échéancier"
   },
-  "owedOnTotal": "{debtor} doit {share} sur le total"
+  "owedOnTotal": "{debtor} doit {share} sur le total",
+  "coveredBy": "{amount} couverts par {debtors}",
+  "receivedAhead": "{amount} reçus d’avance"
 }

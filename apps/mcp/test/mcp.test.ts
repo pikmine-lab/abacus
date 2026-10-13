@@ -1062,6 +1062,14 @@ test('a purchase financed for someone else is one claim, planned and paid back o
   assert.equal(after!.remaining, 250)
   assert.equal(after!.nextDueOn, '2026-07-15')
   assert.equal(after!.nextDueAmount, 50)
+
+  // Nothing paid yet: what came back is ahead of the installments, deducted from nothing.
+  const [financing] = rows<{ coveredByRefunds: number; refundedAhead: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(financing!.coveredByRefunds, 0)
+  assert.equal(financing!.refundedAhead, 50)
 })
 
 test('spending reads back by category group through the MCP surface', async () => {

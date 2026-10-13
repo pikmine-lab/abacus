@@ -56,6 +56,16 @@ export async function getShareForUpdate(
   return share
 }
 
+/** Some shares with what came back on each, read without locking them. */
+export async function sharesByIds(tx: Executor, userId: string, ids: string[]): Promise<ShareState[]> {
+  if (ids.length === 0) return []
+  return await tx<ShareState[]>`
+    select ${state(tx)}
+    from advance_share s ${refundsOf(tx)}
+    where s.user_id = ${userId} and s.id in ${tx(ids)}
+  `
+}
+
 export async function sharesOfMovement(tx: Executor, movementId: string): Promise<ShareState[]> {
   return await tx<ShareState[]>`
     select ${state(tx)}

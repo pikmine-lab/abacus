@@ -10,6 +10,7 @@ import {
   refundedOnShare,
   replaceInstallments,
   setShareClosed,
+  sharesByIds,
   sharesOfCommitments,
   sharesOfMovement,
   updateShareAmount,
@@ -474,23 +475,24 @@ export async function openClaims(userId: string, on = today()): Promise<OpenClai
     sql,
     shares.map((s) => s.id),
   )
-  const claims: OpenClaim[] = []
-  for (const share of shares) {
-    const movement = share.movementId ? ((await getMovement(sql, userId, share.movementId)) ?? null) : null
-    const commitment = share.commitmentId
-      ? ((await getCommitment(sql, userId, share.commitmentId)) ?? null)
-      : null
-    const plan = plans.filter((line) => line.shareId === share.id)
-    claims.push({
-      share,
-      remaining: Math.round((Number(share.amount) - Number(share.refunded)) * 100) / 100,
-      plan,
-      movement,
-      commitment,
-      accountId: movement?.sourceAccountId ?? commitment!.accountId,
-      ...shareProgress(share, plan, on),
-    })
-  }
+  const claims = await Promise.all(
+    shares.map(async (share): Promise<OpenClaim> => {
+      const movement = share.movementId ? ((await getMovement(sql, userId, share.movementId)) ?? null) : null
+      const commitment = share.commitmentId
+        ? ((await getCommitment(sql, userId, share.commitmentId)) ?? null)
+        : null
+      const plan = plans.filter((line) => line.shareId === share.id)
+      return {
+        share,
+        remaining: Math.round((Number(share.amount) - Number(share.refunded)) * 100) / 100,
+        plan,
+        movement,
+        commitment,
+        accountId: movement?.sourceAccountId ?? commitment!.accountId,
+        ...shareProgress(share, plan, on),
+      }
+    }),
+  )
   // The oldest first, the order they were advanced in.
   return claims.sort((a, b) => claimDate(a).localeCompare(claimDate(b)))
 }
@@ -519,10 +521,9 @@ export async function describeShares(
     string,
     { share: ShareState; movement: Movement | null; commitment: Commitment | null }
   >()
-  for (const id of new Set(shareIds)) {
-    const share = await getShareForUpdate(sql, userId, id)
-    if (!share) continue
-    described.set(id, {
+  // A read for a screen: no row lock, unlike the gestures that change a share.
+  for (const share of await sharesByIds(sql, userId, [...new Set(shareIds)])) {
+    described.set(share.id, {
       share,
       movement: share.movementId ? ((await getMovement(sql, userId, share.movementId)) ?? null) : null,
       commitment: share.commitmentId

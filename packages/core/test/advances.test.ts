@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { claimState } from '../src/domain/advance.ts'
+import { claimState, financingCoverage } from '../src/domain/advance.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor, mergeActors } from '../src/services/actors.ts'
@@ -118,6 +118,21 @@ test('the shares never add up to more than what left the account, nor name a per
     { debtorActorId: lea.id, amount: 50 },
     { debtorActorId: marc.id, amount: 50 },
   ])
+})
+
+test('a claim on a financing splits what came back between what it covered and what waits', () => {
+  const claim = (amount: string, refunded: string, perOccurrence = false) => ({
+    amount,
+    refunded,
+    perOccurrence,
+  })
+  // 1 230 back on a claim of 1 230, one installment of 412.50 paid on 1 650.
+  assert.deepEqual(financingCoverage(412.5, 1650, [claim('1230', '1230')]), { covered: 307.5, ahead: 922.5 })
+  // The whole of it claimed: what is paid is covered first.
+  assert.deepEqual(financingCoverage(100, 300, [claim('300', '150')]), { covered: 100, ahead: 50 })
+  assert.deepEqual(financingCoverage(200, 300, [claim('300', '150')]), { covered: 150, ahead: 0 })
+  // Shares per installment are not a claim on the total.
+  assert.equal(financingCoverage(100, 300, [claim('40', '40', true)]), null)
 })
 
 test('the claim state of an expense reads across its shares', () => {

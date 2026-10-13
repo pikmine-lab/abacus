@@ -209,5 +209,7 @@
     "droppedPaid": "{count, plural, one {An installment already paid is removed: its movement will be deleted.} other {# installments already paid are removed: their movements will be deleted.}}",
     "save": "Save schedule"
   },
-  "owedOnTotal": "{debtor} owes {share} of the total"
+  "owedOnTotal": "{debtor} owes {share} of the total",
+  "coveredBy": "{amount} covered by {debtors}",
+  "receivedAhead": "{amount} received ahead"
 }

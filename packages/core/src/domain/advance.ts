@@ -108,3 +108,34 @@ export function shareProgress(
     lateAmount: Math.max(0, expectedByToday - back) / 100,
   }
 }
+
+/** What the refunds of a claim on a financing's total did for the installments paid so far. */
+export interface FinancingCoverage {
+  /** Of the installments paid, what refunds already covered: deducted from them in every net. */
+  covered: number
+  /**
+   * Refunds received beyond that: money that came back ahead of the
+   * installments it will cover. It moved, so it is said, but it is deducted
+   * from nothing until those installments are paid.
+   */
+  ahead: number
+}
+
+/**
+ * Splits what came back on a financing's claims on its total between what it
+ * already covered and what waits, the way the `expense_refund` view spreads
+ * it: each paid installment is covered for its part of the claims, up to what
+ * came back. Null when nobody owes anything of its total.
+ */
+export function financingCoverage(
+  paid: number,
+  total: number,
+  shares: Pick<ShareState, 'amount' | 'refunded' | 'perOccurrence'>[],
+): FinancingCoverage | null {
+  const claims = shares.filter((s) => !s.perOccurrence)
+  if (claims.length === 0 || !(total > 0)) return null
+  const claimed = claims.reduce((sum, s) => sum + Number(s.amount), 0)
+  const back = claims.reduce((sum, s) => sum + Number(s.refunded), 0)
+  const covered = Math.round(Math.min(back, (paid * claimed) / total) * 100) / 100
+  return { covered, ahead: Math.round((back - covered) * 100) / 100 }
+}

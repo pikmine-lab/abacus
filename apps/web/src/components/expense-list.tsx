@@ -1,3 +1,4 @@
+import { financingCoverage } from '@abacus/core/domain/advance'
 import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { CreditCardIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -177,6 +178,16 @@ export function ExpenseRow({
   // under the name what is expected back, since a net only deducts money that
   // has moved.
   const shares = c.shares
+  // Claimed on its total: what came back covered of the installments paid,
+  // and what came back ahead of the ones to come.
+  const coverage =
+    financing && c.progress
+      ? financingCoverage(Number(c.progress.paidTotal), Number(c.totalAmount), shares)
+      : null
+  const claimants = shares
+    .filter((share) => !share.perOccurrence && Number(share.refunded) > 0)
+    .map((share) => actorName(share.debtorActorId))
+    .join(', ')
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
   const defaults = {
@@ -206,16 +217,30 @@ export function ExpenseRow({
         {cardName}
       </span>
     ),
-    ...shares.map((share) => (
-      <span key={share.id}>
-        {t(share.perOccurrence ? 'expectedBackFrom' : 'owedOnTotal', {
-          share: share.perOccurrence
-            ? inCurrency(Number(share.amount), 2)
-            : format.eur(Number(share.amount), 2),
-          debtor: actorName(share.debtorActorId),
-        })}
+    coverage && (coverage.covered > 0 || coverage.ahead > 0) && (
+      <span key="coverage">
+        {[
+          coverage.covered > 0 &&
+            t('coveredBy', { amount: format.eur(coverage.covered, 2), debtors: claimants }),
+          coverage.ahead > 0 && t('receivedAhead', { amount: format.eur(coverage.ahead, 2) }),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
       </span>
-    )),
+    ),
+    // A claim on the total that money came back on is told by the line above.
+    ...shares
+      .filter((share) => share.perOccurrence || !coverage || (coverage.covered === 0 && coverage.ahead === 0))
+      .map((share) => (
+        <span key={share.id}>
+          {t(share.perOccurrence ? 'expectedBackFrom' : 'owedOnTotal', {
+            share: share.perOccurrence
+              ? inCurrency(Number(share.amount), 2)
+              : format.eur(Number(share.amount), 2),
+            debtor: actorName(share.debtorActorId),
+          })}
+        </span>
+      )),
     (!monthly || foreign) && (
       <span key="rhythm">
         {t('rhythm', { unit: c.periodUnit, count: c.periodCount })}
@@ -259,7 +284,17 @@ export function ExpenseRow({
   return (
     <div className={cn(COLUMNS, 'py-2.5')}>
       <div className={cn(NAME_CELL, 'flex min-w-0 items-center gap-3')}>
-        {ring && <ProgressRing done={c.progress!.paidInstallments} total={c.installmentsTotal ?? 0} />}
+        {ring && (
+          <ProgressRing
+            done={c.progress!.paidInstallments}
+            total={c.installmentsTotal ?? 0}
+            refunds={
+              coverage
+                ? { paid: Number(c.progress!.paidTotal), total: Number(c.totalAmount), ...coverage }
+                : undefined
+            }
+          />
+        )}
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="text-[13.5px] font-medium">{c.label}</p>
           {/* Beside the ring with the name it qualifies, once the row is wide. */}

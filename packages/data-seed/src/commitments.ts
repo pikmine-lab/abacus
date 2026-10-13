@@ -239,4 +239,22 @@ export async function commitments(userId: string, { accounts, categories, actors
       targetAccountId: accounts.checking,
       refundsShareId: laptopClaim.share.id,
     })
+
+  // A computer replaced after a claim: the insurer paid its indemnity at
+  // once, before the first of the four instalments it funds. Part of it is
+  // still ahead of the instalments to come.
+  const computerFirst = dayOfMonthAgo(1, 5)
+  const computer = await createFinancing(userId, {
+    label: 'Ordinateur portable',
+    actorId: actors.lender,
+    accountId: accounts.checking,
+    categoryId: categories.equipment,
+    installmentsTotal: 4,
+    totalAmount: 1650,
+    firstDueOn: computerFirst,
+    refundShares: [{ debtorActorId: actors.insurer, amount: 1230, perOccurrence: false }],
+  })
+  const indemnity = (await openClaims(userId)).find((c) => c.commitment?.id === computer.id)!
+  await refundShare(userId, indemnity.share.id, { on: dayOfMonthAgo(1, 2) })
+  await confirmEach(userId, computer.id, dueDates(computerFirst, 'month', 1, yesterday))
 }

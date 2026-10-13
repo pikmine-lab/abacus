@@ -1,3 +1,4 @@
+import { financingCoverage } from '@abacus/core/domain/advance'
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
@@ -506,7 +507,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is what leaves the account: what others are expected to pay back (expectedRefunds: per occurrence in the billing currency, or onTotal of the total of a financing, in euros) is never taken off it, because a net only deducts money that has actually come back. Once a refund lands, analyze_flows reads that expense net of it.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is what leaves the account: what others are expected to pay back (expectedRefunds: per occurrence in the billing currency, or onTotal of the total of a financing, in euros) is never taken off it, because a net only deducts money that has actually come back. Once a refund lands, analyze_flows reads that expense net of it. A financing claimed on its total says what came back: coveredByRefunds, deducted from the installments already paid, and refundedAhead, money received ahead of the installments it will cover, deducted from nothing yet: say it, the user holds that money for now but will spend it on the installments to come.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
         sortBy: z
@@ -549,6 +550,12 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
                   ...(share.perOccurrence ? {} : { onTotal: true }),
                 })),
               }
+        // A claim on its total: what came back already covered of the paid
+        // installments, and what came back ahead of the ones to come.
+        const coverage = (c: (typeof commitments)[number]) => {
+          const split = financingCoverage(Number(c.progress?.paidTotal ?? 0), Number(c.totalAmount), c.shares)
+          return split ? { coveredByRefunds: split.covered, refundedAhead: split.ahead } : {}
+        }
         const view = commitments.map((c) => {
           if (c.kind === 'investment_plan') {
             return {
@@ -581,6 +588,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               paidInstallments: `${c.progress.paidInstallments}/${c.installmentsTotal}`,
               remainingDue: c.progress.remainingDue,
               ...owedBack(c),
+              ...coverage(c),
               cancelledOn: c.cancelledOn ?? undefined,
               settledOn: c.settledOn ?? undefined,
               nextDueOn: c.settledOn ? undefined : c.nextDueOn,

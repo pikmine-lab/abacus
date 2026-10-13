@@ -27,7 +27,7 @@ import { cycleOf, isValidOn } from '../domain/card.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { SortChoice, SortFields } from '../domain/sort.ts'
-import type { Account, Activity, Actor, Invoice, Movement } from '../domain/types.ts'
+import type { Account, Activity, Actor, Invoice, Movement, ShareState } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
 import { refundShareFor, setMovementSharesIn } from './advances.ts'
 import { eurRateOn, toEur } from './fx.ts'
@@ -816,9 +816,11 @@ export async function listMovements(userId: string, filters: MovementFilters = {
     sql,
     rows.filter((m) => m.refunded !== null && m.refunded !== undefined).map((m) => m.id),
   )
+  const byMovement = new Map<string, ShareState[]>()
+  for (const s of shares) byMovement.set(s.movementId!, [...(byMovement.get(s.movementId!) ?? []), s])
   return rows.map((m) => {
-    const own = shares.filter((s) => s.movementId === m.id)
-    return own.length > 0 ? { ...m, shares: own } : m
+    const own = byMovement.get(m.id)
+    return own ? { ...m, shares: own } : m
   })
 }
 
