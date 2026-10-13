@@ -12,6 +12,7 @@ import {
   insertCommitmentEvent,
   listCommitmentEvents,
   listCommitments as listCommitmentsDs,
+  reservesOf,
   updateCommitment,
 } from '../db/datasources/commitments.ts'
 import {
@@ -36,6 +37,7 @@ import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type {
   Commitment,
   CommitmentEvent,
+  CommitmentReserve,
   InvestmentOperation,
   Judgment,
   Movement,
@@ -516,22 +518,26 @@ export interface FinancingProgress {
   nextAmount: number | null
 }
 
-/** Commitments plus, for financings, the derived progress (paid, remaining due). */
+/**
+ * Commitments plus, for financings, the derived progress (paid, remaining
+ * due), and for those an income was received for, their reserve.
+ */
 export async function listCommitmentsWithProgress(
   userId: string,
   activeOnly = true,
   history: HistoryFetcher = fetchHistory,
-): Promise<(CommitmentWithEur & { progress: FinancingProgress | null })[]> {
+): Promise<
+  (CommitmentWithEur & { progress: FinancingProgress | null; reserve: CommitmentReserve | null })[]
+> {
   const sql = db()
   const raw = await listCommitmentsDs(sql, userId, { activeOnly })
   const rates = await latestRates(sql, raw, history)
-  const shares = await sharesOfCommitments(
-    sql,
-    raw.map((c) => c.id),
-  )
+  const ids = raw.map((c) => c.id)
+  const shares = await sharesOfCommitments(sql, ids)
+  const reserves = new Map((await reservesOf(sql, ids)).map((r) => [r.commitmentId, r]))
   return await Promise.all(
     raw.map(async (c) => {
-      const eur = eurAmounts(c, rates, shares)
+      const eur = { ...eurAmounts(c, rates, shares), reserve: reserves.get(c.id) ?? null }
       if (c.kind !== 'financing') return { ...c, ...eur, progress: null }
       const progress = await scheduleProgress(sql, c.id)
       if (!progress) return { ...c, ...eur, progress: null }

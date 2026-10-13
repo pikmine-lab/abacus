@@ -35,7 +35,9 @@
     "ghostHint": "Counted in the balances, in no analysis",
     "more": "Show more ({shown} of {total})",
     "invoiceOption": "{name} · {remaining} left",
-    "paysBack": "Pays back: {what}"
+    "paysBack": "Pays back: {what}",
+    "receivedFor": "Received for: {what}",
+    "drawnFromReserve": "of which {amount} from the reserve"
   },
   "filters": {
     "kinds": {
@@ -159,10 +161,16 @@
     "unlinkTitle": "Detach this refund?",
     "unlinkDescription": "This movement becomes income again: it will count in your income, without a category.",
     "unlinkConfirm": "Detach",
-    "linkExpense": "Link to an expense it pays back",
-    "chooseExpense": "Choose what it pays back",
+    "reserveFor": "Received for",
+    "unlinkReserve": "Detach this payment",
+    "unlinkReserveTitle": "Detach this payment?",
+    "unlinkReserveDescription": "This movement becomes income again: it will count in your income, without a category. The occurrences that drew on it read in full again.",
+    "linkExpense": "Link to what it pays back or covers",
+    "chooseExpense": "Choose what it pays back or covers",
     "groupClaims": "Awaited",
     "groupExpenses": "Recent expenses",
+    "groupCommitments": "Received for a commitment",
+    "commitmentOption": "{label} ({kind, select, financing {financing} other {subscription}})",
     "claimOption": "{debtor} owes {remaining} · {on}",
     "movementOption": "{label} · {amount} on {date}",
     "onExpense": "{label} on {date}",

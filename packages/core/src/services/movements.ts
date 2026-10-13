@@ -71,6 +71,11 @@ export interface DeclareMovementInput {
   /** Links this income to one share: of an expense, or of a financing's total. */
   refundsShareId?: string
   /**
+   * The commitment this income was received for: an outgoing subscription or
+   * a financing, whose occurrences draw from it (see checkReserve).
+   */
+  reservesCommitmentId?: string
+  /**
    * Incomes already declared that paid this expense back before it was: each
    * becomes the refund of its sender's share, created when they owe nothing
    * on it yet, as a correction of the income would do.
@@ -300,6 +305,11 @@ async function datedByCard(
       'refund_has_no_card',
       'An advance is paid back to the account, never to the card that paid it',
     )
+  if (input.reservesCommitmentId)
+    throw new DomainError(
+      'reserve_has_no_card',
+      'Money received for a commitment lands on an account, never on a card',
+    )
   const account = input.sourceAccountId ?? input.targetAccountId
   if (card.accountId !== account)
     throw new DomainError(
@@ -358,6 +368,8 @@ async function checkMovement(
   input: Dated,
   /** On a correction: the movement being corrected, left out of the sums it is measured against. */
   except?: string,
+  /** On a correction: the reserve the movement fed until now. */
+  storedReserve?: string | null,
 ): Promise<{ activityId: string | null; refundsShareId: string | null }> {
   if ((input.sourceAccountId ? 1 : 0) + (input.sourceActorId ? 1 : 0) !== 1)
     throw new DomainError('bad_source', 'A movement needs exactly one source: an account or an actor')
@@ -395,6 +407,7 @@ async function checkMovement(
       ? await requireActor(tx, userId, input.sourceActorId, 'source')
       : null
 
+  await checkReserve(tx, userId, input, storedReserve ?? null)
   const refundsShareId = await refundShareFor(tx, userId, input, input, except)
 
   const invoice = input.invoiceId ? await checkInvoiceLink(tx, userId, input, except) : null
@@ -420,6 +433,55 @@ async function checkMovement(
   }
   checkVat(input, activity)
   return { activityId, refundsShareId }
+}
+
+/**
+ * Money received for a commitment feeds its reserve: an income, from
+ * someone, into an account, for an outgoing subscription or a financing, the
+ * only commitments whose occurrences are expenses to draw on. It is no refund
+ * of a share and pays no invoice, each of which would count the money a second
+ * time. A commitment already over has nothing left to draw: a new link to it
+ * is refused, while an income linked before it ended keeps its link through
+ * any correction, since that is what makes its remainder an income.
+ */
+async function checkReserve(
+  tx: Executor,
+  userId: string,
+  input: DeclareMovementInput,
+  stored: string | null,
+): Promise<void> {
+  if (!input.reservesCommitmentId) return
+  if (!(input.sourceActorId && input.targetAccountId))
+    throw new DomainError(
+      'reserve_is_income',
+      'Only an income is received for a commitment: money coming from someone into one of your accounts',
+    )
+  if (input.refundsShareId || input.refundsMovementId)
+    throw new DomainError(
+      'reserve_or_refund',
+      'An income either pays back a share or feeds a commitment’s reserve, never both',
+    )
+  if (input.invoiceId)
+    throw new DomainError(
+      'reserve_has_no_invoice',
+      'An income paying an invoice is earned: it does not feed a commitment’s reserve',
+    )
+  const commitment = await getCommitment(tx, userId, input.reservesCommitmentId)
+  if (!commitment)
+    throw new DomainError('commitment_not_found', `No commitment ${input.reservesCommitmentId} for this user`)
+  const drawable =
+    commitment.kind === 'financing' ||
+    (commitment.kind === 'subscription' && commitment.direction === 'outgoing')
+  if (!drawable)
+    throw new DomainError(
+      'reserve_needs_expense',
+      'Only an outgoing subscription or a financing has occurrences to draw on a reserve',
+    )
+  if (input.reservesCommitmentId !== stored && (commitment.cancelledOn || commitment.settledOn))
+    throw new DomainError(
+      'commitment_over',
+      `"${commitment.label}" is over since ${commitment.cancelledOn ?? commitment.settledOn}: nothing will draw on this money`,
+    )
 }
 
 /**
@@ -538,6 +600,12 @@ export interface CorrectMovementInput {
   /** Incomes already declared to link to this expense, as on declaration. */
   refundedBy?: string[]
   /**
+   * The commitment this income was received for: an id links it, null
+   * unlinks it, and the income is then a plain income again. Absent, the
+   * stored link is kept.
+   */
+  reservesCommitmentId?: string | null
+  /**
    * The month the movement is about: "YYYY-MM" attaches it, null detaches it
    * (it then follows its date again). Absent, the stored one is kept, which is
    * the whole point of storing it: correcting a date must not move a month
@@ -568,6 +636,7 @@ const CORRECTABLE = [
   'ghost',
   'invoiceId',
   'vatAmount',
+  'reservesCommitmentId',
   'sourceAccountId',
   'sourceActorId',
   'targetAccountId',
@@ -646,6 +715,10 @@ export async function correctMovementIn(
       : { refundsShareId: current.refundsShareId ?? undefined }),
     invoiceId:
       input.invoiceId !== undefined ? (input.invoiceId ?? undefined) : (current.invoiceId ?? undefined),
+    reservesCommitmentId:
+      input.reservesCommitmentId !== undefined
+        ? (input.reservesCommitmentId ?? undefined)
+        : (current.reservesCommitmentId ?? undefined),
     vatAmount:
       input.vatAmount !== undefined
         ? (input.vatAmount ?? undefined)
@@ -698,7 +771,13 @@ export async function correctMovementIn(
           !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
         originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
       }
-  const { activityId, refundsShareId } = await checkMovement(tx, userId, resolved, id)
+  const { activityId, refundsShareId } = await checkMovement(
+    tx,
+    userId,
+    resolved,
+    id,
+    current.reservesCommitmentId,
+  )
 
   const row: Record<string, unknown> = {
     activityId,

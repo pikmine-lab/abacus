@@ -211,5 +211,7 @@
   },
   "owedOnTotal": "{debtor} owes {share} of the total",
   "coveredBy": "{amount} covered by {debtors}",
-  "receivedAhead": "{amount} received ahead"
+  "receivedAhead": "{amount} received ahead",
+  "reserveLeft": "Reserve: {remaining} left of {received} received",
+  "reserveReleased": "{amount} of reserve left unused, counted as income on {date}"
 }

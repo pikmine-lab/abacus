@@ -423,6 +423,12 @@ export default async function MovementsPage({
                               {t('list.paysBack', { what: refunds.get(m.refundsShareId)! })}
                             </span>
                           )}
+                          {/* Money received for a commitment says which one it feeds. */}
+                          {m.reservesCommitmentId && refunds.has(m.reservesCommitmentId) && (
+                            <span className="block truncate text-[11px] text-faint">
+                              {t('list.receivedFor', { what: refunds.get(m.reservesCommitmentId)! })}
+                            </span>
+                          )}
                           {m.note && <span className="block truncate text-[11px] text-faint">{m.note}</span>}
                         </TableCell>
                         <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
@@ -466,6 +472,13 @@ export default async function MovementsPage({
                               {t('list.owes', { debtor: o.debtor, amount: format.eur(o.remaining, 2) })}
                             </span>
                           ))}
+                          {/* Part of it was paid from money received ahead: said by the
+                              amount it comes off, the way a refund is. */}
+                          {m.drawn && (
+                            <span className="block font-sans text-[11px] font-normal text-faint">
+                              {t('list.drawnFromReserve', { amount: format.eur(Number(m.drawn), 2) })}
+                            </span>
+                          )}
                           {closedClaims.map((line) => (
                             <span key={line} className="block font-sans text-[11px] font-normal text-faint">
                               {line}

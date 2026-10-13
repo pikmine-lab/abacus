@@ -2482,3 +2482,71 @@ test('a paid-off financing leaves the review, and says when it was settled', asy
   assert.equal(ended!.settledOn, '2026-09-05')
   assert.equal(ended!.nextDueOn, undefined)
 })
+
+test('money received for a subscription feeds its reserve through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Salle de sport',
+    actor: 'Gym',
+    account: 'Courant',
+    amount: 79,
+    firstDueOn: '2026-08-05',
+  })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      movements: [
+        {
+          date: '2026-08-01',
+          amount: 100,
+          type: 'income',
+          account: 'Courant',
+          actor: 'Parent',
+          forCommitment: 'Salle de sport',
+        },
+      ],
+      createUnknownActors: true,
+    })
+  ).json() as { results: { movementId: string }[] }
+  await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Salle de sport', action: 'confirm' }],
+  })
+
+  const [line] = rows<{ reserve: { received: number; drawn: number; remaining: number } }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.deepEqual(line!.reserve, { received: 100, drawn: 79, remaining: 21 })
+  const listed = rows<{ id: string; forCommitment?: string; drawnFromReserve?: number }>(
+    await call(client, 'list_movements', {}),
+    'movements',
+  )
+  assert.equal(listed.find((m) => m.id === declared.results[0]!.movementId)!.forCommitment, 'Salle de sport')
+  assert.equal(listed.find((m) => m.drawnFromReserve)!.drawnFromReserve, 79)
+
+  const both = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 10,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Parent',
+        forCommitment: 'Salle de sport',
+        refundsMovementId: declared.results[0]!.movementId,
+      },
+    ],
+  })
+  assert.match(both.text, /never both/)
+
+  await call(client, 'fix_movement', {
+    action: 'correct',
+    movement: declared.results[0]!.movementId,
+    forCommitment: 'none',
+  })
+  const [unlinked] = rows<{ reserve?: unknown }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(unlinked!.reserve, undefined)
+})

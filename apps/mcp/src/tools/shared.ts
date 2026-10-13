@@ -90,6 +90,17 @@ export const GUIDANCE: Record<string, string> = {
   merge_shares_overlap:
     'Both actors owe a share of the same advance, so merging them would make one person owe twice on it. Ask the user what that person owes in total, restate it as one share, then merge.',
   bad_count: 'A plan has a whole, positive number of payments.',
+  reserve_is_income:
+    "Only an income is received for a commitment: money from someone into one of the user's accounts. Declare it as an income, or drop forCommitment.",
+  reserve_or_refund:
+    "An income either pays back a claim (refundsMovementId, claimId) or feeds a commitment's reserve (forCommitment), never both: ask the user which one it is. Money someone owed is a claim; money given ahead to cover the coming occurrences is a reserve.",
+  reserve_has_no_invoice:
+    "An income paying an invoice is earned by the activity: it does not feed a commitment's reserve. Drop forCommitment or the invoice.",
+  reserve_needs_expense:
+    'Only an outgoing subscription or a financing has occurrences to draw on a reserve: a recurring income or a scheduled placement does not. Check the commitment with list_commitments.',
+  reserve_has_no_card: 'Money received for a commitment lands on an account, never on a card: drop the card.',
+  commitment_over:
+    'This commitment is over (cancelled, or a financing paid off): nothing will draw on this money any more. Declare it as a plain income, or ask the user which running commitment it was for.',
   transfer_stays_eur:
     'A transfer between two owned accounts moves euros: declare it in euros, without a currency.',
   needless_eur_amount:

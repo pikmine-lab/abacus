@@ -59,7 +59,7 @@ export function MovementRowActions({
   activities: ActivityOption[]
   cards?: CardChoice[]
   /** What the panel offers to link the movement to, as on declaration. */
-  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; incomes: LinkChoice[] }
+  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; commitments: LinkChoice[]; incomes: LinkChoice[] }
   today: string
 }) {
   const t = useTranslations('movements.row')

@@ -138,6 +138,16 @@ export async function commitments(userId: string, { accounts, categories, actors
     judgmentNote: "Presque pas utilisée depuis l'été",
   })
   await confirmEach(userId, gym, dueDates(gymFirst, 'month', 1, yesterday))
+  // A birthday gift given for the membership: the months after it draw on it,
+  // and what is left waits for the next one.
+  await declareMovement(userId, {
+    happenedOn: dayOfMonthAgo(3, 1),
+    amount: 150,
+    sourceActorId: actors.family,
+    targetAccountId: accounts.checking,
+    reservesCommitmentId: gym,
+    note: 'Cadeau pour la salle',
+  })
 
   // Cancelled three months ago: it closes the page, with its date.
   const magazineFirst = firstMonthlyDue(18)

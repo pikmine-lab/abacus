@@ -323,30 +323,37 @@ function LinkBox({ incomes, onRemove }: { incomes: LinkChoice[]; onRemove: () =>
 }
 
 /**
- * What an income pays back, from the income's side. Linked, it reads in its
- * box with a [−] that detaches it, after saying what that does: the money
- * stays, and counts as income again. Not linked, a link opens a choice among
- * the claims awaited and the recent expenses, the share of the person it came
- * from being created on an expense that did not have one.
+ * What an income pays back, or was received for, from the income's side.
+ * Linked, it reads in its box with a [−] that detaches it, after saying what
+ * that does: the money stays, and counts as income again. Not linked, a link
+ * opens a choice among the claims awaited, the recent expenses (the share of
+ * the person it came from being created on one that did not have it) and the
+ * running commitments, whose reserve it then feeds.
  */
 export function RefundLink({
   movementId,
   current,
+  reserve,
   claims,
   expenses,
+  commitments,
   onLinkedChange,
 }: {
   /** The income being corrected; absent on a declaration. */
   movementId?: string
   /** What it pays back now, named. */
   current?: string
+  /** The commitment it was received for, named. */
+  reserve?: string
   claims: LinkChoice[]
   expenses: LinkChoice[]
+  commitments: LinkChoice[]
   /** A refund is never paid to a card: the panel hides its card choice while linked. */
   onLinkedChange?: (linked: boolean) => void
 }) {
   const t = useTranslations('movements.links')
-  const [linked, setLinked] = useState(current)
+  const [linked, setLinked] = useState(current ?? reserve)
+  const forReserve = !current && reserve !== undefined
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -357,17 +364,23 @@ export function RefundLink({
       <div className="flex flex-col gap-1">
         <div className="flex items-start gap-2 rounded-md border border-border px-3 py-2.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[11.5px] text-muted-foreground">{t('refunds')}</p>
+            <p className="text-[11.5px] text-muted-foreground">{t(forReserve ? 'reserveFor' : 'refunds')}</p>
             <p className="text-[13px]">{linked}</p>
           </div>
-          <RemoveButton label={t('unlink')} onClick={() => setConfirming(true)} disabled={pending} />
+          <RemoveButton
+            label={t(forReserve ? 'unlinkReserve' : 'unlink')}
+            onClick={() => setConfirming(true)}
+            disabled={pending}
+          />
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
         <AlertDialog open={confirming} onOpenChange={setConfirming}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t('unlinkTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('unlinkDescription')}</AlertDialogDescription>
+              <AlertDialogTitle>{t(forReserve ? 'unlinkReserveTitle' : 'unlinkTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(forReserve ? 'unlinkReserveDescription' : 'unlinkDescription')}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
@@ -395,7 +408,7 @@ export function RefundLink({
       </div>
     )
 
-  if (claims.length === 0 && expenses.length === 0) return null
+  if (claims.length === 0 && expenses.length === 0 && commitments.length === 0) return null
   return (
     <div className="flex flex-col gap-2">
       {movementId && open && <input type="hidden" name="refundTargetField" value="1" />}
@@ -409,6 +422,7 @@ export function RefundLink({
               groups={[
                 ...(claims.length > 0 ? [{ label: t('groupClaims'), options: claims }] : []),
                 ...(expenses.length > 0 ? [{ label: t('groupExpenses'), options: expenses }] : []),
+                ...(commitments.length > 0 ? [{ label: t('groupCommitments'), options: commitments }] : []),
               ]}
               onValueChange={(value) => onLinkedChange?.(value !== '')}
             />

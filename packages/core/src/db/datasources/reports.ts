@@ -31,8 +31,9 @@ function notGhost(tx: Executor) {
 
 /**
  * Every movement a flow analysis reads, as the CTE `flow`: the side it counts
- * on (`side`: income, expense, or null for a refund and a transfer), what of
- * it came back as linked refunds (`refunded`), and the share of it that counts
+ * on (`side`: income, expense, or null for a refund, a transfer and money
+ * fed into a commitment's reserve), what of it came back as linked refunds or
+ * was drawn from a reserve (`refunded`), and the share of it that counts
  * on that side (`scale`). A figure is `amount * scale` on the income side, and
  * `amount * scale` gross or `(amount - refunded) * scale` net on the expense
  * side. Each figure is computed per window, `window_start`: the whole period,
@@ -60,10 +61,21 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
     : reading === 'accrual'
       ? tx`m.counted_in_month`
       : tx`date_trunc('month', m.happened_on)::date`
+  // A release has one day, the end of its commitment, and both readings take
+  // its month: there is no other month it could be about.
+  const releaseStart = !byMonth ? tx`${from}::date` : tx`date_trunc('month', rr.released_on)::date`
+  const releaseIn =
+    reading === 'accrual'
+      ? tx`and rr.released_on >= date_trunc('month', ${from}::date)
+           and rr.released_on < date_trunc('month', ${to}::date) + interval '1 month'`
+      : tx`and rr.released_on >= ${from} and rr.released_on <= ${to}`
   return tx`
     counted as (
       select m.id, m.happened_on, m.note, m.kind, m.amount, m.activity_id, m.category_id,
-             m.source_actor_id, m.target_actor_id, m.refunds_share_id,
+             m.source_actor_id, m.target_actor_id,
+             -- A refund brings an expense back, and money received for a
+             -- commitment's reserve pays its occurrences: neither is earned.
+             m.kind = 'income' and m.refunds_share_id is null and m.reserves_commitment_id is null as earned,
              ${windowStart} as window_start,
              coalesce(er.counted, 0) as refunded,
              m.kind = 'expense' and exists (
@@ -75,10 +87,24 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
       where m.user_id = ${userId}
         ${notGhost(tx)}
         ${inPeriod(tx, from, to, reading)}
+      union all
+      -- What a reserve's occurrences left undrawn once its commitment is over:
+      -- an income of that day, carried by the incomes that fed it.
+      select m.id, rr.released_on, m.note, m.kind, rr.released, m.activity_id, m.category_id,
+             m.source_actor_id, m.target_actor_id,
+             true,
+             ${releaseStart},
+             0,
+             false
+      from reserve_release rr
+      join movement m on m.id = rr.movement_id
+      where m.user_id = ${userId} and rr.released > 0
+        ${notGhost(tx)}
+        ${releaseIn}
     ),
     activity_net as (
       select window_start, activity_id,
-             sum(amount) filter (where kind = 'income' and refunds_share_id is null) as received,
+             sum(amount) filter (where earned) as received,
              sum(amount - refunded) filter (where settles) as charged
       from counted
       where activity_id is not null
@@ -86,7 +112,7 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
     ),
     flow as (
       select c.*,
-             case when c.kind = 'income' and c.refunds_share_id is null then 'income'
+             case when c.earned then 'income'
                   when c.kind = 'expense' then 'expense' end as side,
              case
                when c.kind = 'income'

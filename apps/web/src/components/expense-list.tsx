@@ -228,6 +228,21 @@ export function ExpenseRow({
           .join(' · ')}
       </span>
     ),
+    // Money received ahead for it: what is left for the coming occurrences,
+    // or, once it is over, what became an income.
+    c.reserve && (
+      <span key="reserve">
+        {c.reserve.releasedOn
+          ? t('reserveReleased', {
+              amount: format.eur(Number(c.reserve.remaining), 2),
+              date: format.date(c.reserve.releasedOn),
+            })
+          : t('reserveLeft', {
+              remaining: format.eur(Number(c.reserve.remaining), 2),
+              received: format.eur(Number(c.reserve.received), 2),
+            })}
+      </span>
+    ),
     // A claim on the total that money came back on is told by the line above.
     ...shares
       .filter((share) => share.perOccurrence || !coverage || (coverage.covered === 0 && coverage.ahead === 0))

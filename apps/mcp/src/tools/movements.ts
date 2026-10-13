@@ -24,6 +24,7 @@ import {
   requireActorByName,
   requireCardByName,
   requireCategoryByName,
+  requireCommitment,
   requireInvoice,
 } from '../resolve.ts'
 import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
@@ -208,6 +209,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 .describe(
                   "Income paying a claim back, by its claimId from list_outstanding_advances: the way to pay back a claim on a financing's total, which no single expense carries. The actor must be the claim's debtor",
                 ),
+              forCommitment: z
+                .string()
+                .optional()
+                .describe(
+                  "Income received for a subscription or a financing (label or id from list_commitments): someone gave money to cover its coming occurrences, 400 for a 79 monthly subscription, or part of an instalment purchase. It is no claim, nobody owes it: it feeds the commitment's reserve, and each confirmed occurrence draws what is left of it after its own refunds, the last one only what remains. It is not counted as income while the commitment runs; what is left when it ends becomes an income of that day. A subscription's occurrence only draws money arrived on its day, a financing's from all of it. Not with refundsMovementId, claimId or invoice. To pay back a claim someone owes (list_outstanding_advances), use claimId instead",
+                ),
               invoice: z
                 .string()
                 .optional()
@@ -292,6 +299,9 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             refundedNow: m.alreadyRefunded,
             refundsMovementId: m.refundsMovementId,
             refundsShareId: m.claimId,
+            reservesCommitmentId: m.forCommitment
+              ? (await requireCommitment(userId, m.forCommitment)).id
+              : undefined,
             invoiceId: m.invoice ? (await requireInvoice(userId, m.invoice)).id : undefined,
             vatAmount: m.vatAmount,
             cardId: m.card ? (await requireCardByName(userId, m.card)).id : undefined,
@@ -331,7 +341,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. list_outstanding_advances only lists the claims still open.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. An income received for a subscription or a financing carries forCommitment, and an occurrence that drew on that reserve drawnFromReserve, deducted from it in every net. list_outstanding_advances only lists the claims still open.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -447,6 +457,9 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                   })),
                 }
               : {}),
+            // Absent unless the occurrence drew on its commitment's reserve.
+            ...(m.drawn ? { drawnFromReserve: Number(m.drawn) } : {}),
+            ...(m.reservesCommitmentId ? { forCommitment: commitmentLabel.get(m.reservesCommitmentId) } : {}),
             ...(m.refundsShareId
               ? {
                   claimId: m.refundsShareId,
@@ -619,6 +632,12 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .string()
           .optional()
           .describe('correct, income only: id of the claim this income pays back, or "none" to unlink it'),
+        forCommitment: z
+          .string()
+          .optional()
+          .describe(
+            'correct, income only: the subscription or financing this income was received for (label or id), feeding its reserve, or "none" to unlink it: it is then a plain income again, counted as income. Absent: the stored link is kept',
+          ),
         invoice: z
           .string()
           .optional()
@@ -673,6 +692,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const claim = clearable(f.claimId)
         const invoice = clearable(f.invoice)
         const card = clearable(f.card)
+        const reserve = clearable(f.forCommitment)
         const movement = await correctMovement(userId, f.movement, {
           happenedOn: f.date,
           amount: f.amount,
@@ -693,6 +713,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           // "none" on either side unlinks: an income pays back one share or none.
           refundsMovementId: advanced,
           refundsShareId: claim,
+          reservesCommitmentId: reserve ? (await requireCommitment(userId, reserve)).id : reserve,
           invoiceId: invoice ? (await requireInvoice(userId, invoice)).id : invoice,
           vatAmount: f.vatAmount,
           cardId: card ? (await requireCardByName(userId, card)).id : card,

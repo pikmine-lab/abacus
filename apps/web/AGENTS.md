@@ -196,6 +196,12 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   ou le lien d'un revenu vers ce qu'il rembourse (son encadré « Rembourse »), se retire par
   son [−] derrière une confirmation qui dit que l'argent redevient un revenu, sans catégorie.
   Aucune liste réenvoyée par le formulaire ne la fait disparaître en silence.
+- **Un revenu versé pour un engagement se relie depuis le même champ « Rembourse »**, groupe
+  des engagements en cours : ce n'est pas une créance, personne ne doit rien, c'est de
+  l'argent déjà là que les échéances consomment. Son encadré dit « Versé pour » et se
+  détache comme un remboursement. Une échéance qui y a puisé le dit sous son montant, et
+  la ligne de l'engagement dit ce qui reste de la réserve, ou, une fois l'engagement
+  terminé, ce qui est devenu un revenu et quand.
 - **Une créance est un travail à faire, pas un filtre.** Les avances non remboursées
   s'affichent en tête des mouvements, hors période : celle de quatre mois est exactement
   celle qu'on a oubliée. Une ligne par personne et par chose avancée : une note partagée à
