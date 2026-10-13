@@ -49,7 +49,7 @@
     "checkedAgo": "{account} : pointé {when}",
     "neverChecked": "{account} : jamais pointé",
     "claims": "{amount} à récupérer",
-    "advances": "{count, plural, one {# avance} other {# avances}}",
+    "advances": "{count, plural, one {# créance} other {# créances}}",
     "activity": "Activité"
   },
   "alerts": {

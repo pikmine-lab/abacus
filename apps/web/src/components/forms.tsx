@@ -9,7 +9,15 @@ import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CALENDAR_LOCALE } from '@/i18n/calendar'
 import type { FormState } from '@/lib/actions'
 import { useFormat } from '@/lib/format'
@@ -104,9 +112,12 @@ export function FormSelect({
   defaultValue = '',
   ariaLabel,
   onValueChange,
+  groups = [],
 }: {
   name: string
   options: { value: string; label: string }[]
+  /** Options under a heading of their own, after the plain ones. */
+  groups?: { label: string; options: { value: string; label: string }[] }[]
   placeholder?: string
   required?: boolean
   /** Visible item that clears the selection, for optional fields. */
@@ -138,6 +149,16 @@ export function FormSelect({
           <SelectItem key={o.value} value={o.value}>
             {o.label}
           </SelectItem>
+        ))}
+        {groups.map((group) => (
+          <SelectGroup key={group.label}>
+            <SelectLabel>{group.label}</SelectLabel>
+            {group.options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
         ))}
       </SelectContent>
     </Select>

@@ -3,6 +3,7 @@
 import { MinusIcon, PlusIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useState } from 'react'
+import { type LinkChoice, RefundLink, type ShareDraft, ShareLinks } from '@/components/advance-links'
 import { AmountInput } from '@/components/amount-input'
 import { type CardChoice, CardSelect, debitDayFor } from '@/components/card-forms'
 import { CurrencySelect } from '@/components/currency-select'
@@ -15,7 +16,6 @@ import {
   SubmitButton,
   TextField,
 } from '@/components/forms'
-import { RefundShare } from '@/components/refund-share'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,12 +36,6 @@ export interface ActivityOption extends Option {
   vatRegistered?: boolean
   /** The rate its purchases usually bear, as a percentage, when it has one. */
   defaultVatRate?: number
-}
-interface Advance {
-  id: string
-  happenedOn: string
-  amount: number
-  remaining: number
 }
 /** An invoice still awaiting payment, offered to an income from its client. */
 export interface OpenInvoiceOption {
@@ -71,9 +65,10 @@ export interface MovementDraft {
   accrualMonth?: string
   /** Left out of every analysis, while still counted in the balances. */
   ghost?: boolean
-  /** Advance carried by this expense: who owes, and the share expected back. */
-  refundFromActorName?: string
-  expectedRefundAmount?: number
+  /** Advance carried by this expense: who owes what of it, and what came back. */
+  shares?: ShareDraft[]
+  /** Refund of an advance: what it pays back, named. */
+  refundsLabel?: string
   /** The VAT stated inside the amount, when the activity reclaims it. */
   vatAmount?: string
   /** The card that paid it; with a deferred card, happenedOn above is the purchase day. */
@@ -87,7 +82,7 @@ export function MovementForm({
   actors,
   categories,
   activities,
-  advances,
+  links = { claims: [], expenses: [], incomes: [] },
   invoices = [],
   cards = [],
   today,
@@ -97,7 +92,12 @@ export function MovementForm({
   actors: Option[]
   categories: Option[]
   activities: ActivityOption[]
-  advances: Advance[]
+  /**
+   * What an advance link can point at: the claims awaited and the recent
+   * expenses an income may pay back, the plain incomes an expense may be
+   * paid back by.
+   */
+  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; incomes: LinkChoice[] }
   /** Open invoices, so an income from a client can say which one it pays. */
   invoices?: OpenInvoiceOption[]
   /** The cards of the open accounts, offered on the account they debit. */
@@ -117,7 +117,6 @@ export function MovementForm({
   // says how much of it was VAT: only one registered for VAT reclaims any.
   const [activityId, setActivityId] = useState(draft?.activityId ?? '')
   const vatActivity = activities.find((a) => a.id === activityId && a.vatRegistered)
-  const [advanceOpen, setAdvanceOpen] = useState(draft?.refundFromActorName !== undefined)
   const [monthOpen, setMonthOpen] = useState(draft?.accrualMonth !== undefined)
   // The month the movement is about is stated against the month of its date,
   // so the date is watched here: moving the date moves what "no attachment"
@@ -137,7 +136,7 @@ export function MovementForm({
   const [accountId, setAccountId] = useState(draft?.accountId ?? '')
   const [cardId, setCardId] = useState(draft?.cardId ?? '')
   // The refund of an advance comes back to the account, never to a card.
-  const [refunding, setRefunding] = useState(false)
+  const [refunding, setRefunding] = useState(draft?.refundsLabel !== undefined)
   const card = cards.find((c) => c.id === cardId && c.accountId === accountId)
   const withCard = type !== 'transfer' && !refunding
   const debitOn = withCard ? debitDayFor(card, day) : null
@@ -376,40 +375,19 @@ export function MovementForm({
         </Label>
       )}
 
+      {/* Who owes what back of it, one box per person, and the incomes that
+          already paid it back. */}
       {type === 'expense' && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setAdvanceOpen((v) => !v)}
-            className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-            aria-expanded={advanceOpen}
-          >
-            {advanceOpen ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
-            {advanceOpen ? t('form.advance') : t('form.advanceToRefund')}
-          </button>
-          {advanceOpen && (
-            <div className="mt-2 flex flex-col gap-3">
-              <TextField
-                name="expectedRefundFrom"
-                label={t('form.whoRefunds')}
-                list="actors-list"
-                placeholder={t('form.whoRefundsPlaceholder')}
-                autoComplete="off"
-                defaultValue={draft?.refundFromActorName ?? ''}
-              />
-              <RefundShare
-                expense={Number(foreign ? eurAmount : amount)}
-                defaultAmount={draft?.expectedRefundAmount}
-              />
-              {!editing && (
-                <Label className="flex items-center gap-2 text-[11.5px] font-normal text-muted-foreground">
-                  <Checkbox name="refundedNow" />
-                  <span>{t('form.refundedNow')}</span>
-                </Label>
-              )}
-            </div>
-          )}
-        </div>
+        <ShareLinks
+          // A new type or a fresh declaration starts from what is stored.
+          key={draft?.id ?? 'new'}
+          initial={draft?.shares}
+          cost={Number(foreign ? eurAmount : amount)}
+          kind="movement"
+          actorsListId="actors-list"
+          incomes={links.incomes}
+          withRefundedNow={!editing}
+        />
       )}
 
       {/* Declaration only: a correction never touches the link an income has
@@ -424,22 +402,14 @@ export function MovementForm({
         </Field>
       )}
 
-      {type === 'income' && !editing && advances.length > 0 && (
-        <Field label={t('form.refundsAdvance')}>
-          <FormSelect
-            name="refundsMovementId"
-            noneLabel={t('form.no')}
-            onValueChange={(v) => setRefunding(v !== '')}
-            options={advances.map((adv) => ({
-              value: adv.id,
-              label: t('form.advanceOption', {
-                date: adv.happenedOn,
-                amount: format.eur(adv.amount),
-                remaining: format.eur(adv.remaining),
-              }),
-            }))}
-          />
-        </Field>
+      {type === 'income' && (
+        <RefundLink
+          movementId={draft?.id}
+          current={draft?.refundsLabel}
+          claims={links.claims}
+          expenses={links.expenses}
+          onLinkedChange={setRefunding}
+        />
       )}
 
       <SubmitButton className="self-start">{editing ? t('form.save') : t('declare')}</SubmitButton>

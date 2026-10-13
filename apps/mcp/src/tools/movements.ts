@@ -1,19 +1,19 @@
-import { ADVANCE_FILTERS, claimState } from '@abacus/core/domain/advance'
+import { ADVANCE_FILTERS, claimState, type ShareInput, shareState } from '@abacus/core/domain/advance'
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
+import { closeShare, openClaims, removeShare, setShareSchedule } from '@abacus/core/services/advances'
 import { listCards } from '@abacus/core/services/cards'
 import { listCategories } from '@abacus/core/services/catalog'
+import { listCommitments } from '@abacus/core/services/commitments'
 import {
-  closeAdvance,
   correctMovement,
   DEFAULT_MOVEMENT_SORT,
   declareMovement,
   deleteMovement,
   listMovements,
   MOVEMENT_SORTS,
-  outstandingAdvances,
 } from '@abacus/core/services/movements'
 import { readingPreference } from '@abacus/core/services/preferences'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -28,35 +28,82 @@ import {
 } from '../resolve.ts'
 import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
+/** Who owes what of an expense, as the tools that declare and correct one take it. */
+export const expectedRefunds = z
+  .array(
+    z.object({
+      from: z.string().describe('Name of the actor who owes this share'),
+      amount: z
+        .number()
+        .positive()
+        .describe(
+          'What they owe back, in euros. Never assumed: paying 120 for four and being owed 30 by each of three is the ordinary case',
+        ),
+    }),
+  )
+  .min(1)
+
+/** The shares as the core states them, each debtor resolved by name. */
+export async function sharesOf(
+  userId: string,
+  list: { from: string; amount: number }[],
+  createIfUnknown?: boolean,
+): Promise<ShareInput[]> {
+  const shares: ShareInput[] = []
+  for (const share of list)
+    shares.push({
+      debtorActorId: (await requireActorByName(userId, share.from, { createIfUnknown })).actor.id,
+      amount: share.amount,
+    })
+  return shares
+}
+
 /**
- * An open claim, told in full: what left the account, what is owed back, and
- * the two names a refund declaration needs. The AI reading this never has to
- * look up who or where.
+ * Every open claim, told in full: who owes, what is left, what it was
+ * advanced on, where a refund lands, and what the debtor's plan says today.
+ * The AI reading this never has to look up who or where.
  */
 export async function advancesView(userId: string) {
-  const [advances, actors, accounts] = await Promise.all([
-    outstandingAdvances(userId),
+  const [claims, actors, accounts] = await Promise.all([
+    openClaims(userId),
     listActors(userId),
     listAccounts(userId),
   ])
   const actorName = new Map(actors.map((a) => [a.id, a.name]))
   const accountName = new Map(accounts.map((a) => [a.id, a.name]))
-  return advances.map((a) => {
-    const owed = Number(a.expectedRefundAmount)
-    const refunded = Number(a.refunded)
-    return {
-      movementId: a.id,
-      date: a.happenedOn,
-      paidTo: actorName.get(a.targetActorId!) ?? '?',
-      paid: Number(a.amount),
-      owed,
-      refunded,
-      remaining: Math.round((owed - refunded) * 100) / 100,
-      debtor: actorName.get(a.expectedRefundFromActorId!) ?? '?',
-      account: accountName.get(a.sourceAccountId!) ?? '?',
-      note: a.note ?? undefined,
-    }
-  })
+  return claims.map((c) => ({
+    claimId: c.share.id,
+    debtor: actorName.get(c.share.debtorActorId) ?? '?',
+    owed: Number(c.share.amount),
+    refunded: Number(c.share.refunded),
+    remaining: c.remaining,
+    account: accountName.get(c.accountId) ?? '?',
+    ...(c.movement
+      ? {
+          advancedOn: {
+            movementId: c.movement.id,
+            date: c.movement.purchasedOn ?? c.movement.happenedOn,
+            paidTo: actorName.get(c.movement.targetActorId!) ?? '?',
+            paid: Number(c.movement.amount),
+            note: c.movement.note ?? undefined,
+          },
+        }
+      : {
+          advancedOn: {
+            financing: c.commitment!.label,
+            commitmentId: c.commitment!.id,
+            total: Number(c.commitment!.totalAmount),
+          },
+        }),
+    // Absent unless the debtor said when they would pay.
+    ...(c.plan.length > 0
+      ? {
+          plan: c.plan.map((line) => ({ dueOn: line.dueOn, amount: Number(line.amount) })),
+          ...(c.nextDueOn ? { nextDueOn: c.nextDueOn, nextDueAmount: c.nextDueAmount } : {}),
+          ...(c.lateAmount > 0 ? { late: c.lateAmount } : {}),
+        }
+      : {}),
+  }))
 }
 
 export function registerMovementTools(server: McpServer, userId: string): void {
@@ -138,30 +185,28 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                   'true: the movement counts in every balance and in no analysis (period totals, breakdowns, monthly curve). For what really reached the account but tells nothing about the flows: an insurance payout, a gift received, a regularisation, money coming from an account that is not tracked. An ordinary expense is never a ghost, however large: ask the user rather than deciding. Never on a transfer, which already counts in no total',
                 ),
               note: z.string().optional(),
-              expectedRefundFrom: z
-                .string()
+              expectedRefunds: expectedRefunds
                 .optional()
                 .describe(
-                  "Expense advanced on someone's behalf: name of the actor who owes the refund. Requires expectedRefundAmount",
-                ),
-              expectedRefundAmount: z
-                .number()
-                .positive()
-                .optional()
-                .describe(
-                  'How much of this expense is owed back, in euros, at most the amount. Mandatory with expectedRefundFrom: paying 120 and being owed 90 is the ordinary case, so the share is never assumed',
+                  "Expense advanced on others' behalf: one share per person who owes part of it back. The shares add up to at most the amount, what is left being the user's own part; a person appears once. Ask for each share when it was not stated, never split it yourself",
                 ),
               alreadyRefunded: z
                 .boolean()
                 .optional()
                 .describe(
-                  'The money came back the same day: the refund income is written too, so the balance is right without a second call. Leave it out when the refund is still awaited',
+                  'The money of every share came back the same day: their refund incomes are written too, so the balance is right without a second call. Leave it out when the refunds are still awaited',
                 ),
               refundsMovementId: z
                 .string()
                 .optional()
                 .describe(
-                  'Income refunding an advance: id of the advanced movement, from list_outstanding_advances',
+                  'Income paying an advance back: id of the expense it pays back (list_outstanding_advances, list_movements). It pays the share of the actor it comes from; when that actor owed nothing on that expense yet (they paid before it was declared an advance), their share is created for what this income brings. Never more than their share: the rest of a larger payment is another income',
+                ),
+              claimId: z
+                .string()
+                .optional()
+                .describe(
+                  "Income paying a claim back, by its claimId from list_outstanding_advances: the way to pay back a claim on a financing's total, which no single expense carries. The actor must be the claim's debtor",
                 ),
               invoice: z
                 .string()
@@ -226,12 +271,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
               : m.activity === null
                 ? null
                 : (await requireActivityByName(userId, m.activity)).id
-          const expectedRefundFromActorId = m.expectedRefundFrom
-            ? (
-                await requireActorByName(userId, m.expectedRefundFrom, {
-                  createIfUnknown: createUnknownActors,
-                })
-              ).actor.id
+          const refundShares = m.expectedRefunds
+            ? await sharesOf(userId, m.expectedRefunds, createUnknownActors)
             : undefined
           const movement = await declareMovement(userId, {
             happenedOn: m.date,
@@ -247,10 +288,10 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             note: m.note,
             accrualMonth: m.month,
             ghost: m.ghost,
-            expectedRefundFromActorId,
-            expectedRefundAmount: m.expectedRefundAmount,
+            refundShares,
             refundedNow: m.alreadyRefunded,
             refundsMovementId: m.refundsMovementId,
+            refundsShareId: m.claimId,
             invoiceId: m.invoice ? (await requireInvoice(userId, m.invoice)).id : undefined,
             vatAmount: m.vatAmount,
             cardId: m.card ? (await requireCardByName(userId, m.card)).id : undefined,
@@ -290,7 +331,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claim (who owes, the share owed, what came back so far, its state, and the day of the last refund), and an income refunding one carries refunds, the id of that advance. list_outstanding_advances only lists the claims still open.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. list_outstanding_advances only lists the claims still open.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -318,7 +359,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .enum(ADVANCE_FILTERS)
           .optional()
           .describe(
-            'Keeps one side of the advance mechanism. open: advanced expenses still owed; settled: back in full; written_off: closed with part of the share never refunded; refunds: the incomes that brought an advance back. from/to apply to each row\'s own date: an advance is selected on the day it was paid, a refund on the day the money landed, so "what X paid me back in September" is refunds with actor X over September',
+            'Keeps one side of the advance mechanism. open: advanced expenses someone still owes on; settled: every share back in full; written_off: nobody owes any more, one share having been closed short of it; refunds: the incomes that brought an advance back. from/to apply to each row\'s own date: an advance is selected on the day it was paid, a refund on the day the money landed, so "what X paid me back in September" is refunds with actor X over September',
           ),
         limit: z.number().int().min(1).max(500).optional().describe('Default 100'),
         sortBy: z
@@ -350,12 +391,14 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           limit: f.limit,
           sort,
         })
-        const [accounts, actors, categories, cards] = await Promise.all([
+        const [accounts, actors, categories, cards, commitments] = await Promise.all([
           listAccounts(userId),
           listActors(userId),
           listCategories(userId),
           listCards(userId),
+          listCommitments(userId, false),
         ])
+        const commitmentLabel = new Map(commitments.map((c) => [c.id, c.label]))
         const accountName = new Map(accounts.map((a) => [a.id, a.name]))
         const actorName = new Map(actors.map((a) => [a.id, a.name]))
         const categoryName = new Map(categories.map((c) => [c.id, c.name]))
@@ -391,18 +434,28 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             // Absent unless a VAT was stated inside the amount.
             ...(m.vatAmount !== null ? { vatAmount: Number(m.vatAmount) } : {}),
             // Absent unless the movement is an advance, or the refund of one.
-            ...(m.expectedRefundFromActorId
+            ...(m.shares
               ? {
-                  claim: {
-                    debtor: actorName.get(m.expectedRefundFromActorId) ?? '?',
-                    owed: Number(m.expectedRefundAmount),
-                    refunded: Number(m.refunded ?? 0),
-                    state: claimState(m),
-                    ...(m.lastRefundedOn ? { lastRefundedOn: m.lastRefundedOn } : {}),
-                  },
+                  claimState: claimState(m),
+                  claims: m.shares.map((share) => ({
+                    claimId: share.id,
+                    debtor: actorName.get(share.debtorActorId) ?? '?',
+                    owed: Number(share.amount),
+                    refunded: Number(share.refunded),
+                    state: shareState(share),
+                    ...(share.lastRefundedOn ? { lastRefundedOn: share.lastRefundedOn } : {}),
+                  })),
                 }
               : {}),
-            ...(m.refundsMovementId ? { refunds: m.refundsMovementId } : {}),
+            ...(m.refundsShareId
+              ? {
+                  claimId: m.refundsShareId,
+                  ...(m.refundsMovementId ? { refunds: m.refundsMovementId } : {}),
+                  ...(m.refundsCommitmentId
+                    ? { refundsFinancing: commitmentLabel.get(m.refundsCommitmentId) }
+                    : {}),
+                }
+              : {}),
             note: m.note ?? undefined,
           })),
         })
@@ -413,7 +466,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_outstanding_advances',
     {
       description:
-        'Open claims: expenses advanced on someone\'s behalf, awaiting a refund. The ones already refunded or written off are read with list_movements and its advances filter. Each one says what left the account (paid) and what is owed back (owed), which are the same figure only when the whole expense was advanced. When a refund arrives, declare it with declare_movements as an income of the amount received, on the listed account, from the listed debtor, with refundsMovementId set to this movementId: the claim then closes itself, in one go or refund after refund. An abandoned claim ("they will never pay the rest") is closed with close_advance instead: it leaves this list and the expense stays whole.',
+        'Open claims: what someone owes back of what the user paid for them, one line per person and per thing advanced, so a bill shared by three people is three claims, each paid back on its own. advancedOn says what was advanced: an expense (paid is what left the account, owed this person\'s share of it) or a financing, claimed on its total and paid back on a rhythm of its own. The ones already refunded or written off are read with list_movements and its advances filter. When a refund arrives, declare it with declare_movements as an income of the amount received, on the listed account, from the listed debtor, with claimId set to this claimId: the claim then closes itself, in one go or refund after refund. A claim with a plan (the debtor said when they would pay, manage_claims) carries it, the next payment expected (nextDueOn, nextDueAmount) and late, what the plan expected by today that has not come back: say it when it is there. An abandoned claim ("they will never pay the rest") is closed with close_advance instead: it leaves this list and the expense stays whole.',
       inputSchema: z.object({}),
     },
     async () => run(async () => ok(await advancesView(userId))),
@@ -423,15 +476,65 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'close_advance',
     {
       description:
-        "Writes off the remainder of a claim: the person will not refund (any more of) it. The expense stays fully counted in both gross and net; only the claim tracking stops. Practically irreversible: confirm the user's intent before calling.",
+        "Writes off the remainder of one claim: that person will not refund (any more of) it. The others who owe on the same expense still do. The expense stays fully counted in both gross and net; only the claim tracking stops. Practically irreversible: confirm the user's intent before calling.",
       inputSchema: z.object({
-        movementId: z.string().describe('Id of the advanced expense, from list_outstanding_advances'),
+        claimId: z.string().describe('Id of the claim, from list_outstanding_advances'),
       }),
     },
-    async ({ movementId }) =>
+    async ({ claimId }) =>
       run(async () => {
-        const movement = await closeAdvance(userId, movementId)
-        return ok({ movementId: movement.id, closed: true })
+        const share = await closeShare(userId, claimId)
+        return ok({ claimId: share.id, closed: true })
+      }),
+  )
+
+  server.registerTool(
+    'manage_claims',
+    {
+      description:
+        'Repairs one claim (a claimId from list_outstanding_advances or list_movements) beyond who owes how much, which declare_movements, fix_movement, manage_subscription and declare_financing state. plan records when the debtor said they would pay: count equal payments a period apart from firstDueOn (the last one carrying the rounding), or lines when the promise is uneven; either way it adds up to the claim exactly, and a new plan replaces the old one. drop_plan forgets it: the claim is then never late, nobody having said when. remove drops the claim itself, for a share stated on the wrong person or never owed: the refunds already linked to it are not deleted, the money did come in, they become plain incomes again and count as income. Tell the user that before calling remove when the claim has refunds.',
+      inputSchema: z.object({
+        claimId: z.string().describe('Id of the claim'),
+        action: z.enum(['plan', 'drop_plan', 'remove']),
+        count: z.number().int().positive().optional().describe('plan: how many equal payments'),
+        firstDueOn: isoDate.optional().describe('plan with count: the day of the first payment'),
+        periodUnit: z.enum(['week', 'month', 'year']).optional().describe('plan with count: default month'),
+        periodCount: z.number().int().positive().optional().describe('plan with count: default 1'),
+        lines: z
+          .array(z.object({ dueOn: isoDate, amount: z.number().positive() }))
+          .min(1)
+          .optional()
+          .describe('plan, instead of count: each payment as promised, adding up to the claim'),
+      }),
+    },
+    async (c) =>
+      run(async () => {
+        if (c.action === 'remove') {
+          const detached = await removeShare(userId, c.claimId)
+          return ok({ claimId: c.claimId, removed: true, refundsBecameIncomes: detached })
+        }
+        if (c.action === 'drop_plan') {
+          await setShareSchedule(userId, c.claimId, null)
+          return ok({ claimId: c.claimId, plan: [] })
+        }
+        if (!c.lines && !(c.count && c.firstDueOn))
+          return fail('plan requires either lines, or count and firstDueOn.')
+        const plan = await setShareSchedule(
+          userId,
+          c.claimId,
+          c.lines
+            ? { lines: c.lines }
+            : {
+                count: c.count!,
+                firstDueOn: c.firstDueOn!,
+                periodUnit: c.periodUnit,
+                periodCount: c.periodCount,
+              },
+        )
+        return ok({
+          claimId: c.claimId,
+          plan: plan.map((l) => ({ dueOn: l.dueOn, amount: Number(l.amount) })),
+        })
       }),
   )
 
@@ -439,7 +542,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'fix_movement',
     {
       description:
-        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment) and the link tying a received refund to the advance it repaid. The claim itself is repairable: expectedRefundFrom and expectedRefundAmount fix who owes and how much, and "none" drops the claim entirely (refused while a refund is already linked to it). Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it. The invoice an income pays is repairable the same way: invoice links it (id or reference from list_invoices), "none" unlinks it, absent keeps it. So is the VAT inside an expense of a VAT-registered business activity: vatAmount states it, null clears it, absent keeps it. And the card that paid it: card names it, "none" says the account was debited directly, absent keeps it. On a movement paid with a deferred-debit card, date is the purchase day (purchasedOn in list_movements), and its statement follows from the card; a correction that touches neither the date nor the card keeps the statement it had. A wrong debit day is fixed on the statement, for every purchase at once (manage_card_statements), never movement by movement.',
+        'Repairs an already declared movement: correct what was mistyped, or delete what should never have been recorded (a duplicate, an entry that turned out not to have happened). Get the id from list_movements first: this tool never guesses which movement is meant. Correcting rebuilds the movement from what you pass: give the type and every field that applies to it, exactly as with declare_movements, because switching an expense to a transfer has to drop its actor and its category. What it never touches: the links to an origin (a confirmed occurrence, a balance-check adjustment). The advance links are repairable from either side. On an expense, expectedRefunds restates who owes what, whole: a person kept keeps their refunds, one left out is dropped, "none" drops them all; a claim that already has refunds cannot be dropped this way (manage_claims remove does it, turning its refunds back into incomes), nor lowered below them. On an income, refundsMovementId links it to the expense it pays back (the share of the person it comes from, created when they owed nothing on it yet), claimId to one claim, and "none" on either unlinks it: it is then a plain income again, counted as income. Deleting is not how you undo a confirmed occurrence: the commitment has already moved on and would need manage_subscription. Prefer correcting over delete-then-redeclare: the movement keeps its identity and its links. Correcting the amount or the date of a movement that settled a financing installment realigns that installment too, so the plan keeps saying what was really paid, and when. On a movement declared in a foreign currency, amount alone corrects the euros that hit the account (what the bank statement shows) and leaves the paid amount as declared; correcting the date alone keeps the euros too; pass currency to redeclare the paid side and reconvert at the day\'s rate. The month it is about is repairable the same way: month attaches it, "none" detaches it, and leaving it out keeps what is stored, so a date fix never moves a month that was stated on purpose. Being out of the analyses is repairable too: ghost true takes it out, false brings it back, absent keeps it. The invoice an income pays is repairable the same way: invoice links it (id or reference from list_invoices), "none" unlinks it, absent keeps it. So is the VAT inside an expense of a VAT-registered business activity: vatAmount states it, null clears it, absent keeps it. And the card that paid it: card names it, "none" says the account was debited directly, absent keeps it. On a movement paid with a deferred-debit card, date is the purchase day (purchasedOn in list_movements), and its statement follows from the card; a correction that touches neither the date nor the card keeps the statement it had. A wrong debit day is fixed on the statement, for every purchase at once (manage_card_statements), never movement by movement.',
       inputSchema: z.object({
         movement: z.string().describe('Id of the movement, from list_movements'),
         action: z.enum(['correct', 'delete']),
@@ -500,19 +603,22 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .describe(
             'correct: true leaves the movement out of every analysis while keeping it in the balances, false brings it back in. Absent: the stored value is kept',
           ),
-        expectedRefundFrom: z
+        expectedRefunds: z
+          .union([expectedRefunds, z.literal('none')])
+          .optional()
+          .describe(
+            'correct, expense only: every share owed back, restated whole, or "none" to drop them all. Absent: kept',
+          ),
+        refundsMovementId: z
           .string()
           .optional()
           .describe(
-            'correct, expense only: name of the actor who owes a refund, or "none" to drop the claim',
+            'correct, income only: id of the expense this income pays back, or "none" to unlink it. Absent: the stored link is kept',
           ),
-        expectedRefundAmount: z
-          .number()
-          .positive()
+        claimId: z
+          .string()
           .optional()
-          .describe(
-            'correct: how much of the expense is owed back, in euros. Required when expectedRefundFrom names an actor the movement did not already owe to',
-          ),
+          .describe('correct, income only: id of the claim this income pays back, or "none" to unlink it'),
         invoice: z
           .string()
           .optional()
@@ -563,7 +669,8 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         }
         const category = clearable(f.category)
         const activity = clearable(f.activity)
-        const debtor = clearable(f.expectedRefundFrom)
+        const advanced = clearable(f.refundsMovementId)
+        const claim = clearable(f.claimId)
         const invoice = clearable(f.invoice)
         const card = clearable(f.card)
         const movement = await correctMovement(userId, f.movement, {
@@ -577,10 +684,15 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           note: clearable(f.note),
           accrualMonth: clearable(f.month),
           ghost: f.ghost,
-          expectedRefundFromActorId: debtor ? (await requireActorByName(userId, debtor)).actor.id : debtor,
-          // Dropping the debtor drops the amount with it: half a claim is not a
-          // state the model has.
-          expectedRefundAmount: debtor === null ? null : f.expectedRefundAmount,
+          refundShares:
+            f.expectedRefunds === undefined
+              ? undefined
+              : f.expectedRefunds === 'none'
+                ? null
+                : await sharesOf(userId, f.expectedRefunds),
+          // "none" on either side unlinks: an income pays back one share or none.
+          refundsMovementId: advanced,
+          refundsShareId: claim,
           invoiceId: invoice ? (await requireInvoice(userId, invoice)).id : invoice,
           vatAmount: f.vatAmount,
           cardId: card ? (await requireCardByName(userId, card)).id : card,

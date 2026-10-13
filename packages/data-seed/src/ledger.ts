@@ -80,6 +80,8 @@ export async function ledger(userId: string) {
     londonMuseum: await actor('London Gallery Shop'),
     londonPub: await actor('The Old Crown'),
     friend: await actor('Alex'),
+    nora: await actor('Nora'),
+    jules: await actor('Jules'),
     family: await actor('Famille'),
     tenant: await actor('Locataire du parking'),
     unknown: await actor('Inconnu'),

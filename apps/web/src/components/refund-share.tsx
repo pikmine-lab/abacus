@@ -16,13 +16,30 @@ import { useFormat } from '@/lib/format'
  * The form always carries euros: a percentage of an amount that later gets
  * corrected would silently move the claim.
  */
-export function RefundShare({ expense, defaultAmount }: { expense: number; defaultAmount?: number }) {
+export function RefundShare({
+  expense,
+  defaultAmount,
+  name = 'expectedRefundAmount',
+  label,
+  blank,
+}: {
+  expense: number
+  defaultAmount?: number
+  /** The field the euros travel in. */
+  name?: string
+  /** Names whose share it is, for a list of several. */
+  label?: string
+  /** Opens empty: the share of one person among several is never all of it. */
+  blank?: boolean
+}) {
   const t = useTranslations('movements.form')
   const format = useFormat()
   const [{ value, unit }, setShare] = useState<{ value: string; unit: 'eur' | 'pct' }>(
     defaultAmount !== undefined
       ? { value: format.editable(defaultAmount, 2), unit: 'eur' }
-      : { value: '100', unit: 'pct' },
+      : blank
+        ? { value: '', unit: 'eur' }
+        : { value: '100', unit: 'pct' },
   )
 
   const typed = value.trim() === '' ? 0 : format.parse(value)
@@ -35,8 +52,9 @@ export function RefundShare({ expense, defaultAmount }: { expense: number; defau
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      <input type="hidden" name="expectedRefundAmount" value={Number.isFinite(euros) ? euros : ''} />
-      <Field label={t('expectedShare')}>
+      {/* Empty stays empty: a row left blank states no share at all. */}
+      <input type="hidden" name={name} value={value.trim() !== '' && Number.isFinite(euros) ? euros : ''} />
+      <Field label={label ?? t('expectedShare')}>
         <Input
           inputMode="decimal"
           autoComplete="off"

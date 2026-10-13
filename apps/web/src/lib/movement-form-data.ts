@@ -51,8 +51,15 @@ export function cardChoices(cards: Card[]): CardChoice[] {
   }))
 }
 
-/** A declared movement, flattened for the correction panel. */
-export function movementDraft(m: Movement, actorName: Map<string, string>): MovementDraft {
+/**
+ * A declared movement, flattened for the correction panel. `refundLabels`
+ * names what each share a refund pays back was advanced on, by share.
+ */
+export function movementDraft(
+  m: Movement,
+  actorName: Map<string, string>,
+  refundLabels: Map<string, string> = new Map(),
+): MovementDraft {
   const isTransfer = m.kind === 'transfer'
   const isIncome = m.kind === 'income'
   return {
@@ -72,10 +79,14 @@ export function movementDraft(m: Movement, actorName: Map<string, string>): Move
     note: m.note ?? undefined,
     accrualMonth: m.accrualMonth?.slice(0, 7),
     ghost: m.ghost,
-    refundFromActorName: m.expectedRefundFromActorId
-      ? (actorName.get(m.expectedRefundFromActorId) ?? '')
-      : undefined,
-    expectedRefundAmount: m.expectedRefundAmount ? Number(m.expectedRefundAmount) : undefined,
+    shares: m.shares?.map((share) => ({
+      id: share.id,
+      debtor: actorName.get(share.debtorActorId) ?? '',
+      amount: Number(share.amount),
+      refunded: Number(share.refunded),
+      lastRefundedOn: share.lastRefundedOn ?? undefined,
+    })),
+    refundsLabel: m.refundsShareId ? (refundLabels.get(m.refundsShareId) ?? '') : undefined,
     vatAmount: m.vatAmount === null ? undefined : Number(m.vatAmount).toFixed(2),
     origin: m.commitmentId ? 'commitment' : m.balanceCheckId ? 'balanceCheck' : undefined,
   }

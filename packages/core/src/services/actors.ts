@@ -16,6 +16,7 @@ import {
   suggestActors,
   updateActorRow,
 } from '../db/datasources/actors.ts'
+import { sharedObjects } from '../db/datasources/advances.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
 import type { Actor } from '../domain/types.ts'
 
@@ -119,6 +120,14 @@ export async function mergeActors(userId: string, keepId: string, absorbedId: st
     const keep = await getActor(tx, userId, keepId)
     const absorbed = await getActor(tx, userId, absorbedId)
     if (!keep || !absorbed) throw new DomainError('actor_not_found', 'Both actors must exist for this user')
+    // A person owes once on one thing: two shares of the merged pair on the
+    // same expense would become one, and adding up two shares that carry
+    // their own refunds is the person's call, not the merge's.
+    if ((await sharedObjects(tx, absorbedId, keepId)) > 0)
+      throw new DomainError(
+        'merge_shares_overlap',
+        `"${absorbed.name}" and "${keep.name}" both owe a share of the same advance: restate it as one share before merging`,
+      )
     await reassignActorReferences(tx, absorbedId, keepId)
     await moveAliases(tx, absorbedId, keepId)
     await deleteActor(tx, userId, absorbedId)

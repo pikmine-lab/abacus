@@ -37,6 +37,7 @@ import {
   reattachActorHistory,
   resolveActor,
 } from '@abacus/core/services/actors'
+import { closeShare, removeShare, setShareSchedule } from '@abacus/core/services/advances'
 import {
   correctBalanceCheck,
   createAdjustment,
@@ -104,11 +105,10 @@ import {
   supersedeLevy,
 } from '@abacus/core/services/levies'
 import {
-  closeAdvance,
   correctMovement,
   declareMovement,
   deleteMovement,
-  refundAdvance,
+  refundShare,
 } from '@abacus/core/services/movements'
 import {
   setLanguagePreference,
@@ -281,21 +281,45 @@ async function actorIdFromName(userId: string, name: string): Promise<string> {
 }
 
 /**
- * The share of each occurrence someone pays back, as the subscription panels
- * send it: who, by name, and the euros the share fields settled on. Nothing
- * when the block was left closed.
+ * The shares a panel states, one row each: who by name, the euros its share
+ * fields settled on, and on a financing whether it is owed on the total. A
+ * row left blank states nothing; one with an amount and no name is refused
+ * like any share without its debtor. Undefined when the block was not
+ * offered, an empty list when every row was removed: the service then drops
+ * the shares there were.
  */
-async function refundShareOf(
+async function sharesOf(
   userId: string,
   formData: FormData,
   n: Awaited<ReturnType<typeof numbersOf>>,
-): Promise<{ expectedRefundFromActorId: string; expectedRefundAmount: number } | undefined> {
-  const debtor = opt(formData, 'expectedRefundFrom')
-  if (!debtor) return undefined
-  return {
-    expectedRefundFromActorId: await actorIdFromName(userId, debtor),
-    expectedRefundAmount: n.num('expectedRefundAmount'),
+): Promise<{ debtorActorId: string; amount: number; perOccurrence: boolean }[] | undefined> {
+  if (formData.get('sharesField') === null) return undefined
+  const amounts = formData.getAll('shareAmount').map(String)
+  const totals = formData.getAll('shareOnTotal').map(String)
+  const shares = []
+  for (const [index, raw] of formData.getAll('shareDebtor').entries()) {
+    const name = String(raw).trim()
+    const amount = (amounts[index] ?? '').trim()
+    if (!name && !amount) continue
+    if (!name) throw new DomainError('advance_needs_actor', 'A share needs the actor who owes it')
+    shares.push({
+      debtorActorId: await actorIdFromName(userId, name),
+      amount: amount ? n.parse(amount) : Number.NaN,
+      perOccurrence: totals[index] !== '1',
+    })
   }
+  return shares
+}
+
+/**
+ * What an income pays back, as the panel's choice encodes it: one claim, or
+ * an expense whose share of the sender it pays (created when they owed
+ * nothing on it yet). Empty: nothing.
+ */
+function refundTarget(value: string | undefined): { refundsShareId?: string; refundsMovementId?: string } {
+  if (!value) return {}
+  const [kind, id] = value.split(':')
+  return kind === 'claim' ? { refundsShareId: id } : { refundsMovementId: id }
 }
 
 /**
@@ -358,7 +382,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
           ? { sourceAccountId: accountId, targetActorId: actorId }
           : { sourceActorId: actorId, targetAccountId: accountId }
     }
-    const expectedRefundFrom = opt(formData, 'expectedRefundFrom')
+    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : undefined
     const currency = opt(formData, 'currency')
     await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
@@ -371,16 +395,14 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       note: opt(formData, 'note'),
       accrualMonth: opt(formData, 'accrualMonth'),
       ghost: formData.get('ghost') !== null,
-      refundsMovementId: opt(formData, 'refundsMovementId'),
+      ...(type === 'income' ? refundTarget(opt(formData, 'refundTarget')) : {}),
       invoiceId: opt(formData, 'invoiceId'),
       // Rendered only on an expense of an activity that reclaims VAT, so an
       // absent field is the truth everywhere else.
       vatAmount: n.optNum('vatAmount'),
-      expectedRefundFromActorId: expectedRefundFrom
-        ? await actorIdFromName(userId, expectedRefundFrom)
-        : undefined,
-      expectedRefundAmount: expectedRefundFrom ? n.num('expectedRefundAmount') : undefined,
-      refundedNow: expectedRefundFrom ? formData.get('refundedNow') !== null : undefined,
+      refundShares: shares?.length ? shares : undefined,
+      refundedNow: shares?.length ? formData.get('refundedNow') !== null : undefined,
+      refundedBy: type === 'expense' ? linkedIncomes(formData) : undefined,
       // No card chosen: the account was debited directly.
       cardId: type === 'transfer' ? undefined : opt(formData, 'cardId'),
     })
@@ -432,8 +454,8 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
             }
     }
     // Only an expense can be an advance, so switching a movement away from
-    // expense drops the claim rather than colliding with the domain rule.
-    const expectedRefundFrom = type === 'expense' ? opt(formData, 'expectedRefundFrom') : undefined
+    // expense drops its shares rather than colliding with the domain rule.
+    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : null
     // The form rebuilds the money side whole, so the currency travels even as
     // 'EUR': that is what drops a wrongly declared foreign original.
     const currency = type === 'transfer' ? undefined : opt(formData, 'currency')
@@ -452,16 +474,54 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       // Same: an unchecked (or unrendered) box brings the movement back into
       // the analyses, which is what the panel shows.
       ghost: formData.get('ghost') !== null,
-      expectedRefundFromActorId: expectedRefundFrom
-        ? await actorIdFromName(userId, expectedRefundFrom)
-        : null,
-      expectedRefundAmount: expectedRefundFrom ? n.num('expectedRefundAmount') : null,
+      refundShares: shares,
+      refundedBy: type === 'expense' ? linkedIncomes(formData) : undefined,
+      // Only where the panel offered the choice: an empty one unlinks.
+      ...(type === 'income' && formData.get('refundTargetField') !== null
+        ? { refundsShareId: null, refundsMovementId: null, ...refundTarget(opt(formData, 'refundTarget')) }
+        : {}),
       // Same as the claim: an emptied (or unrendered) field clears the VAT
       // rather than keeping a figure the panel no longer shows.
       vatAmount: n.optNum('vatAmount') ?? null,
       // Same: no card chosen (or none offered) means debited directly.
       cardId: type === 'transfer' ? null : (opt(formData, 'cardId') ?? null),
     })
+  } catch (e) {
+    return { error: await refusal(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/** The incomes a panel links to the expense it declares or corrects. */
+function linkedIncomes(formData: FormData): string[] | undefined {
+  const ids = formData.getAll('refundedBy').map(String).filter(Boolean)
+  return ids.length > 0 ? ids : undefined
+}
+
+/**
+ * Takes an income off the share it paid back: it is a plain income again.
+ * Called directly by the link's own button, after its confirmation.
+ */
+export async function unlinkRefundAction(movementId: string): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await correctMovement(userId, movementId, { refundsMovementId: null, refundsShareId: null })
+  } catch (e) {
+    return { error: await refusal(e) }
+  }
+  refreshAll()
+  return { ok: true }
+}
+
+/**
+ * Drops a share by name; its refunds, if any, become plain incomes again. The
+ * share's own button calls it, after a confirmation that says so.
+ */
+export async function removeShareAction(shareId: string): Promise<FormState> {
+  const userId = await requireUserId()
+  try {
+    await removeShare(userId, shareId)
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -750,7 +810,7 @@ export async function createSubscriptionAction(_prev: FormState, formData: FormD
       judgment: opt(formData, 'judgment') as Judgment | undefined,
       engagedUntil: opt(formData, 'engagedUntil'),
       cardId: str(formData, 'direction') === 'incoming' ? undefined : opt(formData, 'cardId'),
-      ...(await refundShareOf(userId, formData, n)),
+      refundShares: (await sharesOf(userId, formData, n))?.map(({ perOccurrence: _, ...share }) => share),
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -843,6 +903,7 @@ export async function createFinancingAction(_prev: FormState, formData: FormData
       categoryId: opt(formData, 'categoryId'),
       activityId: opt(formData, 'activityId'),
       cardId: opt(formData, 'cardId'),
+      refundShares: await sharesOf(userId, formData, n),
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -963,12 +1024,8 @@ export async function editCommitmentAction(_prev: FormState, formData: FormData)
       ...every,
       // Only where the panel offered one: an empty choice then means a direct debit.
       ...(formData.get('cardField') !== null && { cardId: opt(formData, 'cardId') ?? null }),
-      // Only where the panel offered it: a closed block then drops the claim.
-      ...(formData.get('refundField') !== null &&
-        ((await refundShareOf(userId, formData, await numbersOf(formData))) ?? {
-          expectedRefundFromActorId: null,
-          expectedRefundAmount: null,
-        })),
+      // Only where the panel offered them: every row removed drops the shares.
+      refundShares: await sharesOf(userId, formData, await numbersOf(formData)),
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -1031,14 +1088,14 @@ export async function cancelCommitmentAction(_prev: FormState, formData: FormDat
 }
 
 /**
- * "It came back": writes the income that closes the claim. The amount is
+ * "It came back": writes the income that pays a claim back. The amount is
  * editable on the way, because a refund arrives partial as often as whole.
  */
-export async function refundAdvanceAction(formData: FormData): Promise<void> {
+export async function refundShareAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
   const n = await numbersOf(formData)
   try {
-    await refundAdvance(userId, str(formData, 'movementId'), {
+    await refundShare(userId, str(formData, 'shareId'), {
       amount: opt(formData, 'amount') ? n.num('amount') : undefined,
       on: opt(formData, 'date'),
     })
@@ -1048,14 +1105,48 @@ export async function refundAdvanceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
-export async function closeAdvanceAction(formData: FormData): Promise<void> {
+export async function closeShareAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
   try {
-    await closeAdvance(userId, str(formData, 'movementId'))
+    await closeShare(userId, str(formData, 'shareId'))
   } catch (e) {
     errorRedirect(formData, await refusal(e))
   }
   refreshAll()
+}
+
+/**
+ * When a debtor said they would pay a claim back: a count of equal payments a
+ * period apart, or the lines adjusted one by one. `drop` forgets the plan.
+ */
+export async function planShareAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const userId = await requireUserId()
+  const n = await numbersOf(formData)
+  const shareId = str(formData, 'shareId')
+  try {
+    if (formData.get('drop') !== null) await setShareSchedule(userId, shareId, null)
+    else {
+      const invalid = await checkFields(formData, [
+        { name: 'installmentsTotal', kind: 'count' },
+        { name: 'firstDueOn', kind: 'date' },
+      ])
+      if (invalid) return { fields: invalid }
+      const every = period(formData)
+      if (!every) return { fields: { period: await fieldError('required') } }
+      const lines = scheduleFrom(formData, n)
+      await setShareSchedule(
+        userId,
+        shareId,
+        lines
+          ? { lines }
+          : { count: n.num('installmentsTotal'), firstDueOn: str(formData, 'firstDueOn'), ...every },
+      )
+    }
+  } catch (e) {
+    return { error: await refusal(e) }
+  }
+  refreshAll()
+  return { ok: true }
 }
 
 /** What an invoice needs to exist; the rates and their amounts are optional, the service fills them. */

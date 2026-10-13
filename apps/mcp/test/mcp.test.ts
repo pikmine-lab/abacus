@@ -258,17 +258,14 @@ test('a subscription partly refunded by someone through the MCP surface', async 
     account: 'Courant',
     amount: 86.4,
     firstDueOn: '2026-08-01',
-    expectedRefundFrom: 'Employeur',
-    expectedRefundAmount: 43.2,
+    expectedRefunds: [{ from: 'Employeur', amount: 43.2 }],
   })
   const listed = await call(client, 'list_commitments')
   const [line] = rows<{
-    expectedRefundFrom: string
-    expectedRefundAmount: number
+    expectedRefunds: { from: string; amount: number; onTotal?: boolean }[]
     monthlyEquivalent: number
   }>(listed, 'commitments')
-  assert.equal(line!.expectedRefundFrom, 'Employeur')
-  assert.equal(line!.expectedRefundAmount, 43.2)
+  assert.deepEqual(line!.expectedRefunds, [{ from: 'Employeur', amount: 43.2 }])
   // The share is still to come back: the cost is what leaves the account.
   assert.equal(line!.monthlyEquivalent, 86.4)
   const [cost] = (listed.json() as { costByAccount: { monthlyCost: number }[] }).costByAccount
@@ -842,9 +839,10 @@ test('an advance and its refund through the MCP surface', async () => {
   await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
   await call(client, 'manage_actors', { action: 'create', name: 'Restaurant' })
   await call(client, 'manage_actors', { action: 'create', name: 'Alex' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Sam' })
 
-  // A claim without its share is refused, with what to do about it.
-  const missing = await call(client, 'declare_movements', {
+  // Shares beyond the bill are refused, with what to do about it.
+  const tooMuch = await call(client, 'declare_movements', {
     movements: [
       {
         date: '2026-08-10',
@@ -852,11 +850,14 @@ test('an advance and its refund through the MCP surface', async () => {
         type: 'expense',
         account: 'Courant',
         actor: 'Restaurant',
-        expectedRefundFrom: 'Alex',
+        expectedRefunds: [
+          { from: 'Alex', amount: 90 },
+          { from: 'Sam', amount: 40 },
+        ],
       },
     ],
   })
-  assert.match(missing.text, /expectedRefundAmount/)
+  assert.match(tooMuch.text, /cannot add up to more than what was paid/)
 
   await call(client, 'declare_movements', {
     movements: [
@@ -866,68 +867,65 @@ test('an advance and its refund through the MCP surface', async () => {
         type: 'expense',
         account: 'Courant',
         actor: 'Restaurant',
-        expectedRefundFrom: 'Alex',
-        expectedRefundAmount: 90,
+        expectedRefunds: [
+          { from: 'Alex', amount: 60 },
+          { from: 'Sam', amount: 30 },
+        ],
       },
     ],
   })
 
-  // The claim tells what is owed and where a refund lands: nothing to guess.
-  const open = (await call(client, 'list_outstanding_advances')).json() as {
-    movementId: string
-    paid: number
+  // One claim per person, each telling what is owed and where a refund lands.
+  type Claim = {
+    claimId: string
+    debtor: string
     owed: number
     remaining: number
-    debtor: string
     account: string
-  }[]
-  assert.equal(open.length, 1)
-  assert.equal(open[0]!.paid, 120)
-  assert.equal(open[0]!.owed, 90)
-  assert.equal(open[0]!.remaining, 90)
-  assert.equal(open[0]!.debtor, 'Alex')
-  assert.equal(open[0]!.account, 'Courant')
-
-  // Half of it comes back, then the rest: the claim closes on its own.
-  await call(client, 'declare_movements', {
-    movements: [
-      {
-        date: '2026-08-12',
-        amount: 40,
-        type: 'income',
-        account: 'Courant',
-        actor: 'Alex',
-        refundsMovementId: open[0]!.movementId,
-      },
+    advancedOn: { movementId?: string; paid?: number; financing?: string }
+    nextDueOn?: string
+    late?: number
+  }
+  const open = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  assert.deepEqual(
+    open.map((c) => [c.debtor, c.owed, c.remaining, c.account, c.advancedOn.paid]),
+    [
+      ['Alex', 60, 60, 'Courant', 120],
+      ['Sam', 30, 30, 'Courant', 120],
     ],
-  })
-  const half = (await call(client, 'list_outstanding_advances')).json() as { remaining: number }[]
-  assert.equal(half[0]!.remaining, 50)
+  )
+  const bill = open[0]!.advancedOn.movementId!
 
-  await call(client, 'declare_movements', {
-    movements: [
-      {
-        date: '2026-08-13',
-        amount: 50,
-        type: 'income',
-        account: 'Courant',
-        actor: 'Alex',
-        refundsMovementId: open[0]!.movementId,
-      },
-    ],
-  })
-  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+  // Alex pays back in two steps, Sam has not yet: the claims close one by one.
+  for (const [date, amount] of [
+    ['2026-08-12', 40],
+    ['2026-08-13', 20],
+  ] as const)
+    await call(client, 'declare_movements', {
+      movements: [
+        { date, amount, type: 'income', account: 'Courant', actor: 'Alex', claimId: open[0]!.claimId },
+      ],
+    })
+  const left = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  assert.deepEqual(
+    left.map((c) => c.debtor),
+    ['Sam'],
+  )
 
-  // Settled, it is still read back: the claim and the refunds that closed it.
-  const history = (await call(client, 'list_movements', { advances: 'settled' })).json() as {
-    movements: { id: string; claim?: Record<string, unknown> }[]
+  // The bill reads back with each person's claim, and the refunds with what they pay back.
+  const history = (await call(client, 'list_movements', { advances: 'open' })).json() as {
+    movements: { id: string; claimState: string; claims: Record<string, unknown>[] }[]
   }
   assert.deepEqual(
-    history.movements.map((m) => [m.id, m.claim]),
+    history.movements.map((m) => [m.id, m.claimState, m.claims.map(({ claimId: _, ...rest }) => rest)]),
     [
       [
-        open[0]!.movementId,
-        { debtor: 'Alex', owed: 90, refunded: 90, state: 'settled', lastRefundedOn: '2026-08-13' },
+        bill,
+        'open',
+        [
+          { debtor: 'Alex', owed: 60, refunded: 60, state: 'settled', lastRefundedOn: '2026-08-13' },
+          { debtor: 'Sam', owed: 30, refunded: 0, state: 'open' },
+        ],
       ],
     ],
   )
@@ -936,7 +934,47 @@ test('an advance and its refund through the MCP surface', async () => {
   ).json() as { movements: { amount: number; refunds?: string }[] }
   assert.deepEqual(
     refunds.movements.map((m) => [m.amount, m.refunds]),
-    [[50, open[0]!.movementId]],
+    [[20, bill]],
+  )
+
+  // A refund from the wrong person, or beyond the share, is refused.
+  const wrong = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-14',
+        amount: 10,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Sam',
+        claimId: open[0]!.claimId,
+      },
+    ],
+  })
+  assert.match(wrong.text, /comes from someone else/)
+
+  // Sam paid by a transfer already declared as a plain income: linked afterwards, then unlinked.
+  const plain = (
+    await call(client, 'declare_movements', {
+      movements: [{ date: '2026-08-15', amount: 30, type: 'income', account: 'Courant', actor: 'Sam' }],
+    })
+  ).json() as { results: { movementId: string }[] }
+  const income = plain.results[0]!.movementId
+  await call(client, 'fix_movement', { movement: income, action: 'correct', refundsMovementId: bill })
+  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+  await call(client, 'fix_movement', { movement: income, action: 'correct', refundsMovementId: 'none' })
+  assert.equal(((await call(client, 'list_outstanding_advances')).json() as Claim[]).length, 1)
+
+  // Sam promises three monthly payments, and is late on the first by October.
+  const [sam] = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  const planned = await call(client, 'manage_claims', {
+    claimId: sam!.claimId,
+    action: 'plan',
+    count: 3,
+    firstDueOn: '2026-09-01',
+  })
+  assert.deepEqual(
+    (planned.json() as { plan: { amount: number }[] }).plan.map((l) => l.amount),
+    [10, 10, 10],
   )
 
   // Refunded on the spot: both movements, no claim left behind.
@@ -948,44 +986,90 @@ test('an advance and its refund through the MCP surface', async () => {
         type: 'expense',
         account: 'Courant',
         actor: 'Restaurant',
-        expectedRefundFrom: 'Alex',
-        expectedRefundAmount: 30,
+        expectedRefunds: [{ from: 'Alex', amount: 30 }],
         alreadyRefunded: true,
       },
     ],
   })
   assert.equal((sameDay.json() as { declared: number; failed: number }).declared, 1)
-  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+  assert.equal(((await call(client, 'list_outstanding_advances')).json() as Claim[]).length, 1)
 
-  // The claim itself is repairable: a share mistyped, then dropped entirely.
+  // The shares are repairable: restated, then dropped entirely.
+  await call(client, 'fix_movement', {
+    movement: bill,
+    action: 'correct',
+    expectedRefunds: [
+      { from: 'Alex', amount: 60 },
+      { from: 'Sam', amount: 30 },
+    ],
+  })
+  const dropping = await call(client, 'fix_movement', {
+    movement: bill,
+    action: 'correct',
+    expectedRefunds: 'none',
+  })
+  assert.match(dropping.text, /manage_claims remove/)
+})
+
+test('a purchase financed for someone else is one claim, planned and paid back on its own rhythm', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  await call(client, 'declare_financing', {
+    label: 'Laptop',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 300,
+    installmentsTotal: 3,
+    firstDueOn: '2026-07-01',
+    expectedRefunds: [{ from: 'Lea', amount: 300, onTotal: true }],
+  })
+  const [line] = rows<{ expectedRefunds: unknown }>(await call(client, 'list_commitments'), 'commitments')
+  assert.deepEqual(line!.expectedRefunds, [{ from: 'Lea', amount: 300, onTotal: true }])
+
+  const [claim] = (await call(client, 'list_outstanding_advances')).json() as {
+    claimId: string
+    advancedOn: { financing: string }
+    remaining: number
+  }[]
+  assert.equal(claim!.advancedOn.financing, 'Laptop')
+  await call(client, 'manage_claims', {
+    claimId: claim!.claimId,
+    action: 'plan',
+    lines: [
+      { dueOn: '2026-07-15', amount: 100 },
+      { dueOn: '2026-09-15', amount: 200 },
+    ],
+  })
   await call(client, 'declare_movements', {
     movements: [
       {
-        date: '2026-08-15',
-        amount: 80,
-        type: 'expense',
+        date: '2026-07-20',
+        amount: 50,
+        type: 'income',
         account: 'Courant',
-        actor: 'Restaurant',
-        expectedRefundFrom: 'Alex',
-        expectedRefundAmount: 80,
+        actor: 'Lea',
+        claimId: claim!.claimId,
       },
     ],
   })
-  const [claim] = (await call(client, 'list_outstanding_advances')).json() as { movementId: string }[]
-  await call(client, 'fix_movement', {
-    movement: claim!.movementId,
-    action: 'correct',
-    expectedRefundAmount: 20,
-  })
-  const fixed = (await call(client, 'list_outstanding_advances')).json() as { owed: number }[]
-  assert.equal(fixed[0]!.owed, 20)
+  const [after] = (await call(client, 'list_outstanding_advances')).json() as {
+    remaining: number
+    nextDueOn: string
+    nextDueAmount: number
+  }[]
+  assert.equal(after!.remaining, 250)
+  assert.equal(after!.nextDueOn, '2026-07-15')
+  assert.equal(after!.nextDueAmount, 50)
 
-  await call(client, 'fix_movement', {
-    movement: claim!.movementId,
-    action: 'correct',
-    expectedRefundFrom: 'none',
-  })
-  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+  // Nothing paid yet: what came back is ahead of the installments, deducted from nothing.
+  const [financing] = rows<{ coveredByRefunds: number; refundedAhead: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(financing!.coveredByRefunds, 0)
+  assert.equal(financing!.refundedAhead, 50)
 })
 
 test('spending reads back by category group through the MCP surface', async () => {

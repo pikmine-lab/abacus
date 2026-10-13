@@ -1,8 +1,10 @@
 import { db, type Executor } from '../db/client.ts'
 import { getAccount } from '../db/datasources/accounts.ts'
 import { getActor } from '../db/datasources/actors.ts'
+import { getShareForUpdate, sharesOfMovement, sharesOfMovements } from '../db/datasources/advances.ts'
 import { dropEmptyStatements, getCard, statementFor } from '../db/datasources/cards.ts'
 import { getActivity, soleActivityOfAccount } from '../db/datasources/catalog.ts'
+import { getCommitment } from '../db/datasources/commitments.ts'
 import {
   alignInstallmentOnMovement,
   installmentByMovement,
@@ -14,22 +16,20 @@ import {
   getMovement,
   insertMovement,
   listMovements as listMovementsDs,
-  listOutstandingAdvances,
   type MovementFilters,
   type MovementSelection,
   type MovementSortField,
-  refundedSoFar,
   selectionTotals as selectionTotalsDs,
-  setRefundClosed,
   updateMovementRow,
 } from '../db/datasources/movements.ts'
-import { checkRefundShare } from '../domain/advance.ts'
+import type { ShareInput } from '../domain/advance.ts'
 import { cycleOf, isValidOn } from '../domain/card.ts'
 import { DomainError } from '../domain/errors.ts'
 import { today } from '../domain/period.ts'
 import type { SortChoice, SortFields } from '../domain/sort.ts'
-import type { Account, Activity, Actor, Invoice, Movement } from '../domain/types.ts'
+import type { Account, Activity, Actor, Invoice, Movement, ShareState } from '../domain/types.ts'
 import { fetchHistory, type HistoryFetcher } from '../prices/sources.ts'
+import { refundShareFor, setMovementSharesIn } from './advances.ts'
 import { eurRateOn, toEur } from './fx.ts'
 
 export interface DeclareMovementInput {
@@ -57,15 +57,28 @@ export interface DeclareMovementInput {
   note?: string
   commitmentId?: string
   balanceCheckId?: string
-  /** Marks the expense as an advance to be refunded by this actor. */
-  expectedRefundFromActorId?: string
-  /** How much of the expense is owed back. Required with a refunding actor. */
-  expectedRefundAmount?: number
-  /** Links this income to the advanced expense it refunds. */
-  refundsMovementId?: string
   /**
-   * The advance came back the same day: the refund income is written in the
-   * same transaction, so the account balance never lies in between.
+   * Marks the expense as an advance: who owes what of it back, one share per
+   * person, adding up to at most the amount.
+   */
+  refundShares?: ShareInput[]
+  /**
+   * Links this income to the advanced expense it refunds: the share of the
+   * person it comes from, created for what it brings when they owed nothing
+   * on it yet.
+   */
+  refundsMovementId?: string
+  /** Links this income to one share: of an expense, or of a financing's total. */
+  refundsShareId?: string
+  /**
+   * Incomes already declared that paid this expense back before it was: each
+   * becomes the refund of its sender's share, created when they owe nothing
+   * on it yet, as a correction of the income would do.
+   */
+  refundedBy?: string[]
+  /**
+   * The advance came back the same day: the refund of every share is written
+   * in the same transaction, so the account balance never lies in between.
    */
   refundedNow?: boolean
   /**
@@ -195,41 +208,60 @@ export async function declareMovementIn(
 ): Promise<Movement> {
   const declared = { ...input, accrualMonth: monthOrNothing(input.accrualMonth) }
   const resolved = await inAccountCurrency(tx, await datedByCard(tx, userId, declared), history)
-  const activityId = await checkMovement(tx, userId, resolved)
-  const { refundedNow, eurAmount: _, awaitingDebit, ...row } = resolved
-  const movement = await insertMovement(tx, { ...row, userId, activityId })
-  if (refundedNow) await writeRefundIn(tx, userId, movement, {})
+  const { activityId, refundsShareId } = await checkMovement(tx, userId, resolved)
+  const {
+    refundedNow,
+    eurAmount: _,
+    awaitingDebit,
+    refundShares,
+    refundsMovementId: __,
+    refundedBy,
+    ...row
+  } = resolved
+  const movement = await insertMovement(tx, { ...row, userId, activityId, refundsShareId })
+  await setMovementSharesIn(tx, userId, movement, refundShares)
+  for (const income of refundedBy ?? [])
+    await correctMovementIn(tx, userId, income, { refundsMovementId: movement.id }, history)
+  if (refundedNow) {
+    if (!refundShares?.length)
+      throw new DomainError(
+        'not_an_advance',
+        'Only an advance can be refunded on the spot: state who owes what',
+      )
+    for (const share of await sharesOfMovement(tx, movement.id)) await writeRefundIn(tx, userId, share.id, {})
+  }
   return awaitingDebit === undefined ? movement : { ...movement, awaitingDebit }
 }
 
 /**
- * The income that brings an advance back: it lands on the account that paid,
- * comes from the actor who owed it, and defaults to what is still owed. One
+ * The income that brings a share back: it lands on the account that paid,
+ * comes from the person who owed it, and defaults to what they still owe. One
  * place decides that, because the web panel, the MCP and an advance refunded
  * on the spot must all write the same movement.
  */
 async function writeRefundIn(
   tx: Executor,
   userId: string,
-  advance: Movement,
+  shareId: string,
   { amount, on }: { amount?: number; on?: string },
 ): Promise<Movement> {
-  if (!advance.expectedRefundFromActorId || !advance.expectedRefundAmount)
-    throw new DomainError('not_an_advance', 'This movement is not marked as an advance')
-  const owed = Number(advance.expectedRefundAmount) - Number(await refundedSoFar(tx, advance.id))
-  const received = amount ?? owed
+  const share = await getShareForUpdate(tx, userId, shareId)
+  if (!share) throw new DomainError('claim_not_found', `No share ${shareId} for this user`)
+  const owed = Number(share.amount) - Number(share.refunded)
+  const received = amount ?? Math.round(owed * 100) / 100
   if (!(received > 0))
-    throw new DomainError('advance_settled', 'This advance has already been refunded in full')
+    throw new DomainError('advance_settled', 'This share has already been refunded in full')
+  const advance = share.movementId ? await getMovement(tx, userId, share.movementId) : undefined
+  const financing = share.commitmentId ? await getCommitment(tx, userId, share.commitmentId) : undefined
   return await declareMovementIn(tx, userId, {
     // Paid with a deferred card, the advance is dated on its debit: the
     // person who owed it paid back on the day of the purchase, straight to the
     // account, never to the card.
-    happenedOn: on ?? advance.purchasedOn ?? advance.happenedOn,
+    happenedOn: on ?? advance?.purchasedOn ?? advance?.happenedOn ?? today(),
     amount: received,
-    currency: advance.currency,
-    sourceActorId: advance.expectedRefundFromActorId,
-    targetAccountId: advance.sourceAccountId!,
-    refundsMovementId: advance.id,
+    sourceActorId: share.debtorActorId,
+    targetAccountId: advance?.sourceAccountId ?? financing!.accountId,
+    refundsShareId: share.id,
   })
 }
 
@@ -263,7 +295,7 @@ async function datedByCard(
       'transfer_has_no_card',
       'A card pays or is refunded: it never moves money between two of your accounts',
     )
-  if (input.refundsMovementId)
+  if (input.refundsMovementId || input.refundsShareId)
     throw new DomainError(
       'refund_has_no_card',
       'An advance is paid back to the account, never to the card that paid it',
@@ -301,8 +333,9 @@ async function datedByCard(
  * The domain rules a movement must satisfy, whether it is being declared or
  * corrected: exactly one endpoint per side, at least one owned account, no
  * category on a transfer, no writing onto a closed account or under a closed
- * activity, a refund pointing at a real advance, an invoice paid by its own
- * client and never beyond what it asks. Returns the activity to store.
+ * activity, a refund paying back a share of the person it comes from (see
+ * advances.ts), an invoice paid by its own client and never beyond what it
+ * asks. Returns the activity and the refunded share to store.
  *
  * The activity is settled at write time and never again. Explicit wins, and an
  * explicit null means "none". Absent, it is inherited from the invoice the
@@ -325,7 +358,7 @@ async function checkMovement(
   input: Dated,
   /** On a correction: the movement being corrected, left out of the sums it is measured against. */
   except?: string,
-): Promise<string | null> {
+): Promise<{ activityId: string | null; refundsShareId: string | null }> {
   if ((input.sourceAccountId ? 1 : 0) + (input.sourceActorId ? 1 : 0) !== 1)
     throw new DomainError('bad_source', 'A movement needs exactly one source: an account or an actor')
   if ((input.targetAccountId ? 1 : 0) + (input.targetActorId ? 1 : 0) !== 1)
@@ -362,17 +395,7 @@ async function checkMovement(
       ? await requireActor(tx, userId, input.sourceActorId, 'source')
       : null
 
-  if (input.expectedRefundFromActorId)
-    await requireActor(tx, userId, input.expectedRefundFromActorId, 'refunding')
-  checkAdvanceShare(input)
-
-  if (input.refundsMovementId) {
-    const advanced = await getMovement(tx, userId, input.refundsMovementId)
-    if (!advanced)
-      throw new DomainError('movement_not_found', `No movement ${input.refundsMovementId} for this user`)
-    if (!advanced.expectedRefundFromActorId)
-      throw new DomainError('not_an_advance', 'The linked movement is not marked as an advance')
-  }
+  const refundsShareId = await refundShareFor(tx, userId, input, input, except)
 
   const invoice = input.invoiceId ? await checkInvoiceLink(tx, userId, input, except) : null
 
@@ -396,7 +419,7 @@ async function checkMovement(
       )
   }
   checkVat(input, activity)
-  return activityId
+  return { activityId, refundsShareId }
 }
 
 /**
@@ -466,17 +489,6 @@ async function checkInvoiceLink(
   return invoice
 }
 
-/** Only an expense can be an advance; the share itself follows checkRefundShare. */
-function checkAdvanceShare(input: DeclareMovementInput): void {
-  const { expectedRefundFromActorId: debtor, expectedRefundAmount: share } = input
-  if ((debtor || share !== undefined) && !(input.sourceAccountId && input.targetActorId))
-    throw new DomainError(
-      'advance_is_expense',
-      'Only an expense can be an advance: a transfer or an income cannot be owed back',
-    )
-  checkRefundShare(debtor, share, input.amount)
-}
-
 export async function declareMovement(
   userId: string,
   input: DeclareMovementInput,
@@ -508,8 +520,23 @@ export interface CorrectMovementInput {
   categoryId?: string | null
   activityId?: string | null
   note?: string | null
-  expectedRefundFromActorId?: string | null
-  expectedRefundAmount?: number | null
+  /**
+   * Who owes what of the expense, restated whole: a share kept by its person
+   * keeps its refunds and its plan, null or an empty list drops them all.
+   * Dropping a share that has refunds is refused here: removeShare does it,
+   * by name. Absent, the stored shares are kept, and checked against the
+   * corrected movement.
+   */
+  refundShares?: ShareInput[] | null
+  /**
+   * The expense this income pays back (the share of the person it comes
+   * from), or the share itself: an id links it, null unlinks it, and the
+   * income is then a plain income again. Absent, the stored link is kept.
+   */
+  refundsMovementId?: string | null
+  refundsShareId?: string | null
+  /** Incomes already declared to link to this expense, as on declaration. */
+  refundedBy?: string[]
   /**
    * The month the movement is about: "YYYY-MM" attaches it, null detaches it
    * (it then follows its date again). Absent, the stored one is kept, which is
@@ -548,16 +575,16 @@ const CORRECTABLE = [
   'categoryId',
   'activityId',
   'note',
-  'expectedRefundFromActorId',
-  'expectedRefundAmount',
 ] as const
 
 /**
  * Corrects a declared movement. A declarative ledger is only as good as the
  * user's ability to fix a typo, so this exists: but it is a correction, not a
- * rewrite: the origin links (commitment, balance check, advance and refund
- * links) are never touched here, and the merged result must satisfy the same
- * domain rules as a fresh declaration.
+ * rewrite: the origin links (commitment, balance check) are never touched
+ * here, and the merged result must satisfy the same domain rules as a fresh
+ * declaration. The advance links are the exception, because they are what
+ * the person sees and repairs on the movement itself: its shares, and the
+ * share an income pays back.
  *
  * The stored activity is not re-inherited from a changed actor or account:
  * history stays stable unless the activity is set explicitly (same rule as
@@ -609,14 +636,14 @@ export async function correctMovementIn(
     note: pick(input, current, 'note'),
     // Explicit null keeps "no activity" from being re-inherited.
     activityId: input.activityId !== undefined ? input.activityId : current.activityId,
-    expectedRefundFromActorId: pick(input, current, 'expectedRefundFromActorId'),
-    expectedRefundAmount:
-      input.expectedRefundAmount !== undefined
-        ? (input.expectedRefundAmount ?? undefined)
-        : current.expectedRefundAmount !== null
-          ? Number(current.expectedRefundAmount)
-          : undefined,
-    refundsMovementId: current.refundsMovementId ?? undefined,
+    // An income linked anew, or unlinked; absent, it keeps paying back the
+    // share it did, which is checked again against what it now says.
+    ...(input.refundsShareId !== undefined || input.refundsMovementId !== undefined
+      ? {
+          refundsShareId: input.refundsShareId ?? undefined,
+          refundsMovementId: input.refundsMovementId ?? undefined,
+        }
+      : { refundsShareId: current.refundsShareId ?? undefined }),
     invoiceId:
       input.invoiceId !== undefined ? (input.invoiceId ?? undefined) : (current.invoiceId ?? undefined),
     vatAmount:
@@ -671,26 +698,11 @@ export async function correctMovementIn(
           !becomesTransfer && current.originalAmount !== null ? Number(current.originalAmount) : undefined,
         originalCurrency: !becomesTransfer ? (current.originalCurrency ?? undefined) : undefined,
       }
-  const activityId = await checkMovement(tx, userId, resolved, id)
-
-  // What has already come back is a fact: the claim it belongs to cannot be
-  // dropped under it, nor shrunk below it.
-  const received = Number(await refundedSoFar(tx, id))
-  if (received > 0) {
-    if (!resolved.expectedRefundFromActorId)
-      throw new DomainError(
-        'advance_has_refund',
-        'A refund is already linked to this advance: delete that refund before dropping the claim',
-      )
-    if (resolved.expectedRefundAmount! < received)
-      throw new DomainError(
-        'advance_below_refunds',
-        `The amount expected back cannot be lower than the ${received} already refunded`,
-      )
-  }
+  const { activityId, refundsShareId } = await checkMovement(tx, userId, resolved, id)
 
   const row: Record<string, unknown> = {
     activityId,
+    refundsShareId,
     originalAmount: resolved.originalAmount ?? null,
     originalCurrency: resolved.originalCurrency ?? null,
   }
@@ -700,6 +712,14 @@ export async function correctMovementIn(
   }
   const updated = await updateMovementRow(tx, userId, id, row)
   if (!updated) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
+  await setMovementSharesIn(
+    tx,
+    userId,
+    updated,
+    input.refundShares === null ? [] : (input.refundShares ?? undefined),
+  )
+  for (const income of input.refundedBy ?? [])
+    await correctMovementIn(tx, userId, income, { refundsMovementId: id }, history)
   // Moved off a statement (another day, another card, no card): the one it
   // left may be empty now.
   if (current.cardId) await dropEmptyStatements(tx, current.cardId)
@@ -730,23 +750,16 @@ export async function correctMovementIn(
 function pick(
   input: CorrectMovementInput,
   current: Movement,
-  key:
-    | 'sourceAccountId'
-    | 'sourceActorId'
-    | 'targetAccountId'
-    | 'targetActorId'
-    | 'categoryId'
-    | 'note'
-    | 'expectedRefundFromActorId',
+  key: 'sourceAccountId' | 'sourceActorId' | 'targetAccountId' | 'targetActorId' | 'categoryId' | 'note',
 ): string | undefined {
   const value = input[key] !== undefined ? input[key] : current[key]
   return value ?? undefined
 }
 
 /**
- * Removes a declared movement. Refused while another movement refunds it: the
- * refund would be left pointing at nothing, and the user has to decide which
- * of the two is wrong.
+ * Removes a declared movement. Refused while another movement refunds one of
+ * its shares: the refund would be left pointing at nothing, and the user has
+ * to decide which of the two is wrong. Its shares without refunds go with it.
  *
  * When the movement settled a financing installment, that installment becomes
  * owed again (the foreign key frees it) and the plan's cursor is moved back
@@ -765,7 +778,8 @@ export async function deleteMovementIn(tx: Executor, userId: string, id: string)
   const movement = await getMovement(tx, userId, id)
   if (!movement) throw new DomainError('movement_not_found', `No movement ${id} for this user`)
   const [refund] = await tx<{ id: string }[]>`
-    select id from movement where refunds_movement_id = ${id} limit 1
+    select r.id from movement r join advance_share s on s.id = r.refunds_share_id
+    where s.movement_id = ${id} limit 1
   `
   if (refund)
     throw new DomainError('refunded_movement', 'A refund is linked to this movement: delete the refund first')
@@ -794,8 +808,20 @@ export const MOVEMENT_SORTS: SortFields<MovementSortField> = {
 
 export const DEFAULT_MOVEMENT_SORT: SortChoice<MovementSortField> = { field: 'date', direction: 'desc' }
 
+/** The ledger, each advanced expense carrying who owes what of it. */
 export async function listMovements(userId: string, filters: MovementFilters = {}): Promise<Movement[]> {
-  return await listMovementsDs(db(), userId, filters)
+  const sql = db()
+  const rows = await listMovementsDs(sql, userId, filters)
+  const shares = await sharesOfMovements(
+    sql,
+    rows.filter((m) => m.refunded !== null && m.refunded !== undefined).map((m) => m.id),
+  )
+  const byMovement = new Map<string, ShareState[]>()
+  for (const s of shares) byMovement.set(s.movementId!, [...(byMovement.get(s.movementId!) ?? []), s])
+  return rows.map((m) => {
+    const own = byMovement.get(m.id)
+    return own ? { ...m, shares: own } : m
+  })
 }
 
 /** What the current filter selects, in one row: count and per-kind totals. */
@@ -806,34 +832,18 @@ export async function selectionTotals(
   return await selectionTotalsDs(db(), userId, filters)
 }
 
-export async function outstandingAdvances(userId: string): Promise<(Movement & { refunded: string })[]> {
-  return await listOutstandingAdvances(db(), userId)
-}
-
 /**
- * The refund arrived: writes the income that closes the claim, in full or in
- * part. Everything it needs is already in the advance, so a caller only says
+ * The refund arrived: writes the income that pays a share back, in full or in
+ * part. Everything it needs is already in the share, so a caller only says
  * what reality changed, the amount received and the day it landed.
  */
-export async function refundAdvance(
+export async function refundShare(
   userId: string,
-  movementId: string,
+  shareId: string,
   { amount, on }: { amount?: number; on?: string } = {},
 ): Promise<Movement> {
   const sql = db()
-  return await sql.begin(async (tx) => {
-    const advance = await getMovement(tx, userId, movementId)
-    if (!advance) throw new DomainError('movement_not_found', `No movement ${movementId} for this user`)
-    return await writeRefundIn(tx, userId, advance, { amount, on: on ?? today() })
-  })
-}
-
-/** Writes off what will never come back: the claim stops showing, the expense stays whole. */
-export async function closeAdvance(userId: string, movementId: string): Promise<Movement> {
-  const sql = db()
-  const movement = await getMovement(sql, userId, movementId)
-  if (!movement) throw new DomainError('movement_not_found', `No movement ${movementId} for this user`)
-  if (!movement.expectedRefundFromActorId)
-    throw new DomainError('not_an_advance', 'This movement is not marked as an advance')
-  return (await setRefundClosed(sql, userId, movementId, true))!
+  return await sql.begin(
+    async (tx) => await writeRefundIn(tx, userId, shareId, { amount, on: on ?? today() }),
+  )
 }

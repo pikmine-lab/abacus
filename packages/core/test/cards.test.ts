@@ -351,8 +351,7 @@ test('a merchant refund comes back through the card, an advance comes back to th
     sourceAccountId: checking.id,
     targetActorId: shop.id,
     cardId: card.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 40,
+    refundShares: [{ debtorActorId: friend.id, amount: 40 }],
     refundedNow: true,
   })
   const [refund] = await listMovements(user, { actorId: friend.id })

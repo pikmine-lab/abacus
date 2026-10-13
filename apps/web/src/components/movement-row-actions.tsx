@@ -3,6 +3,7 @@
 import { EllipsisIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
+import type { LinkChoice } from '@/components/advance-links'
 import type { CardChoice } from '@/components/card-forms'
 import { useEntryPanel } from '@/components/entry-dock'
 import { type ActivityOption, type MovementDraft, MovementForm } from '@/components/movement-form'
@@ -46,6 +47,7 @@ export function MovementRowActions({
   categories,
   activities,
   cards,
+  links,
   today,
 }: {
   draft: MovementDraft
@@ -56,6 +58,8 @@ export function MovementRowActions({
   categories: Option[]
   activities: ActivityOption[]
   cards?: CardChoice[]
+  /** What the panel offers to link the movement to, as on declaration. */
+  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; incomes: LinkChoice[] }
   today: string
 }) {
   const t = useTranslations('movements.row')
@@ -110,7 +114,7 @@ export function MovementRowActions({
               categories={categories}
               activities={activities}
               cards={cards}
-              advances={[]}
+              links={links}
               today={today}
               draft={draft}
             />

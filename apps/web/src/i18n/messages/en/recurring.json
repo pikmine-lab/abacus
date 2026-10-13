@@ -6,7 +6,7 @@
   "perMonth": "/mo",
   "amountPerMonth": "{amount}/mo",
   "monthlyApprox": "≈ {amount}/mo",
-  "expectedBackFrom": "{share} expected back from {debtor}",
+  "expectedBackFrom": "{share} expected from {debtor} each installment",
   "nextOn": "next on {date}",
   "movesTo": "moves to {account} on {date}",
   "rhythm": "{unit, select, week {{count, plural, =1 {every week} other {every # weeks}}} month {{count, plural, =1 {every month} other {every # months}}} other {{count, plural, =1 {every year} other {every # years}}}}",
@@ -106,10 +106,9 @@
     "newAccountOutgoing": "New debited account",
     "effectiveOn": "Starting on",
     "toJudge": "undecided",
-    "refundedInPart": "Partly refunded by someone else",
-    "whoRefunds": "Who pays it back?",
-    "whoRefundsPlaceholder": "Employer",
-    "refundNote": "Each confirmed occurrence becomes an advance on this share, followed in the movements."
+    "refundedInPart": "Who pays part of it back",
+    "refundNote": "Each confirmed installment becomes an advance on these shares, tracked in the movements.",
+    "refundNoteFinancing": "A share of each installment becomes an advance on every confirmed one; a share of the total is paid back at its own pace. Both are tracked in the movements."
   },
   "row": {
     "perPeriod": "per {unit, select, week {{count, plural, =1 {week} other {# weeks}}} month {{count, plural, =1 {month} other {# months}}} other {{count, plural, =1 {year} other {# years}}}}",
@@ -198,7 +197,8 @@
     "installmentAmount": "Amount of installment {index}",
     "totalMatches": "Schedule total <amount>{total}</amount>: it matches the total due.",
     "totalOver": "Schedule total <amount>{total}</amount>: {gap} over the total due.",
-    "totalUnder": "Schedule total <amount>{total}</amount>: {gap} short of the total due."
+    "totalUnder": "Schedule total <amount>{total}</amount>: {gap} short of the total due.",
+    "hintFixedTotal": "Enter the number of payments: the plan works itself out."
   },
   "schedule": {
     "revised": "Schedule revised",
@@ -208,5 +208,8 @@
     "addInstallment": "Add an installment",
     "droppedPaid": "{count, plural, one {An installment already paid is removed: its movement will be deleted.} other {# installments already paid are removed: their movements will be deleted.}}",
     "save": "Save schedule"
-  }
+  },
+  "owedOnTotal": "{debtor} owes {share} of the total",
+  "coveredBy": "{amount} covered by {debtors}",
+  "receivedAhead": "{amount} received ahead"
 }

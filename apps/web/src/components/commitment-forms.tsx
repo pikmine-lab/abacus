@@ -1,16 +1,15 @@
 'use client'
 
 import type { Judgment } from '@abacus/core/domain'
-import { MinusIcon, PlusIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useOptimistic, useState, useTransition } from 'react'
+import { type ShareDraft, ShareLinks } from '@/components/advance-links'
 import { AmountInput } from '@/components/amount-input'
 import { type CardChoice, CardSelect } from '@/components/card-forms'
 import { CurrencySelect } from '@/components/currency-select'
 import { FinancingAmountFields } from '@/components/financing-fields'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { PeriodField } from '@/components/period-field'
-import { RefundShare } from '@/components/refund-share'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -136,46 +135,39 @@ function CommitmentIdentityFields({
 }
 
 /**
- * The share of each occurrence someone pays back, an employer covering half a
- * transport pass. Each confirmed occurrence becomes an advance on it, so it is
- * stated the way an advance is: who, and the share in euros or in percent of
- * the price, whichever is typed holding. Closed, it states no claim, and on a
- * correction it drops the one there was.
+ * Who pays part of it back, one box per person: an employer covering half a
+ * transport pass, flatmates sharing a box, someone a purchase was financed
+ * for. The same block as on an expense, because each confirmed occurrence
+ * becomes an advance on these shares; on a financing, a share can instead be
+ * owed on the total and paid back on its own rhythm.
  */
 function RefundFields({
+  kind,
   amount,
-  defaults,
+  total,
+  shares,
 }: {
+  kind: 'subscription' | 'financing'
+  /** One occurrence, which a share per occurrence is a part of. */
   amount: number
-  defaults?: { debtor?: string; share?: number }
+  /** A financing's total, which a share on the total is a part of. */
+  total?: number
+  shares?: ShareDraft[]
 }) {
   const t = useTranslations('recurring.form')
-  const [open, setOpen] = useState(defaults?.debtor !== undefined)
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-        aria-expanded={open}
-      >
-        {open ? <MinusIcon className="size-3" /> : <PlusIcon className="size-3" />}
-        {t('refundedInPart')}
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-3">
-          <TextField
-            name="expectedRefundFrom"
-            label={t('whoRefunds')}
-            list="commitment-actors"
-            placeholder={t('whoRefundsPlaceholder')}
-            autoComplete="off"
-            defaultValue={defaults?.debtor ?? ''}
-          />
-          <RefundShare expense={amount} defaultAmount={defaults?.share} />
-          <p className="text-[11.5px] text-faint">{t('refundNote')}</p>
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      <p className="text-[12px] text-muted-foreground">{t('refundedInPart')}</p>
+      <ShareLinks
+        initial={shares}
+        cost={amount}
+        totalCost={total}
+        kind={kind}
+        actorsListId="commitment-actors"
+      />
+      <p className="text-[11.5px] text-faint">
+        {t(kind === 'financing' ? 'refundNoteFinancing' : 'refundNote')}
+      </p>
     </div>
   )
 }
@@ -203,6 +195,9 @@ export function NewCommitmentForm({
   const [accountId, setAccountId] = useState('')
   // Watched because a refunded share reads as a percentage of it, live.
   const [amount, setAmount] = useState('')
+  // A financing's plan, for the same reason: a share is a part of an
+  // installment, or of the total.
+  const [plan, setPlan] = useState({ total: Number.NaN, count: Number.NaN })
   const outgoing = direction === 'outgoing'
   const t = useTranslations('recurring')
 
@@ -298,7 +293,7 @@ export function NewCommitmentForm({
             </Field>
             <PeriodField defaultValue="month:1" />
           </div>
-          <RefundFields amount={Number(amount)} />
+          {outgoing && <RefundFields kind="subscription" amount={Number(amount)} />}
           <Field label={t('judgment')}>
             <FormSelect
               name="judgment"
@@ -323,7 +318,8 @@ export function NewCommitmentForm({
             label={t('form.paidWith')}
             noneLabel={t('form.noCard')}
           />
-          <FinancingAmountFields today={today} />
+          <FinancingAmountFields today={today} onPlanChange={setPlan} />
+          <RefundFields kind="financing" amount={plan.total / plan.count} total={plan.total} />
           <SubmitButton className="self-start">{t('form.createFinancing')}</SubmitButton>
         </ActionForm>
       )}
@@ -361,10 +357,11 @@ export function EditCommitmentForm({
     /** The account it hits today, whose cards it can be billed to. */
     accountId?: string
     cardId?: string
-    /** Outgoing subscription only: the price, and who pays part of it back. */
+    /** Outgoing only: the price of one occurrence, and who pays part of it back. */
     amount?: number
-    refundFrom?: string
-    refundAmount?: number
+    /** A financing's total. */
+    total?: number
+    shares?: ShareDraft[]
   }
   options: CommitmentOptions
   onDone?: () => void
@@ -407,15 +404,8 @@ export function EditCommitmentForm({
           />
         </>
       )}
-      {kind === 'subscription' && !incoming && defaults.amount !== undefined && (
-        <>
-          {/* Says the block was offered, so a closed one drops the claim. */}
-          <input type="hidden" name="refundField" value="1" />
-          <RefundFields
-            amount={defaults.amount}
-            defaults={{ debtor: defaults.refundFrom, share: defaults.refundAmount }}
-          />
-        </>
+      {!incoming && defaults.amount !== undefined && (
+        <RefundFields kind={kind} amount={defaults.amount} total={defaults.total} shares={defaults.shares} />
       )}
       <p className="text-[11.5px] text-faint">{t('form.editNote')}</p>
       <SubmitButton className="self-start">{t('form.save')}</SubmitButton>

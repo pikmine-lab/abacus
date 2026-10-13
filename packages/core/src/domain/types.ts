@@ -115,11 +115,8 @@ export interface Movement {
   note: string | null
   commitmentId: string | null
   balanceCheckId: string | null
-  expectedRefundFromActorId: string | null
-  /** What is owed back: a share of the amount, never implicitly all of it. */
-  expectedRefundAmount: string | null
-  refundClosed: boolean
-  refundsMovementId: string | null
+  /** The share this income pays back, when it is the refund of an advance. */
+  refundsShareId: string | null
   /** What was paid abroad, when the movement was declared in a foreign
    * currency: `amount` is then its EUR counter-value, frozen at declaration. */
   originalAmount: string | null
@@ -171,6 +168,44 @@ export interface Movement {
   refunded?: string | null
   /** Read by the movement list, on an advance only: the day the last refund landed. */
   lastRefundedOn?: string | null
+  /** Read by the movement list, on an advance only: who owes what of it. */
+  shares?: ShareState[]
+  /** Read by the movement list, on a refund only: the expense it pays back, or the financing. */
+  refundsMovementId?: string | null
+  refundsCommitmentId?: string | null
+}
+
+/**
+ * Someone's share of what was advanced for them: of one expense, or of a
+ * commitment, either per occurrence (a rule each confirmed occurrence copies
+ * onto its movement) or on a financing's total. In euros, except a share per
+ * occurrence, which is part of a price and speaks its billing currency.
+ */
+export interface AdvanceShare {
+  id: string
+  userId: string
+  movementId: string | null
+  commitmentId: string | null
+  perOccurrence: boolean
+  debtorActorId: string
+  amount: string
+  /** Written off: what is left will never come back. */
+  closed: boolean
+}
+
+/** A share with what came back on it, as every reading needs it. */
+export interface ShareState extends AdvanceShare {
+  refunded: string
+  lastRefundedOn: string | null
+}
+
+/** One line of the plan a debtor gave for paying a share back. */
+export interface ShareInstallment {
+  id: string
+  shareId: string
+  position: number
+  dueOn: string
+  amount: string
 }
 
 /** Where a claim stands: still owed, back in full, or closed short of that. */
@@ -262,13 +297,6 @@ export interface Commitment {
   totalAmount: string | null
   /** Outgoing subscription only: the card it is billed to. */
   cardId: string | null
-  /**
-   * Outgoing subscription only: who pays part of it back. Each confirmed
-   * occurrence is an advance on this actor for `expectedRefundAmount`.
-   */
-  expectedRefundFromActorId: string | null
-  /** The share owed back per occurrence, in the commitment's currency. */
-  expectedRefundAmount: string | null
 }
 
 export type CommitmentEventType =

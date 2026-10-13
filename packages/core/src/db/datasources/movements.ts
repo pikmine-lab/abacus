@@ -17,9 +17,7 @@ export interface NewMovement {
   note?: string | null
   commitmentId?: string | null
   balanceCheckId?: string | null
-  expectedRefundFromActorId?: string | null
-  expectedRefundAmount?: number | null
-  refundsMovementId?: string | null
+  refundsShareId?: string | null
   originalAmount?: number | null
   originalCurrency?: string | null
   /** First day of the month the movement is about; null follows its date. */
@@ -162,21 +160,30 @@ function movementOrder(tx: Executor, sort: SortChoice<MovementSortField>) {
 }
 
 /**
- * Where a claim stands, read from the refunds linked to it: settled once its
- * share is back, whatever was declared after; written off when it was closed
- * short of that; open otherwise. `claimState` in the domain reads the same
- * three cases off a listed row, and the two must agree.
+ * Where an advanced expense stands across its shares, each read from the
+ * refunds linked to it: open while one share is neither back nor written off;
+ * written off when none is open and one was closed short; settled once every
+ * share is back. `claimState` in the domain reads the same three cases off a
+ * listed row, and the two must agree.
  */
 function advanceWhere(tx: Executor, filter: AdvanceFilter) {
-  if (filter === 'refunds') return tx`and m.refunds_movement_id is not null`
-  const refunded = tx`coalesce((select sum(r.amount) from movement r where r.refunds_movement_id = m.id), 0)`
+  if (filter === 'refunds') return tx`and m.refunds_share_id is not null`
+  const shareIs = (state: 'open' | 'written_off') => tx`
+    exists (
+      select 1 from advance_share s
+      where s.movement_id = m.id
+        and s.closed = ${state === 'written_off'}
+        and s.amount > coalesce((select sum(r.amount) from movement r where r.refunds_share_id = s.id), 0)
+    )
+  `
+  const advanced = tx`exists (select 1 from advance_share s where s.movement_id = m.id)`
   const state =
-    filter === 'settled'
-      ? tx`m.expected_refund_amount <= ${refunded}`
+    filter === 'open'
+      ? shareIs('open')
       : filter === 'written_off'
-        ? tx`m.refund_closed and m.expected_refund_amount > ${refunded}`
-        : tx`not m.refund_closed and m.expected_refund_amount > ${refunded}`
-  return tx`and m.expected_refund_from_actor_id is not null and ${state}`
+        ? tx`not ${shareIs('open')} and ${shareIs('written_off')}`
+        : tx`not ${shareIs('open')} and not ${shareIs('written_off')}`
+  return tx`and ${advanced} and ${state}`
 }
 
 /**
@@ -195,7 +202,7 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.actorId ? tx`and (m.source_actor_id = ${f.actorId} or m.target_actor_id = ${f.actorId})` : tx``}
     ${
       f.categoryId === null
-        ? tx`and m.category_id is null and m.kind <> 'transfer' and m.refunds_movement_id is null`
+        ? tx`and m.category_id is null and m.kind <> 'transfer' and m.refunds_share_id is null`
         : f.categoryId
           ? tx`and m.category_id = ${f.categoryId}`
           : tx``
@@ -228,14 +235,15 @@ export async function listMovements(
       exists (
         select 1 from card_statement cs where cs.id = m.card_statement_id and cs.debited_on is null
       ) as awaiting_debit,
-      rf.total as refunded,
-      rf.last_on as last_refunded_on
+      -- Only an advance has refunds to sum: every other row reads null there.
+      case when exists (select 1 from advance_share s where s.movement_id = m.id)
+           then coalesce(er.refunded, 0) end as refunded,
+      er.last_refunded_on,
+      rs.movement_id as refunds_movement_id,
+      rs.commitment_id as refunds_commitment_id
     from movement m
-    -- Only an advance has refunds to sum: every other row reads null there.
-    left join lateral (
-      select coalesce(sum(r.amount), 0)::numeric(14,2) as total, max(r.happened_on) as last_on
-      from movement r where r.refunds_movement_id = m.id
-    ) rf on m.expected_refund_from_actor_id is not null
+    left join expense_refund er on er.movement_id = m.id
+    left join advance_share rs on rs.id = m.refunds_share_id
     ${
       named
         ? tx`left join actor sa on sa.id = m.source_actor_id
@@ -342,54 +350,6 @@ export async function sumMovementsForCommitment(tx: Executor, commitmentId: stri
     select coalesce(sum(amount), 0)::numeric(14,2) as total from movement where commitment_id = ${commitmentId}
   `
   return row!.total
-}
-
-/**
- * Open advances: expenses awaiting a refund, with what came back so far.
- * What is owed is the expected share, not the whole expense: paying for four
- * and being owed three quarters is the ordinary case. An advance drops out on
- * its own once that share is back; an abandoned one is closed explicitly
- * (refund_closed).
- */
-export async function listOutstandingAdvances(
-  tx: Executor,
-  userId: string,
-): Promise<(Movement & { refunded: string })[]> {
-  return await tx<(Movement & { refunded: string })[]>`
-    select m.*, coalesce(r.total, 0)::numeric(14,2) as refunded
-    from movement m
-    left join lateral (
-      select sum(amount) as total from movement r where r.refunds_movement_id = m.id
-    ) r on true
-    where m.user_id = ${userId}
-      and m.expected_refund_from_actor_id is not null
-      and m.refund_closed = false
-      and m.expected_refund_amount > coalesce(r.total, 0)
-    order by m.happened_on
-  `
-}
-
-/** What has already come back on an advance, refund movements linked to it. */
-export async function refundedSoFar(tx: Executor, id: string): Promise<string> {
-  const [row] = await tx<{ total: string }[]>`
-    select coalesce(sum(amount), 0)::numeric(14,2) as total
-    from movement where refunds_movement_id = ${id}
-  `
-  return row!.total
-}
-
-export async function setRefundClosed(
-  tx: Executor,
-  userId: string,
-  id: string,
-  closed: boolean,
-): Promise<Movement | undefined> {
-  const [movement] = await tx<Movement[]>`
-    update movement set refund_closed = ${closed}, updated_at = now()
-    where user_id = ${userId} and id = ${id}
-    returning *
-  `
-  return movement
 }
 
 /** The adjustment a balance check produced, if its gap was settled. */

@@ -6,7 +6,7 @@
   "perMonth": "/mois",
   "amountPerMonth": "{amount}/mois",
   "monthlyApprox": "≈ {amount}/mois",
-  "expectedBackFrom": "{share} attendus de {debtor}",
+  "expectedBackFrom": "{share} attendus de {debtor} à chaque échéance",
   "nextOn": "prochaine le {date}",
   "movesTo": "passe sur {account} le {date}",
   "rhythm": "{unit, select, week {{count, plural, =1 {chaque semaine} other {toutes les # semaines}}} month {{count, plural, =1 {chaque mois} other {tous les # mois}}} other {{count, plural, =1 {chaque année} other {tous les # ans}}}}",
@@ -106,10 +106,9 @@
     "newAccountOutgoing": "Nouveau compte prélevé",
     "effectiveOn": "À partir du",
     "toJudge": "à juger",
-    "refundedInPart": "Remboursé en partie par un tiers",
-    "whoRefunds": "Qui rembourse ?",
-    "whoRefundsPlaceholder": "Employeur",
-    "refundNote": "Chaque échéance confirmée devient une avance sur cette part, à suivre dans les mouvements."
+    "refundedInPart": "Qui en rembourse une part",
+    "refundNote": "Chaque échéance confirmée devient une avance sur ces parts, à suivre dans les mouvements.",
+    "refundNoteFinancing": "Une part à chaque échéance devient une avance sur chaque échéance confirmée ; une part sur le total se rembourse à son rythme. Les deux se suivent dans les mouvements."
   },
   "row": {
     "perPeriod": "par {unit, select, week {{count, plural, =1 {semaine} other {# semaines}}} month {{count, plural, =1 {mois} other {# mois}}} other {{count, plural, =1 {an} other {# ans}}}}",
@@ -198,7 +197,8 @@
     "installmentAmount": "Montant de l’échéance {index}",
     "totalMatches": "Total de l’échéancier <amount>{total}</amount> : il correspond au total dû.",
     "totalOver": "Total de l’échéancier <amount>{total}</amount> : dépasse de {gap} par rapport au total dû.",
-    "totalUnder": "Total de l’échéancier <amount>{total}</amount> : manque de {gap} par rapport au total dû."
+    "totalUnder": "Total de l’échéancier <amount>{total}</amount> : manque de {gap} par rapport au total dû.",
+    "hintFixedTotal": "Indique le nombre de versements : l’échéancier se calcule seul."
   },
   "schedule": {
     "revised": "Échéancier révisé",
@@ -208,5 +208,8 @@
     "addInstallment": "Ajouter une échéance",
     "droppedPaid": "{count, plural, one {Une échéance déjà payée est retirée : son mouvement sera supprimé.} other {# échéances déjà payées sont retirées : leurs mouvements seront supprimés.}}",
     "save": "Enregistrer l’échéancier"
-  }
+  },
+  "owedOnTotal": "{debtor} doit {share} sur le total",
+  "coveredBy": "{amount} couverts par {debtors}",
+  "receivedAhead": "{amount} reçus d’avance"
 }

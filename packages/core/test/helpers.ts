@@ -33,3 +33,10 @@ export async function seedUser(id = 'user-1'): Promise<string> {
   `
   return id
 }
+
+/** The one share of an expense advanced for a single person. */
+export async function shareOf(movementId: string): Promise<string> {
+  const [share] = await db()<{ id: string }[]>`select id from advance_share where movement_id = ${movementId}`
+  if (!share) throw new Error(`No share on movement ${movementId}`)
+  return share.id
+}
