@@ -16,7 +16,7 @@ import {
   updateShareAmount,
 } from '../db/datasources/advances.ts'
 import { getCommitment } from '../db/datasources/commitments.ts'
-import { listInstallments } from '../db/datasources/installments.ts'
+import { installmentByMovement, listInstallments } from '../db/datasources/installments.ts'
 import { getMovement } from '../db/datasources/movements.ts'
 import { checkShares, type ShareInput, type ShareProgress, shareProgress } from '../domain/advance.ts'
 import { DomainError } from '../domain/errors.ts'
@@ -125,6 +125,27 @@ function requireExpense(m: Pick<Movement, 'sourceAccountId' | 'targetActorId'>):
 }
 
 /**
+ * What the shares of an expense of its own may claim of it: all of it, except
+ * on an installment of a financing claimed on its total, whose claims already
+ * take their part of it (the share of the total that installment is), and
+ * which the person owing on the total pays back there, never here.
+ */
+async function claimableOf(
+  tx: Executor,
+  userId: string,
+  movement: Pick<Movement, 'id' | 'amount'>,
+): Promise<{ cost: number; onTotal: ShareState[] }> {
+  const amount = Number(movement.amount)
+  const installment = await installmentByMovement(tx, movement.id)
+  if (!installment) return { cost: amount, onTotal: [] }
+  const financing = await getCommitment(tx, userId, installment.commitmentId)
+  const onTotal = (await sharesOfCommitments(tx, [installment.commitmentId])).filter((s) => !s.perOccurrence)
+  if (!financing || onTotal.length === 0) return { cost: amount, onTotal }
+  const claimed = onTotal.reduce((sum, s) => sum + Number(s.amount), 0)
+  return { cost: Math.round(amount * (1 - claimed / Number(financing.totalAmount)) * 100) / 100, onTotal }
+}
+
+/**
  * States who owes what of an expense. Undefined restates nothing, but still
  * checks the stored shares against the movement as it now is, since a
  * correction of its amount or of its nature must not leave them behind.
@@ -140,7 +161,7 @@ export async function setMovementSharesIn(
   if (wanted.length === 0 && current.length === 0) return
   if (wanted.length > 0) requireExpense(movement)
   await requireDebtors(tx, userId, wanted)
-  checkShares(wanted, Number(movement.amount))
+  if (wanted.length > 0) checkShares(wanted, (await claimableOf(tx, userId, movement)).cost)
   if (shares !== undefined) await reconcile(tx, userId, current, wanted, { movementId: movement.id })
 }
 
@@ -307,7 +328,12 @@ export async function refundShareFor(
     if (!advanced)
       throw new DomainError('movement_not_found', `No movement ${target.refundsMovementId} for this user`)
     const current = await sharesOfMovement(tx, advanced.id)
-    const theirs = current.find((s) => s.debtorActorId === income.sourceActorId)
+    const claimable = await claimableOf(tx, userId, advanced)
+    // An installment of a financing they owe on: the refund pays that claim,
+    // never a second share of the same money.
+    const theirs =
+      current.find((s) => s.debtorActorId === income.sourceActorId) ??
+      claimable.onTotal.find((s) => s.debtorActorId === income.sourceActorId)
     if (theirs) shareId = theirs.id
     else {
       requireExpense(advanced)
@@ -315,7 +341,7 @@ export async function refundShareFor(
         ...current.map((s) => ({ debtorActorId: s.debtorActorId, amount: Number(s.amount) })),
         { debtorActorId: income.sourceActorId, amount: income.amount },
       ]
-      checkShares(wanted, Number(advanced.amount))
+      checkShares(wanted, claimable.cost)
       shareId = (
         await insertShare(tx, {
           userId,

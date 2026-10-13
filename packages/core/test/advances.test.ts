@@ -352,6 +352,24 @@ test('a claim on the total of a financing is paid back on its own rhythm, and sp
   assert.equal(refund.targetAccountId, plan.accountId)
 })
 
+test('a refund linked to an instalment pays the claim its sender has on the total', async () => {
+  const { user, lea, marc, plan, income } = await financed()
+  const { movement } = await confirmNextOccurrence(user, plan.id)
+  const [claim] = await openClaims(user)
+
+  // Lea owes on the total: linked to the instalment, the money goes to that claim.
+  const paid = await income(lea.id, 100, '2026-07-05', { refundsMovementId: movement.id })
+  assert.equal(paid.refundsShareId, claim!.share.id)
+  const [after] = await openClaims(user)
+  assert.equal(after!.remaining, 200)
+
+  // The claim takes the whole instalment: nobody else can owe a share of it.
+  await assert.rejects(
+    income(marc.id, 10, '2026-07-06', { refundsMovementId: movement.id }),
+    code('advance_amount_too_large'),
+  )
+})
+
 test('a financing is shared per instalment, on its total, or both, within every instalment', async () => {
   const { user, lea, marc, plan } = await financed()
   await assert.rejects(

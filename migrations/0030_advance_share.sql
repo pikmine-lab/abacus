@@ -123,60 +123,59 @@ create index movement_refunds on movement (refunds_share_id) where refunds_share
 --
 -- On an expense of its own, that is the refunds of its shares (an occurrence
 -- of a commitment shared per occurrence is one of them). On a financing
--- claimed on its total, the refunds of those shares are spread over the instalments
--- already paid, in their order, each up to the part of it that is claimed
--- (its amount times the claim over the financing's total): an instalment
--- reads net of what came back for it, the way an advanced expense does.
--- Refunds beyond what the paid instalments claim wait for the next one.
+-- claimed on its total, the refunds of those shares are spread over the
+-- instalments already paid, in their order, each up to the part of it that
+-- is claimed (its amount times the claim over the financing's total): an
+-- instalment reads net of what came back for it, the way an advanced expense
+-- does. Refunds beyond what the paid instalments claim wait for the next one.
+--
+-- Computed movement by movement, from the movement the query reads: a reading
+-- of one person's month joins this view row by row on the movement's key and
+-- never computes anyone else's claims. Only a movement something came back on
+-- has a row.
 create view expense_refund as
-with own as (
-  select s.movement_id,
-         sum(r.amount) as refunded,
+select m.id as movement_id,
+       (coalesce(own.refunded, 0) + coalesce(spread.refunded, 0))::numeric(14,2) as refunded,
+       (coalesce(own.counted, 0) + coalesce(spread.counted, 0))::numeric(14,2) as counted,
+       own.last_refunded_on
+from movement m
+left join lateral (
+  select sum(r.amount) as refunded,
          coalesce(sum(r.amount) filter (where not r.ghost), 0) as counted,
          max(r.happened_on) as last_refunded_on
   from advance_share s
   join movement r on r.refunds_share_id = s.id
-  where s.movement_id is not null
-  group by s.movement_id
-),
-claim as (
-  select commitment_id, sum(amount) as claimed
-  from advance_share
-  where commitment_id is not null and not per_occurrence
-  group by commitment_id
-),
-back as (
-  select s.commitment_id,
-         sum(r.amount) as refunded,
-         coalesce(sum(r.amount) filter (where not r.ghost), 0) as counted
-  from advance_share s
-  join movement r on r.refunds_share_id = s.id
-  where s.commitment_id is not null
-  group by s.commitment_id
-),
-paid as (
-  select fi.commitment_id, fi.movement_id,
-         m.amount * cl.claimed / c.total_amount as claimed_on_it,
-         coalesce(sum(m.amount * cl.claimed / c.total_amount) over (
-           partition by fi.commitment_id order by fi.position
-           rows between unbounded preceding and 1 preceding
-         ), 0) as claimed_before
+  where s.movement_id = m.id
+  having count(*) > 0
+) own on true
+left join lateral (
+  -- The instalment this movement settled, what its financing's claims on the
+  -- total take of it, and what they took of the instalments paid before it.
+  select round(least(part.claimed_on_it, greatest(back.refunded - part.claimed_before, 0)), 2) as refunded,
+         round(least(part.claimed_on_it, greatest(back.counted - part.claimed_before, 0)), 2) as counted
   from financing_installment fi
-  join movement m on m.id = fi.movement_id
   join commitment c on c.id = fi.commitment_id
-  join claim cl on cl.commitment_id = fi.commitment_id
-),
-spread as (
-  select p.movement_id,
-         round(least(p.claimed_on_it, greatest(b.refunded - p.claimed_before, 0)), 2) as refunded,
-         round(least(p.claimed_on_it, greatest(b.counted - p.claimed_before, 0)), 2) as counted,
-         null::date as last_refunded_on
-  from paid p
-  join back b on b.commitment_id = p.commitment_id
-)
-select movement_id,
-       sum(refunded)::numeric(14,2) as refunded,
-       sum(counted)::numeric(14,2) as counted,
-       max(last_refunded_on) as last_refunded_on
-from (select * from own union all select * from spread) x
-group by movement_id;
+  cross join lateral (
+    select sum(amount) as claimed
+    from advance_share
+    where commitment_id = fi.commitment_id and not per_occurrence
+  ) claim
+  cross join lateral (
+    select coalesce(sum(r.amount), 0) as refunded,
+           coalesce(sum(r.amount) filter (where not r.ghost), 0) as counted
+    from advance_share s
+    join movement r on r.refunds_share_id = s.id
+    where s.commitment_id = fi.commitment_id and not s.per_occurrence
+  ) back
+  cross join lateral (
+    select m.amount * claim.claimed / c.total_amount as claimed_on_it,
+           coalesce((
+             select sum(pm.amount) * claim.claimed / c.total_amount
+             from financing_installment prior
+             join movement pm on pm.id = prior.movement_id
+             where prior.commitment_id = fi.commitment_id and prior.position < fi.position
+           ), 0) as claimed_before
+  ) part
+  where fi.movement_id = m.id and claim.claimed is not null
+) spread on true
+where own.refunded is not null or spread.refunded is not null;
