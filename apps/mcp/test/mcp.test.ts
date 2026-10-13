@@ -99,6 +99,13 @@ test('full declarative session through the MCP surface', async () => {
   const byActivity = await call(client, 'list_movements', { activity: 'Freelance' })
   assert.equal(rows(byActivity, 'movements').length, 1)
 
+  // A search is read word by word, the number as the start of an amount.
+  const searched = await call(client, 'list_movements', { search: 'glov 20' })
+  assert.deepEqual(
+    rows<{ amount: number }>(searched, 'movements').map((m) => m.amount),
+    [20],
+  )
+
   // Overview: balances reflect the movements, transfer stayed neutral.
   const overview = (await call(client, 'get_overview')).json() as {
     accounts: { name: string; balance: number }[]

@@ -27,6 +27,7 @@ import { MovementRowActions } from '@/components/movement-row-actions'
 import { OutstandingAdvances } from '@/components/outstanding-advances'
 import { PageBody } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
+import { ShowMore } from '@/components/show-more'
 import { SortButton, SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { linkChoices, openClaims, refundLabels } from '@/lib/advance-data'
@@ -59,9 +60,9 @@ export default async function MovementsPage({
   const params = await searchParams
   const t = await getTranslations('movements')
   const format = await getFormat()
-  // A ledger opens on a window wide enough to hold something, not on the
-  // first day of the month.
-  const period = resolvePeriod({ t: await getTranslations('common.period'), format }, params, today(), '90d')
+  // A ledger opens on its whole history, newest first and cut at a page: a
+  // search then finds what is remembered without first guessing its date.
+  const period = resolvePeriod({ t: await getTranslations('common.period'), format }, params, today(), 'all')
 
   const limit = Number(params.limit) > 0 ? Math.min(Number(params.limit), 1000) : PAGE_SIZE
 
@@ -390,8 +391,11 @@ export default async function MovementsPage({
                         </TableCell>
                         <TableCell className="max-w-0">
                           {/* A transfer wraps rather than lose its destination,
-                              the fact that tells two transfers apart. */}
-                          <span className={`block text-[13px] ${isTransfer ? 'break-words' : 'truncate'}`}>
+                              the fact that tells two transfers apart. The cell
+                              is nowrap, so wrapping is turned back on here. */}
+                          <span
+                            className={`block text-[13px] ${isTransfer ? 'break-words whitespace-normal' : 'truncate'}`}
+                          >
                             {counterparty}
                           </span>
                           {/* The category before the account: it is what tells
@@ -508,7 +512,7 @@ export default async function MovementsPage({
   )
 }
 
-/** Plain link, so "show more" costs no client state and survives a reload. */
+/** The limit travels in the URL, so a list grown this way survives a reload. */
 function MoreLink({
   params,
   limit,
@@ -526,11 +530,6 @@ function MoreLink({
   )
   next.set('limit', String(limit + PAGE_SIZE))
   return (
-    <a
-      href={`?${next}`}
-      className="self-start text-[12.5px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
-    >
-      {t('more', { shown, total })}
-    </a>
+    <ShowMore href={`${PATH}?${next}`} label={t('more', { shown, total })} pendingLabel={t('loadingMore')} />
   )
 }
