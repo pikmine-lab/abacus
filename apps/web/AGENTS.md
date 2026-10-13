@@ -42,7 +42,7 @@ c'est précisément là que les écarts s'accumulent.
 Ces fichiers nous appartiennent (modèle shadcn) ; les divergences volontaires avec le
 registre sont locales et motivées, en commentaire, sur place.
 
-Trois contrôles ne se prennent pas dans le catalogue tel quel :
+Quatre contrôles ne se prennent pas dans le catalogue tel quel :
 
 - **Une devise se choisit dans un combobox recherchable** (`CurrencySelect`), jamais dans
   un Select brut : ~180 codes n'ont ni vue d'ensemble ni tri utile (le problème du
@@ -62,6 +62,11 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
   « loisirs »), chacun devenant son propre groupe. Le champ reste libre, les valeurs en
   usage s'ouvrent dessous ; focalisé alors qu'il est rempli, il propose toutes les autres,
   pour déplacer l'entrée. Jamais une `datalist` native, qui ignore le thème.
+- **Un mouvement à relier se cherche** (`MovementPicker`), jamais dans une liste fixe : on
+  relie un mouvement précis, souvent ancien, et une liste ne tient que les plus récents.
+  La saisie part au serveur, qui cherche dans tout l'historique avec la règle de la
+  recherche des mouvements et du MCP (`searchTerms`) ; avant toute frappe, la liste
+  s'ouvre sur les créances en attente puis les derniers mouvements.
 
 ## Formulaires, actions et URL
 

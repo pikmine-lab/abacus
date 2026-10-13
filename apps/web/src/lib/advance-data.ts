@@ -1,14 +1,10 @@
 import type { Movement } from '@abacus/core/domain'
-import { addPeriod, today } from '@abacus/core/domain/period'
-import { describeShares, type OpenClaim, openClaims } from '@abacus/core/services/advances'
+import { actorNames } from '@abacus/core/services/actors'
+import { describeShares, linkCandidates, type OpenClaim, openClaims } from '@abacus/core/services/advances'
 import { listCommitments } from '@abacus/core/services/commitments'
-import { listMovements } from '@abacus/core/services/movements'
 import { getTranslations } from 'next-intl/server'
 import type { LinkChoice } from '@/components/advance-links'
 import { getFormat } from '@/lib/format-server'
-
-/** How far back an income or an expense is offered to be linked: a quarter covers what is still discussed. */
-const LINKABLE_MONTHS = 3
 
 /** What a claim was advanced on, in a few words: the expense and its day, or the financing. */
 async function advancedOn(
@@ -56,10 +52,36 @@ export async function refundLabels(
 }
 
 /**
- * What an advance link can point at, for the movement panel: the claims
- * awaited and the recent expenses an income may pay back, the running
- * subscriptions and financings it may have been received for, the recent
- * plain incomes an expense may be paid back by.
+ * Movements as a link offers them: who, how much, and when. An expense is
+ * valued `movement:<id>`, apart from the claims it is listed with; an income
+ * by its id alone.
+ */
+async function movementChoices(
+  side: 'expense' | 'income',
+  movements: Movement[],
+  actorName: Map<string, string>,
+): Promise<LinkChoice[]> {
+  const t = await getTranslations('movements.links')
+  const format = await getFormat()
+  return movements.map((m) => ({
+    value: side === 'expense' ? `movement:${m.id}` : m.id,
+    label: t('movementOption', {
+      label: actorName.get((side === 'income' ? m.sourceActorId : m.targetActorId)!) ?? '?',
+      amount: format.eur(Number(m.amount), 2),
+      date: format.date(m.purchasedOn ?? m.happenedOn),
+    }),
+  }))
+}
+
+/** How many of the latest movements a link offers before anything is typed. */
+const RECENT = 5
+
+/**
+ * What an advance link offers when it opens, for the movement panel: the
+ * claims awaited and the latest expenses an income may pay back, the running
+ * subscriptions and financings it may have been received for, the latest
+ * plain incomes an expense may be paid back by. The rest of the history is
+ * searched (`searchLinkChoices`), never listed.
  */
 export async function linkChoices(
   userId: string,
@@ -73,42 +95,62 @@ export async function linkChoices(
 }> {
   const t = await getTranslations('movements.links')
   const format = await getFormat()
-  const from = addPeriod(today(), 'month', -LINKABLE_MONTHS)
   const [expenses, incomes, running] = await Promise.all([
-    listMovements(userId, { kind: 'expense', from, limit: 60 }),
-    listMovements(userId, { kind: 'income', from, limit: 60 }),
+    linkCandidates(userId, 'expense', undefined, RECENT),
+    linkCandidates(userId, 'income', undefined, RECENT),
     listCommitments(userId, true),
   ])
-  const line = (m: Movement, who: string | null) =>
-    t('movementOption', {
-      label: actorName.get(who!) ?? '?',
-      amount: format.eur(Number(m.amount), 2),
-      date: format.date(m.purchasedOn ?? m.happenedOn),
-    })
   return {
     claims: await Promise.all(
-      claims.map(async (c) => ({
-        value: `claim:${c.share.id}`,
-        label: t('claimOption', {
-          debtor: actorName.get(c.share.debtorActorId) ?? '?',
-          remaining: format.eur(c.remaining, 2),
-          on: await advancedOn(c, actorName),
-        }),
-      })),
+      claims.map(async (c) => {
+        const debtor = actorName.get(c.share.debtorActorId) ?? '?'
+        const on = await advancedOn(c, actorName)
+        return {
+          value: `claim:${c.share.id}`,
+          label: t('claimOption', { debtor, remaining: format.eur(c.remaining, 2), on }),
+          // Searched by what the reader remembers of it, as a movement is.
+          search: {
+            texts: [debtor, on, c.movement?.note ?? ''],
+            amounts: [
+              c.remaining,
+              Number(c.share.amount),
+              ...(c.movement ? [Number(c.movement.amount)] : []),
+            ],
+          },
+        }
+      }),
     ),
-    expenses: expenses.map((m) => ({ value: `movement:${m.id}`, label: line(m, m.targetActorId) })),
+    expenses: await movementChoices('expense', expenses, actorName),
     // Only those whose occurrences are expenses, the ones a reserve is drawn by.
     commitments: running
       .filter((c) => c.kind === 'financing' || (c.kind === 'subscription' && c.direction === 'outgoing'))
       .map((c) => ({
         value: `reserve:${c.id}`,
         label: t('commitmentOption', { label: c.label, kind: c.kind }),
+        search: { texts: [c.label], amounts: [Number(c.amount)] },
       })),
-    // Only what pays nothing back yet and pays no invoice: those already say what they are.
-    incomes: incomes
-      .filter((m) => m.refundsShareId === null && m.reservesCommitmentId === null && m.invoiceId === null)
-      .map((m) => ({ value: m.id, label: line(m, m.sourceActorId) })),
+    incomes: await movementChoices('income', incomes, actorName),
   }
+}
+
+/**
+ * The movements a link finds for what was typed, across the whole history,
+ * valued as `linkChoices` values them on the same side.
+ */
+export async function searchLinkChoices(
+  userId: string,
+  side: 'expense' | 'income',
+  search: string,
+): Promise<LinkChoice[]> {
+  const found = await linkCandidates(userId, side, search)
+  const actorName = await actorNames(
+    userId,
+    found.flatMap((m) => {
+      const id = side === 'income' ? m.sourceActorId : m.targetActorId
+      return id ? [id] : []
+    }),
+  )
+  return await movementChoices(side, found, actorName)
 }
 
 export { openClaims }

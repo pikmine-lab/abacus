@@ -1,3 +1,4 @@
+import { type SearchTerm, searchTerms } from '../../domain/search.ts'
 import type { SortChoice } from '../../domain/sort.ts'
 import type { AdvanceFilter, LevyDue, Movement, MovementKind, Reading } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
@@ -105,7 +106,7 @@ export interface MovementFilters {
   commitmentId?: string
   /** What a card paid, or was credited back. */
   cardId?: string
-  /** Free text, matched on the note and on the counterparty's name. */
+  /** Free text, read word by word (`searchTerms`): every word must be found on the movement. */
   search?: string
   /**
    * One side of the advance mechanism: the advanced expenses in one state of
@@ -114,6 +115,8 @@ export interface MovementFilters {
    * on the day the money came back.
    */
   advances?: AdvanceFilter
+  /** Paying back no share, feeding no reserve and settling no invoice: an income that says nothing of what it is yet. */
+  unlinked?: boolean
   limit?: number
   /** How the selection is ordered; the date, newest first, by default. */
   sort?: SortChoice<MovementSortField>
@@ -193,7 +196,6 @@ function advanceWhere(tx: Executor, filter: AdvanceFilter) {
  * "the current selection" means, and two copies of this would drift.
  */
 function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
-  const term = f.search?.trim() ? `%${f.search.trim()}%` : null
   const accrual = f.reading === 'accrual'
   return tx`
     where m.user_id = ${userId}
@@ -214,15 +216,45 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
     ${f.cardId ? tx`and m.card_id = ${f.cardId}` : tx``}
     ${f.advances ? advanceWhere(tx, f.advances) : tx``}
+    ${f.unlinked ? tx`and m.refunds_share_id is null and m.reserves_commitment_id is null and m.invoice_id is null` : tx``}
+    ${searchTerms(f.search).reduce((clauses, term) => tx`${clauses} ${searchWhere(tx, term)}`, tx``)}
+  `
+}
+
+/**
+ * One word of a search, found anywhere on the movement: its note, either
+ * counterparty by name or by one of its aliases (the name the person typed is
+ * the one they remember), its category or that category's group, either
+ * account, and its amount when the word reads as one. Case and accents never
+ * count, on either side.
+ */
+function searchWhere(tx: Executor, term: SearchTerm) {
+  const fragment = `%${term.text.replace(/[\\%_]/g, '\\$&')}%`
+  const like = (column: string) => tx`unaccent(${tx(column)}) ilike unaccent(${fragment})`
+  return tx`and (
+    ${like('m.note')}
+    or exists (
+      select 1 from actor a
+      where a.id in (m.source_actor_id, m.target_actor_id)
+        and (${like('a.name')} or exists (
+          select 1 from actor_alias al where al.actor_id = a.id and ${like('al.alias')}
+        ))
+    )
+    or exists (
+      select 1 from category c
+      where c.id = m.category_id and (${like('c.name')} or ${like('c.group_label')})
+    )
+    or exists (
+      select 1 from account ac
+      where ac.id in (m.source_account_id, m.target_account_id) and ${like('ac.name')}
+    )
     ${
-      term
-        ? tx`and (m.note ilike ${term} or exists (
-            select 1 from actor a
-            where a.id in (m.source_actor_id, m.target_actor_id) and a.name ilike ${term}
-          ))`
+      term.amount
+        ? tx`or (m.amount >= ${term.amount.from} and m.amount < ${term.amount.to})
+             or (m.original_amount >= ${term.amount.from} and m.original_amount < ${term.amount.to})`
         : tx``
     }
-  `
+  )`
 }
 
 export async function listMovements(

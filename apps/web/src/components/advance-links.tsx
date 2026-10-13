@@ -3,7 +3,8 @@
 import { MinusIcon, PlusIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useId, useRef, useState, useTransition } from 'react'
-import { Field, FormSelect, TextField } from '@/components/forms'
+import { Field, TextField } from '@/components/forms'
+import { MovementPicker } from '@/components/movement-picker'
 import { RefundShare } from '@/components/refund-share'
 import {
   AlertDialog,
@@ -37,6 +38,8 @@ export interface ShareDraft {
 export interface LinkChoice {
   value: string
   label: string
+  /** What a choice the server does not search is matched on: its names and amounts. */
+  search?: { texts: string[]; amounts: number[] }
 }
 
 type Row = ShareDraft & { key: string }
@@ -73,7 +76,7 @@ export function ShareLinks({
   kind: 'movement' | 'subscription' | 'financing'
   /** The datalist of actor names the debtor field completes on. */
   actorsListId: string
-  /** Incomes already declared that this expense may be linked to. */
+  /** The latest incomes this expense may be linked to; the others are searched. */
   incomes?: LinkChoice[]
   /** Declaration only: write the refunds in the same go. */
   withRefundedNow?: boolean
@@ -315,7 +318,13 @@ function LinkBox({ incomes, onRemove }: { incomes: LinkChoice[]; onRemove: () =>
   return (
     <div className="flex items-end gap-2 rounded-md border border-border px-3 py-2.5">
       <Field label={t('income')} className="min-w-0 flex-1">
-        <FormSelect name="refundedBy" placeholder={t('chooseIncome')} options={incomes} />
+        <MovementPicker
+          name="refundedBy"
+          label={t('income')}
+          side="income"
+          recent={incomes}
+          placeholder={t('searchMovement')}
+        />
       </Field>
       <RemoveButton label={t('removeLink')} onClick={onRemove} />
     </div>
@@ -326,8 +335,8 @@ function LinkBox({ incomes, onRemove }: { incomes: LinkChoice[]; onRemove: () =>
  * What an income pays back, or was received for, from the income's side.
  * Linked, it reads in its box with a [−] that detaches it, after saying what
  * that does: the money stays, and counts as income again. Not linked, a link
- * opens a choice among the claims awaited, the recent expenses (the share of
- * the person it came from being created on one that did not have it) and the
+ * opens a search over the claims awaited, every expense (the share of the
+ * person it came from being created on one that did not have it) and the
  * running commitments, whose reserve it then feeds.
  */
 export function RefundLink({
@@ -346,6 +355,7 @@ export function RefundLink({
   /** The commitment it was received for, named. */
   reserve?: string
   claims: LinkChoice[]
+  /** The latest expenses; the others are searched. */
   expenses: LinkChoice[]
   commitments: LinkChoice[]
   /** A refund is never paid to a card: the panel hides its card choice while linked. */
@@ -415,15 +425,14 @@ export function RefundLink({
       {open ? (
         <div className="flex items-end gap-2 rounded-md border border-border px-3 py-2.5">
           <Field label={t('refunds')} className="min-w-0 flex-1">
-            <FormSelect
+            <MovementPicker
               name="refundTarget"
-              placeholder={t('chooseExpense')}
-              options={[]}
-              groups={[
-                ...(claims.length > 0 ? [{ label: t('groupClaims'), options: claims }] : []),
-                ...(expenses.length > 0 ? [{ label: t('groupExpenses'), options: expenses }] : []),
-                ...(commitments.length > 0 ? [{ label: t('groupCommitments'), options: commitments }] : []),
-              ]}
+              label={t('refunds')}
+              side="expense"
+              claims={claims}
+              recent={expenses}
+              placeholder={t('searchMovement')}
+              commitments={commitments}
               onValueChange={(value) => onLinkedChange?.(value !== '')}
             />
           </Field>
