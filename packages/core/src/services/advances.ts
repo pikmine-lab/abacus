@@ -17,7 +17,7 @@ import {
 } from '../db/datasources/advances.ts'
 import { getCommitment } from '../db/datasources/commitments.ts'
 import { installmentByMovement, listInstallments } from '../db/datasources/installments.ts'
-import { getMovement } from '../db/datasources/movements.ts'
+import { getMovement, listMovements } from '../db/datasources/movements.ts'
 import { checkShares, type ShareInput, type ShareProgress, shareProgress } from '../domain/advance.ts'
 import { DomainError } from '../domain/errors.ts'
 import { addPeriod, today } from '../domain/period.ts'
@@ -525,6 +525,27 @@ export async function openClaims(userId: string, on = today()): Promise<OpenClai
 
 function claimDate(c: OpenClaim): string {
   return c.movement?.purchasedOn ?? c.movement?.happenedOn ?? c.commitment?.nextDueOn ?? ''
+}
+
+/**
+ * What a link between two movements can point at, searched: the expenses an
+ * income may pay back, or the incomes an expense may be paid back by. An
+ * income already paying back a share or settling an invoice says what it is,
+ * and is not offered. Across the whole history, newest first: the expense a
+ * refund pays back is often older than any window a screen opens on.
+ */
+export async function linkCandidates(
+  userId: string,
+  side: 'expense' | 'income',
+  search?: string,
+  limit = 20,
+): Promise<Movement[]> {
+  return await listMovements(db(), userId, {
+    kind: side,
+    search,
+    unlinked: side === 'income' || undefined,
+    limit,
+  })
 }
 
 /** The shares of commitments, for the screens and tools that state them. */

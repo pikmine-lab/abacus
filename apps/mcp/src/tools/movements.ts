@@ -331,7 +331,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. list_outstanding_advances only lists the claims still open.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name), and searchable by free text (search). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. list_outstanding_advances only lists the claims still open.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -355,6 +355,13 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           .optional()
           .describe('Activity name, or "none" for what belongs to no activity, transfers included'),
         card: z.string().optional().describe('Card name: what it paid, or was credited back'),
+        search: z
+          .string()
+          .max(200)
+          .optional()
+          .describe(
+            'Free text, read word by word: every word must be found on the movement, each in any of its counterparty (aliases included), note, category or its group, account, or amount. Case and accents are ignored and a word may be a fragment ("resto" finds "Le Petit Restaurant"). A number also reads as the start of an amount: "86" finds 86.00 to 86.99, "86,4" or "86.4" finds 86.40 to 86.49, in euros or, for a movement in a foreign currency, in that currency too (86 USD is found by "86" though it reads 79 euros). So "resto 86" finds the 86-something euros spent at a place whose name holds "resto". Only the first 8 words count. The way to find a movement the user describes from memory; combine it with the other filters as needed. Leave from/to out to search the whole history',
+          ),
         advances: z
           .enum(ADVANCE_FILTERS)
           .optional()
@@ -387,6 +394,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           cardId: f.card ? (await requireCardByName(userId, f.card)).id : undefined,
+          search: f.search,
           advances: f.advances,
           limit: f.limit,
           sort,
