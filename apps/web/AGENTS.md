@@ -182,15 +182,28 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
 
 ### Mouvements, avances et créances
 
-- **Une avance dit qui doit et combien.** La part attendue se saisit en euros **ou** en
-  pourcentage de la dépense, deux champs qui se répondent : un partage à quatre se pense en
-  pourcentage, un article prêté dans un panier commun se pense en euros. Celui qu'on tape
-  fait foi, l'autre suit. Et quand l'argent est déjà revenu au moment de déclarer, une case
-  écrit le revenu dans la même transaction plutôt que d'exiger une deuxième saisie.
+- **Une avance se lit lien par lien** (`ShareLinks`). Chaque personne qui doit une part a son
+  propre encadré : qui, sa part, ce qui en est revenu, et un [−] au bout. Dessous, les
+  ajouts : attendre un remboursement, relier un revenu déjà reçu (remboursé avant d'être
+  déclaré). La part se saisit en euros **ou** en pourcentage, deux champs qui se répondent :
+  un partage à quatre se pense en pourcentage, un article prêté dans un panier commun en
+  euros. Celui qu'on tape fait foi, l'autre suit. Quand l'argent est déjà revenu au moment
+  de déclarer, une case écrit les revenus dans la même transaction. Un abonnement et un
+  financement déclarent leurs parts avec ce même bloc, le financement disant pour chacune si
+  elle vaut à chaque échéance ou sur le total.
+- **Retirer un lien qui porte de l'argent revenu se confirme, et se fait tout de suite.** Une
+  part sans remboursement se retire avec l'enregistrement, comme un champ. Une part qui en a,
+  ou le lien d'un revenu vers ce qu'il rembourse (son encadré « Rembourse »), se retire par
+  son [−] derrière une confirmation qui dit que l'argent redevient un revenu, sans catégorie.
+  Aucune liste réenvoyée par le formulaire ne la fait disparaître en silence.
 - **Une créance est un travail à faire, pas un filtre.** Les avances non remboursées
   s'affichent en tête des mouvements, hors période : celle de quatre mois est exactement
-  celle qu'on a oubliée. Chaque ligne dit ce qui est dû et porte le geste qui la referme,
-  montant modifiable, parce qu'un remboursement arrive partiel aussi souvent qu'entier.
+  celle qu'on a oubliée. Une ligne par personne et par chose avancée : une note partagée à
+  trois fait trois lignes, chacune remboursée à son rythme. Chaque ligne dit ce qui est dû
+  et porte le geste qui la referme, montant modifiable, parce qu'un remboursement arrive
+  partiel aussi souvent qu'entier. Un échéancier donné par le débiteur se pose depuis le
+  menu de la ligne ; la ligne dit alors le prochain versement, ou depuis quand il est en
+  retard, en mots et en rouge.
   « Remboursé » **écrit le revenu** sur le compte qui a payé : cocher un drapeau laisserait
   le solde calculé et le pointage mentir. La ligne nomme ce compte (« revient sur … »),
   pour que le revenu ne soit pas déclaré une seconde fois à la main. Renoncer au reste est
@@ -198,13 +211,14 @@ Trois contrôles ne se prennent pas dans le catalogue tel quel :
 - **Une créance refermée reste de l'histoire, et se relit dans la liste.** Le filtre
   « Avances » choisit un état (en attente, remboursées, abandonnées) ou les remboursements
   reçus, et la période porte sur la date de chaque ligne : une avance se trouve au jour où
-  elle a été payée, un remboursement au jour où l'argent est revenu. Une avance refermée dit
-  sous son montant qui a remboursé quoi et quand, ou ce qui a été abandonné, en discret :
-  ce n'est plus un travail à faire.
+  elle a été payée, un remboursement au jour où l'argent est revenu. Une part refermée dit
+  sous le montant qui a remboursé quoi et quand, ou ce qui a été abandonné, en discret :
+  ce n'est plus un travail à faire. Un remboursement dit sous son nom ce qu'il rembourse.
 - **Ce qui est dû a sa colonne**, à côté du montant, pas la ligne de la note : deux faits
   différents ne partagent pas une place. Elle n'apparaît que si la sélection porte une
-  créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien. Quand la
-  table se resserre, la colonne cède sa place et ce qui est dû passe sous le montant.
+  créance vivante, parce qu'une colonne vide sur toutes ses lignes ne dit rien, et elle
+  nomme chaque personne qui doit encore. Quand la table se resserre, la colonne cède sa
+  place et ce qui est dû passe sous le montant.
 - **Un fantôme se coche, et se relit sous son montant.** Un mouvement qui a bien touché le
   compte sans rien dire des flux se marque d'une case, pas d'un bloc dépliable : c'est un
   attribut, il n'y a rien à saisir derrière. La liste le garde, seul endroit où il se lit et

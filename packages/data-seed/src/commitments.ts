@@ -1,11 +1,12 @@
 import { addPeriod } from '@abacus/core/domain/period'
+import { openClaims, setShareSchedule } from '@abacus/core/services/advances'
 import {
   cancelCommitment,
   createFinancing,
   createSubscription,
   defaultSchedule,
 } from '@abacus/core/services/commitments'
-import { outstandingAdvances, refundAdvance } from '@abacus/core/services/movements'
+import { declareMovement, refundShare } from '@abacus/core/services/movements'
 import { addDays, dayOfMonthAgo, daysAgo, firstMonthlyDue, TODAY } from './calendar.ts'
 import type { Cards } from './cards.ts'
 import type { Ledger } from './ledger.ts'
@@ -99,15 +100,14 @@ export async function commitments(userId: string, { accounts, categories, actors
     firstDueOn: transitFirst,
     judgment: 'essential',
     // Half paid back by the employer with the salary, as a transport pass is.
-    expectedRefundFromActorId: actors.employer,
-    expectedRefundAmount: 37.6,
+    refundShares: [{ debtorActorId: actors.employer, amount: 37.6 }],
   })
   await confirmEach(userId, transit, dueDates(transitFirst, 'month', 1, yesterday))
   // Each month's half comes back on payday; the current month's is still owed.
-  for (const advance of await outstandingAdvances(userId)) {
-    const payday = `${advance.happenedOn.slice(0, 8)}28`
-    if (advance.commitmentId === transit && payday <= yesterday)
-      await refundAdvance(userId, advance.id, { on: payday })
+  for (const claim of await openClaims(userId)) {
+    if (claim.movement?.commitmentId !== transit) continue
+    const payday = `${claim.movement.happenedOn.slice(0, 8)}28`
+    if (payday <= yesterday) await refundShare(userId, claim.share.id, { on: payday })
   }
 
   for (const [label, actorId, amount, day, judgment] of [
@@ -213,4 +213,30 @@ export async function commitments(userId: string, { accounts, categories, actors
     phone.id,
     phoneSchedule.map((line) => line.dueOn),
   )
+
+  // A laptop bought in three instalments for Nora, who pays it back on a
+  // plan of their own, longer than the financing: six monthly payments. Two
+  // came in, the third is late.
+  const laptopFirst = dayOfMonthAgo(3, 10)
+  const laptop = await createFinancing(userId, {
+    label: 'Ordinateur pour Nora',
+    actorId: actors.lender,
+    accountId: accounts.checking,
+    categoryId: categories.equipment,
+    installmentsTotal: 3,
+    totalAmount: 900,
+    firstDueOn: laptopFirst,
+    refundShares: [{ debtorActorId: actors.nora, amount: 900, perOccurrence: false }],
+  })
+  await confirmEach(userId, laptop.id, dueDates(laptopFirst, 'month', 1, yesterday).slice(0, 3))
+  const laptopClaim = (await openClaims(userId)).find((c) => c.commitment?.id === laptop.id)!
+  await setShareSchedule(userId, laptopClaim.share.id, { count: 6, firstDueOn: dayOfMonthAgo(3, 15) })
+  for (const monthsAgo of [3, 2])
+    await declareMovement(userId, {
+      happenedOn: dayOfMonthAgo(monthsAgo, 16),
+      amount: 150,
+      sourceActorId: actors.nora,
+      targetAccountId: accounts.checking,
+      refundsShareId: laptopClaim.share.id,
+    })
 }

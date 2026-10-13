@@ -45,10 +45,23 @@ function buildSchedule(total: number, count: number, firstDueOn: string, period:
   return lines
 }
 
-export function FinancingAmountFields({ today }: { today: string }) {
+export function FinancingAmountFields({
+  today,
+  fixedTotal,
+  onPlanChange,
+}: {
+  today: string
+  /**
+   * A plan for an amount already known, a claim paid back over time: the
+   * total is not asked, and one payment is a plan too.
+   */
+  fixedTotal?: number
+  /** For a caller reading a share as a part of the total or of one installment. */
+  onPlanChange?: (plan: { total: number; count: number }) => void
+}) {
   const t = useTranslations('recurring.financing')
   const format = useFormat()
-  const [total, setTotal] = useState('')
+  const [total, setTotal] = useState(fixedTotal === undefined ? '' : fixedTotal.toFixed(2))
   const [count, setCount] = useState('')
   const [firstDueOn, setFirstDueOn] = useState(today)
   const [period, setPeriod] = useState('month:1')
@@ -60,7 +73,10 @@ export function FinancingAmountFields({ today }: { today: string }) {
   const totalValue = Number(total)
   const countValue = Number(count)
   const canBuild =
-    Number.isFinite(totalValue) && totalValue > 0 && Number.isInteger(countValue) && countValue >= 2
+    Number.isFinite(totalValue) &&
+    totalValue > 0 &&
+    Number.isInteger(countValue) &&
+    countValue >= (fixedTotal === undefined ? 2 : 1)
   const preview = canBuild ? buildSchedule(totalValue, countValue, firstDueOn, period) : null
 
   const scheduled = lines
@@ -71,19 +87,22 @@ export function FinancingAmountFields({ today }: { today: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label={t('totalAmount')} name="totalAmount">
-          <div className="flex gap-2">
-            <AmountInput
-              name="totalAmount"
-              placeholder={t('totalPlaceholder')}
-              onValueChange={(value) => {
-                setTotal(value)
-                setLines(null)
-              }}
-            />
-            <CurrencySelect onValueChange={(v) => setCurrency(v || 'EUR')} />
-          </div>
-        </Field>
+        {fixedTotal === undefined && (
+          <Field label={t('totalAmount')} name="totalAmount">
+            <div className="flex gap-2">
+              <AmountInput
+                name="totalAmount"
+                placeholder={t('totalPlaceholder')}
+                onValueChange={(value) => {
+                  setTotal(value)
+                  setLines(null)
+                  onPlanChange?.({ total: Number(value), count: countValue })
+                }}
+              />
+              <CurrencySelect onValueChange={(v) => setCurrency(v || 'EUR')} />
+            </div>
+          </Field>
+        )}
         <Field label={t('installments')} name="installmentsTotal">
           <Input
             name="installmentsTotal"
@@ -91,8 +110,10 @@ export function FinancingAmountFields({ today }: { today: string }) {
             placeholder="4"
             value={count}
             onChange={(e) => {
-              setCount(e.target.value.replace(/\D/g, ''))
+              const digits = e.target.value.replace(/\D/g, '')
+              setCount(digits)
               setLines(null)
+              onPlanChange?.({ total: totalValue, count: Number(digits) })
             }}
           />
         </Field>
@@ -139,7 +160,7 @@ export function FinancingAmountFields({ today }: { today: string }) {
               )}
             </span>
           ) : (
-            <span>{t('hint')}</span>
+            <span>{t(fixedTotal === undefined ? 'hint' : 'hintFixedTotal')}</span>
           )}
           {preview && (
             <Button

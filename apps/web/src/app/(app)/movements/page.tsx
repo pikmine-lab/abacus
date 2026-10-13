@@ -1,6 +1,6 @@
 import { auth } from '@abacus/core/auth'
 import type { MovementKind } from '@abacus/core/domain'
-import { ADVANCE_FILTERS, claimState } from '@abacus/core/domain/advance'
+import { ADVANCE_FILTERS, shareState } from '@abacus/core/domain/advance'
 import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
@@ -11,7 +11,6 @@ import {
   DEFAULT_MOVEMENT_SORT,
   listMovements,
   MOVEMENT_SORTS,
-  outstandingAdvances,
   selectionTotals,
 } from '@abacus/core/services/movements'
 import { headers } from 'next/headers'
@@ -30,6 +29,7 @@ import { PageBody } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
 import { SortButton, SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { linkChoices, openClaims, refundLabels } from '@/lib/advance-data'
 import { getFormat } from '@/lib/format-server'
 import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
 import { resolvePeriod } from '@/lib/period'
@@ -68,12 +68,12 @@ export default async function MovementsPage({
   // The vocabulary first: a filter naming something this user does not own
   // (a stale link, a deleted category) is dropped rather than silently
   // returning an empty list the controls cannot explain.
-  const [accounts, actors, categories, activities, advances, openInvoices, cards] = await Promise.all([
+  const [accounts, actors, categories, activities, claims, openInvoices, cards] = await Promise.all([
     listAccounts(userId),
     listActors(userId),
     listCategories(userId),
     listActivities(userId),
-    outstandingAdvances(userId),
+    openClaims(userId),
     outstandingInvoices(userId),
     listCards(userId),
   ])
@@ -115,27 +115,43 @@ export default async function MovementsPage({
   const cardName = new Map(cards.map((c) => [c.id, c.name]))
 
   // The claims to settle: outside the period on purpose, an advance from four
-  // months ago is exactly the one that got forgotten.
-  const openAdvances = advances.map((a) => {
-    const expected = Number(a.expectedRefundAmount)
-    const refunded = Number(a.refunded)
-    return {
-      movementId: a.id,
-      label: actorName.get(a.targetActorId!) ?? '?',
-      happenedOn: a.happenedOn,
-      debtor: actorName.get(a.expectedRefundFromActorId!) ?? '?',
-      account: accountName.get(a.sourceAccountId!) ?? '?',
-      expense: Number(a.amount),
-      expected,
-      refunded,
-      remaining: Math.round((expected - refunded) * 100) / 100,
-    }
-  })
+  // months ago is exactly the one that got forgotten. One line per person.
+  const tl = await getTranslations('movements.links')
+  const openClaimRows = claims.map((c) => ({
+    shareId: c.share.id,
+    debtor: actorName.get(c.share.debtorActorId) ?? '?',
+    on: c.commitment
+      ? tl('onFinancing', { label: c.commitment.label })
+      : tl('onExpense', {
+          label: actorName.get(c.movement!.targetActorId!) ?? '?',
+          date: format.date(c.movement!.purchasedOn ?? c.movement!.happenedOn),
+        }),
+    account: accountName.get(c.accountId) ?? '?',
+    owed: Number(c.share.amount),
+    refunded: Number(c.share.refunded),
+    remaining: c.remaining,
+    plan: c.plan.map((line) => ({ dueOn: line.dueOn, amount: Number(line.amount) })),
+    nextDueOn: c.nextDueOn,
+    nextDueAmount: c.nextDueAmount,
+    late: c.lateAmount,
+  }))
 
-  const stillOwed = new Map(openAdvances.map((a) => [a.movementId, a.remaining]))
+  // What each listed expense still has owed on it, person by person.
+  const stillOwed = new Map<string, { debtor: string; remaining: number }[]>()
+  for (const c of claims)
+    if (c.movement)
+      stillOwed.set(c.movement.id, [
+        ...(stillOwed.get(c.movement.id) ?? []),
+        { debtor: actorName.get(c.share.debtorActorId) ?? '?', remaining: c.remaining },
+      ])
   // A column that would be empty on every row says nothing: what is owed only
   // takes its place in the table when the selection holds a live claim.
   const owedInList = movements.some((m) => stillOwed.has(m.id))
+
+  const [links, refunds] = await Promise.all([
+    linkChoices(userId, claims, actorName),
+    refundLabels(userId, movements, actorName),
+  ])
 
   const count = Number(selection.count)
   const options = movementFormOptions({ accounts, actors, categories, activities, cards })
@@ -152,12 +168,7 @@ export default async function MovementsPage({
           <EntrySheet label={t('declare')} title={t('declareTitle')}>
             <MovementForm
               {...options}
-              advances={openAdvances.map((a) => ({
-                id: a.movementId,
-                happenedOn: format.date(a.happenedOn),
-                amount: a.expected,
-                remaining: a.remaining,
-              }))}
+              links={links}
               invoices={openInvoices.map((i) => ({
                 id: i.id,
                 client: actorName.get(i.actorId) ?? '',
@@ -180,9 +191,9 @@ export default async function MovementsPage({
       </PeriodHeader>
 
       <PageBody className="gap-6">
-        {openAdvances.length > 0 && (
+        {openClaimRows.length > 0 && (
           <ActionCard label={t('list.toRecover')}>
-            <OutstandingAdvances advances={openAdvances} today={today()} back={PATH} />
+            <OutstandingAdvances claims={openClaimRows} today={today()} back={PATH} />
           </ActionCard>
         )}
 
@@ -324,28 +335,31 @@ export default async function MovementsPage({
                       </Link>
                     )
                     // What is still owed, which is not the same as "was an advance":
-                    // a claim that came back in full has nothing left to announce.
+                    // a share that came back in full has nothing left to announce.
                     const owed = stillOwed.get(m.id)
-                    // A claim no longer live is history: told under the amount,
+                    // A share no longer live is history: told under the amount,
                     // quieter than one still owed, which is work to do.
-                    const claim = claimState(m)
-                    const debtor = m.expectedRefundFromActorId
-                      ? (actorName.get(m.expectedRefundFromActorId) ?? '?')
-                      : ''
-                    const closedClaim =
-                      claim === 'settled'
-                        ? t('list.claimSettled', {
+                    const closedClaims = (m.shares ?? []).flatMap((share) => {
+                      const debtor = actorName.get(share.debtorActorId) ?? '?'
+                      const state = shareState(share)
+                      if (state === 'settled')
+                        return [
+                          t('list.claimSettled', {
                             debtor,
-                            amount: format.eur(Number(m.refunded), 2),
-                            date: format.date(m.lastRefundedOn!),
-                          })
-                        : claim === 'written_off'
-                          ? t('list.claimWrittenOff', {
-                              debtor,
-                              refunded: format.eur(Number(m.refunded), 2),
-                              owed: format.eur(Number(m.expectedRefundAmount), 2),
-                            })
-                          : null
+                            amount: format.eur(Number(share.refunded), 2),
+                            date: format.date(share.lastRefundedOn!),
+                          }),
+                        ]
+                      if (state === 'written_off')
+                        return [
+                          t('list.claimWrittenOff', {
+                            debtor,
+                            refunded: format.eur(Number(share.refunded), 2),
+                            owed: format.eur(Number(share.amount), 2),
+                          }),
+                        ]
+                      return []
+                    })
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
@@ -403,6 +417,12 @@ export default async function MovementsPage({
                                 })}
                             </span>
                           )}
+                          {/* A refund says what it pays back: the share, by name. */}
+                          {m.refundsShareId && refunds.has(m.refundsShareId) && (
+                            <span className="block truncate text-[11px] text-faint">
+                              {t('list.paysBack', { what: refunds.get(m.refundsShareId)! })}
+                            </span>
+                          )}
                           {m.note && <span className="block truncate text-[11px] text-faint">{m.note}</span>}
                         </TableCell>
                         <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
@@ -414,16 +434,14 @@ export default async function MovementsPage({
                         </TableCell>
                         {owedInList && (
                           <TableCell className="hidden text-right @3xl:table-cell">
-                            {owed !== undefined && (
-                              <>
+                            {owed?.map((o) => (
+                              <span key={o.debtor} className="block">
                                 <span className="block font-mono text-[12.5px] tabular text-primary">
-                                  {format.eur(owed, 2)}
+                                  {format.eur(o.remaining, 2)}
                                 </span>
-                                <span className="block truncate text-[11px] text-faint">
-                                  {actorName.get(m.expectedRefundFromActorId!) ?? '?'}
-                                </span>
-                              </>
-                            )}
+                                <span className="block truncate text-[11px] text-faint">{o.debtor}</span>
+                              </span>
+                            ))}
                           </TableCell>
                         )}
                         <TableCell
@@ -440,19 +458,19 @@ export default async function MovementsPage({
                           )}
                           {/* Without its column, what is owed keeps a place by the
                               amount it is part of, never on the note's line. */}
-                          {owed !== undefined && (
-                            <span className="block font-sans text-[11px] font-normal text-primary @3xl:hidden">
-                              {t('list.owes', {
-                                debtor: actorName.get(m.expectedRefundFromActorId!) ?? '?',
-                                amount: format.eur(owed, 2),
-                              })}
+                          {owed?.map((o) => (
+                            <span
+                              key={o.debtor}
+                              className="block font-sans text-[11px] font-normal text-primary @3xl:hidden"
+                            >
+                              {t('list.owes', { debtor: o.debtor, amount: format.eur(o.remaining, 2) })}
                             </span>
-                          )}
-                          {closedClaim && (
-                            <span className="block font-sans text-[11px] font-normal text-faint">
-                              {closedClaim}
+                          ))}
+                          {closedClaims.map((line) => (
+                            <span key={line} className="block font-sans text-[11px] font-normal text-faint">
+                              {line}
                             </span>
-                          )}
+                          ))}
                           {/* Under the amount, because that is what it qualifies:
                           this figure is in no total above and in no analysis. */}
                           {m.ghost && (
@@ -469,7 +487,8 @@ export default async function MovementsPage({
                             {...options}
                             today={today()}
                             label={`${format.date(m.happenedOn)} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
-                            draft={movementDraft(m, actorName)}
+                            links={links}
+                            draft={movementDraft(m, actorName, refunds)}
                           />
                         </TableCell>
                       </TableRow>

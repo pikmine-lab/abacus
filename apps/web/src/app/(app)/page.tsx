@@ -8,6 +8,7 @@ import {
   isRuleAlert,
   isThresholdAlert,
 } from '@abacus/core/services/activityAlerts'
+import { openClaims } from '@abacus/core/services/advances'
 import { latestCheck } from '@abacus/core/services/balanceChecks'
 import { listCards } from '@abacus/core/services/cards'
 import {
@@ -16,7 +17,6 @@ import {
   pendingOccurrences,
 } from '@abacus/core/services/commitments'
 import { holdingsValue } from '@abacus/core/services/investments'
-import { outstandingAdvances } from '@abacus/core/services/movements'
 import type { BreakdownRow } from '@abacus/core/services/reports'
 import {
   balanceSeries,
@@ -108,7 +108,7 @@ export default async function OverviewPage({
     spendingBreakdown(userId, period.from, period.to, 'category', 'expense', reading),
     spendingBreakdown(userId, period.from, period.to, 'categoryGroup', 'expense', reading),
     pendingOccurrences(userId),
-    outstandingAdvances(userId),
+    openClaims(userId),
     listCommitmentsWithProgress(userId),
     activityAlerts(userId, now),
     listCards(userId),
@@ -195,7 +195,7 @@ export default async function OverviewPage({
   const statementsDue = cards
     .map((card) => ({ card, waiting: card.pending.filter((s) => s.dueOn <= now) }))
     .filter(({ waiting }) => waiting.length > 0)
-  const claims = advances.reduce((sum, a) => sum + Number(a.expectedRefundAmount) - Number(a.refunded), 0)
+  const claims = advances.reduce((sum, a) => sum + a.remaining, 0)
 
   const staleChecks = accounts
     .map((account, i) => ({ account, check: checks[i] }))

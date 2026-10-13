@@ -40,8 +40,7 @@ test('period totals separate what was earned from what came back as a refund', a
     amount: 100,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 100,
+    refundShares: [{ debtorActorId: friend.id, amount: 100 }],
   })
   await declareMovement(user, {
     happenedOn: '2026-06-20',
@@ -113,8 +112,7 @@ test('an income breakdown groups by the actor that paid, refunds excluded', asyn
     amount: 60,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 60,
+    refundShares: [{ debtorActorId: friend.id, amount: 60 }],
   })
   await declareMovement(user, {
     happenedOn: '2026-07-03',
@@ -158,8 +156,7 @@ test('a group breakdown folds every category carrying it into one mass, and unfo
     sourceAccountId: account.id,
     targetActorId: shop.id,
     categoryId: haircut.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 5,
+    refundShares: [{ debtorActorId: friend.id, amount: 5 }],
   })
   // A movement with no category at all: it belongs to no group either.
   await spend(15, undefined, '2026-04-05')
@@ -525,8 +522,7 @@ test("only a settlement of the activity's own rules changes side, net of what ca
     targetActorId: agency.id,
     categoryId: contributions.id,
     activityId: activity.id,
-    expectedRefundFromActorId: agency.id,
-    expectedRefundAmount: 5,
+    refundShares: [{ debtorActorId: agency.id, amount: 5 }],
   })
   await declareMovement(user, {
     happenedOn: '2026-06-20',
@@ -562,8 +558,7 @@ test('the movements behind a row add up to it, each counted as the row counts it
     sourceAccountId: personal.id,
     targetActorId: market.id,
     categoryId: groceries.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 40,
+    refundShares: [{ debtorActorId: friend.id, amount: 40 }],
   })
   await declareMovement(user, {
     happenedOn: '2026-06-15',

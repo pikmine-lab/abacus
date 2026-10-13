@@ -1,5 +1,6 @@
 import { closeAccount } from '@abacus/core/services/accounts'
-import { closeAdvance, declareMovement, refundAdvance } from '@abacus/core/services/movements'
+import { closeShare, openClaims } from '@abacus/core/services/advances'
+import { declareMovement, refundShare } from '@abacus/core/services/movements'
 import {
   addDays,
   amountBetween,
@@ -78,25 +79,44 @@ export async function everyday(userId: string, { accounts, categories, actors }:
       eurAmount: euros,
     })
 
+  // The claim a person holds on an expense, to pay back or write off.
+  const claimOn = async (movementId: string, debtor: string) =>
+    (await openClaims(userId)).find((c) => c.movement?.id === movementId && c.share.debtorActorId === debtor)!
+      .share.id
+
   // A dinner and a concert shared with a friend: the dinner was paid back, the
   // concert is still owed and leads the movements screen.
   const repaid = await spend(dayOfMonthAgo(2, 6), actors.bistro, categories.restaurants, 96, {
-    expectedRefundFromActorId: actors.friend,
-    expectedRefundAmount: 48,
+    refundShares: [{ debtorActorId: actors.friend, amount: 48 }],
   })
-  await refundAdvance(userId, repaid.id, { on: dayOfMonthAgo(2, 19) })
+  await refundShare(userId, await claimOn(repaid.id, actors.friend), { on: dayOfMonthAgo(2, 19) })
   await spend(daysAgo(12), actors.concert, categories.outings, 120, {
-    expectedRefundFromActorId: actors.friend,
-    expectedRefundAmount: 60,
+    refundShares: [{ debtorActorId: actors.friend, amount: 60 }],
   })
   // A pizza night three months ago: half of the share came back, the rest was
   // let go, so the claim reads as written off.
   const forgiven = await spend(dayOfMonthAgo(3, 14), actors.pizzeria, categories.restaurants, 64, {
-    expectedRefundFromActorId: actors.friend,
-    expectedRefundAmount: 32,
+    refundShares: [{ debtorActorId: actors.friend, amount: 32 }],
   })
-  await refundAdvance(userId, forgiven.id, { amount: 16, on: dayOfMonthAgo(3, 20) })
-  await closeAdvance(userId, forgiven.id)
+  const forgivenClaim = await claimOn(forgiven.id, actors.friend)
+  await refundShare(userId, forgivenClaim, { amount: 16, on: dayOfMonthAgo(3, 20) })
+  await closeShare(userId, forgivenClaim)
+
+  // A birthday dinner for four, paid at once: each guest owes a share and pays
+  // it back in their own time. Nora paid the next day, Jules transferred
+  // half, Alex has not yet.
+  const birthday = await spend(dayOfMonthAgo(1, 9), actors.bistro, categories.restaurants, 184, {
+    refundShares: [
+      { debtorActorId: actors.friend, amount: 46 },
+      { debtorActorId: actors.nora, amount: 46 },
+      { debtorActorId: actors.jules, amount: 46 },
+    ],
+  })
+  await refundShare(userId, await claimOn(birthday.id, actors.nora), { on: dayOfMonthAgo(1, 10) })
+  await refundShare(userId, await claimOn(birthday.id, actors.jules), {
+    amount: 23,
+    on: dayOfMonthAgo(1, 15),
+  })
 
   // A birthday gift: it reached the account but says nothing about the flows.
   await declareMovement(userId, {

@@ -3,14 +3,9 @@ import { after, before, beforeEach, test } from 'node:test'
 import { claimState } from '../src/domain/advance.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
-import {
-  closeAdvance,
-  declareMovement,
-  listMovements,
-  refundAdvance,
-  selectionTotals,
-} from '../src/services/movements.ts'
-import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
+import { closeShare } from '../src/services/advances.ts'
+import { declareMovement, listMovements, refundShare, selectionTotals } from '../src/services/movements.ts'
+import { seedUser, setupDb, shareOf, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
 beforeEach(truncateAll)
@@ -29,25 +24,24 @@ async function claims() {
       amount: 80,
       sourceAccountId: account.id,
       targetActorId: restaurant.id,
-      expectedRefundFromActorId: debtor,
-      expectedRefundAmount: share,
+      refundShares: [{ debtorActorId: debtor, amount: share }],
     })
 
   const open = await advance('2026-08-01', alex.id, 60)
-  await refundAdvance(user, open.id, { amount: 20, on: '2026-08-05' })
+  await refundShare(user, await shareOf(open.id), { amount: 20, on: '2026-08-05' })
 
   const settled = await advance('2026-08-10', employer.id, 40)
-  await refundAdvance(user, settled.id, { amount: 15, on: '2026-08-20' })
-  await refundAdvance(user, settled.id, { amount: 25, on: '2026-09-03' })
+  await refundShare(user, await shareOf(settled.id), { amount: 15, on: '2026-08-20' })
+  await refundShare(user, await shareOf(settled.id), { amount: 25, on: '2026-09-03' })
 
   const writtenOff = await advance('2026-08-15', alex.id, 50)
-  await refundAdvance(user, writtenOff.id, { amount: 10, on: '2026-08-16' })
-  await closeAdvance(user, writtenOff.id)
+  await refundShare(user, await shareOf(writtenOff.id), { amount: 10, on: '2026-08-16' })
+  await closeShare(user, await shareOf(writtenOff.id))
 
   // Closed after it was back in full: the money came back, so it is settled.
   const settledThenClosed = await advance('2026-09-01', employer.id, 30)
-  await refundAdvance(user, settledThenClosed.id, { on: '2026-09-02' })
-  await closeAdvance(user, settledThenClosed.id)
+  await refundShare(user, await shareOf(settledThenClosed.id), { on: '2026-09-02' })
+  await closeShare(user, await shareOf(settledThenClosed.id))
 
   return { user, alex, employer, open, settled, writtenOff, settledThenClosed }
 }

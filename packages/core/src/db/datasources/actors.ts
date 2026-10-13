@@ -83,7 +83,7 @@ export async function reassignActorReferences(
 ): Promise<void> {
   await tx`update movement set source_actor_id = ${toActorId} where source_actor_id = ${fromActorId}`
   await tx`update movement set target_actor_id = ${toActorId} where target_actor_id = ${fromActorId}`
-  await tx`update movement set expected_refund_from_actor_id = ${toActorId} where expected_refund_from_actor_id = ${fromActorId}`
+  await tx`update advance_share set debtor_actor_id = ${toActorId} where debtor_actor_id = ${fromActorId}`
   await tx`update commitment set actor_id = ${toActorId} where actor_id = ${fromActorId}`
 }
 

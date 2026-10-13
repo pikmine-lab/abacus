@@ -8,11 +8,11 @@ import {
   correctMovement,
   declareMovement,
   listMovements,
-  refundAdvance,
+  refundShare,
   selectionTotals,
 } from '../src/services/movements.ts'
 import { balanceSeries, flowTotals, monthlyFlows, spendingBreakdown } from '../src/services/reports.ts'
-import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
+import { seedUser, setupDb, shareOf, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
 beforeEach(truncateAll)
@@ -207,10 +207,9 @@ test('a refund declared a ghost stops reducing what the period cost', async () =
     amount: 120,
     sourceAccountId: account.id,
     targetActorId: shop.id,
-    expectedRefundFromActorId: colleague.id,
-    expectedRefundAmount: 90,
+    refundShares: [{ debtorActorId: colleague.id, amount: 90 }],
   })
-  const refund = await refundAdvance(user, advance.id, { on: '2026-08-15' })
+  const refund = await refundShare(user, await shareOf(advance.id), { on: '2026-08-15' })
   assert.equal((await flowTotals(user, '2026-08-01', '2026-08-31')).expenseNet, '30.00')
 
   await correctMovement(user, refund.id, { ghost: true })

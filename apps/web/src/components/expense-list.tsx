@@ -173,10 +173,10 @@ export function ExpenseRow({
     foreign ? format.money(value, c.currency, decimals) : format.eur(value, decimals)
   const accountName = (id: string) => options.accounts.find((a) => a.id === id)?.name ?? ''
   const actorName = (id: string) => options.actors.find((a) => a.id === id)?.name ?? ''
-  // Partly paid back by someone: the row keeps what leaves the account and says
+  // Partly paid back by others: the row keeps what leaves the account and says
   // under the name what is expected back, since a net only deducts money that
   // has moved.
-  const share = c.expectedRefundAmount === null ? 0 : Number(c.expectedRefundAmount)
+  const shares = c.shares
   // The actor field is a name (it autocompletes on existing ones), so the row
   // resolves it from the list it was handed.
   const defaults = {
@@ -189,8 +189,15 @@ export function ExpenseRow({
     accountId: c.accountId,
     cardId: c.cardId ?? undefined,
     amount: Number(c.amount),
-    refundFrom: c.expectedRefundFromActorId ? actorName(c.expectedRefundFromActorId) : undefined,
-    refundAmount: share > 0 ? share : undefined,
+    total: c.totalAmount === null ? undefined : Number(c.totalAmount),
+    shares: shares.map((share) => ({
+      id: share.id,
+      debtor: actorName(share.debtorActorId),
+      amount: Number(share.amount),
+      perOccurrence: share.perOccurrence,
+      refunded: Number(share.refunded),
+      lastRefundedOn: share.lastRefundedOn ?? undefined,
+    })),
   }
   const attributes = [
     cardName && (
@@ -199,14 +206,16 @@ export function ExpenseRow({
         {cardName}
       </span>
     ),
-    share > 0 && (
-      <span key="refund">
-        {t('expectedBackFrom', {
-          share: inCurrency(share, 2),
-          debtor: actorName(c.expectedRefundFromActorId!),
+    ...shares.map((share) => (
+      <span key={share.id}>
+        {t(share.perOccurrence ? 'expectedBackFrom' : 'owedOnTotal', {
+          share: share.perOccurrence
+            ? inCurrency(Number(share.amount), 2)
+            : format.eur(Number(share.amount), 2),
+          debtor: actorName(share.debtorActorId),
         })}
       </span>
-    ),
+    )),
     (!monthly || foreign) && (
       <span key="rhythm">
         {t('rhythm', { unit: c.periodUnit, count: c.periodCount })}

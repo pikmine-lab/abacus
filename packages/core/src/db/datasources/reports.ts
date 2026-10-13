@@ -63,24 +63,22 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
   return tx`
     counted as (
       select m.id, m.happened_on, m.note, m.kind, m.amount, m.activity_id, m.category_id,
-             m.source_actor_id, m.target_actor_id, m.refunds_movement_id,
+             m.source_actor_id, m.target_actor_id, m.refunds_share_id,
              ${windowStart} as window_start,
-             coalesce(r.total, 0) as refunded,
+             coalesce(er.counted, 0) as refunded,
              m.kind = 'expense' and exists (
                select 1 from levy l
                where l.activity_id = m.activity_id and l.settlement_category_id = m.category_id
              ) as settles
       from movement m
-      left join lateral (
-        select sum(amount) as total from movement r where r.refunds_movement_id = m.id and r.ghost = false
-      ) r on true
+      left join expense_refund er on er.movement_id = m.id
       where m.user_id = ${userId}
         ${notGhost(tx)}
         ${inPeriod(tx, from, to, reading)}
     ),
     activity_net as (
       select window_start, activity_id,
-             sum(amount) filter (where kind = 'income' and refunds_movement_id is null) as received,
+             sum(amount) filter (where kind = 'income' and refunds_share_id is null) as received,
              sum(amount - refunded) filter (where settles) as charged
       from counted
       where activity_id is not null
@@ -88,7 +86,7 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
     ),
     flow as (
       select c.*,
-             case when c.kind = 'income' and c.refunds_movement_id is null then 'income'
+             case when c.kind = 'income' and c.refunds_share_id is null then 'income'
                   when c.kind = 'expense' then 'expense' end as side,
              case
                when c.kind = 'income'

@@ -50,26 +50,46 @@ export const GUIDANCE: Record<string, string> = {
   bad_month:
     'A month is written YYYY-MM (2026-08). Pass the month the movement is about, not a description of it.',
   not_an_advance:
-    'The referenced movement is not marked as an advance, so a refund cannot be linked to it. Check the id with list_outstanding_advances.',
+    'alreadyRefunded only goes with expectedRefunds: say who owes what of the expense, and their refunds are written with it.',
   advance_needs_amount:
-    'An advance says how much is owed back: pass expectedRefundAmount alongside expectedRefundFrom. Ask the user for the share if it was not stated, rather than assuming the whole expense.',
-  advance_needs_actor:
-    'An expected refund needs the actor who owes it: pass expectedRefundFrom alongside expectedRefundAmount.',
+    'Each share in expectedRefunds says how much that person owes back. Ask the user for it if it was not stated, rather than assuming an even split or the whole expense.',
+  advance_needs_actor: 'Each share in expectedRefunds names the actor who owes it (from).',
   advance_amount_invalid: 'The amount expected back must be a positive number of euros.',
   advance_amount_too_large:
-    'You cannot be owed back more than what left the account: the expected refund must not exceed the movement amount, or the price of one period on a subscription.',
+    'The shares owed back cannot add up to more than what was paid: the expense, the price of one occurrence, the total of a financing, or each of its instalments, counting what a claim on the total takes of it. Lower a share, or check the amounts with the user.',
   advance_is_expense:
-    'Only an expense can be advanced for someone: a transfer between owned accounts or an income cannot be owed back. On a commitment, only an outgoing subscription can be partly refunded.',
+    'Only an expense can be advanced for someone: a transfer between owned accounts or an income cannot be owed back. On a commitment, only an outgoing subscription or a financing can be partly paid back. A refund pays back an expense, never an income.',
+  share_debtor_repeated:
+    'The same actor appears twice among the shares: what one person owes on one thing is one share. Add the two amounts up into one.',
   refund_share_above_price:
-    'The subscription carries a share refunded on each occurrence, and the new price would be below it. Lower that share first with update_commitment (expectedRefundAmount), or drop it, then change the price.',
+    'The subscription carries shares paid back on each occurrence, and the new price would be below them. Lower them first with update_commitment (expectedRefunds), or drop them, then change the price.',
   refund_share_keeps_currency:
-    'The share refunded on each occurrence is stated in the current billing currency. Drop it or restate it with update_commitment before changing the currency, then set it again in the new one.',
+    'The shares paid back on each occurrence are stated in the current billing currency. Drop or restate them with update_commitment before changing the currency, then set them again in the new one.',
   advance_has_refund:
-    'A refund is already linked to this advance, so the claim cannot be dropped: delete that refund movement first if it never happened.',
+    'A refund is already linked to a share this would drop. Drop that share by name with manage_claims remove, after telling the user its refunds become plain incomes, or keep the share in the list.',
   advance_below_refunds:
-    'The amount expected back would be lower than what has already been refunded. Raise it, or correct the refund movement instead.',
+    'A share would be lower than what that person already paid back. Raise it, or correct the refund movement instead.',
   advance_settled:
-    'This advance is already refunded in full: there is nothing left to bring back. Check list_outstanding_advances.',
+    'This claim is already refunded in full: there is nothing left to bring back. Check list_outstanding_advances.',
+  refund_is_income:
+    "Only an income pays an advance back: money from the debtor into one of the user's accounts. Declare it as an income, or drop the refund link.",
+  refund_other_debtor:
+    'A refund comes from the person whose share it pays back, and this income comes from someone else. Link it to the expense with refundsMovementId instead: it then pays the share of the actor it comes from, created if they owed nothing on it yet.',
+  refund_above_share:
+    'This refund would bring back more than the person owes on that share. Raise their share first (fix_movement expectedRefunds), or declare the excess as another income.',
+  claim_not_found:
+    'No such claim for this user. Get a current claimId from list_outstanding_advances, or from the claims of an expense in list_movements.',
+  claim_is_a_rule:
+    'This is the share a commitment copies onto every occurrence, not a claim of its own: refund, write off or plan the claim of one occurrence instead, from list_outstanding_advances.',
+  claim_needs_financing:
+    'Only a financing has a total to owe: on a subscription, every share is a part of each occurrence. Drop onTotal.',
+  claim_needs_eur:
+    'A claim on the total of a financing is in euros, and this plan is in another currency: share it per instalment instead (drop onTotal).',
+  share_has_schedule:
+    'This claim has a repayment plan adding up to its amount. Restate the plan for the new amount with manage_claims plan, or drop it with drop_plan, then change the amount.',
+  merge_shares_overlap:
+    'Both actors owe a share of the same advance, so merging them would make one person owe twice on it. Ask the user what that person owes in total, restate it as one share, then merge.',
+  bad_count: 'A plan has a whole, positive number of payments.',
   transfer_stays_eur:
     'A transfer between two owned accounts moves euros: declare it in euros, without a currency.',
   needless_eur_amount:
@@ -106,7 +126,7 @@ export const GUIDANCE: Record<string, string> = {
   schedule_length_mismatch:
     'The schedule you passed has a different number of installments than installmentsTotal: make them match.',
   schedule_sum_mismatch:
-    'The installments do not add up to the total. Fix one or the other: a plan that does not sum to what is owed would make the remaining due wrong.',
+    'The plan does not add up to what is owed: the total of a financing, or the amount of a claim. Fix one or the other: a plan that does not sum to it would make the remaining due, or the lateness of a claim, wrong.',
   cannot_skip_financing:
     'A financing installment cannot be skipped: it is owed. Confirm it when it is paid, or cancel the financing if the plan ended early.',
   not_a_financing:

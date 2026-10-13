@@ -3,6 +3,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
+import { closeShare, openClaims } from '../src/services/advances.ts'
 import {
   correctBalanceCheck,
   createAdjustment,
@@ -13,13 +14,11 @@ import {
 } from '../src/services/balanceChecks.ts'
 import { createCategory } from '../src/services/catalog.ts'
 import {
-  closeAdvance,
   correctMovement,
   declareMovement,
   deleteMovement,
   listMovements,
-  outstandingAdvances,
-  refundAdvance,
+  refundShare,
 } from '../src/services/movements.ts'
 import { balanceSeries, spendingBreakdown } from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -101,17 +100,15 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
     categoryId: dining.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 100,
+    refundShares: [{ debtorActorId: friend.id, amount: 100 }],
   })
 
-  // Refunding must target a real advance.
-  const plain = await declareMovement(user, {
+  // Refunding must target an expense.
+  const salary = await declareMovement(user, {
     happenedOn: '2026-04-11',
     amount: 20,
-    sourceAccountId: account.id,
-    targetActorId: restaurant.id,
-    categoryId: dining.id,
+    sourceActorId: restaurant.id,
+    targetAccountId: account.id,
   })
   await assert.rejects(
     declareMovement(user, {
@@ -119,10 +116,17 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
       amount: 10,
       sourceActorId: friend.id,
       targetAccountId: account.id,
-      refundsMovementId: plain.id,
+      refundsMovementId: salary.id,
     }),
-    (e: DomainError) => e.code === 'not_an_advance',
+    (e: DomainError) => e.code === 'advance_is_expense',
   )
+  await declareMovement(user, {
+    happenedOn: '2026-04-11',
+    amount: 20,
+    sourceAccountId: account.id,
+    targetActorId: restaurant.id,
+    categoryId: dining.id,
+  })
 
   await declareMovement(user, {
     happenedOn: '2026-04-15',
@@ -132,10 +136,10 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
     refundsMovementId: advance.id,
   })
 
-  const open = await outstandingAdvances(user)
+  const open = await openClaims(user)
   assert.equal(open.length, 1)
-  assert.equal(open[0]!.id, advance.id)
-  assert.equal(open[0]!.refunded, '50.00')
+  assert.equal(open[0]!.movement!.id, advance.id)
+  assert.equal(open[0]!.share.refunded, '50.00')
 
   // Gross keeps the full outflow; net deducts only what actually came back.
   // The row also carries the grouping id and the movement count, so a report
@@ -147,8 +151,8 @@ test('advances track partial refunds, net vs gross, and explicit write-off', asy
   )
 
   // "They will never pay the rest": the claim closes, the expense stays whole.
-  await closeAdvance(user, advance.id)
-  assert.deepEqual([...(await outstandingAdvances(user))], [])
+  await closeShare(user, open[0]!.share.id)
+  assert.deepEqual(await openClaims(user), [])
   const after = await spendingBreakdown(user, '2026-04-01', '2026-04-30', 'category')
   assert.deepEqual(
     [...after],
@@ -295,23 +299,22 @@ test('an advance is owed its share, not the whole expense', async () => {
     amount: 120,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 90,
+    refundShares: [{ debtorActorId: friend.id, amount: 90 }],
   })
-  assert.equal(advance.expectedRefundAmount, '90.00')
 
-  const [open] = await outstandingAdvances(user)
-  assert.equal(open!.expectedRefundAmount, '90.00')
-  assert.equal(open!.refunded, '0.00')
+  const [open] = await openClaims(user)
+  assert.equal(open!.movement!.id, advance.id)
+  assert.equal(open!.share.amount, '90.00')
+  assert.equal(open!.share.refunded, '0.00')
 
   // The claim is settled at its share: the remaining 30 was never owed.
-  const refund = await refundAdvance(user, advance.id, { amount: 90, on: '2026-08-12' })
+  const refund = await refundShare(user, open!.share.id, { amount: 90, on: '2026-08-12' })
   assert.equal(refund.kind, 'income')
   assert.equal(refund.amount, '90.00')
-  assert.equal(refund.refundsMovementId, advance.id)
+  assert.equal(refund.refundsShareId, open!.share.id)
   assert.equal(refund.targetAccountId, account.id)
   assert.equal(refund.sourceActorId, friend.id)
-  assert.deepEqual([...(await outstandingAdvances(user))], [])
+  assert.deepEqual(await openClaims(user), [])
 })
 
 test('a refund defaults to what is still owed, and closes the claim in steps', async () => {
@@ -325,18 +328,19 @@ test('a refund defaults to what is still owed, and closes the claim in steps', a
     amount: 80,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 60,
+    refundShares: [{ debtorActorId: friend.id, amount: 60 }],
   })
 
-  await refundAdvance(user, advance.id, { amount: 20, on: '2026-08-15' })
-  const [half] = await outstandingAdvances(user)
-  assert.equal(half!.refunded, '20.00')
+  const [claim] = await openClaims(user)
+  assert.equal(claim!.movement!.id, advance.id)
+  await refundShare(user, claim!.share.id, { amount: 20, on: '2026-08-15' })
+  const [half] = await openClaims(user)
+  assert.equal(half!.share.refunded, '20.00')
 
   // No amount given: what is left of the claim, not of the expense.
-  const rest = await refundAdvance(user, advance.id, { on: '2026-08-16' })
+  const rest = await refundShare(user, claim!.share.id, { on: '2026-08-16' })
   assert.equal(rest.amount, '40.00')
-  assert.deepEqual([...(await outstandingAdvances(user))], [])
+  assert.deepEqual(await openClaims(user), [])
 })
 
 test('an advance refunded on the spot writes both movements at once', async () => {
@@ -350,18 +354,18 @@ test('an advance refunded on the spot writes both movements at once', async () =
     amount: 50,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 25,
+    refundShares: [{ debtorActorId: friend.id, amount: 25 }],
     refundedNow: true,
   })
 
   // Nothing is owed any more, and the account only really lost the other half.
-  assert.deepEqual([...(await outstandingAdvances(user))], [])
+  assert.deepEqual(await openClaims(user), [])
   const [balance] = await balanceSeries(user, '2026-08-18', '2026-08-18')
   assert.equal(balance!.balance, '-25.00')
   const movements = await listMovements(user)
   assert.equal(movements.length, 2)
   assert.equal(movements.find((m) => m.kind === 'income')!.refundsMovementId, advance.id)
+  assert.equal(movements.find((m) => m.id === advance.id)!.shares![0]!.refunded, '25.00')
 })
 
 test('a claim is correctable, unless a refund already contradicts the correction', async () => {
@@ -376,42 +380,36 @@ test('a claim is correctable, unless a refund already contradicts the correction
     amount: 100,
     sourceAccountId: account.id,
     targetActorId: restaurant.id,
-    expectedRefundFromActorId: friend.id,
-    expectedRefundAmount: 100,
+    refundShares: [{ debtorActorId: friend.id, amount: 100 }],
   })
 
   // The share was wrong, and so was the debtor.
-  const fixed = await correctMovement(user, advance.id, {
-    expectedRefundFromActorId: other.id,
-    expectedRefundAmount: 40,
-  })
-  assert.equal(fixed.expectedRefundFromActorId, other.id)
-  assert.equal(fixed.expectedRefundAmount, '40.00')
+  await correctMovement(user, advance.id, { refundShares: [{ debtorActorId: other.id, amount: 40 }] })
+  const [fixed] = await openClaims(user)
+  assert.equal(fixed!.share.debtorActorId, other.id)
+  assert.equal(fixed!.share.amount, '40.00')
 
   // Never more than what left the account.
   await assert.rejects(
-    correctMovement(user, advance.id, { expectedRefundAmount: 140 }),
+    correctMovement(user, advance.id, { refundShares: [{ debtorActorId: other.id, amount: 140 }] }),
     (e: DomainError) => e.code === 'advance_amount_too_large',
   )
-  // And never half a claim.
+  // Not even by correcting the expense below its shares.
   await assert.rejects(
-    correctMovement(user, advance.id, { expectedRefundFromActorId: null }),
-    (e: DomainError) => e.code === 'advance_needs_actor',
+    correctMovement(user, advance.id, { amount: 30 }),
+    (e: DomainError) => e.code === 'advance_amount_too_large',
   )
 
-  await refundAdvance(user, advance.id, { amount: 40, on: '2026-08-21' })
+  await refundShare(user, fixed!.share.id, { amount: 40, on: '2026-08-21' })
 
   // What came back is a fact: the claim cannot be dropped under it, nor shrunk
   // below it.
   await assert.rejects(
-    correctMovement(user, advance.id, {
-      expectedRefundFromActorId: null,
-      expectedRefundAmount: null,
-    }),
+    correctMovement(user, advance.id, { refundShares: null }),
     (e: DomainError) => e.code === 'advance_has_refund',
   )
   await assert.rejects(
-    correctMovement(user, advance.id, { expectedRefundAmount: 10 }),
+    correctMovement(user, advance.id, { refundShares: [{ debtorActorId: other.id, amount: 10 }] }),
     (e: DomainError) => e.code === 'advance_below_refunds',
   )
 })
@@ -425,19 +423,26 @@ test('a claim needs an amount, an actor, and an expense to sit on', async () => 
   const base = { happenedOn: '2026-08-22', amount: 30, sourceAccountId: account.id }
 
   await assert.rejects(
-    declareMovement(user, { ...base, targetActorId: restaurant.id, expectedRefundFromActorId: friend.id }),
+    declareMovement(user, {
+      ...base,
+      targetActorId: restaurant.id,
+      refundShares: [{ debtorActorId: friend.id, amount: undefined as unknown as number }],
+    }),
     (e: DomainError) => e.code === 'advance_needs_amount',
   )
   await assert.rejects(
-    declareMovement(user, { ...base, targetActorId: restaurant.id, expectedRefundAmount: 10 }),
+    declareMovement(user, {
+      ...base,
+      targetActorId: restaurant.id,
+      refundShares: [{ debtorActorId: '', amount: 10 }],
+    }),
     (e: DomainError) => e.code === 'advance_needs_actor',
   )
   await assert.rejects(
     declareMovement(user, {
       ...base,
       targetActorId: restaurant.id,
-      expectedRefundFromActorId: friend.id,
-      expectedRefundAmount: 31,
+      refundShares: [{ debtorActorId: friend.id, amount: 31 }],
     }),
     (e: DomainError) => e.code === 'advance_amount_too_large',
   )
@@ -446,8 +451,7 @@ test('a claim needs an amount, an actor, and an expense to sit on', async () => 
     declareMovement(user, {
       ...base,
       targetAccountId: savings.id,
-      expectedRefundFromActorId: friend.id,
-      expectedRefundAmount: 10,
+      refundShares: [{ debtorActorId: friend.id, amount: 10 }],
     }),
     (e: DomainError) => e.code === 'advance_is_expense',
   )
