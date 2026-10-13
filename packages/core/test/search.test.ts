@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { searchTerms } from '../src/domain/search.ts'
+import { MAX_SEARCH_TERMS, matchesSearch, searchTerms } from '../src/domain/search.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { addAlias, createActor } from '../src/services/actors.ts'
 import { linkCandidates } from '../src/services/advances.ts'
@@ -19,10 +19,32 @@ test('a search is read word by word, an amount as a prefix of euros', () => {
   ])
   assert.deepEqual(searchTerms('86,4'), [{ text: '86,4', amount: { from: '86.40', to: '86.50' } }])
   assert.deepEqual(searchTerms('86.45€'), [{ text: '86.45', amount: { from: '86.45', to: '86.46' } }])
-  assert.deepEqual(searchTerms('1 200,5'), [{ text: '1200,5', amount: { from: '1200.50', to: '1200.60' } }])
+  // Groups of three digits are one amount, still matched as typed in a text.
+  assert.deepEqual(searchTerms('1 200,5 €'), [
+    { text: '1 200,5', amount: { from: '1200.50', to: '1200.60' } },
+  ])
+  // A group that does not end the number is another word.
+  assert.deepEqual(searchTerms('86 100%'), [
+    { text: '86', amount: { from: '86.00', to: '87.00' } },
+    { text: '100%' },
+  ])
   assert.deepEqual(searchTerms('4G'), [{ text: '4G' }])
   assert.deepEqual(searchTerms(''), [])
   assert.deepEqual(searchTerms(' € '), [])
+  // A pasted paragraph is not a query per word.
+  assert.equal(searchTerms('a b c d e f g h i j k l').length, MAX_SEARCH_TERMS)
+})
+
+test('what is matched outside the query follows the same rule', () => {
+  const claim = { texts: ['Léa', 'Le Bistrot du 10/05'], amounts: [86.4, 172.8] }
+  const matches = (input: string) => matchesSearch(searchTerms(input), claim.texts, claim.amounts)
+  assert.equal(matches('lea bistrot'), true)
+  assert.equal(matches('86.4'), true)
+  assert.equal(matches('86,4'), true)
+  assert.equal(matches('172'), true)
+  assert.equal(matches('86,5'), false)
+  assert.equal(matches('lea cafe'), false)
+  assert.equal(matches(''), true)
 })
 
 async function ledger(user: string) {

@@ -357,9 +357,10 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         card: z.string().optional().describe('Card name: what it paid, or was credited back'),
         search: z
           .string()
+          .max(200)
           .optional()
           .describe(
-            'Free text, read word by word: every word must be found on the movement, each in any of its counterparty (aliases included), note, category or its group, account, or amount. Case and accents are ignored and a word may be a fragment ("resto" finds "Le Petit Restaurant"). A number also reads as the start of an amount: "86" finds 86.00 to 86.99, "86,4" or "86.4" finds 86.40 to 86.49, in euros or, for a movement in a foreign currency, in that currency too (86 USD is found by "86" though it reads 79 euros). So "resto 86" finds the 86-something euros spent at a place whose name holds "resto". The way to find a movement the user describes from memory; combine it with the other filters as needed. Leave from/to out to search the whole history',
+            'Free text, read word by word: every word must be found on the movement, each in any of its counterparty (aliases included), note, category or its group, account, or amount. Case and accents are ignored and a word may be a fragment ("resto" finds "Le Petit Restaurant"). A number also reads as the start of an amount: "86" finds 86.00 to 86.99, "86,4" or "86.4" finds 86.40 to 86.49, in euros or, for a movement in a foreign currency, in that currency too (86 USD is found by "86" though it reads 79 euros). So "resto 86" finds the 86-something euros spent at a place whose name holds "resto". Only the first 8 words count. The way to find a movement the user describes from memory; combine it with the other filters as needed. Leave from/to out to search the whole history',
           ),
         advances: z
           .enum(ADVANCE_FILTERS)

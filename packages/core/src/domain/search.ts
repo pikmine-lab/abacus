@@ -18,20 +18,32 @@ export interface SearchTerm {
   amount?: { from: string; to: string }
 }
 
+/**
+ * The words read from a search, at most this many. Each word costs the query
+ * a pass over the movement's fields; nobody remembers a movement in more
+ * words than this, and a pasted paragraph must not become a query that scans
+ * the ledger once per word.
+ */
+export const MAX_SEARCH_TERMS = 8
+
 /** "86", "86,4", "86.40", "86," and "86€": digits, then at most two decimals. */
 const AMOUNT = /^(\d+)(?:[.,](\d{0,2}))?$/
 
+/**
+ * A word, or an amount written in groups of three digits ("1 200", "12 300,50
+ * €"), which is one amount and not several words. The group must end the
+ * number, so "86 100%" stays two words.
+ */
+const WORD = /\d{1,3}(?:[   ]\d{3})+(?:[.,]\d*)?(?=€|\s|$)|\S+/g
+
 export function searchTerms(input: string | undefined | null): SearchTerm[] {
   if (!input) return []
-  // "1 200" is one amount, not two words: a space, narrow or not, between
-  // digit groups is how amounts are written.
-  const joined = input.replace(/(\d)[\s  ](?=\d{3}(?!\d))/g, '$1')
-  return joined
-    .split(/\s+/)
+  return (input.match(WORD) ?? [])
     .map((word) => word.replace(/€/g, ''))
     .filter((word) => word.length > 0)
+    .slice(0, MAX_SEARCH_TERMS)
     .map((text) => {
-      const match = AMOUNT.exec(text)
+      const match = AMOUNT.exec(text.replace(/[   ]/g, ''))
       if (!match) return { text }
       const decimals = match[2] ?? ''
       const from = BigInt(match[1]!) * 100n + BigInt(decimals.padEnd(2, '0'))
@@ -42,4 +54,23 @@ export function searchTerms(input: string | undefined | null): SearchTerm[] {
 
 function cents(value: bigint): string {
   return `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`
+}
+
+/** Accent- and case-insensitive, as the query's unaccent and ilike are. */
+function fold(text: string): string {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+/**
+ * The same rule, for what is matched outside the query: every word found in
+ * one of the texts, or, when it reads as an amount, naming one of the amounts.
+ */
+export function matchesSearch(terms: SearchTerm[], texts: string[], amounts: number[]): boolean {
+  const folded = texts.map(fold)
+  return terms.every(
+    (term) =>
+      folded.some((text) => text.includes(fold(term.text))) ||
+      (term.amount !== undefined &&
+        amounts.some((a) => a >= Number(term.amount!.from) && a < Number(term.amount!.to))),
+  )
 }

@@ -1,6 +1,7 @@
 import { db } from '../db/client.ts'
 import {
   type ActorWithAliases,
+  actorsByIds,
   countInheritingMovements,
   deleteActor,
   findActorByNameOrAlias,
@@ -71,6 +72,12 @@ export async function createActor(
 
 export async function listActors(userId: string): Promise<Actor[]> {
   return await listActorsDs(db(), userId)
+}
+
+/** The names of some actors, for a list naming a few rows without reading the whole referential. */
+export async function actorNames(userId: string, ids: string[]): Promise<Map<string, string>> {
+  const actors = await actorsByIds(db(), userId, [...new Set(ids)])
+  return new Map(actors.map((a) => [a.id, a.name]))
 }
 
 /** For the screen that repairs the referential: the aliases come with the actor. */

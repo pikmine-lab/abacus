@@ -1,9 +1,9 @@
 'use client'
 
+import { matchesSearch, searchTerms } from '@abacus/core/domain/search'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { LinkChoice } from '@/components/advance-links'
-import { fold } from '@/components/master-detail'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -20,7 +20,8 @@ import { cn } from '@/lib/utils'
  *
  * Once something is typed, every movement proposed comes from that search, so
  * one rule decides what matches. The claims are not movements and the server
- * does not search them: they are matched here, word by word on their label.
+ * does not search them: they are matched here by the same rule
+ * (`matchesSearch`), on their names and amounts.
  * Picking writes the movement's name in the field; typing again drops it.
  */
 export function MovementPicker({
@@ -90,9 +91,14 @@ export function MovementPicker({
     }
   }, [term, side])
 
-  const words = fold(term).split(/\s+/).filter(Boolean)
+  const terms = searchTerms(term)
   const groups = [
-    { label: t('groupClaims'), options: claims.filter((c) => words.every((w) => fold(c.label).includes(w))) },
+    {
+      label: t('groupClaims'),
+      options: claims.filter((c) =>
+        matchesSearch(terms, c.search?.texts ?? [c.label], c.search?.amounts ?? []),
+      ),
+    },
     {
       label: term ? t('groupFound') : t(side === 'expense' ? 'groupExpenses' : 'groupIncomes'),
       options: term ? hits : recent,

@@ -1,5 +1,5 @@
 import type { Movement } from '@abacus/core/domain'
-import { listActors } from '@abacus/core/services/actors'
+import { actorNames } from '@abacus/core/services/actors'
 import { describeShares, linkCandidates, type OpenClaim, openClaims } from '@abacus/core/services/advances'
 import { getTranslations } from 'next-intl/server'
 import type { LinkChoice } from '@/components/advance-links'
@@ -90,14 +90,23 @@ export async function linkChoices(
   ])
   return {
     claims: await Promise.all(
-      claims.map(async (c) => ({
-        value: `claim:${c.share.id}`,
-        label: t('claimOption', {
-          debtor: actorName.get(c.share.debtorActorId) ?? '?',
-          remaining: format.eur(c.remaining, 2),
-          on: await advancedOn(c, actorName),
-        }),
-      })),
+      claims.map(async (c) => {
+        const debtor = actorName.get(c.share.debtorActorId) ?? '?'
+        const on = await advancedOn(c, actorName)
+        return {
+          value: `claim:${c.share.id}`,
+          label: t('claimOption', { debtor, remaining: format.eur(c.remaining, 2), on }),
+          // Searched by what the reader remembers of it, as a movement is.
+          search: {
+            texts: [debtor, on, c.movement?.note ?? ''],
+            amounts: [
+              c.remaining,
+              Number(c.share.amount),
+              ...(c.movement ? [Number(c.movement.amount)] : []),
+            ],
+          },
+        }
+      }),
     ),
     expenses: await movementChoices('expense', expenses, actorName),
     incomes: await movementChoices('income', incomes, actorName),
@@ -113,8 +122,14 @@ export async function searchLinkChoices(
   side: 'expense' | 'income',
   search: string,
 ): Promise<LinkChoice[]> {
-  const [found, actors] = await Promise.all([linkCandidates(userId, side, search), listActors(userId)])
-  const actorName = new Map(actors.map((a) => [a.id, a.name]))
+  const found = await linkCandidates(userId, side, search)
+  const actorName = await actorNames(
+    userId,
+    found.flatMap((m) => {
+      const id = side === 'income' ? m.sourceActorId : m.targetActorId
+      return id ? [id] : []
+    }),
+  )
   return await movementChoices(side, found, actorName)
 }
 

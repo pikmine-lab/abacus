@@ -25,6 +25,11 @@ export async function listActors(tx: Executor, userId: string): Promise<Actor[]>
   return await tx<Actor[]>`select * from actor where user_id = ${userId} order by name`
 }
 
+export async function actorsByIds(tx: Executor, userId: string, ids: string[]): Promise<Actor[]> {
+  if (ids.length === 0) return []
+  return await tx<Actor[]>`select * from actor where user_id = ${userId} and id in ${tx(ids)}`
+}
+
 /** Case-insensitive match on the canonical name or any alias. */
 export async function findActorByNameOrAlias(
   tx: Executor,

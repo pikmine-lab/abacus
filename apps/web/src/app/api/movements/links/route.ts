@@ -15,5 +15,8 @@ export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams
   const side = params.get('side')
   if (side !== 'expense' && side !== 'income') return new Response('Bad side', { status: 400 })
-  return Response.json(await searchLinkChoices(session.user.id, side, params.get('q') ?? ''))
+  // What anyone types to find a movement fits well within this; a longer text
+  // is cut, not refused, since the field sends what is typed as it goes.
+  const q = (params.get('q') ?? '').slice(0, 200)
+  return Response.json(await searchLinkChoices(session.user.id, side, q))
 }

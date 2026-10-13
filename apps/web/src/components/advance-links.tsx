@@ -38,6 +38,8 @@ export interface ShareDraft {
 export interface LinkChoice {
   value: string
   label: string
+  /** What a choice the server does not search is matched on: its names and amounts. */
+  search?: { texts: string[]; amounts: number[] }
 }
 
 type Row = ShareDraft & { key: string }
