@@ -89,8 +89,10 @@ function ledger(tx: Executor, userId: string, from: string, to: string, reading:
         ${inPeriod(tx, from, to, reading)}
       union all
       -- What a reserve's occurrences left undrawn once its commitment is over:
-      -- an income of that day, carried by the incomes that fed it.
-      select m.id, rr.released_on, m.note, m.kind, rr.released, m.activity_id, m.category_id,
+      -- an income of that day, carried by the incomes that fed it. It is money
+      -- given for a commitment, not earned by an activity: the activity
+      -- statement leaves it out, and so does every activity's net here.
+      select m.id, rr.released_on, m.note, m.kind, rr.released, null::uuid, m.category_id,
              m.source_actor_id, m.target_actor_id,
              true,
              ${releaseStart},

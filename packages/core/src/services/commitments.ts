@@ -507,6 +507,14 @@ export async function listCommitments(
   return await withEurAmounts(sql, await listCommitmentsDs(sql, userId, { activeOnly }), history)
 }
 
+/** The labels of some commitments, for a screen naming what an income was received for. */
+export async function commitmentLabels(userId: string, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const wanted = new Set(ids)
+  const all = await listCommitmentsDs(db(), userId)
+  return new Map(all.filter((c) => wanted.has(c.id)).map((c) => [c.id, c.label]))
+}
+
 export interface FinancingProgress {
   paidInstallments: number
   paidTotal: string

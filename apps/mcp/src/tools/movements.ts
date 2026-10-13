@@ -466,7 +466,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                 }
               : {}),
             // Absent unless the occurrence drew on its commitment's reserve.
-            ...(m.drawn ? { drawnFromReserve: Number(m.drawn) } : {}),
+            ...(Number(m.drawn) > 0 ? { drawnFromReserve: Number(m.drawn) } : {}),
             ...(m.reservesCommitmentId ? { forCommitment: commitmentLabel.get(m.reservesCommitmentId) } : {}),
             ...(m.refundsShareId
               ? {

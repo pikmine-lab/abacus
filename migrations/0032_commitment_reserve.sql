@@ -47,7 +47,7 @@ alter view expense_refund rename to share_refund;
 -- D(i) = min(D(i-1) + left(i), I(i)), which unrolls into
 -- D(i) = R(i) + min(0, min over k <= i of (I(k) - R(k))): one window, no
 -- recursion. `counted` does the same without the ghost movements, which no
--- analysis reads.
+-- analysis reads, on either side.
 create view reserve_draw as
 with occurrence as (
   select m.id, m.commitment_id,
@@ -55,7 +55,9 @@ with occurrence as (
          coalesce(m.purchased_on, m.happened_on) as paid_on,
          m.created_at,
          greatest(m.amount - coalesce(sr.refunded, 0), 0) as left_all,
-         greatest(m.amount - coalesce(sr.counted, 0), 0) as left_counted,
+         -- A ghost occurrence is read by no analysis: it draws nothing of
+         -- what the analyses count, which stays for the occurrences they read.
+         case when m.ghost then 0 else greatest(m.amount - coalesce(sr.counted, 0), 0) end as left_counted,
          (select coalesce(sum(r.amount), 0) from movement r
           where r.reserves_commitment_id = m.commitment_id
             and (c.kind = 'financing' or r.happened_on <= coalesce(m.purchased_on, m.happened_on))) as available_all,
@@ -94,50 +96,73 @@ window w as (partition by commitment_id order by position, paid_on, created_at, 
 -- shares, plus what it drew from its commitment's reserve. `refunded` counts
 -- everything, `counted` leaves out the ghosts; `share_refunded` and `drawn`
 -- keep the two apart for the screens that say which is which.
+--
+-- Built from the movement, like share_refund, so that a reading joining it on
+-- the movement's key computes that movement only: the draws are looked up by
+-- its commitment, which the window partitions on, so only that commitment's
+-- occurrences are drawn. `offset 0` keeps the lookup a subquery the
+-- commitment can be pushed into, instead of a join over every reserve.
 create view expense_refund as
-select coalesce(sr.movement_id, rd.movement_id) as movement_id,
+select m.id as movement_id,
        (coalesce(sr.refunded, 0) + coalesce(rd.drawn, 0))::numeric(14,2) as refunded,
        (coalesce(sr.counted, 0) + coalesce(rd.counted, 0))::numeric(14,2) as counted,
        sr.last_refunded_on,
        sr.refunded as share_refunded,
        rd.drawn
-from share_refund sr
-full join (select * from reserve_draw where drawn > 0 or counted > 0) rd on rd.movement_id = sr.movement_id;
+from movement m
+left join share_refund sr on sr.movement_id = m.id
+left join lateral (
+  select d.drawn, d.counted from reserve_draw d
+  where d.commitment_id = m.commitment_id and d.movement_id = m.id and (d.drawn > 0 or d.counted > 0)
+  offset 0
+) rd on m.commitment_id is not null
+where sr.movement_id is not null or rd.drawn is not null;
 
 -- A reserve per commitment: what fed it, what its occurrences drew, and, once
--- the commitment is over, the day what is left became free. A subscription is
--- over on the day it was cancelled; a financing on the day its last
--- instalment was paid, derived as the commitment reads do.
+-- the commitment is over, the day what is left became free. `counted_left` is
+-- the same remainder without the ghosts, the part a release may count. A commitment is
+-- over on the day it was cancelled, a financing closed before its end
+-- included; a financing also on the day its last instalment was paid, derived
+-- as the commitment reads do. A cancellation dated ahead releases nothing yet:
+-- the occurrences until then still draw.
 create view commitment_reserve as
 select c.id as commitment_id,
        fed.received,
        coalesce(d.drawn, 0)::numeric(14,2) as drawn,
        (fed.received - coalesce(d.drawn, 0))::numeric(14,2) as remaining,
-       case when c.kind = 'financing' then settled.settled_on else c.cancelled_on end as released_on
+       case when ended.ended_on <= current_date then ended.ended_on end as released_on,
+       (fed.counted - coalesce(d.counted, 0))::numeric(14,2) as counted_left
 from commitment c
 join lateral (
-  select sum(r.amount)::numeric(14,2) as received from movement r where r.reserves_commitment_id = c.id
+  select sum(r.amount)::numeric(14,2) as received,
+         coalesce(sum(r.amount) filter (where not r.ghost), 0) as counted
+  from movement r where r.reserves_commitment_id = c.id
   having count(*) > 0
 ) fed on true
 left join lateral (
-  select sum(drawn) as drawn from reserve_draw where commitment_id = c.id
+  select sum(drawn) as drawn, sum(counted) as counted from reserve_draw where commitment_id = c.id
 ) d on true
 left join lateral (
   select max(i.due_on) as settled_on from financing_installment i
   where i.commitment_id = c.id
   having bool_and(i.movement_id is not null)
-) settled on true;
+) settled on true
+cross join lateral (
+  select coalesce(c.cancelled_on, case when c.kind = 'financing' then settled.settled_on end) as ended_on
+) ended;
 
 -- What each income of a reserve gives back once its commitment is over: the
 -- part of it nothing drew. The oldest money is drawn first, so what is left
--- belongs to the latest incomes, each up to its own amount.
+-- belongs to the latest incomes, each up to its own amount. A ghost is read by
+-- no analysis, so the release is spread over the other incomes only, out of
+-- what the analyses did not draw: a ghost income is never counted twice.
 create view reserve_release as
 select r.id as movement_id, cr.released_on,
-       greatest(least(r.amount, cr.remaining - (
+       greatest(least(r.amount, cr.counted_left - (
          select coalesce(sum(later.amount), 0) from movement later
-         where later.reserves_commitment_id = r.reserves_commitment_id
+         where later.reserves_commitment_id = r.reserves_commitment_id and not later.ghost
            and (later.happened_on, later.created_at, later.id) > (r.happened_on, r.created_at, r.id)
        )), 0)::numeric(14,2) as released
 from movement r
 join commitment_reserve cr on cr.commitment_id = r.reserves_commitment_id
-where cr.released_on is not null and cr.remaining > 0;
+where not r.ghost and cr.released_on is not null and cr.counted_left > 0;

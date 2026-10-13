@@ -478,7 +478,7 @@ export default async function MovementsPage({
                           ))}
                           {/* Part of it was paid from money received ahead: said by the
                               amount it comes off, the way a refund is. */}
-                          {m.drawn && (
+                          {Number(m.drawn) > 0 && (
                             <span className="block font-sans text-[11px] font-normal text-faint">
                               {t('list.drawnFromReserve', { amount: format.eur(Number(m.drawn), 2) })}
                             </span>

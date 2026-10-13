@@ -1,7 +1,7 @@
 import type { Movement } from '@abacus/core/domain'
 import { actorNames } from '@abacus/core/services/actors'
 import { describeShares, linkCandidates, type OpenClaim, openClaims } from '@abacus/core/services/advances'
-import { listCommitments } from '@abacus/core/services/commitments'
+import { commitmentLabels, listCommitments } from '@abacus/core/services/commitments'
 import { getTranslations } from 'next-intl/server'
 import type { LinkChoice } from '@/components/advance-links'
 import { getFormat } from '@/lib/format-server'
@@ -36,10 +36,10 @@ export async function refundLabels(
     userId,
     movements.flatMap((m) => (m.refundsShareId ? [m.refundsShareId] : [])),
   )
-  const labels = new Map<string, string>()
-  const reserved = new Set(movements.flatMap((m) => (m.reservesCommitmentId ? [m.reservesCommitmentId] : [])))
-  if (reserved.size > 0)
-    for (const c of await listCommitments(userId, false)) if (reserved.has(c.id)) labels.set(c.id, c.label)
+  const labels = await commitmentLabels(
+    userId,
+    movements.flatMap((m) => (m.reservesCommitmentId ? [m.reservesCommitmentId] : [])),
+  )
   for (const [id, d] of described)
     labels.set(
       id,

@@ -4,6 +4,7 @@ import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor } from '../src/services/actors.ts'
 import { openClaims } from '../src/services/advances.ts'
+import { createActivity } from '../src/services/catalog.ts'
 import {
   cancelCommitment,
   confirmNextOccurrence,
@@ -12,7 +13,7 @@ import {
   listCommitmentsWithProgress,
 } from '../src/services/commitments.ts'
 import { correctMovement, declareMovement, listMovements, refundShare } from '../src/services/movements.ts'
-import { flowTotals } from '../src/services/reports.ts'
+import { flowTotals, spendingBreakdown } from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -166,6 +167,88 @@ test('a financing paid off releases what its reserve holds beyond what it cost',
 
   assert.equal((await reserveOf(user, bike.id))!.releasedOn, '2026-03-01')
   assert.equal((await flowTotals(user, '2026-03-01', '2026-03-31')).income, '50.00')
+})
+
+test('a financing closed before its end releases what is left on the day it closed', async () => {
+  const { user, account, gym, received } = await fixture()
+  const bike = await createFinancing(user, {
+    label: 'Bike',
+    actorId: gym.id,
+    accountId: account.id,
+    installmentsTotal: 3,
+    totalAmount: 300,
+    firstDueOn: '2026-02-01',
+  })
+  await received(250, '2026-01-15', bike.id)
+  await confirmNextOccurrence(user, bike.id)
+  await cancelCommitment(user, bike.id, '2026-02-20')
+
+  assert.equal((await reserveOf(user, bike.id))!.releasedOn, '2026-02-20')
+  assert.equal((await flowTotals(user, '2026-02-01', '2026-02-28')).income, '150.00')
+})
+
+test('a cancellation dated ahead releases nothing yet', async () => {
+  const { user, received, membership } = await fixture()
+  await received(100, '2026-01-02')
+  await cancelCommitment(user, membership.id, '2099-01-31')
+
+  assert.equal((await reserveOf(user, membership.id))!.releasedOn, null)
+})
+
+test('a ghost occurrence draws nothing of what the analyses count', async () => {
+  const { user, received, confirm } = await fixture()
+  await received(100, '2026-01-02')
+  const [january] = await confirm(2)
+  await correctMovement(user, january!, { ghost: true })
+
+  // February draws the 79 the analyses would otherwise lose to a ghost.
+  assert.equal((await flowTotals(user, '2026-02-01', '2026-02-28')).expenseNet, '0.00')
+})
+
+test('a ghost income fed into a reserve is never released into the analyses', async () => {
+  const { user, received, confirm, membership } = await fixture()
+  const ghost = await received(100, '2026-01-01')
+  await correctMovement(user, ghost.id, { ghost: true })
+  await received(100, '2026-01-02')
+  await confirm(1)
+  await cancelCommitment(user, membership.id, '2026-02-10')
+
+  // 121 left in the account; of the money the analyses count, 79 was drawn.
+  assert.equal((await reserveOf(user, membership.id))!.remaining, '121.00')
+  assert.equal((await flowTotals(user, '2026-02-01', '2026-02-28')).income, '21.00')
+})
+
+test('a released reserve is no activity revenue', async () => {
+  const { user, received, confirm, membership } = await fixture()
+  const studio = await createActivity(user, { name: 'Studio', kind: 'business' })
+  const fed = await received(100, '2026-01-02')
+  await correctMovement(user, fed.id, { activityId: studio.id })
+  await confirm(1)
+  await cancelCommitment(user, membership.id, '2026-02-10')
+
+  const [row] = await spendingBreakdown(user, '2026-02-01', '2026-02-28', 'activity', 'income')
+  assert.equal(row!.key, null)
+  assert.equal(row!.net, '21.00')
+})
+
+test('linking an income to a reserve drops the claim it paid back, and the reverse', async () => {
+  const { user, received, membership, parent, account, gym } = await fixture()
+  const expense = await declareMovement(user, {
+    happenedOn: '2026-01-03',
+    amount: 50,
+    sourceAccountId: account.id,
+    targetActorId: gym.id,
+  })
+  const fed = await received(30, '2026-01-04')
+
+  const refund = await correctMovement(user, fed.id, { refundsMovementId: expense.id })
+  assert.equal(refund.reservesCommitmentId, null)
+  assert.notEqual(refund.refundsShareId, null)
+  assert.equal(parent.id, refund.sourceActorId)
+
+  const back = await correctMovement(user, fed.id, { reservesCommitmentId: membership.id })
+  assert.equal(back.refundsShareId, null)
+  assert.equal(back.reservesCommitmentId, membership.id)
 })
 
 test('only an income feeds a reserve, of an expense commitment still running', async () => {

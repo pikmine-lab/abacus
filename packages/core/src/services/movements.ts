@@ -707,18 +707,24 @@ export async function correctMovementIn(
     activityId: input.activityId !== undefined ? input.activityId : current.activityId,
     // An income linked anew, or unlinked; absent, it keeps paying back the
     // share it did, which is checked again against what it now says.
+    // An income is one link or the other: linking it to a reserve drops the
+    // share it paid back, and the reverse.
     ...(input.refundsShareId !== undefined || input.refundsMovementId !== undefined
       ? {
           refundsShareId: input.refundsShareId ?? undefined,
           refundsMovementId: input.refundsMovementId ?? undefined,
         }
-      : { refundsShareId: current.refundsShareId ?? undefined }),
+      : input.reservesCommitmentId
+        ? {}
+        : { refundsShareId: current.refundsShareId ?? undefined }),
     invoiceId:
       input.invoiceId !== undefined ? (input.invoiceId ?? undefined) : (current.invoiceId ?? undefined),
     reservesCommitmentId:
       input.reservesCommitmentId !== undefined
         ? (input.reservesCommitmentId ?? undefined)
-        : (current.reservesCommitmentId ?? undefined),
+        : input.refundsShareId || input.refundsMovementId
+          ? undefined
+          : (current.reservesCommitmentId ?? undefined),
     vatAmount:
       input.vatAmount !== undefined
         ? (input.vatAmount ?? undefined)
