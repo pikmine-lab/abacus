@@ -211,5 +211,7 @@
   },
   "owedOnTotal": "{debtor} doit {share} sur le total",
   "coveredBy": "{amount} couverts par {debtors}",
-  "receivedAhead": "{amount} reçus d’avance"
+  "receivedAhead": "{amount} reçus d’avance",
+  "reserveLeft": "Réserve : {remaining} restants sur {received} reçus",
+  "reserveReleased": "{amount} de réserve non consommés, comptés en revenu le {date}"
 }

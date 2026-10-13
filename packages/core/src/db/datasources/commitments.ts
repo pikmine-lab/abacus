@@ -1,5 +1,10 @@
 import { today } from '../../domain/period.ts'
-import type { Commitment, CommitmentEvent, CommitmentEventType } from '../../domain/types.ts'
+import type {
+  Commitment,
+  CommitmentEvent,
+  CommitmentEventType,
+  CommitmentReserve,
+} from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
 export interface NewCommitment {
@@ -224,5 +229,14 @@ export async function countPlansForAsset(tx: Executor, assetId: string): Promise
 export async function listCommitmentEvents(tx: Executor, commitmentId: string): Promise<CommitmentEvent[]> {
   return await tx<CommitmentEvent[]>`
     select * from commitment_event where commitment_id = ${commitmentId} order by occurred_on, created_at
+  `
+}
+
+/** The reserves of some commitments: only those an income was received for have one. */
+export async function reservesOf(tx: Executor, commitmentIds: string[]): Promise<CommitmentReserve[]> {
+  if (commitmentIds.length === 0) return []
+  return await tx<CommitmentReserve[]>`
+    select commitment_id, received, drawn, remaining, released_on
+    from commitment_reserve where commitment_id in ${tx(commitmentIds)}
   `
 }

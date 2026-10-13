@@ -202,6 +202,7 @@ async function receipts(
       on i.id = m.invoice_id and i.cancelled_on is null and i.receivable_amount > 0
     where m.user_id = ${scope.userId} and m.activity_id = ${scope.activityId}
       and m.kind = 'income' and m.ghost = false and m.refunds_share_id is null
+      and m.reserves_commitment_id is null
       and m.happened_on >= ${range.from} and m.happened_on <= ${range.to}
   `
   return {
@@ -457,6 +458,7 @@ export async function revenueByClient(
             on i.id = m.invoice_id and i.cancelled_on is null and i.receivable_amount > 0
           where m.user_id = ${scope.userId} and m.activity_id = ${scope.activityId}
             and m.kind = 'income' and m.ghost = false and m.refunds_share_id is null
+            and m.reserves_commitment_id is null
             and m.happened_on >= ${range.from} and m.happened_on <= ${range.to}
           group by 1, 2
           order by amount desc
@@ -594,6 +596,7 @@ export async function withholdingShare(
             on i.id = m.invoice_id and i.cancelled_on is null and i.receivable_amount > 0
           where m.user_id = ${scope.userId} and m.activity_id = ${scope.activityId}
             and m.kind = 'income' and m.ghost = false and m.refunds_share_id is null
+            and m.reserves_commitment_id is null
             and m.happened_on >= ${range.from} and m.happened_on <= ${range.to}
         `
   const total = Number(row!.total)

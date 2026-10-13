@@ -87,6 +87,7 @@ export function movementDraft(
       lastRefundedOn: share.lastRefundedOn ?? undefined,
     })),
     refundsLabel: m.refundsShareId ? (refundLabels.get(m.refundsShareId) ?? '') : undefined,
+    reserveLabel: m.reservesCommitmentId ? (refundLabels.get(m.reservesCommitmentId) ?? '') : undefined,
     vatAmount: m.vatAmount === null ? undefined : Number(m.vatAmount).toFixed(2),
     origin: m.commitmentId ? 'commitment' : m.balanceCheckId ? 'balanceCheck' : undefined,
   }

@@ -1,6 +1,7 @@
 import type { Movement } from '@abacus/core/domain'
 import { actorNames } from '@abacus/core/services/actors'
 import { describeShares, linkCandidates, type OpenClaim, openClaims } from '@abacus/core/services/advances'
+import { listCommitments } from '@abacus/core/services/commitments'
 import { getTranslations } from 'next-intl/server'
 import type { LinkChoice } from '@/components/advance-links'
 import { getFormat } from '@/lib/format-server'
@@ -21,8 +22,9 @@ async function advancedOn(
 }
 
 /**
- * Names what each refund in a list pays back ("Lea's share · Le Bistrot,
- * 10/05"), for the panel that corrects it: the share alone is an id.
+ * Names what each income in a list pays back ("Lea's share · Le Bistrot,
+ * 10/05") or was received for ("Gym membership"), for the panel that corrects
+ * it: the share and the commitment alone are ids. Keyed by that id.
  */
 export async function refundLabels(
   userId: string,
@@ -35,6 +37,9 @@ export async function refundLabels(
     movements.flatMap((m) => (m.refundsShareId ? [m.refundsShareId] : [])),
   )
   const labels = new Map<string, string>()
+  const reserved = new Set(movements.flatMap((m) => (m.reservesCommitmentId ? [m.reservesCommitmentId] : [])))
+  if (reserved.size > 0)
+    for (const c of await listCommitments(userId, false)) if (reserved.has(c.id)) labels.set(c.id, c.label)
   for (const [id, d] of described)
     labels.set(
       id,
@@ -73,7 +78,8 @@ const RECENT = 5
 
 /**
  * What an advance link offers when it opens, for the movement panel: the
- * claims awaited and the latest expenses an income may pay back, the latest
+ * claims awaited and the latest expenses an income may pay back, the running
+ * subscriptions and financings it may have been received for, the latest
  * plain incomes an expense may be paid back by. The rest of the history is
  * searched (`searchLinkChoices`), never listed.
  */
@@ -81,12 +87,18 @@ export async function linkChoices(
   userId: string,
   claims: OpenClaim[],
   actorName: Map<string, string>,
-): Promise<{ claims: LinkChoice[]; expenses: LinkChoice[]; incomes: LinkChoice[] }> {
+): Promise<{
+  claims: LinkChoice[]
+  expenses: LinkChoice[]
+  commitments: LinkChoice[]
+  incomes: LinkChoice[]
+}> {
   const t = await getTranslations('movements.links')
   const format = await getFormat()
-  const [expenses, incomes] = await Promise.all([
+  const [expenses, incomes, running] = await Promise.all([
     linkCandidates(userId, 'expense', undefined, RECENT),
     linkCandidates(userId, 'income', undefined, RECENT),
+    listCommitments(userId, true),
   ])
   return {
     claims: await Promise.all(
@@ -109,6 +121,14 @@ export async function linkChoices(
       }),
     ),
     expenses: await movementChoices('expense', expenses, actorName),
+    // Only those whose occurrences are expenses, the ones a reserve is drawn by.
+    commitments: running
+      .filter((c) => c.kind === 'financing' || (c.kind === 'subscription' && c.direction === 'outgoing'))
+      .map((c) => ({
+        value: `reserve:${c.id}`,
+        label: t('commitmentOption', { label: c.label, kind: c.kind }),
+        search: { texts: [c.label], amounts: [Number(c.amount)] },
+      })),
     incomes: await movementChoices('income', incomes, actorName),
   }
 }

@@ -36,7 +36,9 @@
     "more": "Afficher plus ({shown} sur {total})",
     "loadingMore": "Chargement…",
     "invoiceOption": "{name} · reste {remaining}",
-    "paysBack": "Rembourse : {what}"
+    "paysBack": "Rembourse : {what}",
+    "receivedFor": "Versé pour : {what}",
+    "drawnFromReserve": "dont {amount} pris sur la réserve"
   },
   "filters": {
     "kinds": {
@@ -159,11 +161,17 @@
     "unlinkTitle": "Détacher ce remboursement ?",
     "unlinkDescription": "Ce mouvement redevient un revenu : il comptera dans tes revenus, sans catégorie.",
     "unlinkConfirm": "Détacher",
-    "linkExpense": "Relier à une dépense remboursée",
+    "reserveFor": "Versé pour",
+    "unlinkReserve": "Détacher ce versement",
+    "unlinkReserveTitle": "Détacher ce versement ?",
+    "unlinkReserveDescription": "Ce mouvement redevient un revenu : il comptera dans tes revenus, sans catégorie. Les échéances qui y puisaient se lisent de nouveau en entier.",
+    "linkExpense": "Relier à ce qu’il rembourse ou couvre",
     "groupClaims": "En attente",
     "groupExpenses": "Dépenses récentes",
     "groupIncomes": "Revenus récents",
     "groupFound": "Trouvés",
+    "groupCommitments": "Versé pour un engagement",
+    "commitmentOption": "{label} ({kind, select, financing {financement} other {abonnement}})",
     "searchMovement": "Nom, montant, note, catégorie…",
     "searching": "Recherche…",
     "nothingFound": "Rien trouvé",

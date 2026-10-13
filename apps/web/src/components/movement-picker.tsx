@@ -1,6 +1,7 @@
 'use client'
 
 import { matchesSearch, searchTerms } from '@abacus/core/domain/search'
+import { ChevronRightIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { LinkChoice } from '@/components/advance-links'
@@ -19,16 +20,21 @@ import { cn } from '@/lib/utils'
  * awaited, then the latest movements.
  *
  * Once something is typed, every movement proposed comes from that search, so
- * one rule decides what matches. The claims are not movements and the server
- * does not search them: they are matched here by the same rule
- * (`matchesSearch`), on their names and amounts.
+ * one rule decides what matches. The claims and the commitments are not
+ * movements and the server does not search them: they are matched here by the
+ * same rule (`matchesSearch`), on their names and amounts.
  * Picking writes the movement's name in the field; typing again drops it.
+ *
+ * Each group folds behind its heading, open by default: a long list of
+ * movements would otherwise push the claims or the commitments under it out of
+ * reach. A folded group says how many it holds, and the arrows skip it.
  */
 export function MovementPicker({
   name,
   label,
   side,
   claims = [],
+  commitments = [],
   recent,
   placeholder,
   onValueChange,
@@ -40,6 +46,8 @@ export function MovementPicker({
   side: 'expense' | 'income'
   /** The claims awaited, on top: what an income most often pays back. */
   claims?: LinkChoice[]
+  /** The running commitments an income may have been received for, after the movements. */
+  commitments?: LinkChoice[]
   /** The latest movements, valued as the search values them, proposed until something is typed. */
   recent: LinkChoice[]
   placeholder: string
@@ -55,6 +63,7 @@ export function MovementPicker({
   const [active, setActive] = useState<number | null>(null)
   const [hits, setHits] = useState<LinkChoice[]>([])
   const [searching, setSearching] = useState(false)
+  const [folded, setFolded] = useState<Set<string>>(new Set())
   // A picked movement's name is in the field, but it is not a search.
   const term = picked ? '' : text.trim()
 
@@ -103,10 +112,27 @@ export function MovementPicker({
       label: term ? t('groupFound') : t(side === 'expense' ? 'groupExpenses' : 'groupIncomes'),
       options: term ? hits : recent,
     },
+    {
+      label: t('groupCommitments'),
+      options: commitments.filter((c) =>
+        matchesSearch(terms, c.search?.texts ?? [c.label], c.search?.amounts ?? []),
+      ),
+    },
   ].filter((group) => group.options.length > 0)
-  const options = groups.flatMap((group) => group.options)
-  const status = options.length > 0 ? null : searching ? t('searching') : term ? t('nothingFound') : null
-  const showing = open && (options.length > 0 || status !== null)
+  // What the arrows walk through: the options of the open groups.
+  const options = groups.flatMap((group) => (folded.has(group.label) ? [] : group.options))
+  const status = groups.length > 0 ? null : searching ? t('searching') : term ? t('nothingFound') : null
+  const showing = open && (groups.length > 0 || status !== null)
+
+  const toggle = (label: string) => {
+    setActive(null)
+    setFolded((current) => {
+      const next = new Set(current)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
 
   const pick = (choice: LinkChoice) => {
     setPicked(choice)
@@ -192,32 +218,55 @@ export function MovementPicker({
             {groups.map((group) => (
               // biome-ignore lint/a11y/useSemanticElements: a group of options inside a listbox is role="group" (ARIA listbox pattern); a fieldset belongs to forms
               <div key={group.label} role="group" aria-label={group.label} className="flex flex-col">
-                <p className="px-2 pt-1.5 pb-1 text-[11px] text-faint">{group.label}</p>
-                {group.options.map((choice) => {
-                  const i = options.indexOf(choice)
-                  return (
-                    <div
-                      key={choice.value}
-                      id={`${listId}-${i}`}
-                      role="option"
-                      tabIndex={-1}
-                      aria-selected={i === active}
-                      // mousedown, not click: the field's blur would close the
-                      // list before a click lands.
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        pick(choice)
-                      }}
-                      onMouseEnter={() => setActive(i)}
-                      className={cn(
-                        'cursor-default truncate rounded-sm px-2 py-1.5 text-[13px]',
-                        i === active && 'bg-accent text-accent-foreground',
-                      )}
-                    >
-                      {choice.label}
-                    </div>
-                  )
-                })}
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-expanded={!folded.has(group.label)}
+                  // mousedown, like an option: focus stays in the field.
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    toggle(group.label)
+                  }}
+                  className="flex items-center gap-1 px-2 pt-1.5 pb-1 text-left text-[11px] text-faint hover:text-foreground"
+                >
+                  <ChevronRightIcon
+                    aria-hidden
+                    className={cn(
+                      'size-3 shrink-0 transition-transform',
+                      !folded.has(group.label) && 'rotate-90',
+                    )}
+                  />
+                  {group.label}
+                  {folded.has(group.label) && (
+                    <span className="font-mono tabular">· {group.options.length}</span>
+                  )}
+                </button>
+                {!folded.has(group.label) &&
+                  group.options.map((choice) => {
+                    const i = options.indexOf(choice)
+                    return (
+                      <div
+                        key={choice.value}
+                        id={`${listId}-${i}`}
+                        role="option"
+                        tabIndex={-1}
+                        aria-selected={i === active}
+                        // mousedown, not click: the field's blur would close the
+                        // list before a click lands.
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          pick(choice)
+                        }}
+                        onMouseEnter={() => setActive(i)}
+                        className={cn(
+                          'cursor-default truncate rounded-sm px-2 py-1.5 text-[13px]',
+                          i === active && 'bg-accent text-accent-foreground',
+                        )}
+                      >
+                        {choice.label}
+                      </div>
+                    )
+                  })}
               </div>
             ))}
           </div>

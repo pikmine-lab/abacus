@@ -117,6 +117,8 @@ export interface Movement {
   balanceCheckId: string | null
   /** The share this income pays back, when it is the refund of an advance. */
   refundsShareId: string | null
+  /** The commitment whose reserve this income feeds, when it was received for one. */
+  reservesCommitmentId: string | null
   /** What was paid abroad, when the movement was declared in a foreign
    * currency: `amount` is then its EUR counter-value, frozen at declaration. */
   originalAmount: string | null
@@ -166,6 +168,8 @@ export interface Movement {
   awaitingDebit?: boolean
   /** Read by the movement list, on an advance only: what came back so far. */
   refunded?: string | null
+  /** Read by the movement list, on an occurrence of a commitment with a reserve: what it drew from it. */
+  drawn?: string | null
   /** Read by the movement list, on an advance only: the day the last refund landed. */
   lastRefundedOn?: string | null
   /** Read by the movement list, on an advance only: who owes what of it. */
@@ -297,6 +301,19 @@ export interface Commitment {
   totalAmount: string | null
   /** Outgoing subscription only: the card it is billed to. */
   cardId: string | null
+}
+
+/**
+ * Money received for a commitment, and what its occurrences drew from it.
+ * Once the commitment is over, `releasedOn` is the day what is left became an
+ * income.
+ */
+export interface CommitmentReserve {
+  commitmentId: string
+  received: string
+  drawn: string
+  remaining: string
+  releasedOn: string | null
 }
 
 export type CommitmentEventType =

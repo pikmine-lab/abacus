@@ -19,6 +19,7 @@ export interface NewMovement {
   commitmentId?: string | null
   balanceCheckId?: string | null
   refundsShareId?: string | null
+  reservesCommitmentId?: string | null
   originalAmount?: number | null
   originalCurrency?: string | null
   /** First day of the month the movement is about; null follows its date. */
@@ -96,7 +97,8 @@ export interface MovementFilters {
    * left to categorise. A transfer never carries one (the schema refuses it),
    * so it is not missing one either; nor is a refund, the advance it brings
    * back carrying the category, and the analysis leaving refunds out of every
-   * row the selection must add up to.
+   * row the selection must add up to; nor is an income feeding a reserve,
+   * which the occurrences drawing from it carry for the same reason.
    */
   categoryId?: string | null
   /** `null` selects what belongs to no activity, transfers included. */
@@ -113,7 +115,7 @@ export interface MovementFilters {
    * on the day the money came back.
    */
   advances?: AdvanceFilter
-  /** Paying back no share and settling no invoice: an income that says nothing of what it is yet. */
+  /** Paying back no share, feeding no reserve and settling no invoice: an income that says nothing of what it is yet. */
   unlinked?: boolean
   limit?: number
   /** How the selection is ordered; the date, newest first, by default. */
@@ -204,7 +206,8 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.actorId ? tx`and (m.source_actor_id = ${f.actorId} or m.target_actor_id = ${f.actorId})` : tx``}
     ${
       f.categoryId === null
-        ? tx`and m.category_id is null and m.kind <> 'transfer' and m.refunds_share_id is null`
+        ? tx`and m.category_id is null and m.kind <> 'transfer' and m.refunds_share_id is null
+             and m.reserves_commitment_id is null`
         : f.categoryId
           ? tx`and m.category_id = ${f.categoryId}`
           : tx``
@@ -213,7 +216,7 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
     ${f.commitmentId ? tx`and m.commitment_id = ${f.commitmentId}` : tx``}
     ${f.cardId ? tx`and m.card_id = ${f.cardId}` : tx``}
     ${f.advances ? advanceWhere(tx, f.advances) : tx``}
-    ${f.unlinked ? tx`and m.refunds_share_id is null and m.invoice_id is null` : tx``}
+    ${f.unlinked ? tx`and m.refunds_share_id is null and m.reserves_commitment_id is null and m.invoice_id is null` : tx``}
     ${searchTerms(f.search).reduce((clauses, term) => tx`${clauses} ${searchWhere(tx, term)}`, tx``)}
   `
 }
@@ -269,8 +272,9 @@ export async function listMovements(
       ) as awaiting_debit,
       -- Only an advance has refunds to sum: every other row reads null there.
       case when exists (select 1 from advance_share s where s.movement_id = m.id)
-           then coalesce(er.refunded, 0) end as refunded,
+           then coalesce(er.share_refunded, 0) end as refunded,
       er.last_refunded_on,
+      er.drawn,
       rs.movement_id as refunds_movement_id,
       rs.commitment_id as refunds_commitment_id
     from movement m

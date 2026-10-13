@@ -69,6 +69,8 @@ export interface MovementDraft {
   shares?: ShareDraft[]
   /** Refund of an advance: what it pays back, named. */
   refundsLabel?: string
+  /** Received for a commitment: the one whose reserve it feeds, named. */
+  reserveLabel?: string
   /** The VAT stated inside the amount, when the activity reclaims it. */
   vatAmount?: string
   /** The card that paid it; with a deferred card, happenedOn above is the purchase day. */
@@ -82,7 +84,7 @@ export function MovementForm({
   actors,
   categories,
   activities,
-  links = { claims: [], expenses: [], incomes: [] },
+  links = { claims: [], expenses: [], commitments: [], incomes: [] },
   invoices = [],
   cards = [],
   today,
@@ -97,7 +99,7 @@ export function MovementForm({
    * expenses an income may pay back, the plain incomes an expense may be
    * paid back by.
    */
-  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; incomes: LinkChoice[] }
+  links?: { claims: LinkChoice[]; expenses: LinkChoice[]; commitments: LinkChoice[]; incomes: LinkChoice[] }
   /** Open invoices, so an income from a client can say which one it pays. */
   invoices?: OpenInvoiceOption[]
   /** The cards of the open accounts, offered on the account they debit. */
@@ -136,7 +138,9 @@ export function MovementForm({
   const [accountId, setAccountId] = useState(draft?.accountId ?? '')
   const [cardId, setCardId] = useState(draft?.cardId ?? '')
   // The refund of an advance comes back to the account, never to a card.
-  const [refunding, setRefunding] = useState(draft?.refundsLabel !== undefined)
+  const [refunding, setRefunding] = useState(
+    draft?.refundsLabel !== undefined || draft?.reserveLabel !== undefined,
+  )
   const card = cards.find((c) => c.id === cardId && c.accountId === accountId)
   const withCard = type !== 'transfer' && !refunding
   const debitOn = withCard ? debitDayFor(card, day) : null
@@ -406,8 +410,10 @@ export function MovementForm({
         <RefundLink
           movementId={draft?.id}
           current={draft?.refundsLabel}
+          reserve={draft?.reserveLabel}
           claims={links.claims}
           expenses={links.expenses}
+          commitments={links.commitments}
           onLinkedChange={setRefunding}
         />
       )}

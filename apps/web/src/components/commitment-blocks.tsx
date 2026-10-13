@@ -1,3 +1,4 @@
+import type { CommitmentReserve } from '@abacus/core/domain'
 import type { CommitmentWithEur, FinancingProgress } from '@abacus/core/services/commitments'
 import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { useTranslations } from 'next-intl'
@@ -15,7 +16,11 @@ const JUDGMENT_VARIANT = {
   to_cancel: 'default' as const,
 }
 
-export type CommitmentWithProgress = CommitmentWithEur & { progress: FinancingProgress | null }
+export type CommitmentWithProgress = CommitmentWithEur & {
+  progress: FinancingProgress | null
+  /** Money received for it, and what its occurrences drew. */
+  reserve: CommitmentReserve | null
+}
 
 /**
  * One recurring commitment. The row is something to read: what it costs, when

@@ -312,14 +312,20 @@ async function sharesOf(
 }
 
 /**
- * What an income pays back, as the panel's choice encodes it: one claim, or
- * an expense whose share of the sender it pays (created when they owed
- * nothing on it yet). Empty: nothing.
+ * What an income pays back, as the panel's choice encodes it: one claim, an
+ * expense whose share of the sender it pays (created when they owed nothing
+ * on it yet), or a commitment whose reserve it feeds. Empty: nothing.
  */
-function refundTarget(value: string | undefined): { refundsShareId?: string; refundsMovementId?: string } {
+function refundTarget(value: string | undefined): {
+  refundsShareId?: string
+  refundsMovementId?: string
+  reservesCommitmentId?: string
+} {
   if (!value) return {}
   const [kind, id] = value.split(':')
-  return kind === 'claim' ? { refundsShareId: id } : { refundsMovementId: id }
+  if (kind === 'claim') return { refundsShareId: id }
+  if (kind === 'reserve') return { reservesCommitmentId: id }
+  return { refundsMovementId: id }
 }
 
 /**
@@ -478,7 +484,12 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
       refundedBy: type === 'expense' ? linkedIncomes(formData) : undefined,
       // Only where the panel offered the choice: an empty one unlinks.
       ...(type === 'income' && formData.get('refundTargetField') !== null
-        ? { refundsShareId: null, refundsMovementId: null, ...refundTarget(opt(formData, 'refundTarget')) }
+        ? {
+            refundsShareId: null,
+            refundsMovementId: null,
+            reservesCommitmentId: null,
+            ...refundTarget(opt(formData, 'refundTarget')),
+          }
         : {}),
       // Same as the claim: an emptied (or unrendered) field clears the VAT
       // rather than keeping a figure the panel no longer shows.
@@ -500,13 +511,18 @@ function linkedIncomes(formData: FormData): string[] | undefined {
 }
 
 /**
- * Takes an income off the share it paid back: it is a plain income again.
- * Called directly by the link's own button, after its confirmation.
+ * Takes an income off the share it paid back, or off the reserve it fed: it
+ * is a plain income again. Called directly by the link's own button, after its
+ * confirmation.
  */
 export async function unlinkRefundAction(movementId: string): Promise<FormState> {
   const userId = await requireUserId()
   try {
-    await correctMovement(userId, movementId, { refundsMovementId: null, refundsShareId: null })
+    await correctMovement(userId, movementId, {
+      refundsMovementId: null,
+      refundsShareId: null,
+      reservesCommitmentId: null,
+    })
   } catch (e) {
     return { error: await refusal(e) }
   }
