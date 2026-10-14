@@ -22,9 +22,6 @@
     "flow": "Sens des flux",
     "expense": "Dépenses",
     "income": "Revenus",
-    "split": "Premier niveau de la carte",
-    "byGroup": "Par groupe",
-    "byActivity": "Par activité",
     "groupBy": "Regrouper par",
     "options": {
       "categoryGroup": "Groupe",

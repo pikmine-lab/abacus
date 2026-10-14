@@ -5,7 +5,7 @@
  */
 
 /** What a block stands for. `rest` is the movements a category's list leaves out, summed. */
-export type MapLevel = 'root' | 'activity' | 'group' | 'category' | 'movement' | 'rest'
+export type MapLevel = 'root' | 'activity' | 'actor' | 'group' | 'category' | 'movement' | 'rest'
 
 export interface MapNode {
   /** Unique within the tree: the path of keys from the root. */

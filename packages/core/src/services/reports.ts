@@ -5,6 +5,7 @@ import {
   type BreakdownGroup,
   type BreakdownRow,
   balanceSeries as balanceSeriesDs,
+  categoriesWithin as categoriesWithinDs,
   type FlowCut,
   type FlowKind,
   type FlowMovement,
@@ -18,6 +19,7 @@ import {
   type MonthlyFlow,
   monthlyFlows as monthlyFlowsDs,
   spendingBreakdown as spendingBreakdownDs,
+  type WithinRow,
 } from '../db/datasources/reports.ts'
 import type { Reading } from '../domain/types.ts'
 
@@ -80,7 +82,72 @@ export async function spendingByCategoryGroup(
     spendingBreakdownDs(db(), userId, from, to, 'category', kind, reading, scope),
     listCategoriesDs(db(), userId),
   ])
+  return foldGroups(rows, new Map(categories.map((c) => [c.id, c.groupLabel])))
+}
+
+/**
+ * Spending (or income) by actor, each actor keeping the categories it was paid
+ * for (or paid for), so an actor can be unfolded the way a group is. An actor
+ * is the very row the ranking by actor shows; the categories under it are each
+ * rounded to the cent on their own.
+ */
+export async function spendingByActor(
+  userId: string,
+  from: string,
+  to: string,
+  kind: FlowKind = 'expense',
+  reading: Reading = 'cash',
+): Promise<BreakdownMass[]> {
+  const [actors, rows] = await Promise.all([
+    spendingBreakdownDs(db(), userId, from, to, 'actor', kind, reading),
+    categoriesWithinDs(db(), userId, from, to, 'actor', kind, reading),
+  ])
+  const within = byWithin(rows)
+  return actors.map((a) => ({ ...a, categories: within.get(a.key) ?? [] }))
+}
+
+/** An activity, and its spending (or income) folded into category groups. */
+export interface ActivityMass extends BreakdownRow {
+  groups: BreakdownMass[]
+}
+
+/**
+ * Spending (or income) by activity, each activity unfolding into its category
+ * groups and their categories. An activity is the very row the ranking by
+ * activity shows, and its groups are the ones `spendingByCategoryGroup` gives
+ * narrowed to it, read for every activity at once.
+ */
+export async function spendingByActivity(
+  userId: string,
+  from: string,
+  to: string,
+  kind: FlowKind = 'expense',
+  reading: Reading = 'cash',
+): Promise<ActivityMass[]> {
+  const [activities, rows, categories] = await Promise.all([
+    spendingBreakdownDs(db(), userId, from, to, 'activity', kind, reading),
+    categoriesWithinDs(db(), userId, from, to, 'activity', kind, reading),
+    listCategoriesDs(db(), userId),
+  ])
+  const within = byWithin(rows)
   const groupOf = new Map(categories.map((c) => [c.id, c.groupLabel]))
+  return activities.map((a) => ({ ...a, groups: foldGroups(within.get(a.key) ?? [], groupOf) }))
+}
+
+/** The category rows of each actor or activity, in the order they came. */
+function byWithin(rows: WithinRow[]): Map<string | null, BreakdownRow[]> {
+  const within = new Map<string | null, BreakdownRow[]>()
+  for (const { withinKey, withinLabel: _, ...row } of rows)
+    within.set(withinKey, [...(within.get(withinKey) ?? []), row])
+  return within
+}
+
+/**
+ * Category rows folded into the groups they carry, each group summing its
+ * rows. Ranked by net like any breakdown, gross breaking the ties; the rows
+ * keep the order they came in, which the datasource already ranks that way.
+ */
+function foldGroups(rows: BreakdownRow[], groupOf: Map<string, string | null>): BreakdownMass[] {
   const masses = new Map<string | null, { gross: number; net: number; count: number; rows: BreakdownRow[] }>()
   for (const row of rows) {
     const group = row.key ? (groupOf.get(row.key) ?? null) : null
@@ -91,8 +158,6 @@ export async function spendingByCategoryGroup(
     mass.rows.push(row)
     masses.set(group, mass)
   }
-  // Ranked by net like any breakdown, gross breaking the ties; the category
-  // rows come out of the datasource already ordered that way.
   return [...masses]
     .map(([group, mass]) => ({
       key: group,
@@ -131,8 +196,8 @@ export async function flowMovements(
 
 /**
  * Every movement of the period at once, the biggest `limit` of each category
- * (of each category within each activity, `per` activity too) and the rest of
- * each as one sum: what a reading that zooms anywhere needs, bounded however
+ * (of each category within each activity or actor, `per` it too) and the rest
+ * of each as one sum: what a reading that zooms anywhere needs, bounded however
  * long the period.
  */
 export async function flowLeaves(

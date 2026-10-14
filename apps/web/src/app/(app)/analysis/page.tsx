@@ -56,7 +56,6 @@ export default async function AnalysisPage({
     flow?: string
     reading?: string
     view?: string
-    split?: string
   }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -87,9 +86,10 @@ export default async function AnalysisPage({
     : DEFAULT_GROUP
   const kind: FlowKind = params.flow === 'income' ? 'income' : 'expense'
   // The map is another reading of the same money, opened for a visit: it
-  // lives in the URL with its zoom, unlike the way the ranking is drawn.
+  // lives in the URL with its zoom, unlike the way the ranking is drawn. It
+  // opens on the dimension the ranking is sorted by, so a question asked of
+  // one carries over to the other.
   const map = params.view === 'map'
-  const split = params.split === 'activity'
 
   const firstDay = await firstDeclaredDay(userId)
   const band = flowBandWindow(period, firstDay, now.slice(0, 7))
@@ -108,7 +108,7 @@ export default async function AnalysisPage({
           period,
           kind,
           reading,
-          split,
+          by: groupBy,
           labels: {
             unset: {
               activity: unset('activity'),
@@ -118,6 +118,7 @@ export default async function AnalysisPage({
             },
             rest: (count) => words('others', { count }),
             root: kind === 'expense' ? mapWords('allExpenses') : mapWords('allIncome'),
+            day: format.date,
           },
         })
       : null,
@@ -248,28 +249,16 @@ export default async function AnalysisPage({
             />
             {flowQualifier && <span className="-ml-2 text-[11.5px] text-faint">{flowQualifier}</span>}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto">
-              {/* The map always reads masses down to movements: the dimension
-                  sorts the ranking only, and what the map opens on, its masses
-                  or the activities above them, is the one choice it adds. */}
-              {map ? (
-                <UrlTabs
-                  param="split"
-                  fallback="group"
-                  clears={[VIEW_PARAM, FOCUS_PARAM]}
-                  ariaLabel={t('ranking.split')}
-                  options={[
-                    { value: 'group', label: t('ranking.byGroup') },
-                    { value: 'activity', label: t('ranking.byActivity') },
-                  ]}
-                />
-              ) : (
-                <UrlTabs
-                  param="by"
-                  fallback={DEFAULT_GROUP}
-                  ariaLabel={t('ranking.groupBy')}
-                  options={GROUPS.map((value) => ({ value, label: t(`ranking.options.${value}`) }))}
-                />
-              )}
+              {/* One dimension for both readings: it sorts the ranking, and
+                  the map opens on it before going down to the movements. A
+                  new dimension is a new map, so it releases the zoom. */}
+              <UrlTabs
+                param="by"
+                fallback={DEFAULT_GROUP}
+                clears={[VIEW_PARAM, FOCUS_PARAM]}
+                ariaLabel={t('ranking.groupBy')}
+                options={GROUPS.map((value) => ({ value, label: t(`ranking.options.${value}`) }))}
+              />
               <UrlTabs
                 param="view"
                 fallback="ranking"
@@ -294,7 +283,7 @@ export default async function AnalysisPage({
                 // A new reading is a new map: it opens where its URL says,
                 // not where the previous one was left.
                 <MoneyMap
-                  key={`${period.from}|${period.to}|${kind}|${reading}|${split}`}
+                  key={`${period.from}|${period.to}|${kind}|${reading}|${groupBy}`}
                   root={tree}
                   kind={kind}
                 />

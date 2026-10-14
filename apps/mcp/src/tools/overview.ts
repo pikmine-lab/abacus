@@ -19,7 +19,7 @@ import type { BreakdownRow } from '@abacus/core/services/reports'
 import { flowMovements, spendingBreakdown, spendingByCategoryGroup } from '@abacus/core/services/reports'
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
-import { requireActivityByName, requireCategoryByName } from '../resolve.ts'
+import { requireActivityByName, requireActorByName, requireCategoryByName } from '../resolve.ts'
 import { advancesView } from './movements.ts'
 import { clearable, isoDate, ok, run } from './shared.ts'
 
@@ -168,7 +168,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
     'analyze_flows',
     {
       description:
-        'Breaks a period down by category, actor, activity, or the group its categories belong to, on either side of the ledger: spending by default, what came in with kind: income. Rows are ranked biggest first, the order the user sees on screen: keep it when reporting. An expense row carries two readings, gross (what actually left the accounts) and net (gross minus linked refunds actually received), and the ranking follows the net, because the net is what the period actually cost. An income row carries one amount: a refund is an advance coming back, not money earned, so refunds are left out of the income side rather than deducted from it. A business activity\'s income is net of what its regime makes it pay, the way a salary is net of its contributions: the payments of its rules (its expenses filed in a rule\'s settlement category) come off that activity\'s income, and grouped by actor, category or categoryGroup each of its incomes keeps its share of what remains. When those payments exceed what the activity received over the period asked, it made a loss: its income counts for nothing and what exceeds shows as expenses, under the category, actor and activity of those payments. Either way the net of the period is unchanged, and a loss belongs to the period read: charges paid the month after the receipts are a loss of that month alone, and none over both. Every row says how many movements make it. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". activity and category narrow the reading to one activity or one category ("none" for what carries none) without changing how any figure is computed, so a narrowed row is the very row the full reading shows: activity plus groupBy categoryGroup answers "where does this activity\'s money go". groupBy movement drills to the end: the movements behind a row, biggest net first, each counted exactly as the row counts it (refunds deducted, an activity\'s income for its share), so their nets add up to the row to the cent\'s rounding, which a list_movements amount does not; past limit, the rest comes back as one sum. Freelance revenue, net of its charges, is kind: income grouped by activity; get_activity_statement gives the revenue before them. A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
+        'Breaks a period down by category, actor, activity, or the group its categories belong to, on either side of the ledger: spending by default, what came in with kind: income. Rows are ranked biggest first, the order the user sees on screen: keep it when reporting. An expense row carries two readings, gross (what actually left the accounts) and net (gross minus linked refunds actually received), and the ranking follows the net, because the net is what the period actually cost. An income row carries one amount: a refund is an advance coming back, not money earned, so refunds are left out of the income side rather than deducted from it. A business activity\'s income is net of what its regime makes it pay, the way a salary is net of its contributions: the payments of its rules (its expenses filed in a rule\'s settlement category) come off that activity\'s income, and grouped by actor, category or categoryGroup each of its incomes keeps its share of what remains. When those payments exceed what the activity received over the period asked, it made a loss: its income counts for nothing and what exceeds shows as expenses, under the category, actor and activity of those payments. Either way the net of the period is unchanged, and a loss belongs to the period read: charges paid the month after the receipts are a loss of that month alone, and none over both. Every row says how many movements make it. Internal transfers never appear here, and neither do movements declared as ghost: that is exactly what the flag is for, so a total that looks short of a known movement is not a bug. Group by categoryGroup to answer "where does the money go, by big mass" in a handful of rows instead of the full category list: each mass also carries the categories it merges, already totalled and ranked, so drilling into one costs no second call and no addition of your own. Rows with no group (or no category) come back as "(none)". activity, category and actor narrow the reading to one activity, one category or one actor ("none" for what carries none) without changing how any figure is computed, so a narrowed row is the very row the full reading shows: activity plus groupBy categoryGroup answers "where does this activity\'s money go", actor plus groupBy category "what was this actor paid for" (or, with kind: income, "what did it pay me for"). groupBy movement drills to the end: the movements behind a row, biggest net first, each counted exactly as the row counts it (refunds deducted, an activity\'s income for its share), so their nets add up to the row to the cent\'s rounding, which a list_movements amount does not; past limit, the rest comes back as one sum. Freelance revenue, net of its charges, is kind: income grouped by activity; get_activity_statement gives the revenue before them. A period can be read two ways (see reading): always tell the user which one the figures come from, because the same month has two legitimate totals.',
       inputSchema: z.object({
         from: isoDate,
         to: isoDate,
@@ -182,6 +182,12 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           .optional()
           .describe(
             'Category name, or "none" for the movements carrying no category: only its movements are read',
+          ),
+        actor: z
+          .string()
+          .optional()
+          .describe(
+            'Actor name or alias, or "none" for the movements with no actor: only the movements where it is the one paid (expense) or the one paying (income) are read',
           ),
         limit: z
           .number()
@@ -214,9 +220,11 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
         const reading = asked ?? (await readingPreference(userId))
         const activity = clearable(f.activity)
         const category = clearable(f.category)
+        const actor = clearable(f.actor)
         const scope = {
           activityId: activity ? (await requireActivityByName(userId, activity)).id : activity,
           categoryId: category ? (await requireCategoryByName(userId, category)).id : category,
+          actorId: actor ? (await requireActorByName(userId, actor)).actor.id : actor,
         }
         // An income has one figure where an expense has two: a refund never
         // enters the income side, so a gross and a net there would be the same
@@ -268,6 +276,7 @@ export function registerOverviewTools(server: McpServer, userId: string): void {
           // Only what narrowed the reading, named as it was asked.
           ...(activity !== undefined ? { activity: activity ?? '(none)' } : {}),
           ...(category !== undefined ? { category: category ?? '(none)' } : {}),
+          ...(actor !== undefined ? { actor: actor ?? '(none)' } : {}),
           rows,
           ...(rest ? { rest } : {}),
         })

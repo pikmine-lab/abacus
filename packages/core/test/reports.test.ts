@@ -12,6 +12,8 @@ import {
   flowTotals,
   monthlyFlows,
   spendingBreakdown,
+  spendingByActivity,
+  spendingByActor,
   spendingByCategoryGroup,
 } from '../src/services/reports.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
@@ -680,8 +682,104 @@ test('the movements behind a row add up to it, each counted as the row counts it
     [[fees.id, 'First client', '45.00']],
   )
   assert.deepEqual(all.rests, [
-    { categoryId: fees.id, activityId: null, count: '1', gross: '30.00', net: '30.00' },
+    { categoryId: fees.id, activityId: null, actorId: null, count: '1', gross: '30.00', net: '30.00' },
   ])
+})
+
+test('an actor unfolds into the categories it was paid for, each keeping its own movements', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const cafe = await createActor(user, { name: 'Cafe' })
+  const groceries = await createCategory(user, 'Groceries', 'Everyday life')
+  const home = await createCategory(user, 'Home', 'Everyday life')
+
+  const spend = async (amount: number, actorId: string, categoryId: string, day: string) =>
+    await declareMovement(user, {
+      happenedOn: day,
+      amount,
+      sourceAccountId: account.id,
+      targetActorId: actorId,
+      categoryId,
+    })
+  await spend(60, shop.id, groceries.id, '2026-05-02')
+  await spend(20, shop.id, groceries.id, '2026-05-03')
+  await spend(30, shop.id, home.id, '2026-05-04')
+  await spend(10, cafe.id, groceries.id, '2026-05-05')
+
+  // Each actor is its row of the ranking, unfolded into the categories it
+  // was paid for, the heaviest first at both levels.
+  const masses = await spendingByActor(user, '2026-05-01', '2026-05-31')
+  const ranking = await spendingBreakdown(user, '2026-05-01', '2026-05-31', 'actor')
+  assert.deepEqual(
+    masses.map(({ categories: _, ...row }) => row),
+    [...ranking],
+  )
+  assert.deepEqual(
+    masses.map((a) => [a.label, a.net, a.count, a.categories.map((c) => [c.label, c.net, c.count])]),
+    [
+      [
+        'Shop',
+        '110.00',
+        '3',
+        [
+          ['Groceries', '80.00', '2'],
+          ['Home', '30.00', '1'],
+        ],
+      ],
+      ['Cafe', '10.00', '1', [['Groceries', '10.00', '1']]],
+    ],
+  )
+
+  // Cut per category and actor, a category shared by two actors keeps a list
+  // and a rest for each of them.
+  const leaves = await flowLeaves(user, '2026-05-01', '2026-05-31', 'expense', 'cash', 1, [
+    'category',
+    'actor',
+  ])
+  assert.deepEqual(
+    leaves.movements.map((m) => [m.actorId, m.categoryId, m.net]).sort((a, b) => Number(b[2]) - Number(a[2])),
+    [
+      [shop.id, groceries.id, '60.00'],
+      [shop.id, home.id, '30.00'],
+      [cafe.id, groceries.id, '10.00'],
+    ],
+  )
+  assert.deepEqual(leaves.rests, [
+    {
+      categoryId: groceries.id,
+      activityId: null,
+      actorId: shop.id,
+      count: '1',
+      gross: '20.00',
+      net: '20.00',
+    },
+  ])
+
+  // Narrowed to an actor, a category is the row that actor shows under it.
+  const shopOnly = await spendingBreakdown(user, '2026-05-01', '2026-05-31', 'category', 'expense', 'cash', {
+    actorId: shop.id,
+  })
+  assert.deepEqual(
+    shopOnly.map((r) => [r.label, r.net]),
+    [
+      ['Groceries', '80.00'],
+      ['Home', '30.00'],
+    ],
+  )
+  const shopMovements = await flowMovements(
+    user,
+    '2026-05-01',
+    '2026-05-31',
+    'expense',
+    'cash',
+    { actorId: shop.id },
+    10,
+  )
+  assert.deepEqual(
+    shopMovements.movements.map((m) => m.net),
+    ['60.00', '30.00', '20.00'],
+  )
 })
 
 test('a row narrowed to an activity is the row the full ranking shows for it', async () => {
@@ -730,5 +828,21 @@ test('a row narrowed to an activity is the row the full ranking shows for it', a
   assert.deepEqual(
     none.map((g) => [g.label, g.net, g.categories.map((c) => [c.label, c.net])]),
     [['Work', '2000.00', [['Salary', '2000.00']]]],
+  )
+
+  // Every activity at once unfolds into the very groups each narrowed reading
+  // gives, under its row of the ranking.
+  const activities = await spendingByActivity(user, '2026-06-01', '2026-06-30', 'income')
+  const ranking = await spendingBreakdown(user, '2026-06-01', '2026-06-30', 'activity', 'income')
+  assert.deepEqual(
+    activities.map(({ groups: _, ...row }) => row),
+    [...ranking],
+  )
+  assert.deepEqual(
+    activities.map((a) => [a.key, a.groups]),
+    [
+      [null, none],
+      [activity.id, own],
+    ],
   )
 })

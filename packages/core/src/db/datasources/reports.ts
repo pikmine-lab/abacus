@@ -223,24 +223,48 @@ export interface BreakdownRow {
 }
 
 /**
- * Narrows a flow analysis to one activity and/or one category, without
+ * Narrows a flow analysis to one activity, category and/or actor, without
  * touching how its figures are computed: the filter applies to the rows of
  * `flow`, after each movement's share is settled over the whole window. A
  * business activity's income therefore keeps the net it has in the unfiltered
- * reading, and a filtered row is the very row the full ranking shows.
+ * reading, and a filtered row is the very row the full ranking shows. The actor
+ * is the counterparty of the side read: who was paid, or who paid.
  *
  * Absent selects everything, `null` selects what carries none.
  */
 export interface FlowScope {
   activityId?: string | null
   categoryId?: string | null
+  actorId?: string | null
 }
 
-function inScope(tx: Executor, scope: FlowScope) {
+/** The actor on the other side of a movement: who was paid on the expense side, who paid on the income side. */
+function counterparty(tx: Executor, kind: FlowKind) {
+  return kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
+}
+
+function inScope(tx: Executor, kind: FlowKind, scope: FlowScope) {
+  const actor = counterparty(tx, kind)
   return tx`
     ${scope.activityId === null ? tx`and m.activity_id is null` : scope.activityId ? tx`and m.activity_id = ${scope.activityId}` : tx``}
     ${scope.categoryId === null ? tx`and m.category_id is null` : scope.categoryId ? tx`and m.category_id = ${scope.categoryId}` : tx``}
+    ${scope.actorId === null ? tx`and ${actor} is null` : scope.actorId ? tx`and ${actor} = ${scope.actorId}` : tx``}
   `
+}
+
+/**
+ * The rows of `flow` a breakdown counts, and what each of its rows adds up:
+ * every breakdown reads them through these two, so a row means the same thing
+ * whatever it is grouped by.
+ */
+function counted(tx: Executor, kind: FlowKind, scope: FlowScope) {
+  return tx`m.side = ${kind} and m.scale > 0 ${inScope(tx, kind, scope)}`
+}
+
+function rowFigures(tx: Executor) {
+  return tx`sum(m.amount * m.scale)::numeric(14,2) as gross,
+            sum((m.amount - m.refunded) * m.scale)::numeric(14,2) as net,
+            count(*) as count`
 }
 
 /**
@@ -275,7 +299,6 @@ export async function spendingBreakdown(
   reading: Reading = 'cash',
   scope: FlowScope = {},
 ): Promise<BreakdownRow[]> {
-  const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
   const entity = tx`left join category g on g.id = m.category_id`
   // A group is a label written on categories, not an entity of its own: it is
   // its own key, and every category carrying it folds into one row. Movements
@@ -283,7 +306,11 @@ export async function spendingBreakdown(
   // mass no group accounts for.
   const dimension = {
     category: { join: entity, key: tx`g.id::text`, label: tx`g.name` },
-    actor: { join: tx`left join actor g on g.id = ${actorColumn}`, key: tx`g.id::text`, label: tx`g.name` },
+    actor: {
+      join: tx`left join actor g on g.id = ${counterparty(tx, kind)}`,
+      key: tx`g.id::text`,
+      label: tx`g.name`,
+    },
     activity: {
       join: tx`left join activity g on g.id = m.activity_id`,
       key: tx`g.id::text`,
@@ -293,15 +320,49 @@ export async function spendingBreakdown(
   }[groupBy]
   return await tx<BreakdownRow[]>`
     with ${ledger(tx, userId, from, to, reading)}
-    select ${dimension.key} as key,
-           ${dimension.label} as label,
-           sum(m.amount * m.scale)::numeric(14,2) as gross,
-           sum((m.amount - m.refunded) * m.scale)::numeric(14,2) as net,
-           count(*) as count
+    select ${dimension.key} as key, ${dimension.label} as label, ${rowFigures(tx)}
     from flow m
     ${dimension.join}
-    where m.side = ${kind} and m.scale > 0 ${inScope(tx, scope)}
+    where ${counted(tx, kind, scope)}
     group by 1, 2
+    order by net desc, gross desc
+  `
+}
+
+/** A category's row within one actor's or one activity's: what it weighs in that category. */
+export interface WithinRow extends BreakdownRow {
+  withinKey: string | null
+  withinLabel: string | null
+}
+
+/**
+ * Spending (or income) by actor or activity and, within each, by category, in
+ * one query: each row is the row `spendingBreakdown` gives for that category
+ * narrowed to that actor or activity. Ranked by net over the whole period,
+ * gross breaking the ties.
+ */
+export async function categoriesWithin(
+  tx: Executor,
+  userId: string,
+  from: string,
+  to: string,
+  within: 'actor' | 'activity',
+  kind: FlowKind = 'expense',
+  reading: Reading = 'cash',
+): Promise<WithinRow[]> {
+  const join =
+    within === 'actor'
+      ? tx`left join actor w on w.id = ${counterparty(tx, kind)}`
+      : tx`left join activity w on w.id = m.activity_id`
+  return await tx<WithinRow[]>`
+    with ${ledger(tx, userId, from, to, reading)}
+    select w.id::text as within_key, w.name as within_label,
+           c.id::text as key, c.name as label, ${rowFigures(tx)}
+    from flow m
+    ${join}
+    left join category c on c.id = m.category_id
+    where ${counted(tx, kind, {})}
+    group by 1, 2, 3, 4
     order by net desc, gross desc
   `
 }
@@ -325,14 +386,19 @@ export interface FlowRest {
   net: string
 }
 
-/** Where a movement or a rest sits, when the list is cut per category (and activity). */
+/**
+ * Where a movement or a rest sits, when the list is cut per category (and
+ * activity, and actor). A movement always names its actor; a rest only when the
+ * list is cut per actor.
+ */
 export interface FlowPlace {
   categoryId: string | null
   activityId: string | null
+  actorId: string | null
 }
 
 /** The rows a flow analysis can cut its movement list by, each cut on its own. */
-export type FlowCut = 'category' | 'activity'
+export type FlowCut = 'category' | 'activity' | 'actor'
 
 /**
  * The movements behind a row of the analysis, biggest net first, each counted
@@ -344,8 +410,8 @@ export type FlowCut = 'category' | 'activity'
  * The list stops at `limit`, and what it leaves out comes back as one rest,
  * so the whole row is still accounted for: the cut happens here rather than in
  * the caller, which would otherwise load a category's entire history to show
- * its biggest few. Cut `per` category (and activity), every one of them keeps
- * its own biggest and its own rest, in one query.
+ * its biggest few. Cut `per` category (and activity, and actor), every one of
+ * them keeps its own biggest and its own rest, in one query.
  */
 export async function flowMovements(
   tx: Executor,
@@ -358,31 +424,25 @@ export async function flowMovements(
   limit: number,
   per: FlowCut[] = [],
 ): Promise<{ movements: (FlowMovement & FlowPlace)[]; rests: (FlowRest & FlowPlace)[] }> {
-  const actorColumn = kind === 'expense' ? tx`m.target_actor_id` : tx`m.source_actor_id`
-  const byCategory = per.includes('category')
-  const byActivity = per.includes('activity')
-  const partition =
-    byCategory && byActivity
-      ? tx`partition by m.category_id, m.activity_id`
-      : byCategory
-        ? tx`partition by m.category_id`
-        : byActivity
-          ? tx`partition by m.activity_id`
-          : tx``
+  const actorColumn = counterparty(tx, kind)
+  // A dimension the list is not cut by is one value for every row, so it
+  // partitions nothing and places nothing.
+  const categoryCut = per.includes('category') ? tx`m.category_id` : tx`null::uuid`
+  const activityCut = per.includes('activity') ? tx`m.activity_id` : tx`null::uuid`
+  const actorCut = per.includes('actor') ? actorColumn : tx`null::uuid`
   const rows = await tx<(FlowMovement & FlowPlace & { rank: string; restCount: string | null })[]>`
     with ${ledger(tx, userId, from, to, reading)},
     ranked as (
       select m.id, m.happened_on, m.note, g.id as actor_id, g.name as actor,
-             ${byCategory ? tx`m.category_id` : tx`null::uuid`} as category_id,
-             ${byActivity ? tx`m.activity_id` : tx`null::uuid`} as activity_id,
+             ${categoryCut} as category_id, ${activityCut} as activity_id, ${actorCut} as cut_actor_id,
              m.amount * m.scale as gross,
              (m.amount - m.refunded) * m.scale as net,
-             row_number() over (${partition}
+             row_number() over (partition by ${categoryCut}, ${activityCut}, ${actorCut}
                                 order by (m.amount - m.refunded) * m.scale desc,
                                          m.amount * m.scale desc, m.happened_on desc, m.id) as rank
       from flow m
       left join actor g on g.id = ${actorColumn}
-      where m.side = ${kind} and m.scale > 0 ${inScope(tx, scope)}
+      where ${counted(tx, kind, scope)}
     )
     select id::text, happened_on::text, note, actor_id::text, actor,
            category_id::text, activity_id::text,
@@ -390,11 +450,11 @@ export async function flowMovements(
            rank, null as rest_count
     from ranked where rank <= ${limit}
     union all
-    select null, null, null, null, null, category_id::text, activity_id::text,
+    select null, null, null, cut_actor_id::text, null, category_id::text, activity_id::text,
            sum(gross)::numeric(14,2)::text, sum(net)::numeric(14,2)::text,
            null, count(*)::text
     from ranked where rank > ${limit}
-    group by category_id, activity_id
+    group by category_id, activity_id, cut_actor_id
     order by rank nulls last
   `
   return {
@@ -419,6 +479,7 @@ export async function flowMovements(
         net: r.net,
         categoryId: r.categoryId,
         activityId: r.activityId,
+        actorId: r.actorId,
       })),
   }
 }

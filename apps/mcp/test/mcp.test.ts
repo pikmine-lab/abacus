@@ -1154,7 +1154,7 @@ test('spending reads back by category group through the MCP surface', async () =
   ])
 })
 
-test('an analysis narrows to an activity or a category and drills to the movements that make a row', async () => {
+test('an analysis narrows to an activity, a category or an actor and drills to the movements that make a row', async () => {
   const user = await seedUser()
   const client = await clientFor(user)
   await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
@@ -1231,6 +1231,23 @@ test('an analysis narrows to an activity or a category and drills to the movemen
   assert.deepEqual(
     ownJson.rows.map((r) => [r.categoryGroup, r.net]),
     [['Travail', 300]],
+  )
+
+  // Narrowed to an actor, by category: what it was paid for.
+  const paid = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+    actor: 'Marché',
+  })
+  const paidJson = paid.json() as { actor: string; rows: { category: string; gross: number; net: number }[] }
+  assert.equal(paidJson.actor, 'Marché')
+  assert.deepEqual(
+    paidJson.rows.map((r) => [r.category, r.gross, r.net]),
+    [
+      ['Matériel', 300, 300],
+      ['Courses', 100, 60],
+    ],
   )
 
   // The movements of a category, net of what came back, add up to its row;
