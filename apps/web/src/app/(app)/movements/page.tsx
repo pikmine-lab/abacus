@@ -332,10 +332,10 @@ export default async function MovementsPage({
                         : (accountName.get((isIncome ? m.targetAccountId : m.sourceAccountId)!) ?? '?')
                       const category = m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''
                       const card = m.cardId && (
-                        // Above the row's own hit area, which opens the movement.
+                        // Leads to the card: a click on it does not open the movement.
                         <Link
                           href={`/accounts/cards/${m.cardId}?from=movements`}
-                          className="relative z-10 text-[11px] text-faint transition-colors hover:text-primary"
+                          className="text-[11px] text-faint transition-colors hover:text-primary"
                         >
                           {t('list.card', { name: cardName.get(m.cardId) ?? '' })}
                         </Link>
@@ -370,7 +370,8 @@ export default async function MovementsPage({
                         // The whole row opens the movement; the open one is washed.
                         <TableRow
                           key={m.id}
-                          className="relative has-[[aria-current=true]]:bg-secondary has-[[aria-current=true]]:hover:bg-secondary"
+                          data-movement-row
+                          className="cursor-pointer has-[[aria-current=true]]:bg-secondary has-[[aria-current=true]]:hover:bg-secondary"
                         >
                           <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
                             {format.date(m.happenedOn)}
