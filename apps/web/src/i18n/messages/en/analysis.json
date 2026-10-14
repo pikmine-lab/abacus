@@ -22,9 +22,6 @@
     "flow": "Flow direction",
     "expense": "Expenses",
     "income": "Income",
-    "split": "Map top level",
-    "byGroup": "By group",
-    "byActivity": "By activity",
     "groupBy": "Group by",
     "options": {
       "categoryGroup": "Group",

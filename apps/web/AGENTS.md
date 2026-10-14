@@ -125,8 +125,10 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   au mois compté : il ne change aucun chiffre, il n'y a donc rien à partager ni à basculer le
   temps d'une visite. Seule la page Réglages l'écrit, et le MCP par `manage_preferences`. La
   carte n'est pas un dessin du classement mais une autre lecture qu'on ouvre le temps d'une
-  visite : elle vit dans l'URL (`view`), avec son premier niveau (`split`), l'endroit où elle
-  regarde (`at`) et le bloc choisi (`focus`). Changer de lecture ou de sens les relâche.
+  visite : elle vit dans l'URL (`view`), avec l'endroit où elle regarde (`at`) et le bloc
+  choisi (`focus`). Elle s'ouvre sur la dimension du classement (`by`), que les deux lectures
+  partagent pour qu'une question posée à l'une se poursuive sur l'autre. Changer de lecture,
+  de sens ou de dimension relâche `at` et `focus`.
 - **Une adresse réécrite sans navigation passe par `history.replaceState(null, …)`.** Avec
   l'état d'historique de Next en premier argument, Next prend l'appel pour le sien, ne met
   pas son routeur à jour, et le retour arrière ramène l'ancienne adresse. Et un retour arrière
