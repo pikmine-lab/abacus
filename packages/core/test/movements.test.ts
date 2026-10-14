@@ -9,7 +9,13 @@ import {
   createCategory,
   setActivityAccounts,
 } from '../src/services/catalog.ts'
-import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
+import {
+  correctMovement,
+  declareMovement,
+  deleteMovement,
+  listMovements,
+  readMovement,
+} from '../src/services/movements.ts'
 import { seedUser, setupDb, teardownDb, truncateAll } from './helpers.ts'
 
 before(setupDb)
@@ -351,6 +357,41 @@ test('a movement can be deleted unless a refund points at it', async () => {
   await deleteMovement(user, refund.id)
   await deleteMovement(user, advance.id)
   assert.equal((await listMovements(user)).length, 0)
+})
+
+test('reads one movement as the list reads it, and only for its owner', async () => {
+  const user = await seedUser('user-1')
+  const other = await seedUser('user-2')
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const shop = await createActor(user, { name: 'Shop' })
+  const friend = await createActor(user, { name: 'Friend' })
+
+  const advance = await declareMovement(user, {
+    happenedOn: '2026-03-01',
+    amount: 60,
+    sourceAccountId: checking.id,
+    targetActorId: shop.id,
+    refundShares: [{ debtorActorId: friend.id, amount: 60 }],
+  })
+  await declareMovement(user, {
+    happenedOn: '2026-03-05',
+    amount: 20,
+    sourceActorId: friend.id,
+    targetAccountId: checking.id,
+    refundsMovementId: advance.id,
+  })
+
+  const read = await readMovement(user, advance.id)
+  assert.equal(read!.id, advance.id)
+  // What only the list derives comes with it: who owes what, and what came back.
+  assert.equal(read!.refunded, '20.00')
+  assert.equal(read!.shares![0]!.debtorActorId, friend.id)
+  // Both ends of the link read back: the refund names its expense, the share its refunds.
+  const [refund] = await listMovements(user, { refundsShareIds: [read!.shares![0]!.id] })
+  assert.equal(refund!.amount, '20.00')
+  assert.equal((await readMovement(user, refund!.id))!.refundsMovementId, advance.id)
+
+  assert.equal(await readMovement(other, advance.id), null)
 })
 
 test('filters on what carries no category or no activity', async () => {

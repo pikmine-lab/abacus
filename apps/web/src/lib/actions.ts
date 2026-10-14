@@ -136,6 +136,8 @@ export interface FormState {
   /** Messages that belong to one field each, keyed by its input name. */
   fields?: Record<string, string>
   ok?: boolean
+  /** What a declaration wrote, so its acknowledgement can lead to it. */
+  id?: string
 }
 
 /**
@@ -374,6 +376,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
   const type = str(formData, 'type')
   const invalid = await checkFields(formData, movementRules(type))
   if (invalid) return { fields: invalid }
+  let id: string
   try {
     const accountId = str(formData, 'accountId')
     const actorName = opt(formData, 'actor')
@@ -390,7 +393,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
     }
     const shares = type === 'expense' ? await sharesOf(userId, formData, n) : undefined
     const currency = opt(formData, 'currency')
-    await declareMovement(userId, {
+    const movement = await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
       amount: n.num('amount'),
       currency,
@@ -412,11 +415,12 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
       // No card chosen: the account was debited directly.
       cardId: type === 'transfer' ? undefined : opt(formData, 'cardId'),
     })
+    id = movement.id
   } catch (e) {
     return { error: await refusal(e) }
   }
   refreshAll()
-  return { ok: true }
+  return { ok: true, id }
 }
 
 /**

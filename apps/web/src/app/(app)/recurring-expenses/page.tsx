@@ -21,6 +21,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import type { CommitmentWithProgress } from '@/components/commitment-blocks'
+import { CommitmentFocus } from '@/components/commitment-focus'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { ActionCard, Figure, FigureRow } from '@/components/composition'
 import { EntrySheet } from '@/components/entry-sheet'
@@ -211,6 +212,8 @@ export default async function RecurringExpensesPage({
 
       {/* One container for the band and the lists, so the rails line up under its split. */}
       <PageBody className="@container">
+        {/* A movement tied to a commitment lands on its row. */}
+        <CommitmentFocus />
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
             {error}

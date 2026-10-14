@@ -14,11 +14,12 @@ import { getTranslations } from 'next-intl/server'
 import { BankCard } from '@/components/bank-card'
 import { CardActions, ValidateStatement } from '@/components/card-forms'
 import { Block, Figure } from '@/components/composition'
-import { MovementRowActions } from '@/components/movement-row-actions'
+import { MovementOpener } from '@/components/movement-opener'
+import { MovementPanel } from '@/components/movement-panel'
 import { EmptyLine, PageBody, PageHeader } from '@/components/page-shell'
 import { StatementFold } from '@/components/statement-fold'
 import { getFormat } from '@/lib/format-server'
-import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
+import { movementFormOptions } from '@/lib/movement-form-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,12 +85,22 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
     const income = m.kind === 'income'
     const counterparty = actorName.get((income ? m.sourceActorId : m.targetActorId)!) ?? '?'
     return (
-      <div key={m.id} className="flex items-center gap-3 py-2.5">
+      // The whole row opens the purchase, as a row of the ledger does.
+      <div
+        key={m.id}
+        className="relative flex items-center gap-3 py-2.5 transition-colors hover:bg-muted/50 has-[[aria-current=true]]:bg-secondary"
+      >
         <span className="w-20 shrink-0 font-mono text-[11.5px] text-faint">
           {format.date(purchaseDay(m))}
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px]">{counterparty}</span>
+          <MovementOpener
+            id={m.id}
+            label={`${format.date(purchaseDay(m))} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
+            className="truncate text-[13px]"
+          >
+            {counterparty}
+          </MovementOpener>
           {m.note && <span className="truncate text-[11px] text-faint">{m.note}</span>}
         </div>
         <span className="hidden w-40 truncate text-[12px] text-muted-foreground md:block">
@@ -101,18 +112,13 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
           {income ? '+' : '−'}
           {format.eur(Number(m.amount), 2)}
         </span>
-        <MovementRowActions
-          {...options}
-          today={now}
-          label={`${format.date(purchaseDay(m))} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
-          draft={movementDraft(m, actorName)}
-        />
       </div>
     )
   }
 
   return (
-    <>
+    // A purchase opens to be read, then corrected, as in the ledger.
+    <MovementPanel {...options} today={now}>
       <PageHeader title={card.name}>
         <CardActions
           cardId={card.id}
@@ -299,6 +305,6 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
           </Block>
         )}
       </PageBody>
-    </>
+    </MovementPanel>
   )
 }

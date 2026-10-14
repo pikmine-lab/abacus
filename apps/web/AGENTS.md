@@ -167,8 +167,9 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   s'ouvre.
 - **Les actions d'une ligne vivent dans un menu `⋯` à son extrémité**, jamais étalées
   dedans : une ligne est d'abord quelque chose à lire, et ses contrôles ne doivent pas
-  concurrencer ses chiffres. Vaut pour les mouvements (corriger, supprimer), les engagements
-  (changer le montant, résilier) et les comptes (pointer, modifier, clore). Ce qui reste
+  concurrencer ses chiffres. Vaut pour les engagements (changer le montant, résilier) et les
+  comptes (pointer, modifier, clore). Un mouvement n'en a pas : toute sa ligne l'ouvre en
+  lecture, et ses gestes partent de là (`MovementPanel`, `MovementOpener`). Ce qui reste
   dans la ligne n'est pas une action mais un attribut : le jugement d'un abonnement se
   change d'un geste pendant la revue « que couper ? ».
 - **Un écran où l'on vient régler une entrée, pas lire des chiffres, fait l'inverse**
@@ -182,6 +183,14 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   que la déclaration, la suppression derrière une confirmation. Une correction ne touche
   jamais les liens d'origine (échéance, pointage) : le panneau le dit quand la ligne en
   porte un.
+- **Ouvrir un mouvement ne lit que lui.** Le panneau de lecture le demande à sa route
+  (`/api/movements/<id>`) et réécrit l'adresse en place (`?movement=`), sans navigation :
+  la liste ne porte que ce que ses lignes affichent, et l'ouvrir ne recharge jamais la page.
+  Seuls enregistrer, supprimer et déclarer rafraîchissent la page, parce que la ligne et les
+  totaux changent.
+- **Un engagement n'a pas de page : un lien vers lui mène à sa ligne.** L'adresse de
+  l'écran qui le liste porte `?commitment=<id>` ; sa ligne se marque `data-commitment`, et
+  `CommitmentFocus` l'amène à l'écran, ouvre les replis qui la contiennent et la lave.
 
 ## Ce que chaque écran doit dire
 
@@ -360,7 +369,7 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
 - **La page d'une carte dit ce qu'elle a payé.** Une carte différée s'y lit par relevé, le plus
   récent d'abord, chacun replié sur ses achats : ouvert tant qu'il attend son débit, fermé une
   fois validé. Une carte immédiate montre la liste de ses achats. Les dates sont celles des
-  achats, et chaque achat se corrige depuis sa ligne comme dans les mouvements. Les abonnements
+  achats, et chaque achat s'ouvre depuis sa ligne comme dans les mouvements. Les abonnements
   et les financements en cours qu'elle paie ferment la page : ce sont eux qu'il faut reporter sur
   une carte renouvelée, et le bloc le rappelle quand la carte a expiré ou expire d'ici la fin
   du mois prochain.

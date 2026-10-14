@@ -297,7 +297,11 @@ export function ExpenseRow({
   const below = described ? 'row-start-3' : 'row-start-2'
 
   return (
-    <div className={cn(COLUMNS, 'py-2.5')}>
+    // Marked so a movement tied to it can land here (CommitmentFocus).
+    <div
+      data-commitment={c.id}
+      className={cn(COLUMNS, 'py-2.5 transition-colors data-[focused=true]:bg-secondary')}
+    >
       <div className={cn(NAME_CELL, 'flex min-w-0 items-center gap-3')}>
         {ring && (
           <ProgressRing

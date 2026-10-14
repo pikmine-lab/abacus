@@ -30,6 +30,7 @@ import { redirect } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { CommitmentRow } from '@/components/commitment-blocks'
+import { CommitmentFocus } from '@/components/commitment-focus'
 import { ActionCard, Block, Figure, FigureRow } from '@/components/composition'
 import { EntryDock } from '@/components/entry-dock'
 import { EntryMenu, EntrySheet } from '@/components/entry-sheet'
@@ -226,6 +227,8 @@ export default async function InvestmentsPage({
 
       {/* One container for the band and the list, so the list's figures line up under its split. */}
       <PageBody className="@container gap-10">
+        {/* A movement tied to a commitment lands on its row. */}
+        <CommitmentFocus />
         {investmentAccounts.length === 0 ? (
           <EmptyLine>
             {t.rich('page.noAccount', {

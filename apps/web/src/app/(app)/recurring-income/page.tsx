@@ -15,6 +15,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { CommitmentRow } from '@/components/commitment-blocks'
+import { CommitmentFocus } from '@/components/commitment-focus'
 import { NewCommitmentForm } from '@/components/commitment-forms'
 import { EntrySheet } from '@/components/entry-sheet'
 import { EmptyLine, PageBody, PageHeader, Rows, Section } from '@/components/page-shell'
@@ -91,6 +92,8 @@ export default async function RecurringIncomePage({
       </PageHeader>
 
       <PageBody>
+        {/* A movement tied to a commitment lands on its row. */}
+        <CommitmentFocus />
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
             {error}

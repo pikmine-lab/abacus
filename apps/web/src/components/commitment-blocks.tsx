@@ -74,7 +74,11 @@ export function CommitmentRow({
     cardId: c.cardId ?? undefined,
   }
   return (
-    <div className="flex items-center gap-3 py-3">
+    // Marked so a movement tied to it can land here (CommitmentFocus).
+    <div
+      data-commitment={c.id}
+      className="flex items-center gap-3 py-3 transition-colors data-[focused=true]:bg-secondary"
+    >
       {financing && c.progress && (
         <ProgressRing done={c.progress.paidInstallments} total={c.installmentsTotal ?? 0} />
       )}

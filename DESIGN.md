@@ -63,8 +63,25 @@ new-york). Quatre principes gouvernent le reste :
   ouvrir une seconde carte. Un chiffre qui mène à son détail est cliquable en entier.
 - **Une liste qu'on remplit par salves garde sa saisie à côté d'elle** : sur un écran
   large, le panneau se range à droite, sans voile, et la page se resserre. Chaque ligne
-  envoyée se lit dans la liste restée cliquable, corriger une ligne prend la même place, et
+  envoyée se lit dans la liste restée cliquable, ouvrir une ligne prend la même place, et
   le bouton qui l'a ouvert passe à l'état enfoncé. Plus étroit, le panneau recouvre.
+- **Une entrée déclarée s'ouvre en lecture avant de se corriger.** Toute sa ligne l'ouvre,
+  à la place du panneau de saisie, et la ligne ouverte est lavée : le montant d'abord, puis
+  un fait par ligne, ceux que la ligne tait compris, une dimension vide se disant vide, et
+  « Corriger » au bout. La correction prend le même panneau et y revient une fois
+  enregistrée ; supprimer en est le dernier geste, seul dans une zone encadrée de rouge
+  qui dit son effet. L'accusé d'une déclaration mène à la lecture de ce qui vient d'être
+  écrit. L'entrée ouverte s'écrit en place dans l'URL, et l'ouvrir ne lit qu'elle : jamais
+  la page autour.
+- **Ce qui relie une entrée à une autre se lit en encadré, pas en phrase.** Une avance se
+  lit par personne, un encadré chacune : son nom et sa part, ce qu'elle doit encore, puis
+  ses remboursements dedans, une ligne repliée chacun (quoi, quand, combien) qui se déplie
+  sur ses premiers faits et « Ouvrir ce mouvement ». Un mouvement ouvert ainsi prend le
+  même panneau, qui nomme le retour vers celui d'où l'on vient. Un engagement relié
+  (échéance de, versé pour, rembourse, avance sur) est un encadré cliquable entier, son
+  nom, sa nature, son rythme et son montant, qui mène à sa ligne sur l'écran qui le liste,
+  amenée à l'écran et lavée. Le lien d'un encadré est à l'encre principale : le cuivre
+  reste à ce qui est encore dû.
 - **Les filtres de dimension passent derrière « Filtres »**, et ce qui est en vigueur se lit
   et se retire en pastilles. La recherche et le type restent à découvert : ce sont eux qui
   retrouvent une ligne.
