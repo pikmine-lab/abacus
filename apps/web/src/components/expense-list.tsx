@@ -4,12 +4,13 @@ import { CreditCardIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { CommitmentWithProgress } from '@/components/commitment-blocks'
 import { type CommitmentOptions, JudgmentSelect } from '@/components/commitment-forms'
+import { CommitmentRail, CommitmentRailAxis } from '@/components/commitment-rail'
 import { CommitmentRowActions } from '@/components/commitment-row-actions'
 import { ExpenseFold, FoldChevron } from '@/components/expense-fold'
-import { ExpenseRail, ExpenseRailAxis, type RailMark } from '@/components/expense-rail'
 import type { ScheduleLine } from '@/components/financing-schedule-form'
 import { ProgressRing } from '@/components/progress-ring'
 import { useFormat } from '@/lib/format'
+import type { RailMark } from '@/lib/rail-marks'
 import { cn } from '@/lib/utils'
 
 /*
@@ -58,7 +59,7 @@ export function AccountExpenses({
       <div className={cn(COLUMNS, 'border-b border-border pb-2.5')}>
         <h2 className={cn(NAME_CELL, 'truncate text-[16px] font-semibold tracking-tight')}>{name}</h2>
         <div className={RAIL_CELL}>
-          <ExpenseRailAxis today={today} />
+          <CommitmentRailAxis today={today} />
         </div>
         <PerMonth value={monthlyEur} className={cn(AMOUNT_CELL, 'text-[15px] font-semibold')} />
       </div>
@@ -322,7 +323,7 @@ export function ExpenseRow({
       </div>
       {attributeLine('col-span-3 col-start-1 row-start-2 -mt-1 flex @4xl:hidden')}
       <div className={cn('col-start-1 @4xl:col-start-2 @4xl:row-start-1', below)}>
-        <ExpenseRail name={c.label} marks={marks} today={today} />
+        <CommitmentRail name={c.label} marks={marks} today={today} />
       </div>
       <span className={cn(AMOUNT_CELL, 'font-mono text-[13.5px] font-semibold whitespace-nowrap tabular')}>
         −{inCurrency(Number(c.amount), 2)}

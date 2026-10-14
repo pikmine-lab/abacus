@@ -265,6 +265,11 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   nomme, un prélèvement ne dit rien. Sa prochaine échéance se lit sur le rail, la date
   exacte dans son infobulle. Ce qui est terminé, résilié ou soldé, ferme la page dans un
   repli fermé, chaque ligne avec sa date.
+- **Les revenus récurrents se lisent comme les dépenses**, une section par compte crédité,
+  sur les mêmes colonnes et le même rail. Sans sorte entre le compte et ses lignes, le
+  tri se pose dans l'en-tête du compte, au-dessus des montants, et chaque menu pilote le
+  même ordre dans tous les comptes ; le total du compte suit alors son nom, et s'efface
+  quand il répète le chiffre de l'écran ou l'unique ligne du compte.
 - **La périodicité est une seule question** : « chaque mois », « toutes les 2 semaines »,
   « tous les 3 mois », plutôt qu'une unité et un multiple à combiner de tête. La liste couvre
   les rythmes réels ; un engagement déclaré par le MCP avec un multiple hors liste garde le

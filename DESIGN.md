@@ -97,10 +97,10 @@ new-york). Quatre principes gouvernent le reste :
   date exacte dans l'infobulle du rail, au survol, au focus ou au toucher. Le pointage d'un
   compte regarde les 90 derniers jours : un point par pointage, le dernier plein, un repère
   à 45 jours, et un écart ouvert change la forme du point autant que sa couleur. L'échéance
-  d'une dépense récurrente regarde les 30 prochains jours : la prochaine pleine, les
-  suivantes plus petites, le passage du mois en trait ; ce qui attend sa confirmation est
-  cuivre, dans une marge sans échelle à gauche d'aujourd'hui, et ce qui tombe au-delà
-  s'épingle creux au bord droit.
+  d'un engagement récurrent, dépense ou revenu, regarde les 30 prochains jours : la
+  prochaine pleine, les suivantes plus petites, le passage du mois en trait ; ce qui attend
+  sa confirmation est cuivre, dans une marge sans échelle à gauche d'aujourd'hui, et ce qui
+  tombe au-delà s'épingle creux au bord droit.
 - **Une liste posée sous une bande en colonnes en reprend le partage** : ses colonnes de
   bout de ligne s'alignent sur la séparation de la bande, et la page n'a qu'une colonne de
   droite. Quand la bande s'empile, la liste retrouve ses propres colonnes.

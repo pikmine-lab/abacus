@@ -48,22 +48,13 @@
     "settledCount": "{count, plural, one {# paid off} other {# paid off}}"
   },
   "income": {
-    "description": "what comes in on its own: salary, rent, annuities",
     "newTitle": "New recurring income",
     "newDescription": "Same due-payment engine as subscriptions, in reverse: the app will ask you to confirm each payment.",
-    "recurringIncome": "Recurring income",
+    "monthlyIncome": "Monthly income",
     "perYear": "{amount} a year",
-    "activeSources": "Active sources",
-    "stoppedCount": "{count, plural, one {# stopped} other {# stopped}}",
-    "expectedSince": "expected since {date}",
-    "upToDate": "all up to date",
-    "pendingTitle": "Payments to confirm",
-    "pendingDescription": "correct the amount if it differs: that is how a bonus or a raise shows up",
-    "sources": "Sources",
-    "sourcesDescription": "amount, frequency and next due date",
+    "sourceCount": "{count, plural, one {# source} other {# sources}}",
     "empty": "No recurring income declared. Add your salary here and the projection becomes useful.",
     "stopped": "Stopped",
-    "stoppedDescription": "kept for the record",
     "stoppedOn": "stopped on {date}"
   },
   "form": {
@@ -147,7 +138,7 @@
   },
   "pending": {
     "ahead": "Upcoming",
-    "aheadDescription": "What already went out before its date is confirmed here, at the actual date.",
+    "aheadDescription": "What already happened before its date is confirmed here, at the actual date.",
     "aheadFoldDescription": "confirmed ahead, at the actual date",
     "expectedOn": "expected {date}",
     "placement": "contribution of {amount} from {from} to {to} · buys {asset}",
