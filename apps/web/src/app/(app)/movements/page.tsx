@@ -23,7 +23,8 @@ import { EntryDock } from '@/components/entry-dock'
 import { EntrySheet } from '@/components/entry-sheet'
 import { MovementFilters } from '@/components/movement-filters'
 import { MovementForm } from '@/components/movement-form'
-import { MovementRowActions } from '@/components/movement-row-actions'
+import { MovementOpener } from '@/components/movement-opener'
+import { MovementPanel } from '@/components/movement-panel'
 import { OutstandingAdvances } from '@/components/outstanding-advances'
 import { PageBody } from '@/components/page-shell'
 import { PeriodHeader } from '@/components/period-header'
@@ -32,7 +33,7 @@ import { SortButton, SortHead } from '@/components/sort'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { linkChoices, openClaims, refundLabels } from '@/lib/advance-data'
 import { getFormat } from '@/lib/format-server'
-import { movementDraft, movementFormOptions } from '@/lib/movement-form-data'
+import { movementFormOptions } from '@/lib/movement-form-data'
 import { resolvePeriod } from '@/lib/period'
 import { currentReading } from '@/lib/reading'
 import { sorter } from '@/lib/sort'
@@ -161,366 +162,372 @@ export default async function MovementsPage({
     // Declaring is a burst: the panel docks beside the list, so each line
     // sent lands in a table that stays readable next to it.
     <EntryDock>
-      <PeriodHeader
-        title={t('title')}
-        period={period}
-        reading={reading}
-        actions={
-          <EntrySheet label={t('declare')} title={t('declareTitle')}>
-            <MovementForm
-              {...options}
-              links={links}
-              invoices={openInvoices.map((i) => ({
-                id: i.id,
-                client: actorName.get(i.actorId) ?? '',
-                label: t('list.invoiceOption', {
-                  name: i.reference ?? format.date(i.issuedOn),
-                  remaining: format.eur(Number(i.remainingAmount), 2),
-                }),
-              }))}
-              today={today()}
-            />
-          </EntrySheet>
-        }
-      >
-        <MovementFilters
-          accounts={options.accounts}
-          categories={options.categories}
-          actors={options.actors}
-          activities={options.activities}
-        />
-      </PeriodHeader>
+      {/* A row opens its movement in the place the declaration takes. */}
+      <MovementPanel {...options} links={links} today={today()} from="movements">
+        <PeriodHeader
+          title={t('title')}
+          period={period}
+          reading={reading}
+          actions={
+            <EntrySheet label={t('declare')} title={t('declareTitle')}>
+              <MovementForm
+                {...options}
+                links={links}
+                invoices={openInvoices.map((i) => ({
+                  id: i.id,
+                  client: actorName.get(i.actorId) ?? '',
+                  label: t('list.invoiceOption', {
+                    name: i.reference ?? format.date(i.issuedOn),
+                    remaining: format.eur(Number(i.remainingAmount), 2),
+                  }),
+                }))}
+                today={today()}
+              />
+            </EntrySheet>
+          }
+        >
+          <MovementFilters
+            accounts={options.accounts}
+            categories={options.categories}
+            actors={options.actors}
+            activities={options.activities}
+          />
+        </PeriodHeader>
 
-      <PageBody className="gap-6">
-        {openClaimRows.length > 0 && (
-          <ActionCard label={t('list.toRecover')}>
-            <OutstandingAdvances claims={openClaimRows} today={today()} back={PATH} />
-          </ActionCard>
-        )}
-
-        <div className="flex flex-col gap-2">
-          {/* Not on an empty selection: "0 mouvement" would say twice what the
-              empty line says. */}
-          {count > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[12.5px]">
-              <span className="text-muted-foreground">
-                {t.rich('list.count', {
-                  count,
-                  strong: (chunks) => <span className="font-semibold tabular text-foreground">{chunks}</span>,
-                })}
-              </span>
-              {Number(selection.expense) > 0 && (
-                <span className="text-faint">
-                  {t.rich('list.expenses', {
-                    value: format.eur(selection.expense),
-                    amount: (chunks) => (
-                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
-                    ),
-                  })}
-                </span>
-              )}
-              {Number(selection.income) > 0 && (
-                <span className="text-faint">
-                  {t.rich('list.income', {
-                    value: format.eur(selection.income),
-                    amount: (chunks) => (
-                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
-                    ),
-                  })}
-                </span>
-              )}
-              {Number(selection.transfer) > 0 && (
-                <span className="text-faint">
-                  {t.rich('list.transfers', {
-                    value: format.eur(selection.transfer),
-                    amount: (chunks) => (
-                      <span className="font-mono tabular text-muted-foreground">{chunks}</span>
-                    ),
-                  })}
-                </span>
-              )}
-            </div>
+        <PageBody className="gap-6">
+          {openClaimRows.length > 0 && (
+            <ActionCard label={t('list.toRecover')}>
+              <OutstandingAdvances claims={openClaimRows} today={today()} back={PATH} />
+            </ActionCard>
           )}
 
-          {movements.length === 0 ? (
-            <p className="py-8 text-center text-[13px] text-faint">{t('list.empty')}</p>
-          ) : (
-            // Columns follow the room the table has, not the screen: the docked
-            // panel narrows it as much as a tablet does. What qualifies a line
-            // then passes under its name rather than squeezing it, the date
-            // last, on a phone (DESIGN.md § Composition).
-            <div className="@container">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <SortHead
-                      sorter={sort}
-                      field="date"
-                      label={t('fields.date')}
-                      className="hidden w-20 @md:table-cell"
-                    />
-                    <TableHead
-                      aria-sort={
-                        sort.current.field === 'counterparty'
-                          ? sort.current.direction === 'asc'
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      {/* Without its column the date keeps its sort here, the
+          <div className="flex flex-col gap-2">
+            {/* Not on an empty selection: "0 mouvement" would say twice what the
+              empty line says. */}
+            {count > 0 && (
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[12.5px]">
+                <span className="text-muted-foreground">
+                  {t.rich('list.count', {
+                    count,
+                    strong: (chunks) => (
+                      <span className="font-semibold tabular text-foreground">{chunks}</span>
+                    ),
+                  })}
+                </span>
+                {Number(selection.expense) > 0 && (
+                  <span className="text-faint">
+                    {t.rich('list.expenses', {
+                      value: format.eur(selection.expense),
+                      amount: (chunks) => (
+                        <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                      ),
+                    })}
+                  </span>
+                )}
+                {Number(selection.income) > 0 && (
+                  <span className="text-faint">
+                    {t.rich('list.income', {
+                      value: format.eur(selection.income),
+                      amount: (chunks) => (
+                        <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                      ),
+                    })}
+                  </span>
+                )}
+                {Number(selection.transfer) > 0 && (
+                  <span className="text-faint">
+                    {t.rich('list.transfers', {
+                      value: format.eur(selection.transfer),
+                      amount: (chunks) => (
+                        <span className="font-mono tabular text-muted-foreground">{chunks}</span>
+                      ),
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {movements.length === 0 ? (
+              <p className="py-8 text-center text-[13px] text-faint">{t('list.empty')}</p>
+            ) : (
+              // Columns follow the room the table has, not the screen: the docked
+              // panel narrows it as much as a tablet does. What qualifies a line
+              // then passes under its name rather than squeezing it, the date
+              // last, on a phone (DESIGN.md § Composition).
+              <div className="@container">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <SortHead
+                        sorter={sort}
+                        field="date"
+                        label={t('fields.date')}
+                        className="hidden w-20 @md:table-cell"
+                      />
+                      <TableHead
+                        aria-sort={
+                          sort.current.field === 'counterparty'
+                            ? sort.current.direction === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
+                        }
+                      >
+                        {/* Without its column the date keeps its sort here, the
                           button announcing its own order. */}
-                      {/* Joined to the name it now sits under, and first: the
+                        {/* Joined to the name it now sits under, and first: the
                           name's chevron, reserved until hovered, then ends the
                           group instead of opening a gap that reads as a
                           column of its own. */}
-                      <span className="flex items-center gap-1.5">
-                        <SortButton
-                          sorter={sort}
-                          field="date"
-                          label={t('fields.date')}
-                          className="@md:hidden"
-                        />
-                        <span aria-hidden className="text-faint @md:hidden">
-                          ·
+                        <span className="flex items-center gap-1.5">
+                          <SortButton
+                            sorter={sort}
+                            field="date"
+                            label={t('fields.date')}
+                            className="@md:hidden"
+                          />
+                          <span aria-hidden className="text-faint @md:hidden">
+                            ·
+                          </span>
+                          <SortButton sorter={sort} field="counterparty" label={t('fields.counterparty')} />
                         </span>
-                        <SortButton sorter={sort} field="counterparty" label={t('fields.counterparty')} />
-                      </span>
-                    </TableHead>
-                    <SortHead
-                      sorter={sort}
-                      field="account"
-                      label={t('fields.account')}
-                      className="hidden @2xl:table-cell"
-                    />
-                    <SortHead
-                      sorter={sort}
-                      field="category"
-                      label={t('fields.category')}
-                      className="hidden @2xl:table-cell"
-                    />
-                    {/* Not sortable: the column only exists while the selection
+                      </TableHead>
+                      <SortHead
+                        sorter={sort}
+                        field="account"
+                        label={t('fields.account')}
+                        className="hidden @2xl:table-cell"
+                      />
+                      <SortHead
+                        sorter={sort}
+                        field="category"
+                        label={t('fields.category')}
+                        className="hidden @2xl:table-cell"
+                      />
+                      {/* Not sortable: the column only exists while the selection
                     holds a live claim, so an order resting on it would come
                     and go with the filters. */}
-                    {owedInList && (
-                      <TableHead className="hidden w-28 text-right @3xl:table-cell">
-                        {t('list.owed')}
-                      </TableHead>
-                    )}
-                    <SortHead
-                      sorter={sort}
-                      field="amount"
-                      label={t('fields.amount')}
-                      className="w-28 text-right"
-                    />
-                    <TableHead className="w-9 sr-only">{t('list.actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {movements.map((m) => {
-                    const isTransfer = m.kind === 'transfer'
-                    const isIncome = m.kind === 'income'
-                    const counterparty = isTransfer
-                      ? `${accountName.get(m.sourceAccountId!) ?? '?'} → ${accountName.get(m.targetAccountId!) ?? '?'}`
-                      : (actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!) ?? '?')
-                    const account = isTransfer
-                      ? t('list.internalTransfer')
-                      : (accountName.get((isIncome ? m.targetAccountId : m.sourceAccountId)!) ?? '?')
-                    const category = m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''
-                    const card = m.cardId && (
-                      <Link
-                        href={`/accounts/cards/${m.cardId}?from=movements`}
-                        className="text-[11px] text-faint transition-colors hover:text-primary"
-                      >
-                        {t('list.card', { name: cardName.get(m.cardId) ?? '' })}
-                      </Link>
-                    )
-                    // What is still owed, which is not the same as "was an advance":
-                    // a share that came back in full has nothing left to announce.
-                    const owed = stillOwed.get(m.id)
-                    // A share no longer live is history: told under the amount,
-                    // quieter than one still owed, which is work to do.
-                    const closedClaims = (m.shares ?? []).flatMap((share) => {
-                      const debtor = actorName.get(share.debtorActorId) ?? '?'
-                      const state = shareState(share)
-                      if (state === 'settled')
-                        return [
-                          t('list.claimSettled', {
-                            debtor,
-                            amount: format.eur(Number(share.refunded), 2),
-                            date: format.date(share.lastRefundedOn!),
-                          }),
-                        ]
-                      if (state === 'written_off')
-                        return [
-                          t('list.claimWrittenOff', {
-                            debtor,
-                            refunded: format.eur(Number(share.refunded), 2),
-                            owed: format.eur(Number(share.amount), 2),
-                          }),
-                        ]
-                      return []
-                    })
-                    return (
-                      <TableRow key={m.id}>
-                        <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
-                          {format.date(m.happenedOn)}
-                          {/* Only when it differs from the date's own month: the
+                      {owedInList && (
+                        <TableHead className="hidden w-28 text-right @3xl:table-cell">
+                          {t('list.owed')}
+                        </TableHead>
+                      )}
+                      <SortHead
+                        sorter={sort}
+                        field="amount"
+                        label={t('fields.amount')}
+                        className="w-28 text-right"
+                      />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {movements.map((m) => {
+                      const isTransfer = m.kind === 'transfer'
+                      const isIncome = m.kind === 'income'
+                      const counterparty = isTransfer
+                        ? `${accountName.get(m.sourceAccountId!) ?? '?'} → ${accountName.get(m.targetAccountId!) ?? '?'}`
+                        : (actorName.get((isIncome ? m.sourceActorId : m.targetActorId)!) ?? '?')
+                      const account = isTransfer
+                        ? t('list.internalTransfer')
+                        : (accountName.get((isIncome ? m.targetAccountId : m.sourceAccountId)!) ?? '?')
+                      const category = m.categoryId ? (categoryName.get(m.categoryId) ?? '') : ''
+                      const card = m.cardId && (
+                        // Above the row's own hit area, which opens the movement.
+                        <Link
+                          href={`/accounts/cards/${m.cardId}?from=movements`}
+                          className="relative z-10 text-[11px] text-faint transition-colors hover:text-primary"
+                        >
+                          {t('list.card', { name: cardName.get(m.cardId) ?? '' })}
+                        </Link>
+                      )
+                      // What is still owed, which is not the same as "was an advance":
+                      // a share that came back in full has nothing left to announce.
+                      const owed = stillOwed.get(m.id)
+                      // A share no longer live is history: told under the amount,
+                      // quieter than one still owed, which is work to do.
+                      const closedClaims = (m.shares ?? []).flatMap((share) => {
+                        const debtor = actorName.get(share.debtorActorId) ?? '?'
+                        const state = shareState(share)
+                        if (state === 'settled')
+                          return [
+                            t('list.claimSettled', {
+                              debtor,
+                              amount: format.eur(Number(share.refunded), 2),
+                              date: format.date(share.lastRefundedOn!),
+                            }),
+                          ]
+                        if (state === 'written_off')
+                          return [
+                            t('list.claimWrittenOff', {
+                              debtor,
+                              refunded: format.eur(Number(share.refunded), 2),
+                              owed: format.eur(Number(share.amount), 2),
+                            }),
+                          ]
+                        return []
+                      })
+                      return (
+                        // The whole row opens the movement; the open one is washed.
+                        <TableRow
+                          key={m.id}
+                          className="relative has-[[aria-current=true]]:bg-secondary has-[[aria-current=true]]:hover:bg-secondary"
+                        >
+                          <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
+                            {format.date(m.happenedOn)}
+                            {/* Only when it differs from the date's own month: the
                           arrow is there to be noticed, not to repeat. */}
-                          {m.accrualMonth && (
-                            <span
-                              className="block text-[10.5px] text-primary"
-                              title={t('list.accruedIn', { month: format.month(m.accrualMonth) })}
-                            >
-                              → {format.month(m.accrualMonth)}
-                            </span>
-                          )}
-                          {/* The date above is the debit of the card's statement: the
+                            {m.accrualMonth && (
+                              <span
+                                className="block text-[10.5px] text-primary"
+                                title={t('list.accruedIn', { month: format.month(m.accrualMonth) })}
+                              >
+                                → {format.month(m.accrualMonth)}
+                              </span>
+                            )}
+                            {/* The date above is the debit of the card's statement: the
                           expected one while it waits, in no balance until then. */}
-                          {m.purchasedOn && (
-                            <span
-                              className="block text-[10.5px]"
-                              title={
-                                m.awaitingDebit ? t('list.purchaseAwaitingDebit') : t('list.purchaseDebited')
-                              }
-                            >
-                              {t('list.purchasedOn', { date: format.date(m.purchasedOn) })}
-                              {m.awaitingDebit && <span className="block">{t('list.expected')}</span>}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-0">
-                          {/* A transfer wraps rather than lose its destination,
+                            {m.purchasedOn && (
+                              <span
+                                className="block text-[10.5px]"
+                                title={
+                                  m.awaitingDebit
+                                    ? t('list.purchaseAwaitingDebit')
+                                    : t('list.purchaseDebited')
+                                }
+                              >
+                                {t('list.purchasedOn', { date: format.date(m.purchasedOn) })}
+                                {m.awaitingDebit && <span className="block">{t('list.expected')}</span>}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-0">
+                            {/* A transfer wraps rather than lose its destination,
                               the fact that tells two transfers apart. The cell
                               is nowrap, so wrapping is turned back on here. */}
-                          <span
-                            className={`block text-[13px] ${isTransfer ? 'break-words whitespace-normal' : 'truncate'}`}
-                          >
-                            {counterparty}
-                          </span>
-                          {/* The category before the account: it is what tells
+                            <MovementOpener
+                              id={m.id}
+                              label={`${format.date(m.happenedOn)} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
+                              className={`text-[13px] ${isTransfer ? 'break-words whitespace-normal' : 'truncate'}`}
+                            >
+                              {counterparty}
+                            </MovementOpener>
+                            {/* The category before the account: it is what tells
                               two lines on the same account apart, and the end of
                               the line is what gets cut. */}
-                          <span className="block truncate text-[11.5px] text-faint @2xl:hidden">
-                            <span className="font-mono text-[11px] @md:hidden">
-                              {format.date(m.happenedOn)} ·{' '}
+                            <span className="block truncate text-[11.5px] text-faint @2xl:hidden">
+                              <span className="font-mono text-[11px] @md:hidden">
+                                {format.date(m.happenedOn)} ·{' '}
+                              </span>
+                              {category && `${category} · `}
+                              {account}
+                              {card && <> · {card}</>}
                             </span>
-                            {category && `${category} · `}
+                            {(m.accrualMonth || m.purchasedOn) && (
+                              <span className="block truncate font-mono text-[10.5px] text-faint @md:hidden">
+                                {m.accrualMonth && (
+                                  <span className="text-primary">→ {format.month(m.accrualMonth)}</span>
+                                )}
+                                {m.accrualMonth && m.purchasedOn && ' · '}
+                                {m.purchasedOn &&
+                                  t(m.awaitingDebit ? 'list.purchasedOnExpected' : 'list.purchasedOn', {
+                                    date: format.date(m.purchasedOn),
+                                  })}
+                              </span>
+                            )}
+                            {/* A refund says what it pays back: the share, by name. */}
+                            {m.refundsShareId && refunds.has(m.refundsShareId) && (
+                              <span className="block truncate text-[11px] text-faint">
+                                {t('list.paysBack', { what: refunds.get(m.refundsShareId)! })}
+                              </span>
+                            )}
+                            {/* Money received for a commitment says which one it feeds. */}
+                            {m.reservesCommitmentId && refunds.has(m.reservesCommitmentId) && (
+                              <span className="block truncate text-[11px] text-faint">
+                                {t('list.receivedFor', { what: refunds.get(m.reservesCommitmentId)! })}
+                              </span>
+                            )}
+                            {m.note && (
+                              <span className="block truncate text-[11px] text-faint">{m.note}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
                             {account}
-                            {card && <> · {card}</>}
-                          </span>
-                          {(m.accrualMonth || m.purchasedOn) && (
-                            <span className="block truncate font-mono text-[10.5px] text-faint @md:hidden">
-                              {m.accrualMonth && (
-                                <span className="text-primary">→ {format.month(m.accrualMonth)}</span>
-                              )}
-                              {m.accrualMonth && m.purchasedOn && ' · '}
-                              {m.purchasedOn &&
-                                t(m.awaitingDebit ? 'list.purchasedOnExpected' : 'list.purchasedOn', {
-                                  date: format.date(m.purchasedOn),
-                                })}
-                            </span>
-                          )}
-                          {/* A refund says what it pays back: the share, by name. */}
-                          {m.refundsShareId && refunds.has(m.refundsShareId) && (
-                            <span className="block truncate text-[11px] text-faint">
-                              {t('list.paysBack', { what: refunds.get(m.refundsShareId)! })}
-                            </span>
-                          )}
-                          {/* Money received for a commitment says which one it feeds. */}
-                          {m.reservesCommitmentId && refunds.has(m.reservesCommitmentId) && (
-                            <span className="block truncate text-[11px] text-faint">
-                              {t('list.receivedFor', { what: refunds.get(m.reservesCommitmentId)! })}
-                            </span>
-                          )}
-                          {m.note && <span className="block truncate text-[11px] text-faint">{m.note}</span>}
-                        </TableCell>
-                        <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
-                          {account}
-                          {card && <span className="block">{card}</span>}
-                        </TableCell>
-                        <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
-                          {category}
-                        </TableCell>
-                        {owedInList && (
-                          <TableCell className="hidden text-right @3xl:table-cell">
-                            {owed?.map((o) => (
-                              <span key={o.debtor} className="block">
-                                <span className="block font-mono text-[12.5px] tabular text-primary">
-                                  {format.eur(o.remaining, 2)}
+                            {card && <span className="block">{card}</span>}
+                          </TableCell>
+                          <TableCell className="hidden text-[12px] text-muted-foreground @2xl:table-cell">
+                            {category}
+                          </TableCell>
+                          {owedInList && (
+                            <TableCell className="hidden text-right @3xl:table-cell">
+                              {owed?.map((o) => (
+                                <span key={o.debtor} className="block">
+                                  <span className="block font-mono text-[12.5px] tabular text-primary">
+                                    {format.eur(o.remaining, 2)}
+                                  </span>
+                                  <span className="block truncate text-[11px] text-faint">{o.debtor}</span>
                                 </span>
-                                <span className="block truncate text-[11px] text-faint">{o.debtor}</span>
+                              ))}
+                            </TableCell>
+                          )}
+                          <TableCell
+                            className={`text-right font-mono text-[13px] tabular ${
+                              isIncome ? 'text-good' : isTransfer ? 'text-faint' : ''
+                            }`}
+                          >
+                            {isIncome ? '+' : isTransfer ? '' : '−'}
+                            {format.eur(Number(m.amount), 2)}
+                            {m.originalCurrency && (
+                              <span className="block text-[11px] font-normal text-faint">
+                                {format.money(Number(m.originalAmount), m.originalCurrency)}
+                              </span>
+                            )}
+                            {/* Without its column, what is owed keeps a place by the
+                              amount it is part of, never on the note's line. */}
+                            {owed?.map((o) => (
+                              <span
+                                key={o.debtor}
+                                className="block font-sans text-[11px] font-normal text-primary @3xl:hidden"
+                              >
+                                {t('list.owes', { debtor: o.debtor, amount: format.eur(o.remaining, 2) })}
                               </span>
                             ))}
-                          </TableCell>
-                        )}
-                        <TableCell
-                          className={`text-right font-mono text-[13px] tabular ${
-                            isIncome ? 'text-good' : isTransfer ? 'text-faint' : ''
-                          }`}
-                        >
-                          {isIncome ? '+' : isTransfer ? '' : '−'}
-                          {format.eur(Number(m.amount), 2)}
-                          {m.originalCurrency && (
-                            <span className="block text-[11px] font-normal text-faint">
-                              {format.money(Number(m.originalAmount), m.originalCurrency)}
-                            </span>
-                          )}
-                          {/* Without its column, what is owed keeps a place by the
-                              amount it is part of, never on the note's line. */}
-                          {owed?.map((o) => (
-                            <span
-                              key={o.debtor}
-                              className="block font-sans text-[11px] font-normal text-primary @3xl:hidden"
-                            >
-                              {t('list.owes', { debtor: o.debtor, amount: format.eur(o.remaining, 2) })}
-                            </span>
-                          ))}
-                          {/* Part of it was paid from money received ahead: said by the
+                            {/* Part of it was paid from money received ahead: said by the
                               amount it comes off, the way a refund is. */}
-                          {m.drawn && (
-                            <span className="block font-sans text-[11px] font-normal text-faint">
-                              {t('list.drawnFromReserve', { amount: format.eur(Number(m.drawn), 2) })}
-                            </span>
-                          )}
-                          {closedClaims.map((line) => (
-                            <span key={line} className="block font-sans text-[11px] font-normal text-faint">
-                              {line}
-                            </span>
-                          ))}
-                          {/* Under the amount, because that is what it qualifies:
+                            {m.drawn && (
+                              <span className="block font-sans text-[11px] font-normal text-faint">
+                                {t('list.drawnFromReserve', { amount: format.eur(Number(m.drawn), 2) })}
+                              </span>
+                            )}
+                            {closedClaims.map((line) => (
+                              <span key={line} className="block font-sans text-[11px] font-normal text-faint">
+                                {line}
+                              </span>
+                            ))}
+                            {/* Under the amount, because that is what it qualifies:
                           this figure is in no total above and in no analysis. */}
-                          {m.ghost && (
-                            <span
-                              className="block text-[11px] font-normal text-faint"
-                              title={t('list.ghostHint')}
-                            >
-                              {t('list.ghost')}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="pr-1 pl-0 text-right">
-                          <MovementRowActions
-                            {...options}
-                            today={today()}
-                            label={`${format.date(m.happenedOn)} · ${counterparty} · ${format.eur(Number(m.amount), 2)}`}
-                            links={links}
-                            draft={movementDraft(m, actorName, refunds)}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                            {m.ghost && (
+                              <span
+                                className="block text-[11px] font-normal text-faint"
+                                title={t('list.ghostHint')}
+                              >
+                                {t('list.ghost')}
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
-          {count > movements.length && (
-            <MoreLink params={params} limit={limit} shown={movements.length} total={count} />
-          )}
-        </div>
-      </PageBody>
+            {count > movements.length && (
+              <MoreLink params={params} limit={limit} shown={movements.length} total={count} />
+            )}
+          </div>
+        </PageBody>
+      </MovementPanel>
     </EntryDock>
   )
 }

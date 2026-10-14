@@ -16,6 +16,8 @@ import {
   SubmitButton,
   TextField,
 } from '@/components/forms'
+import { useMovementOpener } from '@/components/movement-opener'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -89,6 +91,8 @@ export function MovementForm({
   cards = [],
   today,
   draft,
+  onSaved,
+  onCancel,
 }: {
   accounts: Option[]
   actors: Option[]
@@ -107,6 +111,10 @@ export function MovementForm({
   today: string
   /** Present when correcting an existing movement instead of declaring one. */
   draft?: MovementDraft
+  /** A correction saved: its panel goes back to reading the movement. */
+  onSaved?: () => void
+  /** Leaves a correction without saving it. */
+  onCancel?: () => void
 }) {
   const t = useTranslations('movements')
   const format = useFormat()
@@ -148,12 +156,17 @@ export function MovementForm({
   const accountOptions = accounts.map((a) => ({ value: a.id, label: a.name }))
   const editing = draft !== undefined
   const foreign = type !== 'transfer' && currency !== 'EUR'
+  // On a screen that reads movements, what was just declared opens from its
+  // acknowledgement rather than having to be found again in the list.
+  const opener = useMovementOpener()
 
   return (
     <ActionForm
       action={editing ? correctMovementAction : declareMovementAction}
       successLabel={editing ? t('form.corrected') : t('form.declared')}
+      onSuccessOpen={!editing && opener ? (state) => state.id && opener.open(state.id) : undefined}
       onSuccess={() => {
+        if (onSaved) return onSaved()
         // A success remounts the fields (they clear), but this state lives
         // above the remount: left alone it would keep showing the euros field
         // while the cleared select says EUR.
@@ -418,7 +431,14 @@ export function MovementForm({
         />
       )}
 
-      <SubmitButton className="self-start">{editing ? t('form.save') : t('declare')}</SubmitButton>
+      <div className="flex items-center gap-2">
+        <SubmitButton>{editing ? t('form.save') : t('declare')}</SubmitButton>
+        {onCancel && (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            {t('form.cancel')}
+          </Button>
+        )}
+      </div>
     </ActionForm>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { ArrowRightIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { createContext, useActionState, useContext, useEffect, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
@@ -443,6 +443,7 @@ export function ActionForm({
   action,
   className,
   successLabel,
+  onSuccessOpen,
   onSuccess,
   children,
 }: {
@@ -450,6 +451,11 @@ export function ActionForm({
   className?: string
   /** Acknowledgement kept in place, so entering several in a row stays fluid. */
   successLabel?: string
+  /**
+   * Makes the acknowledgement lead to what was just written: it then reads as
+   * a path to its detail instead of only naming it.
+   */
+  onSuccessOpen?: (state: FormState) => void
   /**
    * Called once per success with what the action reported, for a panel that
    * should close itself, or act on a figure the action answered with.
@@ -483,8 +489,22 @@ export function ActionForm({
       {state.error && <p className="text-xs text-destructive">{state.error}</p>}
       {successLabel && state.ok && state.n > 0 && (
         <p aria-live="polite" className="text-xs text-good">
-          ✓ {successLabel}
-          {state.n > 1 ? ` (${state.n})` : ''}
+          {onSuccessOpen ? (
+            <button
+              type="button"
+              onClick={() => onSuccessOpen(state)}
+              className="inline-flex cursor-pointer items-center gap-1 underline-offset-2 hover:underline"
+            >
+              ✓ {successLabel}
+              {state.n > 1 ? ` (${state.n})` : ''}
+              <ArrowRightIcon className="size-3" />
+            </button>
+          ) : (
+            <>
+              ✓ {successLabel}
+              {state.n > 1 ? ` (${state.n})` : ''}
+            </>
+          )}
         </p>
       )}
     </form>

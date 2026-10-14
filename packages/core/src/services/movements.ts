@@ -903,6 +903,17 @@ export async function listMovements(userId: string, filters: MovementFilters = {
   })
 }
 
+/**
+ * One movement, read the way the ledger reads it: who owes what of an advance,
+ * what an occurrence drew from a reserve, whether a card still has to debit
+ * it. Null when this user has no such movement. Opening a movement reads it
+ * alone, so its detail never costs the list a byte.
+ */
+export async function readMovement(userId: string, id: string): Promise<Movement | null> {
+  const [movement] = await listMovements(userId, { id, limit: 1 })
+  return movement ?? null
+}
+
 /** What the current filter selects, in one row: count and per-kind totals. */
 export async function selectionTotals(
   userId: string,

@@ -9,7 +9,7 @@ related_targets: ["src/components/entry-dock.tsx","src/components/movement-filte
 Question à laquelle il répond : qu'est-ce qui s'est passé, ligne par ligne, et qu'est-ce qu'on me doit.
 Usages, dans l'ordre : retrouver une ligne (la vérifier, la corriger), déclarer une salve puis la relire, suivre les avances. Lire un total filtré n'est pas l'usage principal.
 Contenu et gestes : ceux de l'écran avant refonte, sans ajout ni retrait (#116).
-Tranché avec l'utilisateur : pas de chiffre héros, la liste domine ; compte, catégorie, acteur, activité et « avances en attente » passent derrière un bouton « Filtres », les filtres actifs restent visibles en pastilles ; recherche et type restent à découvert.
+Tranché avec l'utilisateur : pas de chiffre héros, la liste domine ; compte, catégorie, acteur, activité et « avances en attente » passent derrière un bouton « Filtres », les filtres actifs restent visibles en pastilles ; recherche et type restent à découvert. Une ligne entière ouvre son mouvement en lecture, à la place du panneau de saisie, sans menu ⋯ : corriger part de la lecture, supprimer termine la correction, et « Mouvement déclaré » mène à la lecture de ce qui vient d'être déclaré.
 
 ## Direction contract
 
