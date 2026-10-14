@@ -48,22 +48,13 @@
     "settledCount": "{count, plural, one {# soldé} other {# soldés}}"
   },
   "income": {
-    "description": "ce qui rentre tout seul : salaire, loyers, rentes",
     "newTitle": "Nouveau revenu récurrent",
     "newDescription": "Même moteur d’échéances que les abonnements, sens inverse : l’app te proposera de confirmer chaque versement.",
-    "recurringIncome": "Revenu récurrent",
+    "monthlyIncome": "Revenu mensuel",
     "perYear": "{amount} par an",
-    "activeSources": "Sources actives",
-    "stoppedCount": "{count, plural, one {# arrêtée} other {# arrêtées}}",
-    "expectedSince": "attendu depuis le {date}",
-    "upToDate": "tout est à jour",
-    "pendingTitle": "Versements à confirmer",
-    "pendingDescription": "corrige le montant s’il diffère : c’est comme ça qu’on voit une prime ou une hausse",
-    "sources": "Sources",
-    "sourcesDescription": "montant, périodicité et prochaine échéance",
+    "sourceCount": "{count, plural, one {# source} other {# sources}}",
     "empty": "Aucun revenu récurrent déclaré. Ton salaire ici, et la projection devient utile.",
     "stopped": "Arrêtés",
-    "stoppedDescription": "gardés pour l’historique",
     "stoppedOn": "arrêté le {date}"
   },
   "form": {
@@ -147,7 +138,7 @@
   },
   "pending": {
     "ahead": "À venir",
-    "aheadDescription": "Ce qui est déjà parti avant sa date se confirme ici, à la date réelle.",
+    "aheadDescription": "Ce qui a déjà eu lieu avant sa date se confirme ici, à la date réelle.",
     "aheadFoldDescription": "se confirme en avance, à la date réelle",
     "expectedOn": "attendu le {date}",
     "placement": "versement de {amount} de {from} vers {to} · achète {asset}",

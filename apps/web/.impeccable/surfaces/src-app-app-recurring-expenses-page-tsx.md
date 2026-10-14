@@ -2,7 +2,7 @@
 version: 1
 slug: "src-app-app-recurring-expenses-page-tsx"
 primary_target: "src/app/(app)/recurring-expenses/page.tsx"
-related_targets: ["src/components/expense-rail.tsx"]
+related_targets: ["src/components/commitment-rail.tsx"]
 ---
 
 Écran : Dépenses récurrentes (`src/app/(app)/recurring-expenses/page.tsx`). Mode : Operate. Desktop et téléphone, à poids égal.

@@ -3,10 +3,8 @@
 import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 import { type Format, useFormat } from '@/lib/format'
+import { RAIL_DAYS, type RailMark } from '@/lib/rail-marks'
 import { cn, daysBetween } from '@/lib/utils'
-
-/** How far ahead a rail reads, in days: a month, so every monthly line has its dot on it. */
-export const RAIL_DAYS = 30
 
 /**
  * Where today sits, as a share of the rail. The strip on its left is the lane
@@ -15,16 +13,11 @@ export const RAIL_DAYS = 30
  */
 const TODAY_AT = 0.1
 
-/** One occurrence the rail places, by its due date. */
-export interface RailMark {
-  dueOn: string
-}
-
 /**
- * When a recurring expense leaves its account, drawn rather than written. Every
- * rail of the page shares one scale, today to thirty days ahead, so the rails
- * line up from row to row and the eye reads down a column what leaves before
- * the month turns, marked by a tick, and what leaves after.
+ * When a recurring commitment leaves or reaches its account, drawn rather than
+ * written. Every rail of the page shares one scale, today to thirty days
+ * ahead, so the rails line up from row to row and the eye reads down a column
+ * what falls before the month turns, marked by a tick, and what falls after.
  *
  * An occurrence ahead is a dot, the next one full and ringed with the page
  * ground, the ones after it (a weekly rhythm) smaller. One that reached its
@@ -36,7 +29,7 @@ export interface RailMark {
  * The exact dates are in the tooltip, which follows a mouse and anchors under
  * the rail on focus or a tap: a keyboard or a finger reads it as well.
  */
-export function ExpenseRail({
+export function CommitmentRail({
   name,
   marks,
   today,
@@ -128,7 +121,7 @@ export function ExpenseRail({
 }
 
 /** The rail's scale, set once in the header of each list, over the column of rails. */
-export function ExpenseRailAxis({ today }: { today: string }) {
+export function CommitmentRailAxis({ today }: { today: string }) {
   const t = useTranslations('recurring.rail')
   const format = useFormat()
   const turn = monthTurn(today)

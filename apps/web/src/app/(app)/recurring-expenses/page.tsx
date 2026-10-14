@@ -1,5 +1,5 @@
 import { auth } from '@abacus/core/auth'
-import { addPeriod, today } from '@abacus/core/domain/period'
+import { today } from '@abacus/core/domain/period'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listCards } from '@abacus/core/services/cards'
@@ -26,16 +26,14 @@ import { NewCommitmentForm } from '@/components/commitment-forms'
 import { ActionCard, Figure, FigureRow } from '@/components/composition'
 import { EntrySheet } from '@/components/entry-sheet'
 import { AccountExpenses, BAND, ExpenseKind, ExpenseRow } from '@/components/expense-list'
-import { RAIL_DAYS, type RailMark } from '@/components/expense-rail'
-import type { ScheduleLine } from '@/components/financing-schedule-form'
 import { FoldSection } from '@/components/fold-section'
 import { EmptyLine, PageBody, PageHeader, Rows } from '@/components/page-shell'
 import { PendingOccurrences } from '@/components/pending-occurrences'
 import { SortMenu } from '@/components/sort'
 import { getFormat } from '@/lib/format-server'
 import { cardChoices } from '@/lib/movement-form-data'
+import { railMarks } from '@/lib/rail-marks'
 import { type Sorter, sorter } from '@/lib/sort'
-import { daysBetween } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -362,32 +360,4 @@ function endedCount(
   ]
     .filter(Boolean)
     .join(' · ')
-}
-
-/**
- * What a line's rail places: the occurrences that reached their date and wait,
- * those that fall within the rail's window, and the first one past it when
- * nothing ahead falls inside. A financing reads its written plan, since an
- * uneven plan is not a period apart; an open-ended subscription steps from its
- * next due date by its own rhythm.
- */
-function railMarks(c: CommitmentWithProgress, schedule: ScheduleLine[] | undefined, now: string): RailMark[] {
-  const within = (dueOn: string) => daysBetween(now, dueOn) <= RAIL_DAYS
-  const withNext = (marks: RailMark[], next: RailMark | undefined) =>
-    next && !marks.some((m) => m.dueOn > now) ? [...marks, next] : marks
-  if (schedule) {
-    const unpaid = schedule.filter((i) => !i.paid).map((i) => ({ dueOn: i.dueOn }))
-    return withNext(
-      unpaid.filter((m) => within(m.dueOn)),
-      unpaid.find((m) => !within(m.dueOn)),
-    )
-  }
-  const marks: RailMark[] = []
-  let dueOn = c.nextDueOn
-  // Bounded: a weekly line left unconfirmed for a year still draws one late dot.
-  for (let i = 0; i < 60 && within(dueOn); i++) {
-    marks.push({ dueOn })
-    dueOn = addPeriod(dueOn, c.periodUnit, c.periodCount)
-  }
-  return withNext(marks, { dueOn })
 }
