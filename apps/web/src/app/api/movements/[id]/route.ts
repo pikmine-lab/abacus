@@ -8,7 +8,7 @@ import { idParam } from '@/lib/utils'
  * because it reads and is fetched on opening, not posted: opening a movement
  * reads that movement alone, never the page around it.
  */
-export async function GET(_request: Request, ctx: RouteContext<'/api/movements/[id]'>): Promise<Response> {
+export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) return new Response('Unauthorized', { status: 401 })
 
