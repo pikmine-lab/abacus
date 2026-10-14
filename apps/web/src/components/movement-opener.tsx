@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -24,10 +24,17 @@ export function useMovementOpener(): MovementOpenerState | null {
 }
 
 /**
- * The whole row opens its movement: this button holds the row's name, and its
- * hit area stretches over the row, which has to be `relative` for it. A link
- * inside the row stays above it (`relative z-10`). The open row is washed
- * through `aria-current`, read by the row in CSS (`has-[[aria-current=true]]`).
+ * The whole row opens its movement: this button holds the row's name, and a
+ * click anywhere else in the row marked `data-movement-row` is handed to it. A
+ * link or another control inside the row keeps its own gesture. The open row is
+ * washed through `aria-current`, read by the row in CSS
+ * (`has-[[aria-current=true]]`), and the row holding keyboard focus the way a
+ * hovered one is (`has-focus-visible`).
+ *
+ * Not a pseudo-element stretched over a `relative` row: WebKit, hence every
+ * browser on iOS, does not make a table row the containing block of what it
+ * holds, so every row's hit area landed on the table and a tap always opened
+ * the last movement.
  */
 export function MovementOpener({
   id,
@@ -43,15 +50,34 @@ export function MovementOpener({
 }) {
   const t = useTranslations('movements.panel')
   const opener = useMovementOpener()
+  const ref = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const button = ref.current
+    const row = button?.closest('[data-movement-row]')
+    if (!button || !row) return
+    const onClick = (event: Event) => {
+      if ((event.target as Element).closest('a, button, input, select, textarea, label')) return
+      // Selecting text in the row is reading it, not opening it. A selection
+      // left elsewhere on the page does not hold the row back.
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed && row.contains(selection.anchorNode)) return
+      button.click()
+    }
+    row.addEventListener('click', onClick)
+    return () => row.removeEventListener('click', onClick)
+  }, [])
+
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={t('open', { label })}
       aria-current={opener?.openedId === id}
       onClick={() => opener?.open(id)}
       className={cn(
-        'block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:content-[""]',
-        'focus-visible:after:ring-2 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset',
+        'block w-full cursor-pointer rounded-sm text-left outline-none',
+        'focus-visible:ring-2 focus-visible:ring-ring/50',
         className,
       )}
     >
