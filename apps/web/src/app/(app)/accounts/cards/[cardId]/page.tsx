@@ -89,7 +89,7 @@ export default async function CardPage({ params }: { params: Promise<{ cardId: s
       <div
         key={m.id}
         data-movement-row
-        className="flex cursor-pointer items-center gap-3 py-2.5 transition-colors hover:bg-muted/50 has-[[aria-current=true]]:bg-secondary"
+        className="flex cursor-pointer items-center gap-3 py-2.5 transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50 has-[[aria-current=true]]:bg-secondary"
       >
         <span className="w-20 shrink-0 font-mono text-[11.5px] text-faint">
           {format.date(purchaseDay(m))}

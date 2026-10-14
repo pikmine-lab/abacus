@@ -371,7 +371,7 @@ export default async function MovementsPage({
                         <TableRow
                           key={m.id}
                           data-movement-row
-                          className="cursor-pointer has-[[aria-current=true]]:bg-secondary has-[[aria-current=true]]:hover:bg-secondary"
+                          className="cursor-pointer has-focus-visible:bg-muted/50 has-[[aria-current=true]]:bg-secondary has-[[aria-current=true]]:hover:bg-secondary"
                         >
                           <TableCell className="hidden font-mono text-[11.5px] text-faint @md:table-cell">
                             {format.date(m.happenedOn)}

@@ -28,7 +28,8 @@ export function useMovementOpener(): MovementOpenerState | null {
  * click anywhere else in the row marked `data-movement-row` is handed to it. A
  * link or another control inside the row keeps its own gesture. The open row is
  * washed through `aria-current`, read by the row in CSS
- * (`has-[[aria-current=true]]`).
+ * (`has-[[aria-current=true]]`), and the row holding keyboard focus the way a
+ * hovered one is (`has-focus-visible`).
  *
  * Not a pseudo-element stretched over a `relative` row: WebKit, hence every
  * browser on iOS, does not make a table row the containing block of what it
@@ -56,9 +57,11 @@ export function MovementOpener({
     const row = button?.closest('[data-movement-row]')
     if (!button || !row) return
     const onClick = (event: Event) => {
-      if ((event.target as Element).closest('a, button')) return
-      // Selecting text in the row is reading it, not opening it.
-      if (window.getSelection()?.isCollapsed === false) return
+      if ((event.target as Element).closest('a, button, input, select, textarea, label')) return
+      // Selecting text in the row is reading it, not opening it. A selection
+      // left elsewhere on the page does not hold the row back.
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed && row.contains(selection.anchorNode)) return
       button.click()
     }
     row.addEventListener('click', onClick)
