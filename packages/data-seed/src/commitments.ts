@@ -202,14 +202,27 @@ export async function commitments(userId: string, { accounts, categories, actors
     firstDueOn: bikeFirst,
   })
   await confirmEach(userId, bike.id, dueDates(bikeFirst, 'month', 1, yesterday))
-  // The family chipped in: its installments draw on it, whenever it came.
+
+  // The family gave money towards a washing machine paid in ten instalments:
+  // the ones paid so far drew on it, and the rest waits for the next ones.
+  const washerFirst = dayOfMonthAgo(2, 12)
+  const washer = await createFinancing(userId, {
+    label: 'Lave-linge en 10 fois',
+    actorId: actors.applianceStore,
+    accountId: accounts.checking,
+    categoryId: categories.appliances,
+    installmentsTotal: 10,
+    totalAmount: 599,
+    firstDueOn: washerFirst,
+  })
+  await confirmEach(userId, washer.id, dueDates(washerFirst, 'month', 1, yesterday))
   await declareMovement(userId, {
-    happenedOn: dayOfMonthAgo(5, 20),
+    happenedOn: dayOfMonthAgo(2, 3),
     amount: 300,
     sourceActorId: actors.family,
     targetAccountId: accounts.checking,
-    reservesCommitmentId: bike.id,
-    note: 'Participation au vélo',
+    reservesCommitmentId: washer.id,
+    note: 'Participation au lave-linge',
   })
 
   const phoneSchedule = defaultSchedule({
