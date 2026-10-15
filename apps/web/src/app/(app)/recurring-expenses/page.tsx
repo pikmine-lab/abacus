@@ -334,8 +334,9 @@ export default async function RecurringExpensesPage({
                       ? t('expenses.cancelledOn', { date: format.date(c.cancelledOn) })
                       : t('expenses.settledOn', { date: format.date(c.settledOn!) })}
                   </span>
+                  {/* In its billing currency, as the running rows read it. */}
                   <span className="ml-auto font-mono text-[13px] tabular">
-                    {format.eur(Number(c.amount), 2)}
+                    {format.money(Number(c.amount), c.currency, 2)}
                   </span>
                 </div>
               ))}
