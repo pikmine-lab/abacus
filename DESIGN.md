@@ -234,7 +234,7 @@ chroma, ΔE sous daltonisme, contraste sur la surface), les encres par WCAG sur 
   le mois d'avant.
 - **Le mois de l'écran est lavé** dans un graphe mensuel, pour que l'œil le trouve.
 - **Brut et net ensemble** : la part pleine est le net, la part translucide accolée (2 px
-  d'écart) ce qui est revenu en remboursement.
+  d'écart) l'argent reçu qui la couvre, remboursement ou réserve.
 - **Le chiffre est le net, et le classement aussi** ; le brut se lit dans la marque et au
   survol, jamais en second nombre sous le premier.
 - **Un rang se creuse par proximité** : sous son en-tête, 4 px ; avant le rang suivant,

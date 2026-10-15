@@ -1,5 +1,5 @@
 import { DomainError } from './errors.ts'
-import type { AdvanceFilter, ClaimState, ShareInstallment, ShareState } from './types.ts'
+import type { AdvanceFilter, ClaimState, CommitmentReserve, ShareInstallment, ShareState } from './types.ts'
 
 /** Who owes part of what was advanced, and how much: the form both interfaces state shares in. */
 export interface ShareInput {
@@ -138,4 +138,25 @@ export function financingCoverage(
   const back = claims.reduce((sum, s) => sum + Number(s.refunded), 0)
   const covered = Math.round(Math.min(back, (paid * claimed) / total) * 100) / 100
   return { covered, ahead: Math.round((back - covered) * 100) / 100 }
+}
+
+/**
+ * Adds a financing's reserve to what its claims on the total covered: money
+ * paid in for it covers its installments as a refund does, and reads the
+ * same. The reserve draws only what the refunds left of each installment
+ * (`reserve_draw`), so what it drew adds to what they covered without
+ * overlapping, and what it still holds waits for the installments to come.
+ * Once released, what is left became an income: it waits for nothing. Null
+ * when neither covers anything.
+ */
+export function withReserve(
+  coverage: FinancingCoverage | null,
+  reserve: Pick<CommitmentReserve, 'drawn' | 'remaining' | 'releasedOn'> | null,
+): FinancingCoverage | null {
+  if (!reserve) return coverage
+  const held = reserve.releasedOn ? 0 : Number(reserve.remaining)
+  return {
+    covered: Math.round(((coverage?.covered ?? 0) + Number(reserve.drawn)) * 100) / 100,
+    ahead: Math.round(((coverage?.ahead ?? 0) + held) * 100) / 100,
+  }
 }
