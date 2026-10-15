@@ -187,7 +187,9 @@ export function ExpenseRow({
       : null
   // The ring reads the reserve with the claims: both are money that covers
   // the installments, whoever sent it. The row's lines say which is which.
-  const ringCoverage = financing ? withReserve(coverage, c.reserve) : null
+  // The reserve is in euros and the plan in its own currency, so a plan billed
+  // in another one keeps its ring in installments.
+  const ringCoverage = financing && !foreign ? withReserve(coverage, c.reserve) : coverage
   const claimants = shares
     .filter((share) => !share.perOccurrence && Number(share.refunded) > 0)
     .map((share) => actorName(share.debtorActorId))

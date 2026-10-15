@@ -46,7 +46,8 @@ export function ProgressRing({
   const arc = (from: number, to: number) => ({
     strokeDasharray: `0 ${circumference * from} ${circumference * Math.max(0, to - from)} ${circumference}`,
   })
-  const covered = coverage ? clamp(coverage.covered / coverage.total) : 0
+  // Never past what is paid: only a paid installment can be covered.
+  const covered = coverage ? Math.min(ratio, clamp(coverage.covered / coverage.total)) : 0
   // Runs on from what is paid, for as much money as came back ahead.
   const ahead = coverage ? clamp(ratio + coverage.ahead / coverage.total) : 0
 
