@@ -1,4 +1,3 @@
-import { financingCoverage, withReserve } from '@abacus/core/domain/advance'
 import { monthlyEquivalentEur } from '@abacus/core/services/commitments'
 import { CreditCardIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -181,15 +180,12 @@ export function ExpenseRow({
   const shares = c.shares
   // Claimed on its total: what came back covered of the installments paid,
   // and what came back ahead of the ones to come.
-  const coverage =
-    financing && c.progress
-      ? financingCoverage(Number(c.progress.paidTotal), Number(c.totalAmount), shares)
-      : null
+  const coverage = c.progress?.coverage?.refunds ?? null
   // The ring reads the reserve with the claims: both are money that covers
   // the installments, whoever sent it. The row's lines say which is which.
   // The reserve is in euros and the plan in its own currency, so a plan billed
   // in another one keeps its ring in installments.
-  const ringCoverage = financing && !foreign ? withReserve(coverage, c.reserve) : coverage
+  const ringCoverage = foreign ? null : (c.progress?.coverage ?? null)
   const claimants = shares
     .filter((share) => !share.perOccurrence && Number(share.refunded) > 0)
     .map((share) => actorName(share.debtorActorId))
@@ -315,7 +311,12 @@ export function ExpenseRow({
             total={c.installmentsTotal ?? 0}
             coverage={
               ringCoverage
-                ? { paid: Number(c.progress!.paidTotal), total: Number(c.totalAmount), ...ringCoverage }
+                ? {
+                    paid: Number(c.progress!.paidTotal),
+                    total: Number(c.totalAmount),
+                    covered: ringCoverage.covered,
+                    ahead: ringCoverage.ahead,
+                  }
                 : undefined
             }
           />

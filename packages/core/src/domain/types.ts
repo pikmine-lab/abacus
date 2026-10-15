@@ -316,6 +316,20 @@ export interface CommitmentReserve {
   releasedOn: string | null
 }
 
+/**
+ * What covers a financing's installments, read from what every net deducts
+ * of them (`financing_coverage`): `covered` of those paid, `ahead` received
+ * and waiting for those to come. `refundsCovered` and `refundsAhead` are the
+ * part of claims on its total, null when nobody owes anything of it.
+ */
+export interface FinancingCoverage {
+  commitmentId: string
+  refundsCovered: string | null
+  refundsAhead: string | null
+  covered: string
+  ahead: string
+}
+
 export type CommitmentEventType =
   | 'created'
   | 'price_changed'

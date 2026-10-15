@@ -205,8 +205,9 @@ export default async function RecurringIncomePage({
                   <span className="text-[11.5px]">
                     {t('income.stoppedOn', { date: format.date(c.cancelledOn!) })}
                   </span>
+                  {/* In its billing currency, as the running rows read it. */}
                   <span className="ml-auto font-mono text-[13px] tabular">
-                    {format.eur(Number(c.amount), 2)}
+                    {format.money(Number(c.amount), c.currency, 2)}
                   </span>
                 </div>
               ))}

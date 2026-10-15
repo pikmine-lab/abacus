@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { claimState, financingCoverage, withReserve } from '../src/domain/advance.ts'
+import { claimState } from '../src/domain/advance.ts'
 import type { DomainError } from '../src/domain/errors.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import { createActor, mergeActors } from '../src/services/actors.ts'
@@ -118,40 +118,6 @@ test('the shares never add up to more than what left the account, nor name a per
     { debtorActorId: lea.id, amount: 50 },
     { debtorActorId: marc.id, amount: 50 },
   ])
-})
-
-test('a claim on a financing splits what came back between what it covered and what waits', () => {
-  const claim = (amount: string, refunded: string, perOccurrence = false) => ({
-    amount,
-    refunded,
-    perOccurrence,
-  })
-  // 1 230 back on a claim of 1 230, one installment of 412.50 paid on 1 650.
-  assert.deepEqual(financingCoverage(412.5, 1650, [claim('1230', '1230')]), { covered: 307.5, ahead: 922.5 })
-  // The whole of it claimed: what is paid is covered first.
-  assert.deepEqual(financingCoverage(100, 300, [claim('300', '150')]), { covered: 100, ahead: 50 })
-  assert.deepEqual(financingCoverage(200, 300, [claim('300', '150')]), { covered: 150, ahead: 0 })
-  // Shares per installment are not a claim on the total.
-  assert.equal(financingCoverage(100, 300, [claim('40', '40', true)]), null)
-})
-
-test('a reserve covers a financing the way a claim on its total does', () => {
-  const reserve = (drawn: string, remaining: string, releasedOn: string | null = null) => ({
-    drawn,
-    remaining,
-    releasedOn,
-  })
-  assert.equal(withReserve(null, null), null)
-  // Alone: what it drew is covered, what it still holds is ahead.
-  assert.deepEqual(withReserve(null, reserve('150', '50')), { covered: 150, ahead: 50 })
-  // With a claim: it draws what the refunds left, so the two add up.
-  assert.deepEqual(withReserve({ covered: 100, ahead: 20 }, reserve('60.5', '9.5')), {
-    covered: 160.5,
-    ahead: 29.5,
-  })
-  // Released, what is left became an income: it waits for no installment.
-  assert.deepEqual(withReserve(null, reserve('200', '50', '2026-03-01')), { covered: 200, ahead: 0 })
-  assert.deepEqual(withReserve({ covered: 100, ahead: 0 }, null), { covered: 100, ahead: 0 })
 })
 
 test('the claim state of an expense reads across its shares', () => {

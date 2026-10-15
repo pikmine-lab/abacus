@@ -1,4 +1,3 @@
-import { financingCoverage } from '@abacus/core/domain/advance'
 import { DomainError } from '@abacus/core/domain/errors'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
@@ -553,8 +552,8 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
         // A claim on its total: what came back already covered of the paid
         // installments, and what came back ahead of the ones to come.
         const coverage = (c: (typeof commitments)[number]) => {
-          const split = financingCoverage(Number(c.progress?.paidTotal ?? 0), Number(c.totalAmount), c.shares)
-          return split ? { coveredByRefunds: split.covered, refundedAhead: split.ahead } : {}
+          const refunds = c.progress?.coverage?.refunds
+          return refunds ? { coveredByRefunds: refunds.covered, refundedAhead: refunds.ahead } : {}
         }
         // Absent unless an income was received for it: what came in, what its
         // occurrences drew, and what is left, held for the ones to come until
