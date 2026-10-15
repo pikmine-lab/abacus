@@ -6,6 +6,7 @@ import { getCard } from '../db/datasources/cards.ts'
 import {
   type AccountPeriod,
   accountTimeline,
+  coveragesOf,
   getCommitment,
   getCommitmentForUpdate,
   insertCommitment,
@@ -38,6 +39,7 @@ import type {
   Commitment,
   CommitmentEvent,
   CommitmentReserve,
+  FinancingCoverage,
   InvestmentOperation,
   Judgment,
   Movement,
@@ -516,6 +518,18 @@ export interface FinancingProgress {
   remainingDueEur: number | null
   /** Amount of the next installment, which may differ from the others. */
   nextAmount: number | null
+  /**
+   * What money received covers of the installments, as every net deducts it:
+   * claims on its total and its reserve together, and the claims alone.
+   * Null when nobody owes anything of its total and nobody gave money for it.
+   */
+  coverage: (MoneyCoverage & { refunds: MoneyCoverage | null }) | null
+}
+
+/** Of the installments, what money received covers of those paid, and what waits for those to come. */
+export interface MoneyCoverage {
+  covered: number
+  ahead: number
 }
 
 /**
@@ -535,6 +549,7 @@ export async function listCommitmentsWithProgress(
   const ids = raw.map((c) => c.id)
   const shares = await sharesOfCommitments(sql, ids)
   const reserves = new Map((await reservesOf(sql, ids)).map((r) => [r.commitmentId, r]))
+  const coverages = new Map((await coveragesOf(sql, ids)).map((r) => [r.commitmentId, r]))
   return await Promise.all(
     raw.map(async (c) => {
       const eur = { ...eurAmounts(c, rates, shares), reserve: reserves.get(c.id) ?? null }
@@ -551,10 +566,23 @@ export async function listCommitmentsWithProgress(
           remainingDue: Number(progress.remainingDue),
           remainingDueEur: remainingDueEur === null ? null : Number(remainingDueEur),
           nextAmount: progress.nextAmount === null ? null : Number(progress.nextAmount),
+          coverage: moneyCoverage(coverages.get(c.id)),
         },
       }
     }),
   )
+}
+
+function moneyCoverage(row: FinancingCoverage | undefined): FinancingProgress['coverage'] {
+  if (!row) return null
+  return {
+    covered: Number(row.covered),
+    ahead: Number(row.ahead),
+    refunds:
+      row.refundsCovered === null
+        ? null
+        : { covered: Number(row.refundsCovered), ahead: Number(row.refundsAhead) },
+  }
 }
 
 export async function commitmentEvents(userId: string, id: string): Promise<CommitmentEvent[]> {

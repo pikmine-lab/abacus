@@ -4,6 +4,7 @@ import type {
   CommitmentEvent,
   CommitmentEventType,
   CommitmentReserve,
+  FinancingCoverage,
 } from '../../domain/types.ts'
 import { compact, type Executor } from '../client.ts'
 
@@ -238,5 +239,14 @@ export async function reservesOf(tx: Executor, commitmentIds: string[]): Promise
   return await tx<CommitmentReserve[]>`
     select commitment_id, received, drawn, remaining, released_on
     from commitment_reserve where commitment_id in ${tx(commitmentIds)}
+  `
+}
+
+/** What covers some financings: only those claimed on their total or with a reserve have a row. */
+export async function coveragesOf(tx: Executor, commitmentIds: string[]): Promise<FinancingCoverage[]> {
+  if (commitmentIds.length === 0) return []
+  return await tx<FinancingCoverage[]>`
+    select commitment_id, refunds_covered, refunds_ahead, covered, ahead
+    from financing_coverage where commitment_id in ${tx(commitmentIds)}
   `
 }
