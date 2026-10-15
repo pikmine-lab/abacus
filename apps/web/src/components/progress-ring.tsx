@@ -11,24 +11,25 @@ import { cn } from '@/lib/utils'
  * misread and fits at any plan length, where "12/24" would not. The exact
  * count lives in the row's own metadata, and in the label for screen readers.
  *
- * A plan someone pays back on its total (`refunds`) is read in money rather
- * than in installments, with the marks of gross and net (DESIGN.md §
- * Graphes): what was paid and covered by refunds is the translucent part,
- * what was paid out of pocket the full one. What came back ahead of the
- * installments it will cover runs on in the same translucent tint, thinner:
- * covered already, not paid yet. Its tint ties it to the refund, never to
- * what the person pays. The row says the same in words.
+ * A plan that money covers (`coverage`: someone pays it back on its total,
+ * or paid into its reserve) is read in money rather than in installments,
+ * with the marks of gross and net (DESIGN.md § Graphes): what was paid and
+ * covered is the translucent part, what was paid out of pocket the full one.
+ * What came in ahead of the installments it will cover runs on in the same
+ * translucent tint, thinner: covered already, not paid yet. Its tint ties it
+ * to the money that came in, never to what the person pays. The row says the
+ * same in words, and which money it was.
  */
 export function ProgressRing({
   done,
   total,
-  refunds,
+  coverage,
   className,
 }: {
   done: number
   total: number
-  /** In money, for a plan claimed on its total: paid, total, covered and received ahead. */
-  refunds?: { paid: number; total: number; covered: number; ahead: number }
+  /** In money, for a plan claimed on its total or with a reserve: paid, total, covered and received ahead. */
+  coverage?: { paid: number; total: number; covered: number; ahead: number }
   className?: string
 }) {
   const t = useTranslations('common.progress')
@@ -37,7 +38,7 @@ export function ProgressRing({
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
-  const ratio = refunds ? clamp(refunds.paid / refunds.total) : total > 0 ? clamp(done / total) : 0
+  const ratio = coverage ? clamp(coverage.paid / coverage.total) : total > 0 ? clamp(done / total) : 0
   const left = Math.max(0, total - done)
   const tone = left === 0 ? 'var(--good)' : 'var(--primary)'
 
@@ -45,9 +46,9 @@ export function ProgressRing({
   const arc = (from: number, to: number) => ({
     strokeDasharray: `0 ${circumference * from} ${circumference * Math.max(0, to - from)} ${circumference}`,
   })
-  const covered = refunds ? clamp(refunds.covered / refunds.total) : 0
+  const covered = coverage ? clamp(coverage.covered / coverage.total) : 0
   // Runs on from what is paid, for as much money as came back ahead.
-  const ahead = refunds ? clamp(ratio + refunds.ahead / refunds.total) : 0
+  const ahead = coverage ? clamp(ratio + coverage.ahead / coverage.total) : 0
 
   const circle = { cx: size / 2, cy: size / 2, r: radius, fill: 'none' }
   return (
@@ -61,7 +62,7 @@ export function ProgressRing({
         aria-label={left === 0 ? t('allPaid', { total }) : t('paid', { done, total, left })}
       >
         <circle {...circle} stroke="var(--border)" strokeWidth={stroke} />
-        {refunds ? (
+        {coverage ? (
           <>
             {ahead > ratio && (
               <circle

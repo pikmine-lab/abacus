@@ -202,6 +202,15 @@ export async function commitments(userId: string, { accounts, categories, actors
     firstDueOn: bikeFirst,
   })
   await confirmEach(userId, bike.id, dueDates(bikeFirst, 'month', 1, yesterday))
+  // The family chipped in: its installments draw on it, whenever it came.
+  await declareMovement(userId, {
+    happenedOn: dayOfMonthAgo(5, 20),
+    amount: 300,
+    sourceActorId: actors.family,
+    targetAccountId: accounts.checking,
+    reservesCommitmentId: bike.id,
+    note: 'Participation au vélo',
+  })
 
   const phoneSchedule = defaultSchedule({
     totalAmount: 599,
