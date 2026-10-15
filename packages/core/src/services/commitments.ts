@@ -547,9 +547,13 @@ export async function listCommitmentsWithProgress(
   const raw = await listCommitmentsDs(sql, userId, { activeOnly })
   const rates = await latestRates(sql, raw, history)
   const ids = raw.map((c) => c.id)
-  const shares = await sharesOfCommitments(sql, ids)
-  const reserves = new Map((await reservesOf(sql, ids)).map((r) => [r.commitmentId, r]))
-  const coverages = new Map((await coveragesOf(sql, ids)).map((r) => [r.commitmentId, r]))
+  const [shares, reserveRows, coverageRows] = await Promise.all([
+    sharesOfCommitments(sql, ids),
+    reservesOf(sql, ids),
+    coveragesOf(sql, ids),
+  ])
+  const reserves = new Map(reserveRows.map((r) => [r.commitmentId, r]))
+  const coverages = new Map(coverageRows.map((r) => [r.commitmentId, r]))
   return await Promise.all(
     raw.map(async (c) => {
       const eur = { ...eurAmounts(c, rates, shares), reserve: reserves.get(c.id) ?? null }

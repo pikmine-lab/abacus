@@ -2,7 +2,9 @@
 -- it: the claims on its total spread over its paid installments
 -- (`share_refund`) and what its reserve drew from them (`reserve_draw`). The
 -- figure a screen or the MCP shows of it is the sum of what the analyses
--- deduct, never a second computation from the totals that could drift from it.
+-- deduct for those two, never a second computation from the totals that could
+-- drift from it. Shares per instalment are not part of it: each row names its
+-- own refunds.
 
 -- `share_refund` adds the refunds of an expense's own shares to what the
 -- claims on its financing's total cover of it. `on_total` keeps the second
@@ -68,9 +70,13 @@ where own.refunded is not null or spread.refunded is not null;
 create view financing_coverage as
 select c.id as commitment_id,
        claims.covered as refunds_covered,
-       (claims.back - claims.covered)::numeric(14,2) as refunds_ahead,
+       -- Each instalment's part is rounded on its own, so their sum can pass
+       -- what came back by a cent: nothing is ahead then, never less.
+       -- `greatest` skips nulls, hence the case: no claim stays null.
+       case when claims.covered is not null
+            then greatest(claims.back - claims.covered, 0) end::numeric(14,2) as refunds_ahead,
        (coalesce(claims.covered, 0) + coalesce(cr.drawn, 0))::numeric(14,2) as covered,
-       (coalesce(claims.back - claims.covered, 0)
+       (coalesce(greatest(claims.back - claims.covered, 0), 0)
          + case when cr.released_on is null then coalesce(cr.remaining, 0) else 0 end)::numeric(14,2) as ahead
 from commitment c
 left join lateral (

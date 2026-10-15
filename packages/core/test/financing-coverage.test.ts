@@ -107,6 +107,7 @@ test('a financing nobody claimed on or gave money for has nothing covering it', 
   const user = await seedUser()
   const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
   const shop = await createActor(user, { name: 'Bike shop' })
+  const friend = await createActor(user, { name: 'Friend' })
   const bike = await createFinancing(user, {
     label: 'Bike',
     actorId: shop.id,
@@ -114,6 +115,8 @@ test('a financing nobody claimed on or gave money for has nothing covering it', 
     installmentsTotal: 2,
     totalAmount: 400,
     firstDueOn: '2026-02-01',
+    // A share per installment is no claim on the total.
+    refundShares: [{ debtorActorId: friend.id, amount: 50, perOccurrence: true }],
   })
   await confirmNextOccurrence(user, bike.id)
 
