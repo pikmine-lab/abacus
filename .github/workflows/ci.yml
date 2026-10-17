@@ -9,6 +9,11 @@
 # the queue until it times out, so every required job stays free of an event
 # filter. Only deploy is held back, by the ref guard it already had.
 #
+# The `main` ruleset requires these checks by their full job names, matrix
+# included (`build (web, apps/web/Dockerfile)`). Renaming a job, a Dockerfile or
+# the matrix leaves the ruleset waiting for a check that never reports, and
+# every pull request stuck: update the ruleset in the same change.
+#
 # The deploy job is separate on purpose: it is the only job granted an OIDC
 # token, so what it reads from the vault (the Dokploy token, the application
 # secrets) never shares a process with the Docker actions.
@@ -37,6 +42,28 @@ jobs:
           # neither of.
           fetch-depth: 0
       - run: scripts/check-migration-numbers.sh
+
+  # baudrier check-agents-md CI job, version 2.
+  #
+  # Checks every AGENTS.md and CLAUDE.md, with the amendment limits measured from
+  # the pull request's base, or from the default branch on a push or in the merge
+  # queue.
+  agents-md:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The amendment limits diff against the base branch.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Check AGENTS.md and CLAUDE.md
+        env:
+          BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
+        run: node scripts/check-agents-md.mjs --base "$BASE"
 
   test:
     runs-on: ubuntu-latest
