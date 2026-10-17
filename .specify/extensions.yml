@@ -1,0 +1,142 @@
+installed:
+- assess
+- bug
+- issue-sync
+settings:
+  auto_execute_hooks: true
+hooks:
+  before_specify:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_specify:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the spec to the feature's issue
+    condition: null
+  before_clarify:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_clarify:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the clarified spec to the feature's issue
+    condition: null
+  before_plan:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_plan:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the plan and its companions to the feature's issue
+    condition: null
+  before_checklist:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_checklist:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the checklist to the feature's issue
+    condition: null
+  before_tasks:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_tasks:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the tasks to the feature's issue
+    condition: null
+  before_analyze:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  before_implement:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_implement:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the ticked tasks to the feature's issue
+    condition: null
+  before_converge:
+  - extension: issue-sync
+    command: speckit.issue-sync.pull
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.pull?
+    description: Pull the feature's issue into its cache
+    condition: null
+  after_converge:
+  - extension: issue-sync
+    command: speckit.issue-sync.push
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.issue-sync.push?
+    description: Push the tasks converge added to the feature's issue
+    condition: null

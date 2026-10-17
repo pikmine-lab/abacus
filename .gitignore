@@ -34,6 +34,13 @@ next-env.d.ts
 **/.impeccable/build/
 **/.impeccable/live/
 
+# Spec Kit artifacts live in the feature's GitHub issue: what a step reads and
+# writes locally is a cache rebuilt from the issue (see speckit/extensions/
+# issue-sync), never a second source.
+.specify/tmp/
+.specify/assessments/
+.specify/bugs/
+
 # Local noise
 *.log
 .DS_Store

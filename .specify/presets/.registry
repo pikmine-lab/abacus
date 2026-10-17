@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "presets": {
+    "abacus": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:2281ce240d0f9ee390616d98a384e931bec64565dbad8530e03e00658f1f9ff1",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.specify",
+          "speckit.plan",
+          "speckit.tasks",
+          "speckit.implement",
+          "speckit.converge",
+          "speckit.assess.decide",
+          "speckit.bug.assess",
+          "speckit.bug.fix"
+        ]
+      },
+      "registered_skills": {
+        "claude": [
+          "speckit-specify",
+          "speckit-plan",
+          "speckit-tasks",
+          "speckit-implement",
+          "speckit-converge",
+          "speckit-assess-decide",
+          "speckit-bug-assess",
+          "speckit-bug-fix"
+        ]
+      },
+      "installed_at": "2026-10-17T14:14:39.792069+00:00"
+    }
+  }
+}

@@ -1,0 +1,96 @@
+schema_version: "1.0"
+
+extension:
+  id: issue-sync
+  name: "Issue sync"
+  version: "1.0.0"
+  description: "Keeps a feature's Spec Kit artifacts in its GitHub issue: pulled into an ignored cache before each step, pushed back as one comment per artifact after."
+  author: pikmine-lab
+  repository: https://github.com/pikmine-lab/abacus
+  license: MIT
+
+requires:
+  speckit_version: ">=1.2.0"
+  tools:
+    - name: gh
+      required: true
+    - name: node
+      required: true
+
+provides:
+  commands:
+    - name: speckit.issue-sync.pull
+      file: commands/speckit.issue-sync.pull.md
+      description: "Rebuild the local cache of a feature from its GitHub issue before a Spec Kit step"
+    - name: speckit.issue-sync.push
+      file: commands/speckit.issue-sync.push.md
+      description: "Write the artifacts a Spec Kit step changed back to the feature's GitHub issue"
+
+# Every step that reads the artifacts pulls first; every step that writes them
+# pushes after. analyze writes nothing, so it only pulls.
+hooks:
+  before_specify:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_specify:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the spec to the feature's issue"
+  before_clarify:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_clarify:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the clarified spec to the feature's issue"
+  before_plan:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_plan:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the plan and its companions to the feature's issue"
+  before_checklist:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_checklist:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the checklist to the feature's issue"
+  before_tasks:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_tasks:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the tasks to the feature's issue"
+  before_analyze:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  before_implement:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_implement:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the ticked tasks to the feature's issue"
+  before_converge:
+    command: speckit.issue-sync.pull
+    optional: false
+    description: "Pull the feature's issue into its cache"
+  after_converge:
+    command: speckit.issue-sync.push
+    optional: false
+    description: "Push the tasks converge added to the feature's issue"
+
+tags:
+  - "github"
+  - "issues"
+  - "sync"

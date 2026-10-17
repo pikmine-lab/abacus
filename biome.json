@@ -13,7 +13,8 @@
       "!**/.next",
       "!**/next-env.d.ts",
       "!pnpm-lock.yaml",
-      "!.claude/skills/impeccable"
+      "!.claude/skills/impeccable",
+      "!.specify"
     ]
   },
   "formatter": {
