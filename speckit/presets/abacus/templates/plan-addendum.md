@@ -1,4 +1,21 @@
 
+## Stratégie de test *(obligatoire)*
+
+<!--
+  Chaque cas de « Cas et refus » a son niveau de test, choisi ici avant toute tâche :
+  le plus bas qui l'éprouve vraiment. Niveaux : calcul pur du domaine, service contre
+  la base, outil MCP en process, écran. Ce qui ne se teste pas automatiquement dit
+  comment il se valide (validation fonctionnelle de converge).
+-->
+
+| Cas | Niveau | Ce que le test exerce |
+|---|---|---|
+| C1 | [service] | [le geste, l'état de départ, ce qui est vérifié] |
+
+- **Données** : [ce que les tests ajoutent à leurs jeux de départ ; ce que le jeu de démo
+  gagne pour la validation fonctionnelle]
+- **Hors automatisation** : [cas, et comment il se valide]
+
 ## Revue *(obligatoire)*
 
 - **`/code-review`** : niveau `[low | medium | high | xhigh | max]`, choisi selon la taille

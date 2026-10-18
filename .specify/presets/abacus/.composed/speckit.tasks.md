@@ -1,6 +1,6 @@
 ---
-description: Generate the dependency-ordered tasks of the feature, whose tests come
-  from the test-first loop.
+description: Generate the dependency-ordered tasks of the feature as test-first batches,
+  kept in its pull request.
 scripts:
   sh: scripts/bash/setup-tasks.sh --json
   ps: scripts/powershell/setup-tasks.ps1 -Json
@@ -12,13 +12,24 @@ scripts:
 
 Elles priment sur les instructions génériques qui suivent.
 
-- **Le dossier de la fonctionnalité est le cache de son issue**, reconstruit par le
-  hook `before_tasks`. `tasks.md` s'y écrit et rejoint l'issue après l'étape.
-- **Les tests ne sont jamais optionnels**, quoi qu'en dise le gabarit. Ils ne font
-  pas pour autant l'objet de tâches à part : à l'implémentation, chaque tâche de code
-  passe par la boucle test-first, dont un agent dédié écrit les tests depuis la spec
-  et le plan. Une tâche de code dit donc quels comportements et quels refus de
-  « Cas et refus » elle couvre.
+- **Les tâches vivent dans la description de la PR** de la fonctionnalité, dans une
+  section que `issue-sync` tient à jour ; le `tasks.md` du cache n'en est qu'une copie.
+  Avant de terminer l'étape (et donc avant le hook `after_tasks`), ouvrir la PR en
+  brouillon si la branche n'en a pas :
+
+  ```sh
+  git commit --allow-empty -m "chore: open <issue number>"   # seulement si la branche n'a aucun commit
+  git push -u origin HEAD
+  gh pr create --draft --title "<titre de l'issue>" --body "Closes #<issue number>"
+  ```
+
+- **Chaque tâche de code est un lot test-first** : elle cite les cas de « Cas et
+  refus » qu'elle couvre et leur niveau de test, pris dans la « Stratégie de test »
+  du plan. Jamais de tâche « écrire les tests » à part : à l'implémentation, la boucle
+  test-first de chaque tâche écrit ses tests. Les règles complètes sont à la fin du
+  gabarit des tâches.
+- Chaque cas de « Cas et refus » est couvert par au moins une tâche ; un cas sans
+  tâche est un trou du plan, à reprendre avant de continuer.
 - Le jeu de démo (`packages/data-seed`) s'enrichit dans la même fonctionnalité dès
   qu'elle ajoute de quoi déclarer : c'est une tâche.
 

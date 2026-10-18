@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// Keeps the Spec Kit artifacts of a feature in its GitHub issue, one comment
-// per artifact updated in place, and a local copy in a git-ignored cache that
-// the Spec Kit commands read and write. The issue is the source: the cache is
+// Keeps the Spec Kit artifacts of a feature on GitHub, and a local copy in a
+// git-ignored cache that the Spec Kit commands read and write. What the feature
+// must do (spec, plan and their companions) lives in its issue, one comment per
+// artifact updated in place; how it gets done (tasks.md) lives in a section of
+// the description of its pull request. GitHub is the source: the cache is
 // rebuilt from it before every step, and nothing in it is ever committed.
 //
 // Usage:
 //   node issue-sync.mjs pull [<issue>] [--dir <dir>] [--prefix <prefix>]
 //   node issue-sync.mjs push [<issue>] [--dir <dir>] [--prefix <prefix>] [--note <text>]
 //
-// Without <issue>, the number is read from the branch (`<type>/<number>-<slug>`).
+// Without <issue>, the issue number is read from the branch (`<issue number>-<slug>`).
+// The pull request is the open one whose head is the current branch.
 // Without --dir, the cache of that issue is used, and pull points Spec Kit's
 // .specify/feature.json at it. --prefix namespaces what another flow writes
 // elsewhere (`assess/`, `bug/`) so that its files never collide with the
@@ -18,14 +21,17 @@
 // Requires an authenticated `gh`, run from inside the repository.
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const CACHE_ROOT = '.specify/tmp'
 const CONTEXT_FILE = 'issue.md'
+const TASKS_FILE = 'tasks.md'
 const MARKER = /^<!-- speckit-artifact: (\S+) -->$/
-// GitHub refuses a comment body over 65536 characters.
+const TASKS_START = '<!-- speckit-tasks:start -->'
+const TASKS_END = '<!-- speckit-tasks:end -->'
+// GitHub refuses a comment or a description over 65536 characters.
 const MAX_BODY = 65536
 const TEXT_FILE = /\.(md|json|ya?ml|txt)$/
 
@@ -35,9 +41,42 @@ export function cacheDir(issue) {
   return `${CACHE_ROOT}/issue-${issue}`
 }
 
+// The `<type>/` prefix is an older convention, still read while such branches
+// are open.
 export function issueFromBranch(branch) {
-  const match = /^[a-z]+\/(\d+)-/.exec(branch)
+  const match = /^(?:[a-z]+\/)?(\d+)-/.exec(branch)
   return match ? Number(match[1]) : null
+}
+
+function normalize(text) {
+  return text.replace(/\r\n/g, '\n')
+}
+
+// Returns the tasks held in a pull request description, null when it has none.
+export function readTasks(body) {
+  const text = normalize(body ?? '')
+  const start = text.indexOf(`${TASKS_START}\n`)
+  const end = text.indexOf(TASKS_END, start)
+  if (start === -1 || end === -1) return null
+  return text.slice(start + TASKS_START.length + 1, end)
+}
+
+// Puts the tasks into their section of a pull request description, leaving the
+// rest of it as it is; the section is appended when the description has none.
+export function writeTasks(body, tasks) {
+  const content = tasks.endsWith('\n') ? tasks : `${tasks}\n`
+  const section = `${TASKS_START}\n${content}${TASKS_END}`
+  const text = normalize(body ?? '')
+  const start = text.indexOf(`${TASKS_START}\n`)
+  const end = text.indexOf(TASKS_END, start)
+  const result =
+    start === -1 || end === -1
+      ? [text.trimEnd(), section].filter(Boolean).join('\n\n')
+      : text.slice(0, start) + section + text.slice(end + TASKS_END.length)
+  if (result.length > MAX_BODY) {
+    throw new Failure(`the pull request description would be ${result.length} characters: split the tasks.`)
+  }
+  return result
 }
 
 // Artifact paths come from comments anyone can write: only plain relative
@@ -104,7 +143,7 @@ function comments(issue) {
   return pages.flat().map(({ id, body }) => ({ id, body }))
 }
 
-function listFiles(dir, prefix) {
+function listFiles(dir, prefix, skipped) {
   const result = []
   const walk = (current) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
@@ -112,12 +151,24 @@ function listFiles(dir, prefix) {
       if (entry.isDirectory()) walk(full)
       else if (TEXT_FILE.test(entry.name)) {
         const path = relative(dir, full).split(sep).join('/')
-        if (path !== CONTEXT_FILE) result.push({ path: prefix + path, content: readFileSync(full, 'utf8') })
+        if (!skipped.includes(path)) result.push({ path: prefix + path, content: readFileSync(full, 'utf8') })
       }
     }
   }
   walk(dir)
   return result.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+function currentBranch() {
+  return run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
+}
+
+// The open pull request of the current branch, null when there is none yet.
+function pullRequest() {
+  const found = JSON.parse(
+    gh(['pr', 'list', '--head', currentBranch(), '--state', 'open', '--json', 'number,body', '--limit', '1']),
+  )
+  return found[0] ?? null
 }
 
 function parseArgs(argv) {
@@ -139,10 +190,10 @@ function parseArgs(argv) {
 
 function resolveIssue(options) {
   if (options.issue !== null) return options.issue
-  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
+  const branch = currentBranch()
   const issue = issueFromBranch(branch)
   if (issue === null) {
-    throw new Failure(`branch "${branch}" names no issue (<type>/<number>-<slug>): pass the issue number.`)
+    throw new Failure(`branch "${branch}" names no issue (<issue number>-<slug>): pass the issue number.`)
   }
   return issue
 }
@@ -166,13 +217,40 @@ function pull(options) {
     writeFileSync(target, artifact.content)
     restored.push(artifact.path)
   }
-  return { issue, dir, restored }
+  const pr = options.dir ? null : pullRequest()
+  const tasks = readTasks(pr?.body)
+  if (tasks !== null) {
+    writeFileSync(join(dir, TASKS_FILE), tasks)
+    restored.push(`${TASKS_FILE} (PR #${pr.number})`)
+  }
+  return { issue, pr: pr?.number ?? null, dir, restored }
+}
+
+// The tasks go to the pull request, which must exist once there are tasks.
+function pushTasks(dir) {
+  const path = join(dir, TASKS_FILE)
+  if (!existsSync(path)) return null
+  const pr = pullRequest()
+  if (!pr) {
+    throw new Failure(
+      `${TASKS_FILE} has nowhere to go: open the draft pull request of branch "${currentBranch()}" first.`,
+    )
+  }
+  const tasks = readFileSync(path, 'utf8')
+  const body = writeTasks(pr.body, tasks)
+  if (body === normalize(pr.body ?? '')) return null
+  gh(
+    ['api', '--method', 'PATCH', `repos/{owner}/{repo}/pulls/${pr.number}`, '--input', '-'],
+    JSON.stringify({ body }),
+  )
+  return `${TASKS_FILE} (PR #${pr.number})`
 }
 
 function push(options) {
   const issue = resolveIssue(options)
   const dir = options.dir ?? cacheDir(issue)
-  const actions = planPush(listFiles(dir, options.prefix), comments(issue))
+  const skipped = options.dir ? [] : [CONTEXT_FILE, TASKS_FILE]
+  const actions = planPush(listFiles(dir, options.prefix, skipped), comments(issue))
   for (const action of actions) {
     const payload = JSON.stringify({ body: action.body })
     if (action.kind === 'create') {
@@ -188,6 +266,8 @@ function push(options) {
     }
   }
   const changed = actions.map((action) => action.path)
+  const tasks = options.dir ? null : pushTasks(dir)
+  if (tasks) changed.push(tasks)
   if (changed.length > 0 && options.note) {
     const list = changed.map((path) => `\`${path}\``).join(', ')
     const body = `Spec Kit : ${options.note}\n\nArtefacts mis à jour : ${list}.`

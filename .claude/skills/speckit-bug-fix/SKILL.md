@@ -26,7 +26,7 @@ $ARGUMENTS
 ## Étapes
 
 1. **Le bug** : le numéro de son issue, donné en entrée ou tiré de la branche
-   (`fix/<numéro>-<slug>`). `BUG_DIR` vaut `.specify/bugs/<numéro>`. Le reconstruire
+   (`<numéro de l'issue>-<slug>`). `BUG_DIR` vaut `.specify/bugs/<numéro>`. Le reconstruire
    depuis l'issue :
 
    ```sh

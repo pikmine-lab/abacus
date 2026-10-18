@@ -93,7 +93,7 @@ hooks:
     optional: false
     priority: 10
     prompt: Execute speckit.issue-sync.push?
-    description: Push the tasks to the feature's issue
+    description: Push the tasks to the feature's pull request
     condition: null
   before_analyze:
   - extension: issue-sync
@@ -120,7 +120,7 @@ hooks:
     optional: false
     priority: 10
     prompt: Execute speckit.issue-sync.push?
-    description: Push the ticked tasks to the feature's issue
+    description: Push the ticked tasks to the feature's pull request
     condition: null
   before_converge:
   - extension: issue-sync
@@ -138,5 +138,5 @@ hooks:
     optional: false
     priority: 10
     prompt: Execute speckit.issue-sync.push?
-    description: Push the tasks converge added to the feature's issue
+    description: Push the tasks converge added to the feature's pull request
     condition: null

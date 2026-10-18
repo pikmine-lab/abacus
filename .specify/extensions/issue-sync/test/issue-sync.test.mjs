@@ -7,15 +7,54 @@ import {
   issueFromBranch,
   parseComment,
   planPush,
+  readTasks,
   renderComment,
+  writeTasks,
 } from '../scripts/issue-sync.mjs'
 
-test('the issue number is read from a <type>/<number>-<slug> branch', () => {
-  assert.equal(issueFromBranch('feat/189-freeze-behaviour'), 189)
-  assert.equal(issueFromBranch('chore/7-x'), 7)
+test('the issue number is read from a <number>-<slug> branch', () => {
+  assert.equal(issueFromBranch('189-freeze-behaviour'), 189)
+  assert.equal(issueFromBranch('7-x'), 7)
   assert.equal(issueFromBranch('main'), null)
-  assert.equal(issueFromBranch('189-no-type'), null)
   assert.equal(issueFromBranch('feat/no-number'), null)
+  assert.equal(issueFromBranch('189'), null)
+})
+
+test('a branch still named <type>/<number>-<slug> gives its issue number', () => {
+  assert.equal(issueFromBranch('chore/188-spec-kit-harness'), 188)
+})
+
+test('the tasks are read back from the section of the pull request description', () => {
+  const tasks = '# Tasks\n\n- [ ] T001 Do it\n'
+  const body = writeTasks('Closes #189\n\nSummary.', tasks)
+  assert.equal(readTasks(body), tasks)
+  assert.equal(readTasks(body.replace(/\n/g, '\r\n')), tasks)
+})
+
+test('a description without the tasks section has no tasks', () => {
+  assert.equal(readTasks('Closes #189'), null)
+  assert.equal(readTasks(null), null)
+})
+
+test('writing the tasks keeps the rest of the description', () => {
+  const first = writeTasks('Closes #189\n\nSummary.', '- [ ] T001\n')
+  const second = writeTasks(`${first}\n\n## Garde des tests\n\n| File |`, '- [x] T001\n')
+  assert.match(second, /^Closes #189\n\nSummary\./)
+  assert.match(second, /## Garde des tests\n\n\| File \|$/)
+  assert.equal(readTasks(second), '- [x] T001\n')
+  assert.equal(second.match(/speckit-tasks:start/g).length, 1)
+})
+
+test('tasks written to an empty description become the whole section', () => {
+  assert.equal(readTasks(writeTasks('', 'x')), 'x\n')
+  assert.equal(readTasks(writeTasks(null, 'x')), 'x\n')
+})
+
+test('a description over the GitHub limit is refused', () => {
+  assert.throws(
+    () => writeTasks('', 'x'.repeat(65536)),
+    (error) => error instanceof Failure && /split/.test(error.message),
+  )
 })
 
 test('the cache of an issue lives under the ignored temporary root', () => {

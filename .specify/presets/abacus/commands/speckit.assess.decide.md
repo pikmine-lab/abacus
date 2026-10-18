@@ -28,4 +28,4 @@ rédigés en français.
   4. **kill** seulement : fermer l'issue avec son motif, jamais en silence :
      `gh issue close <numéro> --reason "not planned" --comment "<motif décisif>"`.
 - **go** : l'étape suivante est `/speckit-specify` sur la branche
-  `<type>/<numéro>-<slug>` de cette issue.
+  `<numéro de l'issue>-<slug>`.

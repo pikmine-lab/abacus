@@ -38,7 +38,7 @@
     "issue-sync": {
       "version": "1.0.0",
       "source": "local",
-      "manifest_hash": "sha256:d62c51f87b059ce7ff8cc026e691bf789a97478433810921f1a00e6eb2775356",
+      "manifest_hash": "sha256:8c446ad1a374e5fa453774e9f6f62afc611429ccbf24c08ebb503d143c79f54b",
       "enabled": true,
       "priority": 10,
       "registered_commands": {
@@ -48,7 +48,7 @@
         ]
       },
       "registered_skills": [],
-      "installed_at": "2026-10-17T14:14:53.779257+00:00"
+      "installed_at": "2026-10-18T23:35:10.604000+00:00"
     }
   }
 }

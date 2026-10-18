@@ -4,7 +4,7 @@ extension:
   id: issue-sync
   name: "Issue sync"
   version: "1.0.0"
-  description: "Keeps a feature's Spec Kit artifacts in its GitHub issue: pulled into an ignored cache before each step, pushed back as one comment per artifact after."
+  description: "Keeps a feature's Spec Kit artifacts on GitHub: spec and plan as comments of its issue, tasks in its pull request description, pulled into an ignored cache before each step and pushed back after."
   author: pikmine-lab
   repository: https://github.com/pikmine-lab/abacus
   license: MIT
@@ -68,7 +68,7 @@ hooks:
   after_tasks:
     command: speckit.issue-sync.push
     optional: false
-    description: "Push the tasks to the feature's issue"
+    description: "Push the tasks to the feature's pull request"
   before_analyze:
     command: speckit.issue-sync.pull
     optional: false
@@ -80,7 +80,7 @@ hooks:
   after_implement:
     command: speckit.issue-sync.push
     optional: false
-    description: "Push the ticked tasks to the feature's issue"
+    description: "Push the ticked tasks to the feature's pull request"
   before_converge:
     command: speckit.issue-sync.pull
     optional: false
@@ -88,7 +88,7 @@ hooks:
   after_converge:
     command: speckit.issue-sync.push
     optional: false
-    description: "Push the tasks converge added to the feature's issue"
+    description: "Push the tasks converge added to the feature's pull request"
 
 tags:
   - "github"

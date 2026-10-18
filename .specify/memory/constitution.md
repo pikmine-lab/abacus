@@ -189,3 +189,17 @@ Chaque garde-fou a son propre test, qui lui soumet un défaut volontaire et exig
 *Vérifié par* : le test propre à chaque garde-fou ; la revue de code, qui refuse un nouveau
 garde-fou sans le sien.
 
+## XV. La langue de l'utilisateur s'arrête à ce qui s'affiche
+
+La frontière est le lecteur, pas le fichier. Ce qu'une personne lit devant l'application
+est dans la langue qu'elle a choisie, le français par défaut, et vit dans les catalogues
+de messages, jamais en dur dans un composant. Tout ce que seul le code lit est en anglais :
+segments d'URL, clés et valeurs de paramètres de requête, noms de champs de formulaire,
+identifiants, noms de fichiers, branches, commentaires, messages de commit. Les données ne
+se traduisent pas : ce que la personne a saisi reste dans les mots où elle l'a saisi. Les
+documents du dépôt, les issues et les artefacts de spécification sont en français.
+
+*Vérifié par* : les tests des catalogues (chaque langue a exactement les clés et les
+arguments du catalogue français, aucun message vide) ; la revue de code, qui refuse un
+texte affiché écrit en dur et un identifiant dans la langue de l'utilisateur.
+

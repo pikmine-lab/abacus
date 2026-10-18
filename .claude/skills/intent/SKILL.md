@@ -83,9 +83,10 @@ Une causalité n'a pas de relation native : l'écrire dans le corps en citant l'
 
 ## 5. Attaquer, clore
 
-- Branche `<type>/<numéro>-<slug>`, slug en anglais (`feat/12-monthly-due-dates`) :
-  `issue-sync` y lit le numéro. Puis `/speckit-specify` pour une fonctionnalité,
-  `/speckit-bug-assess` pour un bug. La PR close l'issue (`Closes #12`).
+- Branche `<numéro de l'issue>-<slug>`, slug en anglais (`12-monthly-due-dates`) :
+  `issue-sync` y lit le numéro de l'issue. Puis `/speckit-specify` pour une
+  fonctionnalité, `/speckit-bug-assess` pour un bug. La PR, ouverte en brouillon à
+  `/speckit-tasks`, porte les tâches et close l'issue (`Closes #12`).
 - Une tâche Todoist qui double une issue la référence (`abacus #12 : titre`), sans
   recopier son contenu.
 - Une issue abandonnée se ferme avec son motif, jamais en silence :

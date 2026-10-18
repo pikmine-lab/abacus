@@ -10,6 +10,11 @@ Elles priment sur les instructions génériques qui suivent.
   hook `before_plan`. Le plan et ses compagnons (`research.md`, `data-model.md`,
   `contracts/`, `quickstart.md`) s'y écrivent et rejoignent l'issue après l'étape.
 - **Le plan est rédigé en français.**
+- **Section « Stratégie de test »** : pour chaque cas de « Cas et refus », le niveau
+  le plus bas qui l'éprouve vraiment (calcul pur du domaine, service contre la base,
+  outil MCP en process, écran), les données que les tests ajoutent, et ce qui ne
+  s'automatise pas avec la façon de le valider. Les tâches et les boucles test-first
+  en partent ; un cas sans niveau est un plan incomplet.
 - **Section « Revue »** : le niveau d'effort de `/code-review` selon la taille de la
   fonctionnalité, et si `/security-review` est obligatoire, avec la raison. Elle est
   obligatoire dès que la fonctionnalité ajoute un champ saisi, une route, une règle

@@ -33,7 +33,8 @@ format de la vérification Spec Kit (`<source-ref>` : `code-review`,
 `security-review`, `validation`, `humain`). Elle suit le chemin que la skill
 `test-first` donne à sa nature : un bug repasse par un test qui le reproduit, un
 défaut de qualité par l'implémenteur, un plan faux par la spec et le plan d'abord.
-Puis renvoyer les tâches dans l'issue (`/speckit-issue-sync-push`), et reprendre
+Puis renvoyer les tâches dans la description de la PR (`/speckit-issue-sync-push`),
+et reprendre
 `/speckit-implement` puis `/speckit-converge`. Après une petite retouche, revalider
 ce qui a été touché ; après un changement structurant, tout.
 
