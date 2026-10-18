@@ -124,4 +124,3 @@ laquelle elle ne démarre pas. Un worktree reçoit le sien à sa création (`.co
   l'aurait évitée : un contrôle d'abord, sinon une règle dans l'`AGENTS.md` le plus proche,
   sinon rien. Quand un changement retire la cause d'une telle règle, la mettre à jour ou
   la retirer.
-- Décidé le 2026-10-17, voir `docs/absent.md`.
