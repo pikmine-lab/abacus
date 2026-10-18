@@ -10,6 +10,13 @@ pour ce que chaque geste fait et refuse. Une règle d'écran ci-dessous dit comm
 se présente, jamais ce qu'il autorise : ça, c'est le service qui le tranche, et les deux
 interfaces le lisent au même endroit.
 
+Impeccable est installé pour le projet : une montée de version se lance une fois et se
+commite (`npx impeccable install --scope=project --providers=claude-code -y --force`). Pas
+de copie globale, que Claude Code ferait passer devant celle du projet.
+
+Le hook lit le `.impeccable/` du dossier où tourne la session, la racine en temps normal :
+une exception du détecteur ou un réglage du hook s'enregistre depuis la racine.
+
 ## Les textes et les formats
 
 - **Aucun texte affiché n'est écrit dans un composant.** Libellé, phrase, `aria-label`,
@@ -21,7 +28,7 @@ interfaces le lisent au même endroit.
   phrase qui porte une valeur passe par un argument ICU, jamais par une concaténation, et
   un pluriel par `plural`.
 - **Un montant ou une date passe par les formateurs de la langue** : `useFormat()`
-  (`lib/format.ts`) ou `getFormat()` (`lib/format-server.ts`). Un `toLocaleString('fr-FR')`
+  (`src/lib/format.ts`) ou `getFormat()` (`src/lib/format-server.ts`). Un `toLocaleString('fr-FR')`
   ou un nom de mois écrit en dur écrirait des chiffres français sous une page anglaise.
 - **La langue se résout dans `src/i18n/request.ts`** : la préférence du profil, sinon celle
   du navigateur, sinon le français. Ni l'URL ni un cookie ne la portent. Seule la page
@@ -94,7 +101,7 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   liste et leur sens d'ouverture sont déclarés par le service qui la construit
   (`MOVEMENT_SORTS`, `POSITION_SORTS`…), jamais par l'écran : les deux interfaces
   ordonnent alors la même liste de la même façon. La page résout le paramètre en un
-  `Sorter` (`lib/sort.ts`) et le passe à ses en-têtes ; `SortHead` sert une vraie `Table`,
+  `Sorter` (`src/lib/sort.ts`) et le passe à ses en-têtes ; `SortHead` sert une vraie `Table`,
   `SortColumn` un en-tête de colonnes fait à la main, `SortMenu` une liste de blocs, et il
   se réduit à une bascule quand la liste n'a qu'un critère. Une liste tronquée (mouvements,
   opérations) trie en SQL, sinon la limite couperait avant l'ordre et la page serait
@@ -113,8 +120,8 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
 - **L'état de la barre latérale est lu côté serveur** dans le cookie `sidebar_state`, pour
   que le premier rendu ait déjà la bonne largeur.
 - **Le mois compté se résout en trois endroits, dans cet ordre** : le paramètre d'URL, le
-  cookie, la préférence du profil (`lib/reading.ts`). Ce n'est pas un cadrage d'écran
-  comme la période ou le tri. La bascule n'écrit que l'URL ; `proxy.ts` en tire le cookie
+  cookie, la préférence du profil (`src/lib/reading.ts`). Ce n'est pas un cadrage d'écran
+  comme la période ou le tri. La bascule n'écrit que l'URL ; `src/proxy.ts` en tire le cookie
   qui fait suivre le choix d'un écran à l'autre, et l'efface à chaque chargement de
   document, pour qu'aucun état invisible ne survive à un rechargement. Le paramètre est
   toujours écrit en clair, jamais retiré sur la valeur par défaut, sinon l'écran
@@ -139,8 +146,8 @@ Quatre contrôles ne se prennent pas dans le catalogue tel quel :
   actif.
 - **Un cadre qui se redessine a sa hauteur en CSS, pas après mesure.** Une hauteur provisoire
   raccourcit la page le temps d'un rendu, et le navigateur remonte le défilement avec elle.
-- **Ce qui s'exécute avant le rendu vit dans `src/proxy.ts`** (`middleware.ts` est le nom
-  d'avant). Next y masque ses propres en-têtes RSC, pour empêcher qu'une navigation
+- **Ce qui s'exécute avant le rendu vit dans `src/proxy.ts`** (le `middleware` des
+  anciennes versions de Next). Next y masque ses propres en-têtes RSC, pour empêcher qu'une navigation
   réponde autrement qu'un chargement de page : distinguer les deux, quand c'est
   justement ce qu'on veut, passe par `Sec-Fetch-Dest`, en-tête du navigateur. Le proxy est
   empaqueté à part du rendu, donc il n'importe rien de `lib/` : ce qu'il partage se
