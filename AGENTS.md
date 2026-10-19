@@ -62,7 +62,9 @@ branche se nomme `<numéro de l'issue>-<slug>`, et sa PR close l'issue.
   diagnostic ;
 - les tâches sont dans la description de la PR, entre les marqueurs `speckit-tasks` ;
 - les commentaires « Spec Kit : … » disent ce que chaque étape a changé, les autres
-  portent la discussion et le récit.
+  portent la discussion et le récit ;
+- les commentaires se lisent dans l'ordre : quand deux décisions se contredisent, la plus
+  récente l'emporte.
 
 **Accord d'écriture** : les commandes Spec Kit écrivent dans l'issue et la PR de la
 fonctionnalité en cours, par l'extension `issue-sync`, et ouvrent cette PR en brouillon,
