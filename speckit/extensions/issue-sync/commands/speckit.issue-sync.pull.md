@@ -28,10 +28,12 @@ $ARGUMENTS
    node .specify/extensions/issue-sync/scripts/issue-sync.mjs pull <issue number>
    ```
 
-   It writes the issue itself to `issue.md` (context only, never pushed), each
-   artifact comment to its file, the tasks of the branch's open pull request to
-   `tasks.md` when there is one, and points `.specify/feature.json` at the cache
-   directory. Its JSON output gives that directory as `dir`.
+   It writes the issue to `issue.md` (context only, never pushed): its
+   description, then every comment that is not an artifact, in order, a later
+   decision overriding an earlier one. Each artifact comment becomes its own
+   file. When the branch is named after the issue, the tasks of its open pull
+   request go to `tasks.md`. Finally it points `.specify/feature.json` at the
+   cache directory, which its JSON output gives as `dir`.
 3. Use `dir` as the feature directory for the rest of the step, and as
    `SPECIFY_FEATURE_DIRECTORY` wherever the step asks for it. Never create a
    feature directory under `specs/`.

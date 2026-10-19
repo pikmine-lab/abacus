@@ -16,6 +16,8 @@ Elles priment sur les instructions génériques qui suivent.
     --dir .specify/bugs/<numéro> --prefix bug/
   ```
 
+- **Le rapport de bug est l'issue** : `issue.md` du cache, sa description puis ses
+  commentaires dans l'ordre.
 - **Le diagnostic est rédigé en français.** Le correctif ne commence pas ici : il
   passe par `/speckit-bug-fix`, qui reproduit d'abord le bug par un test.
 
