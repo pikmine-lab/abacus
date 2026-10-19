@@ -71,10 +71,8 @@ fonctionnalité en cours, par l'extension `issue-sync`, et ouvrent cette PR en b
 sans demander. L'accord ne couvre que ces deux-là et ce canal : toute autre issue ou PR
 se demande.
 
-Spec Kit, ses extensions et le preset `abacus` sont versionnés ; un clone n'a rien à
-installer. Les sources d'`issue-sync` et du preset vivent dans `speckit/` : on les modifie
-là, puis on les réinstalle (`specify extension add --dev`, `specify preset add --dev`, à la
-version de `.specify/init-options.json`), jamais directement sous `.specify/`.
+Spec Kit est versionné : un clone n'a rien à installer. Ce qu'abacus y ajoute
+(`issue-sync`, preset `abacus`) se modifie dans `speckit/`, jamais sous `.specify/`.
 
 ## Stack
 
