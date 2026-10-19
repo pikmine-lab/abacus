@@ -13,7 +13,11 @@
       "!**/.next",
       "!**/next-env.d.ts",
       "!pnpm-lock.yaml",
-      "!.claude/skills/impeccable"
+      "!.claude/skills/impeccable",
+      "!.specify",
+      "!scripts/guard-tests.mjs",
+      "!scripts/check-agents-md.mjs",
+      "!.claude/hooks/agents-md-reminder.mjs"
     ]
   },
   "formatter": {

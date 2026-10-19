@@ -1,0 +1,3 @@
+# The tests run from the source, in the root test script: the installed copy
+# needs none.
+test/

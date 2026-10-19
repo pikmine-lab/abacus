@@ -34,6 +34,26 @@ next-env.d.ts
 **/.impeccable/build/
 **/.impeccable/live/
 
+# Spec Kit artifacts live in the feature's GitHub issue: what a step reads and
+# writes locally is a cache rebuilt from the issue (see speckit/extensions/
+# issue-sync), never a second source.
+.specify/tmp/
+.specify/assessments/
+.specify/bugs/
+
+# What the Spec Kit CLI writes for one machine: catalog caches, the backups an
+# extension update takes, local config overrides, workflow runs. The registries
+# (.specify/*/.registry) and the .specify-dev outputs stay versioned: the
+# maintenance commands read the first, and the skills of a --dev extension are
+# symlinks into the second.
+.specify/**/.cache/
+.specify/extensions/.backup/
+.specify/extensions/*/*.local.yml
+.specify/workflows/runs/
+
+# Claude Code's per-person settings.
+.claude/settings.local.json
+
 # Local noise
 *.log
 .DS_Store

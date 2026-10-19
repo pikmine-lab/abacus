@@ -1,6 +1,19 @@
 {
-  "description": "Impeccable design detector: immediate-tier checks after Edit/Write on UI files, full-rule deep pass on Stop.",
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write on UI files, full-rule deep pass on Stop. baudrier: a reminder of the editing-agents-md skill before any write to an AGENTS.md or CLAUDE.md.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/agents-md-reminder.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

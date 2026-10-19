@@ -2,262 +2,127 @@
 
 Application web de gestion de finances personnelles, multi-utilisateur, self-hosted : ce
 qui est dépensé aujourd'hui, ce à quoi on est engagé demain, les placements et l'activité
-freelance. Pierre est le premier utilisateur, pas un cas particulier du code.
+freelance. Pierre est le premier utilisateur, pas un cas particulier du code. Rigueur
+durable : ce projet est fait pour tenir, pas pour démontrer.
 
-**URL cible** : `abacus.payangar.dev`
-**Hôte** : VPS `pikmine`, déploiement via Dokploy (mêmes conventions que radar)
-**Rigueur** : durable. Ce projet est fait pour tenir, pas pour démontrer.
+## Lire avant d'agir
 
-**Le modèle de domaine se lit dans le code** : les migrations (`migrations/*.sql`) pour ce
-que le schéma garantit, les services (`packages/core/src/services/`) pour ce que chaque
-geste fait et refuse. Leurs commentaires portent le pourquoi, à côté de ce qu'il gouverne ;
-ne pas redécider ailleurs ce qui y est écrit.
-
-**`DESIGN.md` est la référence de l'interface.** À lire avant toute modification d'UI :
-palette, règles de graphes et principes d'écran y sont tranchés, pas ici.
-**`apps/web/AGENTS.md`** porte les règles de code du front, et se lit avant d'y toucher.
-**Un écran se compose avec la skill Impeccable** : `PRODUCT.md` lui donne la direction du
-produit, et chaque écran a son brief dans `apps/web/.impeccable/surfaces/`.
-
-## Les principes qui gouvernent ce dépôt
-
-- **Tout déclaratif.** Aucune connexion bancaire, jamais. Les données personnelles sont
-  saisies (UI ou MCP). Seule exception : les cours de bourse/crypto, données publiques.
-- **Le cas d'usage de Pierre n'entre jamais dans le code.** Ses banques, ses clients, ses
-  comptes, ses montants sont des données. Si une PR contient « Fortuneo » en dur, elle est
-  fausse par principe.
-- **Une donnée de référence publique n'est pas un cas d'usage.** Le régime fiscal et social
-  d'une juridiction est un fait public, daté et sourcé, que personne ne possède : il se livre
-  avec le dépôt, en données, au même titre qu'un instrument coté. La frontière n'est pas
-  « dans le dépôt ou pas », elle est « donnée ou branchement » : le code applique un modèle
-  sans jamais savoir de quel pays il parle. Un `if` sur un pays, un taux écrit dans une
-  fonction, une règle nommée dans un service : faux par principe. Un modèle porte ses sources
-  et ses dates de revérification, et ce qu'une activité en tire est une copie que
-  l'utilisateur possède et corrige.
-- **Fiabilité par pointage.** Une comptabilité entièrement déclarative dérive si rien ne la
-  rapproche du réel : le pointage de solde est le garde-fou de première classe du modèle,
-  pas une commodité. Ce qui l'affaiblit affaiblit tout le reste.
-- **Un net ne déduit que l'argent qui a bougé.** Une dépense se lit nette des
-  remboursements reçus, jamais de ceux qui sont attendus ; un revenu d'activité se lit net
-  des cotisations et impôts payés, jamais de ceux qui sont dus. Ce qui est attendu ou dû se
-  dit à côté du chiffre, nommé, sans le changer : le chiffre bouge quand l'argent bouge, et
-  « net » veut dire la même chose sur chaque écran et dans le MCP.
-- **La propriété est une colonne, pas une architecture.** Chaque entité du domaine
-  appartient à un utilisateur et n'est visible que de lui ; une colonne de propriété et une
-  authentification sérieuse suffisent. Seule exception, qui découle du premier principe :
-  une donnée publique n'appartient à personne, donc un instrument coté et ses cours sont
-  partagés par tous, quand ce que chacun en détient reste à lui.
-- **API-first.** Le cœur est la couche service de `packages/core`. Le front Next.js et le
-  serveur MCP sont deux clients sans logique propre.
-- **Le MCP est une interface pour une IA, portée par le code.** L'IA qui le consomme n'a
-  jamais accès à ce dépôt : les définitions d'outils (noms, descriptions, erreurs) sont son
-  seul monde. Une description d'outil se travaille comme une UI ; une erreur de l'IA en
-  usage réel se traite comme un défaut d'interface, pas comme un défaut d'IA.
-- **Deux interfaces, un même pouvoir.** Le web et le MCP visent deux acteurs différents,
-  une personne et une IA, mais ouvrent les mêmes cas d'usage : ce qui se déclare, se
-  corrige ou se supprime d'un côté doit pouvoir l'être de l'autre. Une fonctionnalité
-  livrée dans une seule des deux est incomplète, pas « en cours ». Cela ne veut pas dire
-  les mêmes formulaires : chacune parle la langue de son acteur (des noms et une
-  description qui enseigne côté MCP, des listes et des valeurs préremplies côté web).
-- **La langue de l'utilisateur s'arrête à ce qui s'affiche.** La frontière est le
-  lecteur, pas le fichier : ce qu'une personne lit devant l'application est dans la langue
-  qu'elle a choisie (le français par défaut), et vit dans les catalogues de
-  `apps/web/src/i18n/messages/`, jamais en dur dans un composant ; tout ce que seul le code
-  lit est en anglais. Segments d'URL, clés et valeurs de paramètres de requête, noms de
-  champs de formulaire, identifiants, noms de fichiers, slugs de branches, commentaires et
-  messages de commit : anglais. Les données ne se traduisent pas : ce que la personne a
-  saisi reste dans les mots où elle l'a saisi. Les documents du dépôt (`DESIGN.md`, ce
-  fichier, les `AGENTS.md` imbriqués) et les issues restent en français.
-- **Intégrité par construction.** La nature d'un mouvement (dépense, revenu, virement
-  interne) est une colonne générée depuis ses extrémités ; les règles du modèle sont des
-  contraintes SQL, pas des validations applicatives dupliquées.
+- **La constitution** (`.specify/memory/constitution.md`) porte les principes qu'un agent
+  respecte quand il spécifie, planifie, écrit ou juge du code, chacun avec sa
+  vérification. La lire avant de concevoir ou de juger un changement.
+- **Le modèle de domaine se lit dans le code** : les migrations (`migrations/*.sql`) pour
+  ce que le schéma garantit, les services (`packages/core/src/services/`) pour ce que
+  chaque geste fait et refuse. Avant de toucher un geste, lire l'en-tête de son service.
+- **L'interface** : `DESIGN.md` pour l'apparence, `PRODUCT.md` pour la direction,
+  `apps/web/AGENTS.md` pour le code du front. Un écran se compose avec la skill
+  Impeccable, depuis son brief dans `apps/web/.impeccable/surfaces/`.
+- **L'infrastructure** sur laquelle tourne abacus (base partagée, vault, sauvegardes,
+  modules communs) est décrite dans le sous-module `vendors/infra` ; le déploiement de
+  l'application, dans `provision/AGENTS.md`.
 
 ## Où s'écrit une décision
 
-Chaque chose a un endroit et un seul. Se tromper d'endroit ne se voit pas le jour même :
-ça se voit des semaines plus tard, quand deux fichiers disent la même chose et qu'un seul
-a été mis à jour.
+Chaque chose a un endroit et un seul : deux fichiers qui disent la même chose finissent
+par se contredire, et c'est le périmé qu'on croit.
 
 | Ce qui vient d'être décidé | Où ça s'écrit |
 |---|---|
-| Un invariant du modèle : ce qu'une donnée garantit, ce qu'un calcul ne doit jamais regarder | En commentaire de la migration qui pose la contrainte |
-| Une règle de geste : ce qui se déclare, se corrige, se refuse, et pourquoi | En commentaire du service de `packages/core` qui la porte, là où les deux interfaces la lisent |
-| La direction du produit : à qui il parle, ce qu'il cherche | `PRODUCT.md` |
-| Une règle d'apparence : couleur, densité, forme d'un graphe, ton des textes | `DESIGN.md` |
-| La composition d'un écran : sa direction, sa hiérarchie, son premier écran | Son brief, `apps/web/.impeccable/surfaces/` |
-| Une règle de code front : piège React/Next, usage du système de composants, ce qu'un écran doit dire | `apps/web/AGENTS.md` |
-| Le récit : ce qui a été mesuré, ce qui a été écarté, ce qui a causé quoi | L'issue |
+| Un principe qu'un agent respecte en écrivant ou en jugeant du code | La constitution |
+| Un invariant du modèle : ce qu'une donnée garantit | En commentaire de la migration qui le pose |
+| Une règle de geste : ce qui se déclare, se corrige, se refuse | En commentaire du service de `packages/core` qui la porte |
+| La direction du produit | `PRODUCT.md` |
+| Une règle d'apparence : couleur, densité, graphe, ton | `DESIGN.md` |
+| La composition d'un écran | Son brief, `apps/web/.impeccable/surfaces/` |
+| Une règle de code propre à une partie du dépôt | L'`AGENTS.md` le plus proche de ce qu'elle gouverne |
+| Ce qu'une fonctionnalité doit faire : spec, plan | Son issue, un commentaire par artefact Spec Kit |
+| Comment elle se fait : les tâches | La description de sa PR |
+| Le récit : ce qui a été mesuré, écarté, ce qui a causé quoi | L'issue |
 
-Trois conséquences, qui valent pour toutes les lignes :
+Ces fichiers décrivent l'état actuel, au présent : ni date ni numéro d'issue en guise
+d'histoire, ni inventaire de ce qui existe. Une décision qui en corrige une autre la
+remplace. Un renvoi vers une issue ouverte reste légitime.
 
-- **Rien ici ne porte de date ni de numéro d'issue en guise d'histoire.** Ces fichiers
-  décrivent l'état actuel, au présent. Une décision qui en corrige une autre la
-  **remplace** au lieu de s'ajouter à côté : deux formulations d'un même fait valent zéro,
-  et c'est la périmée qu'on croira. Git dit quand, l'issue dit pourquoi. Un renvoi vers une
-  issue **ouverte** reste légitime : c'est un pointeur vers une décision en cours, pas du
-  récit.
-- **Rien ici ne tient d'état des lieux.** Un inventaire de ce qui existe (nombre d'outils
-  MCP, écrans livrés, migrations appliquées) se périme au commit suivant sans que rien ne
-  le signale, et une IA le croit au lieu d'aller lire. Ce qui est fait se lit dans le code,
-  ce qui reste à faire dans les issues ouvertes.
-- **Avant de toucher un geste du domaine, lire le service qui le porte** dans
-  `packages/core/src/services/`. Son commentaire d'en-tête dit ce que le geste garantit et
-  ce qu'il refuse : le contrat vit là, en anglais comme tout commentaire, pas dans un
-  document à part qui se périmerait en silence.
+## Issues et cycle d'une fonctionnalité
+
+Toute intention se trace en issue GitHub, même quand personne ne l'attaque tout de suite :
+la skill `intent` capture, rédige et clôt. Avant de travailler un sujet, chercher ses
+précédents, ouverts comme fermés (`gh issue list --state all --search …`).
+
+Une fonctionnalité suit le cycle Spec Kit adapté au dépôt : `/speckit-specify`,
+`/speckit-plan`, `/speckit-tasks`, `/speckit-implement` (boucle test-first),
+`/speckit-converge`. Un bug passe par `/speckit-bug-assess` puis `/speckit-bug-fix`. La
+branche se nomme `<numéro de l'issue>-<slug>`, et sa PR close l'issue.
+
+**Lire une fonctionnalité** :
+
+- le corps de l'issue porte l'intention (Intention, Pourquoi, Cadre, Fin) ;
+- un commentaire de l'issue qui commence par `<!-- speckit-artifact: … -->` est un
+  artefact (spec, plan…), et fait foi : le cache local, ignoré par git, n'en est qu'une
+  copie reconstruite à chaque étape ; `assess/…` est la réflexion préalable, `bug/…` le
+  diagnostic ;
+- les tâches sont dans la description de la PR, entre les marqueurs `speckit-tasks` ;
+- les commentaires « Spec Kit : … » disent ce que chaque étape a changé, les autres
+  portent la discussion et le récit ;
+- les commentaires se lisent dans l'ordre : quand deux décisions se contredisent, la plus
+  récente l'emporte.
+
+**Accord d'écriture** : les commandes Spec Kit écrivent dans l'issue et la PR de la
+fonctionnalité en cours, par l'extension `issue-sync`, et ouvrent cette PR en brouillon,
+sans demander. L'accord ne couvre que ces deux-là et ce canal : toute autre issue ou PR
+se demande.
+
+Spec Kit, ses extensions et le preset `abacus` sont versionnés ; un clone n'a rien à
+installer. Les sources d'`issue-sync` et du preset vivent dans `speckit/` : on les modifie
+là, puis on les réinstalle (`specify extension add --dev`, `specify preset add --dev`, à la
+version de `.specify/init-options.json`), jamais directement sous `.specify/`.
 
 ## Stack
 
-- **Next.js + Postgres** (instance partagée du socle, base et rôle `abacus`). L'accès
-  arrive uniquement par `DATABASE_URL`, jamais de nom d'hôte en dur.
-- **Better Auth** pour l'authentification. Ses tables sont préfixées `auth_*` pour ne pas
-  percuter la table métier `account`. L'application web est aussi le serveur d'autorisation
-  OAuth du MCP (plugins `jwt`, `mcp`, `cimd`) ; ses versions sont épinglées, et le code
-  d'abacus ne passe que par ses points d'extension.
-- Couche données : **SQL à la main**, datasources CRUD sans métier prenant un `Executor`
-  (pool ou transaction), la transaction appartenant à la couche service.
-- Migrations : `migrations/*.sql`, forward-only, runner `nr migrate` (advisory lock,
-  une transaction). `0001` = schéma Better Auth généré, `0002` = domaine.
-- Monorepo pnpm : `packages/core` (domaine + services + datasources), `apps/web` (Next.js),
-  `apps/mcp` (serveur MCP), `packages/data-seed` (jeu de démo local, hors des images).
+- **Next.js + Postgres** : instance partagée du socle, base et rôle `abacus`, jointe
+  uniquement par `DATABASE_URL`, jamais par un nom d'hôte en dur.
+- **Better Auth** pour l'authentification, tables préfixées `auth_*`. L'application web est
+  aussi le serveur d'autorisation OAuth du MCP (plugins `jwt`, `mcp`, `cimd`) ; ses
+  versions sont épinglées, et le code d'abacus ne passe que par ses points d'extension.
+- **SQL à la main** : datasources CRUD sans métier prenant un `Executor` (pool ou
+  transaction), la transaction appartenant à la couche service.
+- **Migrations** `migrations/*.sql`, forward-only, appliquées par `nr migrate` (verrou
+  advisory, une transaction). Une migration présente sur `main` ne se modifie plus.
+- **Monorepo pnpm** : `packages/core` (domaine, services, datasources), `apps/web`,
+  `apps/mcp` (`apps/mcp/AGENTS.md`), `packages/data-seed` (jeu de démo local).
 
 ## Développement local
 
-Base Postgres jetable en Docker, **ISO socle** : même image (`pgvector/pgvector:pg16`),
-même découpage rôle/base `abacus`, mêmes extensions (`vector`, `pg_trgm`, `unaccent`,
-créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de prod en local.
+Base Postgres jetable en Docker, iso socle (même image, rôle et base `abacus`, extensions
+créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de production en local.
 
 ```sh
 nr db:up         # démarre la base (port local 5544)
 nr migrate:dev   # applique les migrations dessus
 nr data:seed     # réécrit le compte de démo dans la base qu'ouvre l'app
-nr db:reset      # recrée, migre et sème la base qu'ouvre l'app, celle de ce worktree seulement
+nr db:reset      # recrée, migre et sème la base de ce worktree seulement
 nr db:down -v    # détruit le volume et toutes les bases, worktrees compris
 ```
 
-**Un compte de démo remplit chaque écran** : `demo@abacus.local`, mot de passe
-`demo-abacus`, locaux et jetables. `packages/data-seed` le réécrit en entier à chaque
-lancement, par les services de `packages/core` : il n'écrit rien que les deux interfaces ne
-pourraient écrire. Son historique couvre un an et se termine le jour même ; seules les dates
-bougent, les noms et les montants sont fixes. Il tourne à la création de chaque worktree,
-après les migrations, et `nr data:seed` le relance sur la base que lit
-`apps/web/.env.local`. Ce qui est saisi à la main sur ce compte disparaît à la relance, les
-autres comptes de la base ne sont pas touchés, et une base qui n'est pas locale est refusée.
+**Le compte de démo remplit chaque écran** : `demo@abacus.local`, mot de passe
+`demo-abacus`. `packages/data-seed` le réécrit en entier, par les services de
+`packages/core`, à chaque création de worktree et à chaque `nr data:seed` ; ce qui y est
+saisi à la main disparaît, une base non locale est refusée. Une fonctionnalité qui ajoute de
+quoi déclarer enrichit ce jeu dans la même PR, avec des noms inventés.
 
-**Une fonctionnalité qui ajoute de quoi déclarer enrichit le jeu de démo dans la même PR**,
-sinon son écran reste vide en local. Les noms y sont inventés (aucune banque, aucun client,
-aucun montant réel) ; une donnée publique, un instrument coté ou un régime du catalogue,
-s'y utilise telle quelle.
-
-L'app web se lance avec `pnpm --filter @abacus/web dev` et lit `apps/web/.env.local`
-(non commité) : `DATABASE_URL` vers la base Docker, `BETTER_AUTH_SECRET` quelconque,
-`PUBLIC_URL=http://localhost:3000`, et `MCP_URL`, obligatoire : c'est l'adresse à laquelle
-chaque jeton d'accès MCP est lié, et l'app ne démarre pas sans elle. Un worktree reçoit la
-sienne à sa création (`.config/wt.toml`). Pour éprouver le flux OAuth avec un vrai client,
-le serveur MCP se lance sur cette adresse : `MCP_ALLOWED_HOSTS=<hôte de MCP_URL>
-NODE_OPTIONS=--use-system-ca portless <branche>-mcp.abacus node --env-file=apps/web/.env.local
-apps/mcp/src/main.ts` (l'option CA lui fait lire les clés du web derrière le HTTPS local).
-
-Impeccable s'installe une fois par projet, pas par machine : la copie de la skill, ses
-sous-agents de revue et le hook de son détecteur de défauts de design
-(`.claude/settings.json`) sont versionnés, un clone n'a rien à installer. Une montée de
-version se lance une fois et se commite :
-`npx impeccable install --scope=project --providers=claude-code -y --force`. Seuls le
-consentement au hook, son cache et ce qu'une session de design produit restent hors du
-dépôt. Pas de copie globale (`~/.claude/skills/impeccable`) : Claude Code la ferait passer
-devant celle du projet. Le hook lit le `.impeccable/` du dossier où se trouve la session,
-la racine en temps normal, et non celui de l'app éditée : une exception du détecteur ou un
-réglage du hook s'enregistre depuis la racine, sinon il ne s'applique pas.
-
-**Piège d'outillage** : `nr lint | tail` masque le code de sortie (pas de pipefail) ;
-toujours vérifier le lint sans pipe avant de committer, la CI l'attrapera sinon.
-
-Les identifiants `abacus:abacus@127.0.0.1:5544` sont locaux et jetables, ce ne sont pas
-des secrets. Tout le reste passe par `DATABASE_URL`.
-
-## Suivi par issues
-
-Toute intention sur ce dépôt se trace en issue GitHub, même quand personne ne l'attaque
-tout de suite. Le code dit ce qui est fait, l'issue est le seul endroit qui garde le
-pourquoi, ce qui a été écarté et ce qui a causé quoi. Quand Pierre décrit une
-fonctionnalité ou un bug qu'il ne traite pas dans la session, proposer de le tracer.
-
-- Avant de travailler un sujet, chercher ses précédents, ouverts comme fermés
-  (`gh issue list --state all --search …`) : la décision a peut-être déjà été prise.
-- L'issue porte le quoi et le pourquoi, Todoist porte le quand. Une tâche qui double une
-  issue la référence, elle ne recopie pas son contenu.
-- Branche `<type>/<numéro>-<slug>`, la PR close l'issue.
-
-La skill `issue-tracking` détaille la rédaction, les types et les liens.
+L'app web se lance avec `pnpm --filter @abacus/web dev` et lit le `.env.local` d'`apps/web`
+(non commité) : `DATABASE_URL`, `BETTER_AUTH_SECRET`, `PUBLIC_URL` et `MCP_URL`, sans
+laquelle elle ne démarre pas. Un worktree reçoit le sien à sa création (`.config/wt.toml`).
 
 ## Flux de travail
 
-**`main` = production, déploiement continu.** Chaque commit sur `main` déclenche
-tests → build des deux images → déploiement Dokploy. En conséquence :
-
-- **Les features passent par une pull request.** Branche courte, PR vers `main`, la CI
-  (lint, typecheck, tests, build web et images) doit être verte avant merge. Le merge
-  déploie, il n'y a pas d'étape manuelle.
-- **Le merge passe par la file d'attente de GitHub.** « Merge when ready » met la PR en
-  file au lieu de la poser sur `main` : GitHub rejoue la CI sur une branche temporaire qui
-  porte `main`, les PR situées devant et la candidate, et ne merge que si ce run est vert.
-  C'est ce qui laisse un contrôle voir une PR encore non mergée, seul endroit d'où deux
-  branches parallèles sont visibles ensemble (`scripts/check-migration-numbers.sh` s'en
-  sert pour refuser deux migrations de même numéro). En conséquence, **un job requis ne
-  porte jamais de filtre d'événement** : un check requis qui ne se déclenche pas sur
-  `merge_group` ne se reporte jamais et la PR reste en file jusqu'au timeout.
-- Un commit direct sur `main` reste techniquement possible mais réservé aux corrections
-  triviales ; tout ce qui porte du comportement passe en PR.
-- Rollback : relancer le provisionneur avec un tag antérieur
-  (`cd provision && IMAGE_TAG=sha-… node src/provision.ts`, tags visibles sur GHCR).
-
-## Déploiement
-
-Continu, sur le modèle de `pikmine-lab/space-engineers` : le dépôt embarque son
-provisionneur (`provision/`, zéro dépendance, idempotent, API Dokploy uniquement) et la CI
-le rejoue à chaque commit sur `main` avec le tag `sha-…` fraîchement construit. Le
-provisionneur ne supprime jamais rien ; `node provision/src/provision.ts --dry-run` montre
-l'écart sans agir (variables dans `provision/.env` local, jamais commité).
-
-- Images : `ghcr.io/pikmine-lab/abacus-web` (Next standalone) et `abacus-mcp` (migre la
-  base à son démarrage, verrou advisory). Tags `sha-<court>` immuables + `latest`.
-- Stack : `deploy/docker-compose.yml`, projet Dokploy `abacus`, réseau `dokploy-network`,
-  domaines `abacus.payangar.dev` (web) et `abacus-mcp.payangar.dev` (MCP), TLS Let's
-  Encrypt via Traefik. Base et rôle `abacus` sur le Postgres partagé du socle (création
-  one-shot en SSH, hors provisionneur).
-- Secrets : dans le vault Infisical du socle, aucun dans GitHub. Le job `deploy` échange
-  son jeton OIDC contre un accès au vault (`provision/src/vault.ts`) sous sa propre
-  identité `ci-abacus`, dont l'id est la variable de dépôt `INFISICAL_IDENTITY_ID` ;
-  cette identité n'accepte qu'un jeton signé pour `main` de ce dépôt, donc
-  le job ne déclare pas d'`environment`. Il lit `DOKPLOY_URL` et `DOKPLOY_TOKEN` (commun
-  aux applications, utilisateur Dokploy limité à leurs projets) dans le projet `ci`,
-  dossier `/apps`, puis `DATABASE_URL` et `BETTER_AUTH_SECRET` dans le projet `abacus`.
-  Une variable qui n'est pas secrète reste dans le provisionneur (`SPEC`). En local, les
-  mêmes variables viennent de `provision/.env`. Dépôt public : aucun secret, aucune
-  topologie serveur ici.
-- Variables runtime des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
-  (obligatoire en production, sinon crash à la première requête), `PORT` (MCP), `MCP_URL`
-  (web : l'endpoint MCP donné à l'utilisateur, écrit par le provisionneur depuis `SPEC`).
-- Actions GitHub épinglées par commit, jamais par tag.
-- **Aucune sauvegarde Postgres** sur le socle, et ces données ne sont pas recollectables.
-  Risque assumé, suivi par l'issue #14 : ne pas le redécouvrir à chaque session, ne pas le
-  retrancher seul.
-- **Piège** : `main` est gouvernée par le ruleset du même nom, et ses checks requis portent
-  les noms complets des jobs matrix (`build (web, apps/web/Dockerfile)`). Renommer un
-  Dockerfile ou la matrice casse silencieusement le merge des PR (checks « attendus » à
-  jamais) : mettre à jour le ruleset en même temps.
-
-## Se connecter au MCP de production
-
-Le serveur MCP vit sur `https://abacus-mcp.payangar.dev/mcp` (transport HTTP, protocoles
-2025 et 2026-07-28). Il s'autorise par OAuth, sans clé : le client ajoute l'URL, ouvre
-abacus dans le navigateur, l'utilisateur se connecte et consent, et le client reçoit un
-jeton d'accès de dix minutes lié à cette URL exacte, renouvelé par son jeton de
-rafraîchissement. La révocation se fait depuis la liste **Applications** de l'écran
-**Brancher une IA** (menu du compte), qui donne aussi ce que chaque client attend : c'est
-la source à jour, ne pas recopier de commande ici.
-
-Un client s'identifie par l'URL du document de métadonnées qu'il publie (CIMD), ou, quand il
-n'en publie pas, par un `client_id` préenregistré : un client public par assistant, déclaré
-en données avec sa source dans `packages/core/src/oauth-clients.ts`. L'enregistrement
-dynamique reste fermé, et un client qui exige un secret ne se branche pas.
-
+- **`main` est la production**, déployée en continu. Tout passe par une PR dont la CI est
+  verte, et le merge passe par la file d'attente de GitHub (« Merge when ready »).
+- **Pas de commit direct sur `main`.** Le contournement administrateur du ruleset est
+  désactivé ; le réactiver est un geste humain délibéré, qu'un agent ne fait jamais.
+- La suite complète, le typecheck et le build tournent en CI ; en local, seuls les tests
+  de ce qui a été modifié. Lancer `nr lint` sans pipe avant de committer : `| tail` masque
+  son code de sortie.
+- Après une trouvaille qui pourrait revenir au-delà du travail en cours, se demander ce qui
+  l'aurait évitée : un contrôle d'abord, sinon une règle dans l'`AGENTS.md` le plus proche,
+  sinon rien. Quand un changement retire la cause d'une telle règle, la mettre à jour ou
+  la retirer.

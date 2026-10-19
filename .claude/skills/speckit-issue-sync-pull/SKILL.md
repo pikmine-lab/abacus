@@ -1,0 +1,1 @@
+../../../.specify/extensions/issue-sync/.specify-dev/agent-commands/claude/speckit-issue-sync-pull/SKILL.md
