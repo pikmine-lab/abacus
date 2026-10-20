@@ -1,0 +1,8 @@
+{
+  "name": "@abacus/use-case-language",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

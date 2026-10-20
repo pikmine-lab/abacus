@@ -1,0 +1,11 @@
+{
+  "name": "@abacus/use-cases",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@abacus/core": "workspace:*",
+    "@abacus/mcp": "workspace:*",
+    "@abacus/use-case-language": "workspace:*",
+    "@abacus/web": "workspace:*"
+  }
+}
