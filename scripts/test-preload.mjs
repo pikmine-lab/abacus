@@ -42,3 +42,54 @@ net.Socket.prototype.connect = function (...args) {
   process.nextTick(() => this.destroy(error))
   return this
 }
+
+// The clock. With `ABACUS_TEST_TODAY` set, the process sees that date as today: what a test reads
+// stays the same whatever day the suite runs, the end of a month included. The clock is shifted, not
+// frozen: it starts at 12:00 local on that day and keeps flowing, so durations and timeouts measured
+// through `Date` still hold. The day and the noon are local; noon keeps the same day for code that
+// reads it in UTC instead, from UTC-11 to UTC+12. Only the readings of the current time are shifted:
+// `Date.now()`, `new Date()` without argument, and `Date()` called as a function, which returns its
+// string. A date built from a value is that value. The replacement is a function sharing the real
+// prototype rather than a subclass, so that the dates Node builds itself (`fs.stat`,
+// `structuredClone`) are still instances of `Date`. The real time is read through the `Date` found
+// in place at load. An empty value is no value; any other value that is not a canonical YYYY-MM-DD
+// calendar date stops the process here, before the code under test runs on the real day.
+
+const TEST_TODAY = process.env.ABACUS_TEST_TODAY
+
+function isCalendarDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+  const [year, month, day] = match.slice(1).map(Number)
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+  return day >= 1 && day <= (days ?? 0)
+}
+
+if (TEST_TODAY) {
+  if (!isCalendarDate(TEST_TODAY)) {
+    const error = new Error(
+      `invalid_test_today: ABACUS_TEST_TODAY=${JSON.stringify(TEST_TODAY)} is not a YYYY-MM-DD calendar date`,
+    )
+    error.code = 'invalid_test_today'
+    throw error
+  }
+  const RealDate = globalThis.Date
+  const [year, month, day] = TEST_TODAY.split('-').map(Number)
+  // `setFullYear` rather than the constructor, which reads the years 0 to 99 as 1900 to 1999.
+  const noon = new RealDate(0)
+  noon.setFullYear(year, month - 1, day)
+  noon.setHours(12, 0, 0, 0)
+  const offset = noon.getTime() - RealDate.now()
+  const now = () => RealDate.now() + offset
+
+  function ShiftedDate(...args) {
+    if (new.target === undefined) return new RealDate(now()).toString()
+    return Reflect.construct(RealDate, args.length === 0 ? [now()] : args, new.target)
+  }
+  ShiftedDate.prototype = RealDate.prototype
+  ShiftedDate.now = now
+  ShiftedDate.parse = RealDate.parse
+  ShiftedDate.UTC = RealDate.UTC
+  globalThis.Date = ShiftedDate
+}
