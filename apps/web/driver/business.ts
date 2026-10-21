@@ -550,7 +550,12 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
         .filter({ hasText: `à partir du ${d}/${m}/${y!.slice(2)}` })
         .click()
       const remove = page.getByRole('button', { name: `Retirer ${name}` })
+      // The fiche goes before the server answers: wait for the action itself.
+      const answered = page.waitForResponse(
+        (response) => response.request().headers()['next-action'] !== undefined,
+      )
       await remove.click()
+      await answered
       await remove.waitFor({ state: 'detached' })
     },
     async readActivityFigures(activity) {
