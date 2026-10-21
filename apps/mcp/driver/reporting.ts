@@ -1,6 +1,52 @@
-import type { Steps } from '@abacus/use-case-language'
+import { eur, type Preferences, type Steps } from '@abacus/use-case-language'
 import type { McpContext } from './context.ts'
 
-export function reportingSteps(_ctx: McpContext): Partial<Steps> {
-  return {}
+const money = (value: number) => eur(value.toFixed(2))
+
+/** The first and last day of a month, "YYYY-MM". */
+function monthBounds(month: string): { from: string; to: string } {
+  const [year, monthOfYear] = month.split('-').map(Number) as [number, number]
+  const last = new Date(Date.UTC(year, monthOfYear, 0)).getUTCDate()
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` }
+}
+
+type FlowRow = Record<string, string | number> & { gross?: number; net?: number; amount?: number }
+
+export function reportingSteps({ call }: McpContext): Partial<Steps> {
+  return {
+    async readFlows({ kind, by, month }) {
+      const { rows } = await call<{ rows: FlowRow[] }>('analyze_flows', {
+        ...monthBounds(month),
+        groupBy: by,
+        kind,
+      })
+      return rows.map((row) => {
+        const label = row[by] as string
+        return {
+          label: label === '(none)' ? null : label,
+          amount: money((kind === 'expense' ? row.net : row.amount) ?? 0),
+        }
+      })
+    },
+    async readWealth() {
+      const overview = await call<{ accounts: { balance: number }[]; holdings?: { value: number } }>(
+        'get_overview',
+        {},
+      )
+      const balances = overview.accounts.reduce((sum, a) => sum + a.balance, 0)
+      return money(balances + (overview.holdings?.value ?? 0))
+    },
+    async readPreferences() {
+      return await call<Preferences>('manage_preferences', { action: 'show' })
+    },
+    async setReadingPreference(reading) {
+      await call('manage_preferences', { action: 'update', reading })
+    },
+    async setRankingViewPreference(rankingView) {
+      await call('manage_preferences', { action: 'update', rankingView })
+    },
+    async setLanguagePreference(language) {
+      await call('manage_preferences', { action: 'update', language: language ?? 'browser' })
+    },
+  }
 }

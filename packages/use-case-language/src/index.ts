@@ -90,3 +90,7 @@ export async function recordExercised(entry: Exercised): Promise<void> {
   const { appendFile } = await import('node:fs/promises')
   await appendFile(`${folder}/${process.pid}.jsonl`, `${JSON.stringify(entry)}\n`)
 }
+
+export type * from './steps/catalog.ts'
+export type * from './steps/investments.ts'
+export type * from './steps/reporting.ts'

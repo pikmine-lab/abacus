@@ -510,7 +510,12 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await exercised('withdrawNilReturnAction')
       const { row, menuName } = await dueRow(due)
       await row.getByRole('button', { name: menuName }).click()
+      // The menu closes before the server answers: wait for the action itself.
+      const answered = page.waitForResponse(
+        (response) => response.request().headers()['next-action'] !== undefined,
+      )
       await page.getByRole('menuitem', { name: 'Retirer la déclaration à 0' }).click()
+      await answered
       await gone(row.getByRole('button', { name: menuName }))
     },
     async payLevy({ amount, on, account, payee, ...due }) {
