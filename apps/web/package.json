@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "node --env-file-if-exists=../../.env.test --import ../../scripts/test-preload.mjs --test-global-setup=../../scripts/test-setup.mjs --test"
+    "test": "node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./node_modules/@abacus/test-harness/src/setup.ts --test"
   },
   "dependencies": {
     "@abacus/core": "workspace:*",
@@ -31,6 +31,7 @@
     "tailwind-merge": "^3.0.0"
   },
   "devDependencies": {
+    "@abacus/test-harness": "workspace:*",
     "@abacus/use-case-language": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/d3-hierarchy": "3.1.7",

@@ -19,7 +19,7 @@ services:
       - "127.0.0.1:5544:5432"
     volumes:
       - dev-db:/var/lib/postgresql/data
-      - ./scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./scripts/dev-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
 volumes:
   dev-db:

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { checkImage } from './check-image-content.mjs'
+import { checkImage } from './image-content.mjs'
 
 /** A tree of files laid out as an image's /app would be. */
 function tree(files) {
@@ -49,7 +49,7 @@ test('a file carrying the use case suite marker is refused, wherever it sits out
 })
 
 test('the marker searched is the one the suite carries', async () => {
-  const { SUITE_MARKER } = await import('./check-image-content.mjs')
-  const { SUITE_MARKER: carried } = await import('../packages/use-cases/src/environment/accounts.ts')
+  const { SUITE_MARKER } = await import('./image-content.mjs')
+  const { SUITE_MARKER: carried } = await import('../../packages/use-cases/src/environment/accounts.ts')
   assert.equal(SUITE_MARKER, carried)
 })

@@ -14,9 +14,37 @@ import { promisify } from 'node:util'
 // starts them: `--import` for test files, `NODE_OPTIONS` for the servers it launches. Importing the
 // module here would make the result depend on the load order of this process.
 
-const root = fileURLToPath(new URL('..', import.meta.url))
-const preload = join(root, 'scripts', 'test-preload.mjs')
+const root = fileURLToPath(new URL('../../../', import.meta.url))
+const preload = fileURLToPath(new URL('./preload.ts', import.meta.url))
 const run = promisify(execFile)
+
+interface ProbeError {
+  code: string | null
+  message: string
+}
+
+/** What one probe reports from the child: whether its call reached its target, and how it failed. */
+interface ProbeResult {
+  call: string
+  outcome: 'reached' | 'refused'
+  errors: ProbeError[]
+  ms: number
+  value?: unknown
+}
+
+interface Probe {
+  call: string
+  target: Record<string, unknown>
+}
+
+interface Probed {
+  results: ProbeResult[]
+  trapHits: number
+}
+
+/** What a child read off its clock (CLOCK_PROBE). */
+// biome-ignore lint/suspicious/noExplicitAny: the shape is the child's, checked by each assertion.
+type Reading = any
 
 const OUTSIDE = 'query1.finance.yahoo.com'
 
@@ -99,9 +127,9 @@ process.stdout.write(JSON.stringify(results))
 // Runs the probes in a child and returns their results, with the number of connections the trap
 // accepted meanwhile. The child has exited when `run` resolves, but the trap may not have handled
 // the accept yet: a short wait lets it.
-async function probe(probes, { via = 'import' } = {}) {
+async function probe(probes: Probe[], { via = 'import' }: { via?: string } = {}): Promise<Probed> {
   const before = trap.connections
-  const env = { ...process.env, ABACUS_PROBES: JSON.stringify(probes) }
+  const env: NodeJS.ProcessEnv = { ...process.env, ABACUS_PROBES: JSON.stringify(probes) }
   delete env.NODE_OPTIONS
   const args = ['--input-type=module', '-e', PROBE]
   if (via === 'import') args.unshift('--import', preload)
@@ -111,11 +139,12 @@ async function probe(probes, { via = 'import' } = {}) {
   return { results: JSON.parse(stdout), trapHits: trap.connections - before }
 }
 
-function assertTrapUntouched(trapHits) {
+function assertTrapUntouched(trapHits: number): void {
   assert.equal(trapHits, 0, 'a refused connection reached the local trap')
 }
 
-function assertBlocked(result, host, port) {
+function assertBlocked(result: ProbeResult | undefined, host: string, port: number): void {
+  assert.ok(result, 'the probe reported nothing')
   assert.equal(result.outcome, 'refused', `${result.call} to ${host}:${port} went through`)
   const refusal = result.errors.find(
     (e) => e.code === 'outside_network_blocked' || e.message.includes('outside_network_blocked'),
@@ -129,7 +158,8 @@ function assertBlocked(result, host, port) {
   assert.ok(result.ms < 1000, `${result.call} was refused after ${Math.round(result.ms)} ms, not at once`)
 }
 
-function assertReached(result, expected) {
+function assertReached(result: ProbeResult | undefined, expected: unknown): void {
+  assert.ok(result, 'the probe reported nothing')
   assert.equal(result.outcome, 'reached', `${result.call} was refused: ${JSON.stringify(result.errors)}`)
   assert.equal(result.value, expected)
 }
@@ -144,10 +174,10 @@ const socketDir = mkdtempSync(join(tmpdir(), 'abacus-preload-'))
 const socketPath = join(socketDir, 'server.sock')
 let port = 0
 
-const listen = (server, ...args) =>
-  new Promise((resolve, reject) => {
+const listen = (server: net.Server, ...args: unknown[]) =>
+  new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(...args, resolve)
+    ;(server.listen as (...a: unknown[]) => void)(...args, resolve)
   })
 
 before(async () => {
@@ -155,9 +185,9 @@ before(async () => {
     trap.connections += 1
   })
   await listen(trap.server, 0, '127.0.0.1')
-  trap.port = trap.server.address().port
+  trap.port = (trap.server.address() as net.AddressInfo).port
   await listen(ipv4, 0, '127.0.0.1')
-  port = ipv4.address().port
+  port = (ipv4.address() as net.AddressInfo).port
   await listen(ipv6, port, '::1')
   await listen(unix, socketPath)
 })
@@ -171,7 +201,7 @@ after(() => {
 // something if, in the same process, an outside one is refused.
 const sentinel = () => ({ call: 'net.connect', target: { host: OUTSIDE, port: trap.port, loopback: true } })
 
-function assertGuardActive({ results: [guard], trapHits }) {
+function assertGuardActive({ results: [guard], trapHits }: Probed): void {
   assertBlocked(guard, OUTSIDE, trap.port)
   assertTrapUntouched(trapHits)
 }
@@ -231,7 +261,11 @@ test('a positional connect(port, host) to an outside host is refused, as pg open
 
 // C2: local addresses are permitted. Each run sends the sentinel first.
 
-async function assertPermitted(call, target, expected) {
+async function assertPermitted(
+  call: string,
+  target: Record<string, unknown>,
+  expected: unknown,
+): Promise<void> {
   const outcome = await probe([sentinel(), { call, target }])
   assertGuardActive(outcome)
   assertReached(outcome.results[1], expected)
@@ -274,7 +308,7 @@ test('a call to X.Abacus.LocalHost goes through: the host is compared without ca
 
 // C4: boundary, anything outside the exact list is refused.
 
-async function assertRefused(host) {
+async function assertRefused(host: string): Promise<void> {
   const { results, trapHits } = await probe([
     { call: 'net.connect', target: { host, port: trap.port, loopback: true } },
   ])
@@ -305,14 +339,14 @@ test('a loopback address other than 127.0.0.1 is refused with outside_network_bl
 // The test files get the module through the `test` scripts: every script that runs `node --test`
 // preloads it, wherever the scripts end up living.
 
-test('every package script that runs node --test preloads scripts/test-preload.mjs', () => {
+test('every package script that runs node --test preloads the harness', () => {
   const manifests = ['package.json']
   for (const dir of ['apps', 'packages']) {
     for (const name of readdirSync(join(root, dir))) manifests.push(join(dir, name, 'package.json'))
   }
-  const runners = []
+  const runners: { manifest: string; name: string; command: string }[] = []
   for (const manifest of manifests) {
-    let scripts
+    let scripts: Record<string, string>
     try {
       scripts = JSON.parse(readFileSync(join(root, manifest), 'utf8')).scripts ?? {}
     } catch {
@@ -326,8 +360,8 @@ test('every package script that runs node --test preloads scripts/test-preload.m
   for (const { manifest, name, command } of runners) {
     assert.match(
       command,
-      /--import[= ]\S*scripts\/test-preload\.mjs/,
-      `${manifest} script "${name}" runs node --test without preloading scripts/test-preload.mjs`,
+      /--import[= ]\S*(@abacus\/test-harness\/preload|\/preload\.ts)\b/,
+      `${manifest} script "${name}" runs node --test without preloading @abacus/test-harness/preload`,
     )
   }
 })
@@ -411,11 +445,21 @@ after(() => rmSync(clockDir, { recursive: true, force: true }))
 
 // Reads the clock in a child, in Paris unless told otherwise. `testToday` is ABACUS_TEST_TODAY, left
 // unset when undefined; `realNow` is the time the child takes as real, the machine's when undefined.
-async function readClock({ testToday, realNow, tz = 'Europe/Paris', via = 'import' } = {}) {
-  const env = { ...process.env, TZ: tz, ABACUS_PERIOD_URL: periodUrl }
+async function readClock({
+  testToday,
+  realNow,
+  tz = 'Europe/Paris',
+  via = 'import',
+}: {
+  testToday?: string
+  realNow?: string
+  tz?: string
+  via?: string
+} = {}): Promise<Reading> {
+  const env: NodeJS.ProcessEnv = { ...process.env, TZ: tz, ABACUS_PERIOD_URL: periodUrl }
   for (const name of ['NODE_OPTIONS', 'ABACUS_TEST_TODAY', 'ABACUS_SIMULATED_NOW']) delete env[name]
   if (testToday !== undefined) env.ABACUS_TEST_TODAY = testToday
-  const imports = []
+  const imports: string[] = []
   if (realNow !== undefined) {
     env.ABACUS_SIMULATED_NOW = realNow
     imports.push(simulatedClock)
@@ -439,7 +483,7 @@ const LAST_OF_MONTH = '2026-10-31T23:55:00+01:00'
 // Time from the module's load to the first reading: the child imports period.ts in between.
 const STARTUP_MS = 10_000
 
-function assertNoonOfTestDay(reading, noon = NOON) {
+function assertNoonOfTestDay(reading: Reading, noon = NOON): void {
   assert.deepEqual(reading.local, { year: 2026, month: 3, day: 31, hours: 12, minutes: 0 })
   const elapsed = reading.newDate - noon
   assert.ok(elapsed >= 0 && elapsed < STARTUP_MS, `new Date() is ${elapsed} ms from 12:00 on ${TEST_TODAY}`)
@@ -556,7 +600,7 @@ test('Date() called as a function under ABACUS_TEST_TODAY returns the shifted da
   assert.equal(error, undefined, `Date() threw: ${error}`)
   assert.equal(typeof value, 'string')
   assert.ok(value.startsWith('Tue Mar 31 2026 '), `Date() names another day: ${value}`)
-  const withoutTime = (text) => text.replace(/\d{2}:\d{2}:\d{2}/, '')
+  const withoutTime = (text: string) => text.replace(/\d{2}:\d{2}:\d{2}/, '')
   assert.equal(withoutTime(value), withoutTime(asString))
 })
 
@@ -594,37 +638,40 @@ const MALFORMED_TEST_TODAY = [
 
 test('a malformed ABACUS_TEST_TODAY stops the process at start with invalid_test_today, naming the variable and the value', async () => {
   for (const testToday of MALFORMED_TEST_TODAY) {
-    const env = { ...process.env, TZ: 'Europe/Paris', ABACUS_TEST_TODAY: testToday }
+    const env: NodeJS.ProcessEnv = { ...process.env, TZ: 'Europe/Paris', ABACUS_TEST_TODAY: testToday }
     delete env.NODE_OPTIONS
     const child = run(process.execPath, ['--import', preload, '-e', "process.stdout.write('ran')"], {
       env,
       timeout: 30_000,
     })
-    await assert.rejects(child, (error) => {
-      assert.ok(
-        typeof error.code === 'number' && error.code !== 0,
-        `the process ran with ABACUS_TEST_TODAY=${JSON.stringify(testToday)}: ${error.message}`,
-      )
-      assert.equal(error.stdout, '', `the process ran before refusing ${JSON.stringify(testToday)}`)
-      const refusal = error.stderr
-        .split('\n')
-        .find(
-          (line) =>
-            line.includes('invalid_test_today') &&
-            line.includes('ABACUS_TEST_TODAY') &&
-            line.includes(testToday),
+    await assert.rejects(
+      child,
+      (error: { code: unknown; message: string; stdout: string; stderr: string }) => {
+        assert.ok(
+          typeof error.code === 'number' && error.code !== 0,
+          `the process ran with ABACUS_TEST_TODAY=${JSON.stringify(testToday)}: ${error.message}`,
         )
-      assert.ok(
-        refusal,
-        `no line carries invalid_test_today with the variable and the value ${JSON.stringify(testToday)}: ${error.stderr}`,
-      )
-      // Node prints the own properties of an uncaught error after its stack: the code is on error.code.
-      assert.match(
-        error.stderr,
-        /^\s*code: 'invalid_test_today'/m,
-        `the refusal has no error.code: ${error.stderr}`,
-      )
-      return true
-    })
+        assert.equal(error.stdout, '', `the process ran before refusing ${JSON.stringify(testToday)}`)
+        const refusal = error.stderr
+          .split('\n')
+          .find(
+            (line) =>
+              line.includes('invalid_test_today') &&
+              line.includes('ABACUS_TEST_TODAY') &&
+              line.includes(testToday),
+          )
+        assert.ok(
+          refusal,
+          `no line carries invalid_test_today with the variable and the value ${JSON.stringify(testToday)}: ${error.stderr}`,
+        )
+        // Node prints the own properties of an uncaught error after its stack: the code is on error.code.
+        assert.match(
+          error.stderr,
+          /^\s*code: 'invalid_test_today'/m,
+          `the refusal has no error.code: ${error.stderr}`,
+        )
+        return true
+      },
+    )
   }
 })

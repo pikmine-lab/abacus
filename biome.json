@@ -15,7 +15,7 @@
       "!pnpm-lock.yaml",
       "!.claude/skills/impeccable",
       "!.specify",
-      "!scripts/check-agents-md.mjs",
+      "!scripts/checks/agents-md.mjs",
       "!.claude/hooks/agents-md-reminder.mjs"
     ]
   },

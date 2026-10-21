@@ -24,10 +24,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@abacus/test-harness": "workspace:*",
     "@abacus/use-case-language": "workspace:*",
     "@types/pg": "^8.23.1"
   },
   "scripts": {
-    "test": "node --env-file-if-exists=../../.env.test --import ../../scripts/test-preload.mjs --test-global-setup=../../scripts/test-setup.mjs --test --test-concurrency=1"
+    "test": "node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./node_modules/@abacus/test-harness/src/setup.ts --test --test-concurrency=1"
   }
 }

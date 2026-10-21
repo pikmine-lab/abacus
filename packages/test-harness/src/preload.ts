@@ -13,35 +13,37 @@ import net from 'node:net'
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
 
-function isLocal(host) {
+function isLocal(host: string): boolean {
   const name = host.toLowerCase()
   return LOCAL_HOSTS.has(name) || name.endsWith('.localhost')
 }
 
 // The forms `connect` accepts: the arguments `net.connect` already normalised, an options object, a
 // Unix socket path, or a port followed by a host.
-function connectOptions(args) {
+function connectOptions(args: unknown[]): { host?: string | null; port?: unknown; path?: string } {
   const [first, second] = args
   if (Array.isArray(first)) return first[0]
-  if (typeof first === 'object' && first !== null) return first
+  if (typeof first === 'object' && first !== null)
+    return first as { host?: string; port?: unknown; path?: string }
   if (typeof first === 'string' && Number.isNaN(Number(first))) return { path: first }
   return { port: first, host: typeof second === 'string' ? second : undefined }
 }
 
-const connect = net.Socket.prototype.connect
+const connect = net.Socket.prototype.connect as (this: net.Socket, ...args: unknown[]) => net.Socket
 
-net.Socket.prototype.connect = function (...args) {
+net.Socket.prototype.connect = function (this: net.Socket, ...args: unknown[]) {
   const options = connectOptions(args)
   // Read as Node reads them: any path set is a Unix socket, an empty host is `localhost`.
   const host = options.host || 'localhost'
   const port = options.port
   if (options.path || isLocal(host)) return connect.apply(this, args)
-  const error = new Error(`outside_network_blocked: ${host}:${port} is not a local host`)
-  error.code = 'outside_network_blocked'
+  const error = Object.assign(new Error(`outside_network_blocked: ${host}:${port} is not a local host`), {
+    code: 'outside_network_blocked',
+  })
   // Raised the way Node raises a failed lookup: on a later tick, once the caller listens for errors.
   process.nextTick(() => this.destroy(error))
   return this
-}
+} as typeof net.Socket.prototype.connect
 
 // The clock. With `ABACUS_TEST_TODAY` set, the process sees that date as today: what a test reads
 // stays the same whatever day the suite runs, the end of a month included. The clock is shifted, not
@@ -57,10 +59,10 @@ net.Socket.prototype.connect = function (...args) {
 
 const TEST_TODAY = process.env.ABACUS_TEST_TODAY
 
-function isCalendarDate(value) {
+function isCalendarDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return false
-  const [year, month, day] = match.slice(1).map(Number)
+  const [year, month, day] = match.slice(1).map(Number) as [number, number, number]
   const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
   return day >= 1 && day <= (days ?? 0)
@@ -68,14 +70,15 @@ function isCalendarDate(value) {
 
 if (TEST_TODAY) {
   if (!isCalendarDate(TEST_TODAY)) {
-    const error = new Error(
-      `invalid_test_today: ABACUS_TEST_TODAY=${JSON.stringify(TEST_TODAY)} is not a YYYY-MM-DD calendar date`,
+    throw Object.assign(
+      new Error(
+        `invalid_test_today: ABACUS_TEST_TODAY=${JSON.stringify(TEST_TODAY)} is not a YYYY-MM-DD calendar date`,
+      ),
+      { code: 'invalid_test_today' },
     )
-    error.code = 'invalid_test_today'
-    throw error
   }
   const RealDate = globalThis.Date
-  const [year, month, day] = TEST_TODAY.split('-').map(Number)
+  const [year, month, day] = TEST_TODAY.split('-').map(Number) as [number, number, number]
   // `setFullYear` rather than the constructor, which reads the years 0 to 99 as 1900 to 1999.
   const noon = new RealDate(0)
   noon.setFullYear(year, month - 1, day)
@@ -83,13 +86,13 @@ if (TEST_TODAY) {
   const offset = noon.getTime() - RealDate.now()
   const now = () => RealDate.now() + offset
 
-  function ShiftedDate(...args) {
+  function ShiftedDate(...args: unknown[]) {
     if (new.target === undefined) return new RealDate(now()).toString()
-    return Reflect.construct(RealDate, args.length === 0 ? [now()] : args, new.target)
+    return Reflect.construct(RealDate, args.length === 0 ? [now()] : args, new.target as DateConstructor)
   }
   ShiftedDate.prototype = RealDate.prototype
   ShiftedDate.now = now
   ShiftedDate.parse = RealDate.parse
   ShiftedDate.UTC = RealDate.UTC
-  globalThis.Date = ShiftedDate
+  globalThis.Date = ShiftedDate as unknown as DateConstructor
 }

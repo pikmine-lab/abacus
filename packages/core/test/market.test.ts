@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
-import { parseGeckoSearch, parseYahooSearch } from '../packages/core/src/prices/search.ts'
+import { globalSetup, globalTeardown, type Market, startMarket } from '@abacus/test-harness/market'
+import { parseGeckoSearch, parseYahooSearch } from '../src/prices/search.ts'
 import {
   parseCoinGecko,
   parseCoinGeckoHistory,
   parseYahoo,
   parseYahooHistory,
-} from '../packages/core/src/prices/sources.ts'
-import { globalSetup, globalTeardown, startMarket } from './test-market.mjs'
+} from '../src/prices/sources.ts'
 
 /**
  * The local market answers on the paths the app calls, in the shapes the app's
@@ -15,13 +15,13 @@ import { globalSetup, globalTeardown, startMarket } from './test-market.mjs'
  * tests pass on data the app never sees.
  */
 
-let market
+let market: Market
 before(async () => {
   market = await startMarket()
 })
 after(() => market.close())
 
-async function get(path) {
+async function get(path: string): Promise<{ status: number; body: unknown }> {
   const response = await fetch(`${market.url}${path}`)
   return { status: response.status, body: await response.json() }
 }
@@ -51,7 +51,7 @@ test('a Yahoo year of USD/EUR and GBP/EUR closes runs up to today, at a fixed ra
   ]) {
     const history = parseYahooHistory((await get(`/v8/finance/chart/${pair}?interval=1d&range=1y`)).body)
     assert.ok(history.length >= 360, `${pair}: ${history.length} closes`)
-    assert.equal(history.at(-1).quotedOn, today)
+    assert.equal(history.at(-1)?.quotedOn, today)
     assert.ok(history.every((close) => close.price === rate))
   }
 })
@@ -59,7 +59,7 @@ test('a Yahoo year of USD/EUR and GBP/EUR closes runs up to today, at a fixed ra
 test('a Yahoo symbol nobody knows answers 404, as Yahoo does', async () => {
   const { status, body } = await get('/v8/finance/chart/NOPE?interval=1d&range=1d')
   assert.equal(status, 404)
-  assert.equal(body.chart.result, null)
+  assert.equal((body as { chart: { result: unknown } }).chart.result, null)
 })
 
 test('a Yahoo search finds the known share, and nothing for an unknown term', async () => {
@@ -86,7 +86,7 @@ test('a CoinGecko year of a known coin runs up to today, and an unknown coin ans
     (await get('/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=365&interval=daily')).body,
   )
   assert.ok(history.length >= 360)
-  assert.equal(history.at(-1).quotedOn, today)
+  assert.equal(history.at(-1)?.quotedOn, today)
   assert.equal((await get('/api/v3/coins/nope/market_chart?vs_currency=eur&days=365')).status, 404)
 })
 
@@ -103,8 +103,8 @@ test('the global setup points both market addresses at a local market, and the t
   const saved = { yahoo: process.env.ABACUS_MARKET_YAHOO_URL, gecko: process.env.ABACUS_MARKET_COINGECKO_URL }
   try {
     await globalSetup()
-    const yahoo = process.env.ABACUS_MARKET_YAHOO_URL
-    const gecko = process.env.ABACUS_MARKET_COINGECKO_URL
+    const yahoo = process.env.ABACUS_MARKET_YAHOO_URL ?? ''
+    const gecko = process.env.ABACUS_MARKET_COINGECKO_URL ?? ''
     assert.match(yahoo, /^http:\/\/127\.0\.0\.1:\d+$/)
     assert.match(gecko, /^http:\/\/127\.0\.0\.1:\d+$/)
     assert.equal((await fetch(`${yahoo}/v8/finance/chart/ACME?range=1d`)).status, 200)

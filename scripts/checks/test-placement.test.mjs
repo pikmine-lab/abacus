@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { checkPlacement } from './check-test-placement.mjs'
+import { checkPlacement } from './test-placement.mjs'
 
 const codes = (files) => checkPlacement(files).map(({ code, file }) => `${code} ${file}`)
 
@@ -20,7 +20,7 @@ test('a unit test next to its file passes, whatever its extension', () => {
     codes(['apps/web/src/lib/x.ts', 'apps/web/src/lib/x.test.ts', 'apps/web/src/c.test.tsx']),
     [],
   )
-  assert.deepEqual(codes(['scripts/test-db.test.mjs']), [])
+  assert.deepEqual(codes(['scripts/checks/image-content.test.mjs']), [])
 })
 
 test('the test folders kept on purpose pass: packages/core, the Spec Kit extensions, the use case suite', () => {

@@ -9,6 +9,9 @@
     "@abacus/web": "workspace:*"
   },
   "scripts": {
-    "test": "ABACUS_CASES_COVERAGE=1 node --env-file-if-exists=../../.env.test --import ../../scripts/test-preload.mjs --test-global-setup=./src/environment/index.ts --test --test-randomize --test-concurrency=4 'cases/**/*.test.ts' 'src/**/*.test.ts'"
+    "test": "ABACUS_CASES_COVERAGE=1 node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./src/environment/index.ts --test --test-randomize --test-concurrency=4 'cases/**/*.test.ts' 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@abacus/test-harness": "workspace:*"
   }
 }

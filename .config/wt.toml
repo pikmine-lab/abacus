@@ -89,8 +89,8 @@ migrate = "node --env-file=apps/web/.env.local packages/core/src/db/migrate.ts"
 [[pre-start]]
 # The tests never touch the dev database: each package of this worktree tests
 # against its own abacus_test_<branch>_<package>, created on its first run from
-# the base written here (scripts/test-db.mjs).
-test-db = "node scripts/test-db.mjs env"
+# the base written here (packages/test-harness/src/database.ts).
+test-db = "node packages/test-harness/src/database.ts env"
 
 [[pre-start]]
 # This model is entered by hand, so an empty account means no functional
@@ -138,7 +138,7 @@ pkill -TERM -f '[/]portless {{ branch | sanitize }}-mcp.abacus ' || true
 
 [[pre-remove]]
 # Every test database of this worktree, one per package that ran its tests.
-test-db = "node scripts/test-db.mjs drop"
+test-db = "node packages/test-harness/src/database.ts drop"
 
 [[pre-remove]]
 # FORCE closes any connection still open, a plain DROP refusing a database in

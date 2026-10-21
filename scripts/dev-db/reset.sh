@@ -7,7 +7,7 @@
 # the volume alone. Starting over from an empty volume is `nr db:down -v`.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 env_file=apps/web/.env.local
 local_prefix=postgresql://abacus:abacus@127.0.0.1:5544/
@@ -39,7 +39,7 @@ psql() { "${compose[@]}" exec -T db psql -U abacus -v ON_ERROR_STOP=1 --quiet "$
 psql -d postgres \
   -c "DROP DATABASE IF EXISTS $database WITH (FORCE)" \
   -c "CREATE DATABASE $database"
-# The same extensions as scripts/dev-db-init.sql, which only runs on an empty volume.
+# The same extensions as scripts/dev-db/init.sql, which only runs on an empty volume.
 psql -d "$database" \
   -c 'create extension if not exists vector' \
   -c 'create extension if not exists pg_trgm' \

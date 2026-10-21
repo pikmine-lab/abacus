@@ -12,9 +12,9 @@ allowBuilds:
 
 # The tests, run by `pnpm pipeline`: only the projects touched since the base
 # and those depending on them, each result restored from the cache when
-# nothing it depends on changed. What lives outside the packages and still
-# decides a result (the migrations, the test harness under scripts/) reaches
-# the cache key through ABACUS_TESTED_FILES, a fingerprint the CI computes.
+# nothing it depends on changed. The migrations live outside the packages and
+# still decide a result: they reach the cache key through ABACUS_TESTED_FILES,
+# a fingerprint the CI computes.
 tasks:
   test:
     dependsOn: ['^test']

@@ -1,6 +1,6 @@
 /**
  * Where the market sources answer. The real addresses by default; the tests
- * point both at a local market with fixed data (scripts/test-market.mjs), so
+ * point both at the local market of @abacus/test-harness, with fixed data, so
  * no price, rate or search depends on the network. Read at each call rather
  * than once, so a process can be pointed elsewhere after this module loaded.
  */

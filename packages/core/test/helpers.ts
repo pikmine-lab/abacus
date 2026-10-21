@@ -1,4 +1,4 @@
-import { assertTestDatabase } from '../../../scripts/test-db.mjs'
+import { assertTestDatabase } from '@abacus/test-harness/database'
 import { closeDb, db } from '../src/db/client.ts'
 import { migrate } from '../src/db/migrate.ts'
 

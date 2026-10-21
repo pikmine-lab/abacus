@@ -7,7 +7,7 @@
 //   extensions, and the use case suite, which is not unit tests.
 // - test_file_misnamed: any other test naming (x.spec.ts, x-test.ts, x_test.ts).
 //
-// Usage: node scripts/check-test-placement.mjs   (checks the files git tracks)
+// Usage: node scripts/checks/test-placement.mjs   (checks the files git tracks)
 
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

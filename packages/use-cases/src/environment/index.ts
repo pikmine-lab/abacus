@@ -4,8 +4,8 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { packageDatabaseUrl, prepareTestDatabase } from '../../../../scripts/test-db.mjs'
-import { globalSetup as startMarket, globalTeardown as stopMarket } from '../../../../scripts/test-market.mjs'
+import { packageDatabaseUrl, prepareTestDatabase } from '@abacus/test-harness/database'
+import { globalSetup as startMarket, globalTeardown as stopMarket } from '@abacus/test-harness/market'
 
 /**
  * The one configuration every driver reads: the servers the suite started,
@@ -120,7 +120,7 @@ export async function globalSetup(): Promise<void> {
     PUBLIC_URL: webUrl,
     MCP_URL: mcpUrl,
     ABACUS_TEST_TODAY: SUITE_DAY,
-    NODE_OPTIONS: `--import=${root}scripts/test-preload.mjs`,
+    NODE_OPTIONS: `--import=${import.meta.resolve('@abacus/test-harness/preload')}`,
   }
 
   // ABACUS_CASES_REUSE_BUILD=1 serves the last build, to go faster while writing

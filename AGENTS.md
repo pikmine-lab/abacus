@@ -91,7 +91,7 @@ Spec Kit est versionné : un clone n'a rien à installer. Ce qu'abacus y ajoute
 ## Développement local
 
 Base Postgres jetable en Docker, iso socle (même image, rôle et base `abacus`, extensions
-créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de production en local.
+créées par `scripts/dev-db/init.sql`). Jamais de travail sur la base de production en local.
 
 ```sh
 nr db:up         # démarre la base (port local 5544)

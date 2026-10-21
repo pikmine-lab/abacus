@@ -41,7 +41,7 @@ jobs:
           # the shallow single-branch clone checkout takes by default has
           # neither of.
           fetch-depth: 0
-      - run: scripts/check-migration-numbers.sh
+      - run: scripts/checks/migration-numbers.sh
 
   # baudrier check-agents-md CI job, version 2.
   #
@@ -63,7 +63,7 @@ jobs:
       - name: Check AGENTS.md and CLAUDE.md
         env:
           BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
-        run: node scripts/check-agents-md.mjs --base "$BASE"
+        run: node scripts/checks/agents-md.mjs --base "$BASE"
 
   test:
     runs-on: ubuntu-latest
@@ -85,7 +85,7 @@ jobs:
           --health-retries 10
     env:
       # Each package creates its own database under this base on its first
-      # test, with its extensions (scripts/test-db.mjs).
+      # test, with its extensions (packages/test-harness/src/database.ts).
       TEST_DATABASE_URL: postgresql://abacus:abacus@127.0.0.1:5544/abacus_test_ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -102,7 +102,7 @@ jobs:
       # at its pinned version.
       - run: pnpm exec agent-browser --version
       - run: pnpm lint
-      - run: node scripts/check-test-placement.mjs
+      - run: node scripts/checks/test-placement.mjs
       - run: pnpm typecheck
       # The web driver of the use case suite plays its cases in Chromium.
       - run: pnpm --filter @abacus/web exec playwright install --with-deps chromium --only-shell
@@ -114,9 +114,9 @@ jobs:
       # them run, the others restored from the cache; on main and in the merge
       # queue, everything runs, nothing taken from a cache, since main goes to
       # production. No retry anywhere: a flaky test is fixed, not replayed.
-      # What decides a result from outside the packages (the migrations, the
-      # test harness) reaches the cache key as a fingerprint.
-      - run: echo "ABACUS_TESTED_FILES=$(cat migrations/*.sql scripts/*.mjs | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      # The migrations decide results from outside every package: they reach
+      # the cache key as a fingerprint.
+      - run: echo "ABACUS_TESTED_FILES=$(cat migrations/*.sql | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name == 'pull_request'
         with:
@@ -194,7 +194,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           outputs: type=local,dest=${{ runner.temp }}/image
           cache-from: type=gha,scope=${{ matrix.name }}
-      - run: node scripts/check-image-content.mjs "$RUNNER_TEMP/image/app"
+      - run: node scripts/checks/image-content.mjs "$RUNNER_TEMP/image/app"
 
   deploy:
     needs: build

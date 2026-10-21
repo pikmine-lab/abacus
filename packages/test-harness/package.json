@@ -1,0 +1,17 @@
+{
+  "name": "@abacus/test-harness",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./database": "./src/database.ts",
+    "./market": "./src/market.ts",
+    "./preload": "./src/preload.ts",
+    "./setup": "./src/setup.ts"
+  },
+  "scripts": {
+    "test": "node --env-file-if-exists=../../.env.test --import ./src/preload.ts --test"
+  },
+  "dependencies": {
+    "postgres": "3.4.9"
+  }
+}

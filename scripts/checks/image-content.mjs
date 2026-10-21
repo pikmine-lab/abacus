@@ -7,7 +7,7 @@
 // __tests__/), driver_folder (driver/), suite_marker (a file holding the
 // suite's marker, packages/use-cases/src/environment/accounts.ts).
 //
-// Usage: node scripts/check-image-content.mjs <image root>
+// Usage: node scripts/checks/image-content.mjs <image root>
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -43,7 +43,7 @@ export function checkImage(root) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = process.argv[2]
   if (!root) {
-    console.error('usage: check-image-content.mjs <image root>')
+    console.error('usage: image-content.mjs <image root>')
     process.exitCode = 2
   } else {
     const findings = checkImage(root)

@@ -8,10 +8,10 @@
 // shell never decides where the tests write.
 
 import { readFileSync } from 'node:fs'
-import { packageDatabaseUrl, prepareTestDatabase } from './test-db.mjs'
-import { globalSetup as startMarket, globalTeardown as stopMarket } from './test-market.mjs'
+import { packageDatabaseUrl, prepareTestDatabase } from './database.ts'
+import { globalSetup as startMarket, globalTeardown as stopMarket } from './market.ts'
 
-export async function globalSetup() {
+export async function globalSetup(): Promise<void> {
   const base = process.env.TEST_DATABASE_URL
   if (!base) throw new Error('TEST_DATABASE_URL is not set: run `nr db:test:env` to write .env.test')
   const { name } = JSON.parse(readFileSync('package.json', 'utf8'))
@@ -23,6 +23,6 @@ export async function globalSetup() {
   await startMarket()
 }
 
-export async function globalTeardown() {
+export async function globalTeardown(): Promise<void> {
   await stopMarket()
 }
