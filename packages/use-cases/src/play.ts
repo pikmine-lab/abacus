@@ -70,20 +70,46 @@ export async function playCase(useCase: UseCase, driver: Driver, players: Player
   }
 }
 
+export interface CaseOptions {
+  /** The gesture the case is about, when some interface does not offer it: played only where it is offered. */
+  gesture?: string
+  /**
+   * Why the case is unstable by construction, when it is: it is still played,
+   * and its failure is reported with this reason without failing the run. A
+   * flaky case is fixed, not marked; nothing is ever played twice.
+   */
+  unstable?: string
+}
+
+class UnstableWithoutReason extends Error {
+  code = 'unstable_without_reason'
+}
+
+/** What node:test is told about a case's tests: an unstable one runs as a todo carrying its reason. */
+export function caseTestOptions(id: string, options: CaseOptions): { todo?: string } {
+  if (options.unstable === undefined) return {}
+  if (!options.unstable.trim())
+    throw new UnstableWithoutReason(`unstable_without_reason: case ${id} is marked unstable without a reason`)
+  return { todo: `unstable: ${options.unstable}` }
+}
+
 /**
  * Declares a use case, played as one test per declared driver. Called only from
  * a file under cases/, one case per file. A case about a gesture some interface
  * does not offer names it: it is then played only where the inventory says the
  * gesture is offered, the others giving their reason there.
  */
-export function useCase(id: string, body: UseCase['body'], options: { gesture?: string } = {}): void {
+export function useCase(id: string, body: UseCase['body'], options: CaseOptions = {}): void {
   const declared = drivers()
+  const testOptions = caseTestOptions(id, options)
   const entry = options.gesture === undefined ? undefined : gestures[options.gesture]
   if (options.gesture !== undefined && !entry)
     throw new Error(`${id}: no gesture ${options.gesture} in the inventory`)
   describe(id, () => {
     for (const driver of declared.filter((d) => offers(entry, d.name)))
-      test(driver.name, () => playCase({ id, body }, driver, { preparation: preparationDriver, newUser }))
+      test(driver.name, testOptions, () =>
+        playCase({ id, body }, driver, { preparation: preparationDriver, newUser }),
+      )
     after(async () => {
       for (const driver of [...declared, preparationDriver]) await driver.shutdown?.()
     })

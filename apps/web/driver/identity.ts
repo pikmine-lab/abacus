@@ -16,7 +16,10 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
 
   /** The app moves on by client-side navigation, which fires no new load event. */
   async function landedOn(path: string): Promise<void> {
-    await page.waitForFunction((wanted) => location.pathname === wanted, path)
+    await page.waitForFunction(
+      (wanted) => (globalThis as unknown as { location: { pathname: string } }).location.pathname === wanted,
+      path,
+    )
   }
 
   async function loginForm(): Promise<void> {

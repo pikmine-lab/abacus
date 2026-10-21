@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { type CaseUser, type Driver, eur, type Steps } from '@abacus/use-case-language'
-import { playCase } from './play.ts'
+import { caseTestOptions, playCase } from './play.ts'
 
 /** The fake back every fake driver writes to, one ledger per user, as real drivers share the app. */
 const ledgers = new Map<string, Map<string, number>>()
@@ -106,4 +106,36 @@ test('each play of a case gets a user of its own, shared by its preparation and 
   assert.equal(a, b)
   assert.equal(c, d)
   assert.notEqual(a, c)
+})
+
+test('a case marked unstable without a reason is refused with unstable_without_reason, naming it', () => {
+  for (const unstable of ['', '   '])
+    assert.throws(
+      () => caseTestOptions('ledger.movement.x', { unstable }),
+      (error: Error & { code?: string }) =>
+        error.code === 'unstable_without_reason' && error.message.includes('ledger.movement.x'),
+    )
+})
+
+test('a case marked unstable with its reason is played, and its failure is reported with the reason without failing the run', async () => {
+  const options = caseTestOptions('ledger.movement.x', { unstable: 'the bank simulator answers late' })
+  assert.deepEqual(options, { todo: 'unstable: the bank simulator answers late' })
+  const { spawnSync } = await import('node:child_process')
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const file = `${mkdtempSync(`${tmpdir()}/unstable-`)}/x.test.mjs`
+  writeFileSync(
+    file,
+    `import { test } from 'node:test'\ntest('x', ${JSON.stringify(options)}, () => { throw new Error('late') })\n`,
+  )
+  // Without the variable through which node:test drives its own children.
+  const { NODE_TEST_CONTEXT: _, ...env } = process.env
+  const run = spawnSync(process.execPath, ['--test', file], { encoding: 'utf8', env })
+  assert.equal(run.status, 0, run.stdout)
+  assert.match(run.stdout, /unstable: the bank simulator answers late/)
+  assert.match(run.stdout, /late/)
+})
+
+test('a case not marked unstable is an ordinary test', () => {
+  assert.deepEqual(caseTestOptions('x', {}), {})
 })
