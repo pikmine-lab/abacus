@@ -1,0 +1,109 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { type CaseUser, type Driver, eur, type Steps } from '@abacus/use-case-language'
+import { playCase } from './play.ts'
+
+/** The fake back every fake driver writes to, one ledger per user, as real drivers share the app. */
+const ledgers = new Map<string, Map<string, number>>()
+
+/** A driver that keeps balances in memory, with steps left out or failing on demand. */
+function fakeDriver(name: string, change: (steps: Partial<Steps>) => Partial<Steps> = (s) => s): Driver {
+  return {
+    name,
+    async open(user) {
+      if (!ledgers.has(user.id)) ledgers.set(user.id, new Map())
+      const balances = ledgers.get(user.id) as Map<string, number>
+      const steps: Partial<Steps> = {
+        async createAccount({ name, opening }) {
+          balances.set(name, Number(opening?.amount ?? 0))
+        },
+        async declareExpense({ account, amount }) {
+          balances.set(account, (balances.get(account) ?? 0) - Number(amount.amount))
+        },
+        async readAccountBalance(account) {
+          return eur((balances.get(account) ?? 0).toFixed(2))
+        },
+      }
+      return { steps: change(steps), close: async () => {} }
+    },
+  }
+}
+
+const preparation = fakeDriver('preparation')
+let users = 0
+const newUser = async (): Promise<CaseUser> => {
+  users += 1
+  return { id: `u${users}`, email: `u${users}@test.local`, password: 'x', cookie: '', accessToken: '' }
+}
+
+const expense = {
+  id: 'ledger.movement.declare-expense',
+  body: async ({ arrange, act }: { arrange: Steps; act: Steps }) => {
+    await arrange.createAccount({ name: 'Courant', opening: eur('100.00') })
+    await act.declareExpense({
+      account: 'Courant',
+      amount: eur('12.50'),
+      payee: 'Boulangerie',
+      on: '2026-03-10',
+    })
+    assert.deepEqual(await act.readAccountBalance('Courant'), eur('87.50'))
+  },
+}
+
+test('a case passes on a driver that plays it right', async () => {
+  await playCase(expense, fakeDriver('web'), { preparation, newUser })
+})
+
+test('a case fails on a driver that plays it wrong, and the failure names the case and the driver', async () => {
+  const wrong = fakeDriver('mcp', (steps) => ({ ...steps, readAccountBalance: async () => eur('100.00') }))
+  await assert.rejects(playCase(expense, wrong, { preparation, newUser }), (error: Error) => {
+    assert.match(error.message, /ledger\.movement\.declare-expense/)
+    assert.match(error.message, /mcp/)
+    return true
+  })
+})
+
+test('a step a driver does not know fails the case with step_not_implemented, naming case, step and driver', async () => {
+  const partial = fakeDriver('mcp', ({ declareExpense: _, ...rest }) => rest)
+  await assert.rejects(
+    playCase(expense, partial, { preparation, newUser }),
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, 'step_not_implemented')
+      for (const part of ['ledger.movement.declare-expense', 'declareExpense', 'mcp'])
+        assert.ok(error.message.includes(part), part)
+      return true
+    },
+  )
+})
+
+test('a step the interface refuses fails the case, the refusal text in the message', async () => {
+  const refusing = fakeDriver('web', (steps) => ({
+    ...steps,
+    declareExpense: async () => {
+      throw new Error('Ce compte est clos')
+    },
+  }))
+  await assert.rejects(playCase(expense, refusing, { preparation, newUser }), (error: Error) => {
+    for (const part of ['declareExpense', 'web', 'Ce compte est clos'])
+      assert.ok(error.message.includes(part), part)
+    return true
+  })
+})
+
+test('each play of a case gets a user of its own, shared by its preparation and its driver', async () => {
+  const seen: string[] = []
+  const recording = (name: string): Driver => ({
+    name,
+    async open(user) {
+      seen.push(`${name}:${user.id}`)
+      return { steps: {}, close: async () => {} }
+    },
+  })
+  const empty = { id: 'x', body: async () => {} }
+  await playCase(empty, recording('web'), { preparation: recording('preparation'), newUser })
+  await playCase(empty, recording('web'), { preparation: recording('preparation'), newUser })
+  const [a, b, c, d] = seen.map((entry) => entry.split(':')[1])
+  assert.equal(a, b)
+  assert.equal(c, d)
+  assert.notEqual(a, c)
+})

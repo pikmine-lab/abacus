@@ -94,6 +94,8 @@ jobs:
       - run: pnpm lint
       - run: node scripts/check-test-placement.mjs
       - run: pnpm typecheck
+      # The web driver of the use case suite plays its cases in Chromium.
+      - run: pnpm --filter @abacus/web exec playwright install --with-deps chromium --only-shell
       # Each package creates its own database under this base on its first
       # test, with its extensions (scripts/test-db.mjs).
       - run: pnpm test

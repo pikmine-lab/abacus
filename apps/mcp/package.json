@@ -15,7 +15,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@abacus/use-case-language": "workspace:*",
     "@modelcontextprotocol/client": "^2.0.0",
     "@types/express": "^5.0.6"
+  },
+  "exports": {
+    "./driver": "./driver/index.ts"
   }
 }
