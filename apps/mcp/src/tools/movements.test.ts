@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
+import { db } from '@abacus/core/db'
 import { createAccount } from '@abacus/core/services/accounts'
 import { createActor } from '@abacus/core/services/actors'
 import { createAdjustment, recordBalanceCheck } from '@abacus/core/services/balanceChecks'
@@ -168,4 +169,75 @@ test('list_movements names the invoice an income settles, and the balance check 
     },
     { activity: 'Freelance', commitment: undefined, invoice: undefined, origin: 'balanceCheck' },
   ])
+})
+
+/** A user with `n` advanced expenses each paid back, and `n` invoices each settled. */
+async function linkedRows(n: number): Promise<string> {
+  const userId = await seedUser(`user-${n}`)
+  const account = await createAccount({
+    userId,
+    name: 'Pro',
+    behavior: 'payment',
+    openingBalance: 100,
+    openedOn: '2026-01-01',
+  })
+  const freelance = await createActivity(userId, {
+    name: 'Freelance',
+    kind: 'business',
+    startedOn: '2026-01-01',
+    accountIds: [account.id],
+  })
+  const client = await createActor(userId, { name: 'ACME', activityId: freelance.id })
+  const paul = await createActor(userId, { name: 'Paul' })
+  const shop = await createActor(userId, { name: 'Quincaillerie' })
+  for (let i = 1; i <= n; i++) {
+    const on = `2026-03-${String(i).padStart(2, '0')}`
+    const expense = await declareMovement(userId, {
+      happenedOn: on,
+      amount: 20,
+      sourceAccountId: account.id,
+      targetActorId: shop.id,
+      refundShares: [{ debtorActorId: paul.id, amount: 10 }],
+    })
+    await declareMovement(userId, {
+      happenedOn: on,
+      amount: 10,
+      sourceActorId: paul.id,
+      targetAccountId: account.id,
+      refundsMovementId: expense.id,
+    })
+    const invoice = await declareInvoice(userId, {
+      activityId: freelance.id,
+      actorId: client.id,
+      issuedOn: on,
+      baseAmount: 100,
+      vatRate: 0,
+    })
+    await settleInvoice(userId, invoice.id, { accountId: account.id, date: on })
+  }
+  return userId
+}
+
+/** How many queries reach the database while `run` runs. */
+async function queriesDuring(run: () => Promise<unknown>): Promise<number> {
+  const options = db().options as { debug?: unknown }
+  let count = 0
+  options.debug = () => {
+    count++
+  }
+  try {
+    await run()
+  } finally {
+    delete options.debug
+  }
+  return count
+}
+
+test('list_movements reads the same number of queries for ten times the linked rows', async () => {
+  const few = await linkedRows(2)
+  const many = await linkedRows(20)
+  const listed = (userId: string) => queriesDuring(() => movements(userId))
+  // The driver reads the array types once per connection: a first call pays for it.
+  await listed(few)
+  assert.equal(await listed(many), await listed(few))
 })

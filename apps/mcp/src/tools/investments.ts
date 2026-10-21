@@ -24,7 +24,17 @@ import {
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { requireAccountByName, requireAssetByName } from '../resolve.ts'
-import { clearable, fail, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
+import {
+  clearable,
+  fail,
+  isoDate,
+  MAX_WINDOW_DAYS,
+  ok,
+  orderedBy,
+  run,
+  sortDirection,
+  windowProblem,
+} from './shared.ts'
 
 /**
  * A stored price as a decimal string: the cents always written, the places a
@@ -41,7 +51,7 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
     'manage_assets',
     {
       description:
-        "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's), history (every price known for one asset, day by day, as its page draws it: the daily closes of a listed one, the prices typed by hand for the others; decimal strings in euros, a foreign quote being converted at the rate of its day). Omit the source at creation for whatever no source quotes, and give `nature` instead: it is the mass the holding is read under (shares, funds, property), and nothing else can state it, where a listed asset is typed by its own source. One instrument can only be held under one name: a second name for it would split the position in half.",
+        "Manages what the user holds on their investment accounts: a listed asset (an ETF, a share, a crypto) or one priced by hand (unlisted shares, an SCPI, a property). Take the source and reference of a listed one from search_instruments, never from memory: an invented ticker produces a holding whose price never updates. That instrument is shared with the other users of this application, and keeps the description of whoever declared it first. Actions: list, create, rename, set_price (a hand-typed price, and only for an asset with no source, since a listed one takes the market's), history (the prices known for one asset, day by day, as its page draws it: the daily closes of a listed one, the prices typed by hand for the others; decimal strings in euros, a foreign quote being converted at the rate of its day; between from and to, at most 366 days per call, and without them the 366 days that end on its latest price). Omit the source at creation for whatever no source quotes, and give `nature` instead: it is the mass the holding is read under (shares, funds, property), and nothing else can state it, where a listed asset is typed by its own source. One instrument can only be held under one name: a second name for it would split the position in half.",
       inputSchema: z.object({
         action: z.enum(['list', 'create', 'rename', 'set_price', 'unfollow', 'history']),
         name: z
@@ -51,6 +61,8 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
         newName: z.string().optional().describe('rename: the corrected name'),
         price: z.number().nonnegative().optional().describe('set_price: what one unit is worth'),
         pricedOn: isoDate.optional().describe('set_price: the day that price is from'),
+        from: isoDate.optional().describe('history: YYYY-MM-DD, the first day. With to'),
+        to: isoDate.optional().describe('history: YYYY-MM-DD, the last day, included. With from'),
         source: z
           .enum(['yahoo', 'coingecko'])
           .optional()
@@ -122,8 +134,16 @@ export function registerInvestmentTools(server: McpServer, userId: string): void
           return ok({ assetId: renamed.id, name: renamed.name })
         }
         if (a.action === 'history') {
+          if ((a.from === undefined) !== (a.to === undefined))
+            return fail('Give both from and to, or neither.')
+          const problem = a.from && a.to ? windowProblem(a.from, a.to) : null
+          if (problem) return fail(problem)
           const target = await requireAssetByName(userId, a.name)
-          const prices = await assetHistory(userId, target.id)
+          const prices = await assetHistory(
+            userId,
+            target.id,
+            a.from && a.to ? { from: a.from, to: a.to } : { lastDays: MAX_WINDOW_DAYS },
+          )
           return ok({
             asset: target.name,
             currency: 'EUR',

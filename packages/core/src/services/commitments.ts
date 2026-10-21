@@ -33,6 +33,7 @@ import {
 import { getAsset } from '../db/datasources/investments.ts'
 import type { ShareInput } from '../domain/advance.ts'
 import { DomainError } from '../domain/errors.ts'
+import { boundedNote } from '../domain/note.ts'
 import { addPeriod, endOfMonth, today } from '../domain/period.ts'
 import { type SortChoice, type SortFields, sortBy } from '../domain/sort.ts'
 import type {
@@ -206,7 +207,7 @@ export async function createSubscription(
       periodCount: input.periodCount ?? 1,
       nextDueOn: input.firstDueOn,
       judgment: input.judgment ?? null,
-      judgmentNote: input.judgmentNote ?? null,
+      judgmentNote: boundedNote(input.judgmentNote) ?? null,
       engagedUntil: input.engagedUntil ?? null,
     })
     if (input.refundShares)
@@ -808,9 +809,10 @@ export async function setJudgment(
       throw new DomainError('not_a_subscription', 'Only subscriptions carry a judgment')
     // A judgment posed without a note keeps the note it had: the web row's
     // selector sends none, and its gesture must not erase what was written.
+    // An emptied note is none, whichever interface emptied it.
     const updated = await updateCommitment(tx, userId, id, {
       judgment,
-      ...(note !== undefined && { judgmentNote: note }),
+      ...(note !== undefined && { judgmentNote: boundedNote(note.trim()) || null }),
     })
     await insertCommitmentEvent(
       tx,

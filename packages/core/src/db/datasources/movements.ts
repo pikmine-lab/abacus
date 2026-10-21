@@ -83,6 +83,8 @@ export async function getMovement(tx: Executor, userId: string, id: string): Pro
 export interface MovementFilters {
   /** One movement, read with everything the list reads on a row. */
   id?: string
+  /** These movements, read the same way in one query. */
+  ids?: string[]
   /** The incomes paying back these shares: what came back of an advance, movement by movement. */
   refundsShareIds?: string[]
   from?: string
@@ -204,6 +206,7 @@ function movementWhere(tx: Executor, userId: string, f: MovementFilters) {
   return tx`
     where m.user_id = ${userId}
     ${f.id ? tx`and m.id = ${f.id}` : tx``}
+    ${f.ids ? tx`and m.id::text = any(${f.ids}::text[])` : tx``}
     ${f.refundsShareIds ? tx`and m.refunds_share_id::text = any(${f.refundsShareIds}::text[])` : tx``}
     ${f.from ? (accrual ? tx`and m.counted_in_month >= date_trunc('month', ${f.from}::date)` : tx`and m.happened_on >= ${f.from}`) : tx``}
     ${f.to ? (accrual ? tx`and m.counted_in_month <= date_trunc('month', ${f.to}::date)` : tx`and m.happened_on <= ${f.to}`) : tx``}

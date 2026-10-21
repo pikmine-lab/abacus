@@ -93,3 +93,10 @@ test('a window longer than 366 days, reversed, or an unknown account is refused'
     true,
   )
 })
+
+test('an account named past 200 characters is not looked up', async () => {
+  const userId = await seedUser()
+  const name = 'x'.repeat(201)
+  await createAccount({ userId, name, behavior: 'payment', openedOn: '2026-03-01' })
+  assert.equal((await call(userId, { account: name, from: '2026-03-01', to: '2026-03-02' })).isError, true)
+})

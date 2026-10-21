@@ -153,5 +153,7 @@
   "share_has_schedule": "Cette part a un échéancier qui fait son montant : refais d’abord l’échéancier.",
   "merge_shares_overlap": "Ces deux acteurs doivent chacun une part de la même avance : regroupe-les en une seule part avant de fusionner.",
   "bad_count": "Un échéancier compte un nombre entier de versements.",
-  "schedule_sum_mismatch": "L’échéancier ne fait pas le montant dû."
+  "schedule_sum_mismatch": "L’échéancier ne fait pas le montant dû.",
+  "unknown_currency": "Cette devise n'existe pas.",
+  "note_too_long": "Une note tient en 500 caractères au plus."
 }

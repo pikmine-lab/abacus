@@ -15,7 +15,6 @@ import {
   deleteMovement,
   listMovements,
   MOVEMENT_SORTS,
-  readMovement,
 } from '@abacus/core/services/movements'
 import { readingPreference } from '@abacus/core/services/preferences'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -416,6 +415,9 @@ export function registerMovementTools(server: McpServer, userId: string): void {
         const tiedOnlyByTheExpense = movements.filter(
           (m) => !m.commitmentId && !m.reservesCommitmentId && !m.refundsCommitmentId && m.refundsMovementId,
         )
+        // Read in one query each, whatever the number of rows.
+        const invoiceIds = [...new Set(movements.flatMap((m) => (m.invoiceId ? [m.invoiceId] : [])))]
+        const expenseIds = [...new Set(tiedOnlyByTheExpense.map((m) => m.refundsMovementId!))]
         const [accounts, actors, categories, activities, cards, commitments, invoices, expenses] =
           await Promise.all([
             listAccounts(userId),
@@ -425,18 +427,14 @@ export function registerMovementTools(server: McpServer, userId: string): void {
             listCards(userId),
             // Ended ones included: an old occurrence still belongs to its commitment.
             listCommitments(userId, false),
-            movements.some((m) => m.invoiceId) ? listInvoices(userId) : [],
-            Promise.all(
-              [...new Set(tiedOnlyByTheExpense.map((m) => m.refundsMovementId!))].map((id) =>
-                readMovement(userId, id),
-              ),
-            ),
+            invoiceIds.length > 0 ? listInvoices(userId, { ids: invoiceIds }) : [],
+            expenseIds.length > 0 ? listMovements(userId, { ids: expenseIds, limit: expenseIds.length }) : [],
           ])
         const commitmentLabel = new Map(commitments.map((c) => [c.id, c.label]))
         const activityName = new Map(activities.map((a) => [a.id, a.name]))
         const invoiceById = new Map(invoices.map((i) => [i.id, i]))
         const expenseCommitment = new Map(
-          expenses.flatMap((e) => (e?.commitmentId ? [[e.id, e.commitmentId] as const] : [])),
+          expenses.flatMap((e) => (e.commitmentId ? [[e.id, e.commitmentId] as const] : [])),
         )
         // The links the web's reading panel shows, each absent when the movement has none.
         const links = (m: (typeof movements)[number]) => {

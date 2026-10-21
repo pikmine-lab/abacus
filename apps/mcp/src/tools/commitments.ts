@@ -1,4 +1,5 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import { NOTE_MAX_LENGTH } from '@abacus/core/domain/note'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
@@ -115,7 +116,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .optional()
           .describe('create: sphere of the generated movements (e.g. Freelance)'),
         judgment: z.enum(['essential', 'reducible', 'to_cancel']).optional().describe('create/set_judgment'),
-        judgmentNote: z.string().optional(),
+        judgmentNote: z.string().max(NOTE_MAX_LENGTH).optional(),
         engagedUntil: isoDate.optional().describe('create: end of the contractual lock-in period, if any'),
         card: z
           .string()

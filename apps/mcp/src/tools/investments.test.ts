@@ -64,3 +64,47 @@ test('manage_assets history needs an asset the user holds or follows', async () 
   assert.equal((await call(userId, 'manage_assets', { action: 'history' })).isError, true)
   assert.equal((await call(userId, 'manage_assets', { action: 'history', name: 'Inconnu' })).isError, true)
 })
+
+test('manage_assets history answers the window it is given', async () => {
+  const userId = await seedUser()
+  const asset = await declareAsset(userId, { name: 'SCPI Rivage', nature: 'real_estate' })
+  await setManualPrice(userId, asset.id, 190, '2025-12-31')
+  await setManualPrice(userId, asset.id, 200, '2026-01-31')
+  await setManualPrice(userId, asset.id, 210.5, '2026-06-30')
+  const reply = await call(userId, 'manage_assets', {
+    action: 'history',
+    name: 'SCPI Rivage',
+    from: '2026-01-01',
+    to: '2026-03-31',
+  })
+  assert.equal(reply.isError, false, reply.text)
+  assert.deepEqual((reply.json() as { days: unknown[] }).days, [{ day: '2026-01-31', price: '200.00' }])
+})
+
+test('manage_assets history, without a window, answers the 366 days that end on the latest price', async () => {
+  const userId = await seedUser()
+  const asset = await declareAsset(userId, { name: 'SCPI Rivage', nature: 'real_estate' })
+  await setManualPrice(userId, asset.id, 180, '2025-06-29')
+  await setManualPrice(userId, asset.id, 190, '2025-06-30')
+  await setManualPrice(userId, asset.id, 210.5, '2026-06-30')
+  const { days } = (
+    await call(userId, 'manage_assets', { action: 'history', name: 'SCPI Rivage' })
+  ).json() as {
+    days: { day: string }[]
+  }
+  assert.deepEqual(
+    days.map((d) => d.day),
+    ['2025-06-30', '2026-06-30'],
+  )
+})
+
+test('manage_assets history refuses a window it cannot answer in one call', async () => {
+  const userId = await seedUser()
+  await declareAsset(userId, { name: 'Parts', nature: 'other' })
+  const history = (window: Record<string, string>) =>
+    call(userId, 'manage_assets', { action: 'history', name: 'Parts', ...window })
+  assert.equal((await history({ from: '2025-01-01', to: '2026-01-02' })).isError, true)
+  assert.equal((await history({ from: '2026-02-01', to: '2026-01-01' })).isError, true)
+  assert.equal((await history({ from: '2026-01-01' })).isError, true)
+  assert.equal((await history({ from: '2025-01-01', to: '2025-12-31' })).isError, false)
+})

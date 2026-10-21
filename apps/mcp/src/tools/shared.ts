@@ -295,6 +295,19 @@ export const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .describe('Date in YYYY-MM-DD format')
 
+/** The longest window a day-by-day series answers in one call: a year of days, leap day included. */
+export const MAX_WINDOW_DAYS = 366
+
+const dayIndex = (day: string) => Date.parse(`${day}T00:00:00Z`) / 86_400_000
+
+/** Why a day-by-day window cannot be answered in one call; null when it can. */
+export function windowProblem(from: string, to: string): string | null {
+  if (from > to) return `from (${from}) comes after to (${to}).`
+  if (dayIndex(to) - dayIndex(from) + 1 > MAX_WINDOW_DAYS)
+    return `At most ${MAX_WINDOW_DAYS} days per call: split ${from}..${to} in several calls.`
+  return null
+}
+
 /**
  * How a list tool takes the way its order runs. Absent, the criterion decides:
  * a figure and a past date open on the biggest and the most recent, a name on

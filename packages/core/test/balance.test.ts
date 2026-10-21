@@ -456,3 +456,18 @@ test('a claim needs an amount, an actor, and an expense to sit on', async () => 
     (e: DomainError) => e.code === 'advance_is_expense',
   )
 })
+
+test('a balance check note holds 500 characters at most, recorded as corrected', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const tooLong = 'x'.repeat(501)
+  await assert.rejects(
+    recordBalanceCheck(user, account.id, 0, '2026-03-31', tooLong),
+    (e: DomainError) => e.code === 'note_too_long',
+  )
+  const { check } = await recordBalanceCheck(user, account.id, 0, '2026-03-31', 'x'.repeat(500))
+  await assert.rejects(
+    correctBalanceCheck(user, check.id, { note: tooLong }),
+    (e: DomainError) => e.code === 'note_too_long',
+  )
+})

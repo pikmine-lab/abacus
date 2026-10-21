@@ -153,5 +153,7 @@
   "share_has_schedule": "This share has a repayment plan that adds up to it: redo the plan first.",
   "merge_shares_overlap": "Both actors each owe a share of the same advance: combine them into one share before merging.",
   "bad_count": "A plan has a whole number of payments.",
-  "schedule_sum_mismatch": "The plan doesn’t add up to what’s owed."
+  "schedule_sum_mismatch": "The plan doesn’t add up to what’s owed.",
+  "unknown_currency": "This currency does not exist.",
+  "note_too_long": "A note holds 500 characters at most."
 }
