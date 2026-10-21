@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { paceMonths } from '../src/lib/pace.ts'
+import { paceMonths } from './pace.ts'
 
 /**
  * The monthly pace of Analyse divides what was spent by the months it was

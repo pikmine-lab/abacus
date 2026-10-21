@@ -10,7 +10,7 @@ import { LANGUAGES } from '@abacus/core/domain'
  * language and not in the other.
  */
 
-const root = new URL('../src/i18n/messages/', import.meta.url)
+const root = new URL('./', import.meta.url)
 
 function catalog(language: string): Record<string, unknown> {
   const dir = new URL(`${language}/`, root)

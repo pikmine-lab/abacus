@@ -3,8 +3,8 @@ import { after, before, test } from 'node:test'
 import { auth } from '@abacus/core/auth'
 import { db } from '@abacus/core/db'
 import { setupDb, teardownDb, truncateAll } from '../../core/test/helpers.ts'
-import { seedDemo } from '../src/seed.ts'
-import { closeAuth, DEMO_EMAIL, DEMO_PASSWORD, OWNED_TABLES } from '../src/user.ts'
+import { seedDemo } from './seed.ts'
+import { closeAuth, DEMO_EMAIL, DEMO_PASSWORD, OWNED_TABLES } from './user.ts'
 
 before(async () => {
   await setupDb()

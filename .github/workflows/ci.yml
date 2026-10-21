@@ -92,6 +92,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: node scripts/check-test-placement.mjs
       - run: pnpm typecheck
       # Each package creates its own database under this base on its first
       # test, with its extensions (scripts/test-db.mjs).

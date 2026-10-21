@@ -15,7 +15,7 @@ import { listJurisdictions, previewRegime, questionnaire } from '@abacus/core/se
 const catalogs = LANGUAGES.map((language) => ({
   language,
   messages: JSON.parse(
-    readFileSync(new URL(`../src/i18n/messages/${language}/errors.json`, import.meta.url), 'utf8'),
+    readFileSync(new URL(`./${language}/errors.json`, import.meta.url), 'utf8'),
   ) as Record<string, string>,
 }))
 

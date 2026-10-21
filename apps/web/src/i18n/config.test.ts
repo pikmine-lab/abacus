@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { negotiateLanguage } from '../src/i18n/config.ts'
+import { negotiateLanguage } from './config.ts'
 
 test('the browser is followed in its own order of preference', () => {
   assert.equal(negotiateLanguage('en-US,en;q=0.9,fr;q=0.8'), 'en')

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RegimeQuestion } from '@abacus/core/domain/regime'
-import { answered, answersOf, keepMeaningful } from '../src/lib/regime-tree.ts'
+import { answered, answersOf, keepMeaningful } from './regime-tree.ts'
 
 /**
  * Walking back in the questionnaire. The engine takes the answers as the whole

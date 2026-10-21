@@ -8,8 +8,8 @@ import { listAuthorizations, revokeAuthorization } from '@abacus/core/authorizat
 import { authIssuer, MCP_SCOPE, PREREGISTERED_CLIENT_IDS } from '@abacus/core/oauth'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { setupDb, teardownDb, truncateAll } from '../../../packages/core/test/helpers.ts'
-import { createApp } from '../src/app.ts'
-import { protect } from '../src/auth.ts'
+import { createApp } from './app.ts'
+import { protect } from './auth.ts'
 
 /**
  * The whole authorization flow a client runs, against the real authorization

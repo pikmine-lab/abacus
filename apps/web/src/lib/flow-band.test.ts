@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { flowBandWindow } from '../src/lib/flow-band.ts'
+import { flowBandWindow } from './flow-band.ts'
 
 /**
  * The flow band pilots Analyse: a month clicked in it reframes the screen, so

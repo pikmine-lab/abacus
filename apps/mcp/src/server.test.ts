@@ -6,8 +6,8 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import type { AuthInfo } from '@modelcontextprotocol/server'
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { seedUser, setupDb, teardownDb, truncateAll } from '../../../packages/core/test/helpers.ts'
-import { userIdOf } from '../src/auth.ts'
-import { buildServer } from '../src/server.ts'
+import { userIdOf } from './auth.ts'
+import { buildServer } from './server.ts'
 
 before(setupDb)
 beforeEach(truncateAll)
