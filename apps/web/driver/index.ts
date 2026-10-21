@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
 import { type Browser, type BrowserContext, chromium } from 'playwright'
 import { accountsSteps } from './accounts.ts'
@@ -32,9 +33,32 @@ export function webDriver(env: WebEnvironment): Driver {
 
   async function signedIn(user: CaseUser): Promise<BrowserContext> {
     browser ??= await chromium.launch()
-    const context = await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })
+    // A client address of its own per case: the auth server limits sign-ins
+    // and sign-ups per address, read from x-forwarded-for.
+    const [a, b, c] = randomBytes(3)
+    const context = await browser.newContext({
+      locale: 'fr-FR',
+      timezoneId: 'Europe/Paris',
+      extraHTTPHeaders: { 'x-forwarded-for': `10.${a}.${b}.${c}` },
+    })
     context.setDefaultTimeout(env.timeoutMs)
-    await context.clock.install({ time: new Date(`${env.today}T12:00:00`) })
+    // The page's clock moves by the same offset as this process's, which the
+    // preloaded module shifted to the suite's day: performance does not move.
+    // Playwright's own clock is not used: driven from a process whose Date is
+    // shifted, it stops firing the page's timers.
+    const offset = Date.now() - (performance.timeOrigin + performance.now())
+    await context.addInitScript((shift: number) => {
+      const RealDate = Date
+      function ShiftedDate(this: unknown, ...args: unknown[]) {
+        if (new.target === undefined) return new RealDate(RealDate.now() + shift).toString()
+        return Reflect.construct(RealDate, args.length === 0 ? [RealDate.now() + shift] : args, new.target)
+      }
+      ShiftedDate.prototype = RealDate.prototype
+      ShiftedDate.now = () => RealDate.now() + shift
+      ShiftedDate.parse = RealDate.parse
+      ShiftedDate.UTC = RealDate.UTC
+      globalThis.Date = ShiftedDate as unknown as DateConstructor
+    }, offset)
     await context.route('**/*', (route) =>
       LOCAL.has(new URL(route.request().url()).hostname) ? route.continue() : route.abort(),
     )

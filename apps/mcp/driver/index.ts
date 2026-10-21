@@ -26,7 +26,7 @@ export function mcpDriver(mcpUrl: string): Driver {
       })
       const client = new Client({ name: 'abacus-use-cases', version: '0.0.0' })
       await client.connect(transport)
-      const ctx = mcpContext(client)
+      const ctx = mcpContext(client, mcpUrl)
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
         ...accountsSteps(ctx),

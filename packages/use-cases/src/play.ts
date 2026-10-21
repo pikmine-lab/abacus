@@ -2,6 +2,7 @@ import { after, describe, test } from 'node:test'
 import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
 import { drivers, preparationDriver } from './drivers.ts'
 import { newUser } from './environment/accounts.ts'
+import { gestures, offers } from './inventory/index.ts'
 
 /**
  * Plays a use case on one driver.
@@ -71,12 +72,17 @@ export async function playCase(useCase: UseCase, driver: Driver, players: Player
 
 /**
  * Declares a use case, played as one test per declared driver. Called only from
- * a file under cases/, one case per file.
+ * a file under cases/, one case per file. A case about a gesture some interface
+ * does not offer names it: it is then played only where the inventory says the
+ * gesture is offered, the others giving their reason there.
  */
-export function useCase(id: string, body: UseCase['body']): void {
+export function useCase(id: string, body: UseCase['body'], options: { gesture?: string } = {}): void {
   const declared = drivers()
+  const entry = options.gesture === undefined ? undefined : gestures[options.gesture]
+  if (options.gesture !== undefined && !entry)
+    throw new Error(`${id}: no gesture ${options.gesture} in the inventory`)
   describe(id, () => {
-    for (const driver of declared)
+    for (const driver of declared.filter((d) => offers(entry, d.name)))
       test(driver.name, () => playCase({ id, body }, driver, { preparation: preparationDriver, newUser }))
     after(async () => {
       for (const driver of [...declared, preparationDriver]) await driver.shutdown?.()

@@ -16,13 +16,23 @@ export const SUITE_MARKER = 'abacus-use-case-suite-shortcut'
 const CLIENT_ID = PREREGISTERED_CLIENT_IDS.cursor
 const REDIRECT_URI = 'http://localhost:8787/callback'
 
+/**
+ * A client address of its own for each sign-up: the auth server limits sign-ups
+ * per address, and every case signs one up from the same machine. It reads the
+ * address from x-forwarded-for when the header holds a single one.
+ */
+function clientAddress(): string {
+  const [a, b, c] = randomBytes(3)
+  return `10.${a}.${b}.${c}`
+}
+
 async function signUp(): Promise<Omit<CaseUser, 'accessToken'>> {
   const { webUrl } = environment()
   const email = `case-${randomBytes(6).toString('hex')}@${SUITE_MARKER}.test`
   const password = `pw-${randomBytes(12).toString('hex')}`
   const response = await fetch(`${authIssuer(webUrl)}/sign-up/email`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', origin: webUrl },
+    headers: { 'content-type': 'application/json', origin: webUrl, 'x-forwarded-for': clientAddress() },
     body: JSON.stringify({ name: 'Camille', email, password }),
   })
   if (!response.ok) throw new Error(`sign-up answered ${response.status}: ${await response.text()}`)
