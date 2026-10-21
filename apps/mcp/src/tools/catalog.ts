@@ -12,9 +12,10 @@ import {
 } from '@abacus/core/services/accounts'
 import {
   addAlias,
+  countReattachableMovements,
   createActor,
   editActor,
-  listActors,
+  listActorsWithAliases,
   mergeActors,
   reattachActorHistory,
 } from '@abacus/core/services/actors'
@@ -45,7 +46,7 @@ import {
   requireActorByName,
   requireCategoryByName,
 } from '../resolve.ts'
-import { clearable, fail, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
+import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 /** A percentage the AI may clear by passing null. */
 const rate = z.number().min(0).max(100).nullable().optional()
@@ -285,9 +286,17 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     'manage_actors',
     {
       description:
-        "Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list, create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to a freelance activity, passes that sphere to its movements), update (correct the canonical name, the activity, the note or the invoicing defaults), add_alias (\"Macdo\" must resolve to McDonald's), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias), reattach_history (move the actor's past movements onto its current activity). A client of a business activity carries what it does to an invoice: the VAT it bears (invoiceVatRate, 0 for a business abroad or intra-EU) and the share it withholds and pays to the tax office in the user's name (invoiceWithholdingRate); both are percentages copied onto a new invoice as its defaults, and both depend on the payer, which is why they live here and not on the activity. A corrected name replaces the former one, which stops resolving: that is what fixes a typo. A name that really was in use is kept with add_alias instead. The movements already written keep the activity they were written with: attaching an activity to an actor never reclassifies its history as a side effect, because a movement may carry an activity the user set on purpose. update answers movementsLeftBehind, the past movements that still carry what the actor passed on before (no activity, or its former one): tell the user, and on their say-so call reattach_history, which takes exactly those (optionally from a date) and never a movement set to another activity. The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.",
+        "Manages the actor referential (counterparties: merchants, clients, organizations, people). Actions: list (each actor with the aliases that resolve to it), create (with aliases and an optional activity: an actor attached to an activity, e.g. a client attached to a freelance activity, passes that sphere to its movements), update (correct the canonical name, the activity, the note or the invoicing defaults), add_alias (\"Macdo\" must resolve to McDonald's), merge (absorb a duplicate: all history moves to keep, the absorbed name becomes an alias), reattach_history (move the actor's past movements onto its current activity), preview_reattach (how many movements reattach_history would move with the same actor, from and previousActivity, and the day of the oldest, changing nothing). A client of a business activity carries what it does to an invoice: the VAT it bears (invoiceVatRate, 0 for a business abroad or intra-EU) and the share it withholds and pays to the tax office in the user's name (invoiceWithholdingRate); both are percentages copied onto a new invoice as its defaults, and both depend on the payer, which is why they live here and not on the activity. A corrected name replaces the former one, which stops resolving: that is what fixes a typo. A name that really was in use is kept with add_alias instead. The movements already written keep the activity they were written with: attaching an activity to an actor never reclassifies its history as a side effect, because a movement may carry an activity the user set on purpose. update answers movementsLeftBehind, the past movements that still carry what the actor passed on before (no activity, or its former one): tell the user, and on their say-so call reattach_history (preview_reattach first when they want the count for another scope), which takes exactly those (optionally from a date) and never a movement set to another activity. The cleanliness of this referential drives every analysis: merge duplicates as soon as they appear.",
       inputSchema: z.object({
-        action: z.enum(['list', 'create', 'update', 'add_alias', 'merge', 'reattach_history']),
+        action: z.enum([
+          'list',
+          'create',
+          'update',
+          'add_alias',
+          'merge',
+          'reattach_history',
+          'preview_reattach',
+        ]),
         name: z.string().optional().describe('create: canonical name'),
         newName: z.string().optional().describe('update: the corrected canonical name'),
         aliases: z.array(z.string()).optional().describe('create: initial aliases'),
@@ -302,13 +311,18 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
         invoiceWithholdingRate: rate.describe(
           "create/update: percent this client keeps back from an invoice and pays to the tax office in the user's name; null to clear",
         ),
-        actor: z.string().optional().describe('update/add_alias/reattach_history: target actor'),
-        from: isoDate.optional().describe('reattach_history: only the movements from this day on'),
+        actor: z
+          .string()
+          .optional()
+          .describe('update/add_alias/reattach_history/preview_reattach: target actor'),
+        from: isoDate
+          .optional()
+          .describe('reattach_history/preview_reattach: only the movements from this day on'),
         previousActivity: z
           .string()
           .optional()
           .describe(
-            'reattach_history: the activity the actor was attached to before the change, as update knew it. The movements still carrying it were inheriting it and come along; without it, only the movements carrying no activity are taken.',
+            'reattach_history/preview_reattach: the activity the actor was attached to before the change, as update knew it. The movements still carrying it were inheriting it and come along; without it, only the movements carrying no activity are taken.',
           ),
         alias: z.string().optional().describe('add_alias: the new alias'),
         keep: z.string().optional().describe('merge: the actor to keep'),
@@ -321,11 +335,15 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
     async (a) =>
       run(async () => {
         if (a.action === 'list') {
-          const [actors, activities] = await Promise.all([listActors(userId), listActivities(userId)])
+          const [actors, activities] = await Promise.all([
+            listActorsWithAliases(userId),
+            listActivities(userId),
+          ])
           const activityName = new Map(activities.map((act) => [act.id, act.name]))
           return ok(
             actors.map((actor) => ({
               name: actor.name,
+              aliases: actor.aliases,
               activity: actor.activityId ? activityName.get(actor.activityId) : undefined,
               note: actor.note ?? undefined,
               invoiceVatRate: actor.invoiceVatRate !== null ? Number(actor.invoiceVatRate) : undefined,
@@ -367,6 +385,25 @@ export function registerCatalogTools(server: McpServer, userId: string): void {
               updated.leftBehind > 0
                 ? await leftBehindNote(userId, updated.name, updated.leftBehind, target.activityId)
                 : undefined,
+          })
+        }
+        if (a.action === 'preview_reattach') {
+          if (!a.actor) return fail('preview_reattach requires actor.')
+          const target = (await requireActorByName(userId, a.actor)).actor
+          // What reattach_history would refuse has nothing to preview.
+          if (!target.activityId) return fail(GUIDANCE.actor_has_no_activity!)
+          const previousActivityId = a.previousActivity
+            ? (await requireActivityByName(userId, a.previousActivity)).id
+            : undefined
+          const [scope, activities] = await Promise.all([
+            countReattachableMovements(userId, target.id, { from: a.from, previousActivityId }),
+            listActivities(userId),
+          ])
+          return ok({
+            actor: target.name,
+            activity: activities.find((act) => act.id === target.activityId)?.name,
+            movementsToReattach: scope.count,
+            ...(scope.since ? { since: scope.since } : {}),
           })
         }
         if (a.action === 'reattach_history') {

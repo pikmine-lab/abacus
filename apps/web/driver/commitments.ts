@@ -1,4 +1,4 @@
-import type { Steps } from '@abacus/use-case-language'
+import type { Money, Steps } from '@abacus/use-case-language'
 import type { Locator } from 'playwright'
 import { amountsIn, dayShown } from './accounts.ts'
 import { moneyOf, typed, type WebContext } from './context.ts'
@@ -354,6 +354,41 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       const reserve = text.match(/Réserve : (.+?€) restants/)?.[1]
       if (reserve) view.reserveLeft = moneyOf(reserve)
       return view
+    },
+    async readCommitmentTerms(label) {
+      const { path, row } = await locate(label)
+      await exercised(`screen:${path}`)
+      // Partly paid back: the row says what comes back of each occurrence and
+      // from whom, and the page no month's worth per line. Read on monthly
+      // subscriptions only, where each occurrence is a month: the row does not
+      // say its periodicity, so another one would be read wrong.
+      let monthlyExpectedRefund: Money | undefined
+      const text = await row.innerText()
+      const expected = text.match(/([\d\s\u202f\u00a0]+,\d{2}\s?€) attendus de .+ à chaque échéance/)
+      if (expected) {
+        monthlyExpectedRefund = moneyOf(expected[1] as string)
+      }
+      // Who it pays and how it is filed are read in its correction.
+      await rowMenu(label, 'Modifier')
+      const panel = page.getByRole('dialog', { name: label })
+      const value = (field: Locator) =>
+        // A typed name is an input; a choice among a list is a button showing it.
+        field.evaluate((el) =>
+          (el.tagName === 'INPUT'
+            ? (el as unknown as { value: string }).value
+            : (el.textContent ?? '')
+          ).trim(),
+        )
+      const payee = await value(panel.getByRole('combobox', { name: /^Acteur/ }))
+      const category = await value(panel.getByRole('combobox', { name: 'Catégorie', exact: true }))
+      const activity = await value(panel.getByRole('combobox', { name: 'Activité', exact: true }))
+      await panel.getByRole('button', { name: 'Fermer' }).click()
+      return {
+        payee,
+        ...(category !== '(aucune)' ? { category } : {}),
+        ...(activity !== '(perso)' ? { activity } : {}),
+        ...(monthlyExpectedRefund ? { monthlyExpectedRefund } : {}),
+      }
     },
     async readRunningCommitments() {
       return [

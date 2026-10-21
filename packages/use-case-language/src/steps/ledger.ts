@@ -16,6 +16,18 @@ export interface ShareOwed {
   amount: Money
 }
 
+/** What a movement is tied to, each absent when it has none. */
+export interface MovementLinks {
+  /** The activity it belongs to. */
+  activity?: string
+  /** The commitment it is tied to: an occurrence of it, money received for it, a refund on it. */
+  commitment?: string
+  /** The reference of the invoice an income pays. */
+  invoice?: string
+  /** What wrote it: a confirmed occurrence of a commitment, or the settling of a balance check gap. */
+  origin?: 'commitment' | 'balanceCheck'
+}
+
 /** The steps of movements and their links. */
 export interface LedgerSteps {
   declareExpense(input: { account: string; amount: Money; payee: string; on: string }): Promise<void>
@@ -45,4 +57,6 @@ export interface LedgerSteps {
   readNetSpent(input: { payee: string; month: string }): Promise<Money>
   /** Files a movement under one of the person's categories. */
   fileMovement(input: { movement: MovementRef; category: string }): Promise<void>
+  /** What a movement is tied to, read on the movement itself. */
+  readMovementLinks(movement: MovementRef): Promise<MovementLinks>
 }

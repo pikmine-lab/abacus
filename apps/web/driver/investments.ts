@@ -1,6 +1,6 @@
 import type { AssetNature, Money, OperationRef, OperationType, Steps } from '@abacus/use-case-language'
 import type { Locator } from 'playwright'
-import { moneyOf, typed, type WebContext } from './context.ts'
+import { longDay, moneyOf, typed, type WebContext } from './context.ts'
 
 const TYPES: Record<OperationType, string> = {
   buy: 'Achat',
@@ -325,6 +325,27 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
         }
       }
       return { first: day(value.first, performance.first), last: day(value.last, performance.last) }
+    },
+    async readPriceHistory(asset) {
+      await exercised('screen:/investments/[assetId]')
+      // A holding's own page is reached from its line in the positions.
+      await visit('/investments')
+      await page.locator('a[href^="/investments/"]').filter({ hasText: asset }).first().click()
+      await page.waitForURL(/\/investments\/[^/?]+/)
+      const chart = page.getByRole('region', { name: 'Cours' })
+      const days = Number((await chart.getByText(/séances connues$/).innerText()).match(/^(\d+)/)?.[1])
+      // The curve, read at its two ends by pointing at them.
+      const wrap = chart.getByRole('img').locator('xpath=..')
+      const box = await wrap.boundingBox()
+      if (!box) throw new Error(`the price chart of "${asset}" is not drawn`)
+      const at = async (x: number) => {
+        await page.mouse.move(x, box.y + box.height / 2)
+        const lines = (await wrap.locator('div.pointer-events-none').innerText()).split('\n').filter(Boolean)
+        const line = lines.indexOf('Cours')
+        if (line === -1) throw new Error(`no price in the chart's tooltip: ${lines.join(' | ')}`)
+        return { on: longDay(lines[0] as string), price: moneyOf(lines[line + 1] as string) }
+      }
+      return { days, first: await at(box.x + 2), last: await at(box.x + box.width - 2) }
     },
   }
 }

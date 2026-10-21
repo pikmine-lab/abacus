@@ -1,9 +1,11 @@
 import type { Steps } from '@abacus/use-case-language'
 import {
   addAlias,
+  countReattachableMovements,
   createActor,
   editActor,
   listActors,
+  listActorsWithAliases,
   mergeActors,
   reattachActorHistory,
 } from '../src/services/actors.ts'
@@ -62,10 +64,15 @@ export function catalogSteps({ user, accountId }: PreparationContext): Partial<S
     },
     async readActors() {
       const activities = new Map((await listActivities(user.id)).map((a) => [a.id, a.name]))
-      return sortByName(await listActors(user.id)).map((a) => ({
+      return sortByName(await listActorsWithAliases(user.id)).map((a) => ({
         name: a.name,
         activity: a.activityId ? (activities.get(a.activityId) ?? null) : null,
+        aliases: a.aliases,
       }))
+    },
+    async previewReattachActorHistory(name) {
+      const { count, since } = await countReattachableMovements(user.id, (await actor(name)).id, {})
+      return { movements: count, since }
     },
     async declareExpenseToUnknownPayee({ account, amount, payee, on }) {
       const created = await createActor(user.id, { name: payee })

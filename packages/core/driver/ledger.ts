@@ -1,8 +1,16 @@
 import { eur, type Steps } from '@abacus/use-case-language'
 import { listAccounts } from '../src/services/accounts.ts'
 import { listActors } from '../src/services/actors.ts'
-import { listCategories } from '../src/services/catalog.ts'
-import { correctMovement, declareMovement, deleteMovement, listMovements } from '../src/services/movements.ts'
+import { listActivities, listCategories } from '../src/services/catalog.ts'
+import { listCommitments } from '../src/services/commitments.ts'
+import { listInvoices } from '../src/services/invoices.ts'
+import {
+  correctMovement,
+  declareMovement,
+  deleteMovement,
+  listMovements,
+  readMovement,
+} from '../src/services/movements.ts'
 import { readingPreference } from '../src/services/preferences.ts'
 import { spendingBreakdown } from '../src/services/reports.ts'
 import { amountOf, type PreparationContext } from './context.ts'
@@ -111,6 +119,27 @@ export function ledgerSteps({ user, accountId, actorId }: PreparationContext): P
       const found = (await listCategories(user.id)).find((c) => c.name === category)
       if (!found) throw new Error(`no category named "${category}"`)
       await correctMovement(user.id, (await movementOf(user.id, movement)).id, { categoryId: found.id })
+    },
+    async readMovementLinks(movement) {
+      const m = await movementOf(user.id, movement)
+      const expense = m.refundsMovementId ? await readMovement(user.id, m.refundsMovementId) : null
+      const commitmentId =
+        m.commitmentId ?? m.reservesCommitmentId ?? m.refundsCommitmentId ?? expense?.commitmentId ?? null
+      const [activities, commitments, invoices] = await Promise.all([
+        listActivities(user.id),
+        listCommitments(user.id, false),
+        m.invoiceId ? listInvoices(user.id) : [],
+      ])
+      const activity = activities.find((a) => a.id === m.activityId)?.name
+      const commitment = commitments.find((c) => c.id === commitmentId)?.label
+      const invoice = invoices.find((i) => i.id === m.invoiceId)?.reference ?? undefined
+      const origin = m.commitmentId ? 'commitment' : m.balanceCheckId ? 'balanceCheck' : undefined
+      return {
+        ...(activity ? { activity } : {}),
+        ...(commitment ? { commitment } : {}),
+        ...(invoice ? { invoice } : {}),
+        ...(origin ? { origin } : {}),
+      }
     },
   }
 }

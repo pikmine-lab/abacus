@@ -175,5 +175,44 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       const label = (await row.first().getAttribute('aria-label')) ?? (await row.first().innerText())
       return moneyOf(label.slice(payee.length + 2).split(', ')[0] as string)
     },
+    async readMovementLinks({ counterparty, on }) {
+      await exercised('screen:/movements')
+      await visit('/movements')
+      await page
+        .getByRole('button', {
+          name: new RegExp(`^Ouvrir ${escaped(shortDate(on))} · ${escaped(counterparty)} · `),
+        })
+        .click()
+      const panel = page.getByRole('dialog', { name: counterparty })
+      await panel.getByRole('button', { name: 'Corriger' }).waitFor()
+      const facts = await panel.evaluate((dialog) =>
+        Object.fromEntries(
+          [...dialog.querySelectorAll('dt')].map((dt) => [
+            dt.textContent ?? '',
+            dt.nextElementSibling?.textContent ?? '',
+          ]),
+        ),
+      )
+      const activity = facts['Activité']
+      const invoice = facts['Règle la facture']
+      const box = panel.locator('a[href*="?commitment="]')
+      const commitment =
+        (await box.count()) > 0 ? await box.locator('span span').first().innerText() : undefined
+      // An occurrence says where it comes from in its commitment's box.
+      const occurrence =
+        (await panel.getByRole('heading', { name: 'Échéance de', exact: true }).count()) > 0 ||
+        (await panel.getByText('Ce mouvement vient d’une échéance confirmée.').count()) > 0
+      const adjustment = (await panel.getByText('Ce mouvement est un ajustement de pointage.').count()) > 0
+      return {
+        ...(activity && activity !== 'aucune' ? { activity } : {}),
+        ...(commitment ? { commitment } : {}),
+        ...(invoice ? { invoice } : {}),
+        ...(occurrence
+          ? { origin: 'commitment' as const }
+          : adjustment
+            ? { origin: 'balanceCheck' as const }
+            : {}),
+      }
+    },
   }
 }

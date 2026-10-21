@@ -68,6 +68,12 @@ export interface ValuationDay {
   performance: Money
 }
 
+/** The price of an asset on one day, in euros. */
+export interface PricePoint {
+  on: string
+  price: Money
+}
+
 /** The steps of assets, operations, prices, portfolio, instruments. */
 export interface InvestmentsSteps {
   createInvestmentAccount(input: { name: string; opening?: Money; openedOn?: string }): Promise<void>
@@ -96,4 +102,6 @@ export interface InvestmentsSteps {
   readValuationHistory(): Promise<{ first: ValuationDay; last: ValuationDay }>
   /** Every venue quoting the fund a search finds first: its ticker, its place and its price. */
   readVenuesOf(query: string): Promise<{ ticker: string; venue: string; price: Money }[]>
+  /** The price history of a holding, as its own page draws it: how many days are known, the first and the last. */
+  readPriceHistory(asset: string): Promise<{ days: number; first: PricePoint; last: PricePoint }>
 }

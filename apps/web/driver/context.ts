@@ -56,6 +56,14 @@ const MONTHS = [
   'décembre',
 ]
 
+/** "3 juin 2026", a day as the screens write it in full, back to "2026-06-03". */
+export function longDay(text: string): string {
+  const [date, month, year] = text.trim().split(/\s+/) as [string, string, string]
+  const index = MONTHS.indexOf(month.toLowerCase())
+  if (index === -1 || !/^\d{4}$/.test(year)) throw new Error(`not a long date: "${text}"`)
+  return `${year}-${String(index + 1).padStart(2, '0')}-${date.padStart(2, '0')}`
+}
+
 export function webContext(page: Page, env: WebEnvironment): WebContext {
   return {
     page,

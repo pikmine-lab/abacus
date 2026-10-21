@@ -189,5 +189,16 @@ export function investmentsSteps({ call }: McpContext): Partial<Steps> {
       })
       return { first: day(start), last: day(end) }
     },
+    async readPriceHistory(asset) {
+      const { days } = await call<{ days: { day: string; price: string }[] }>('manage_assets', {
+        action: 'history',
+        name: asset,
+      })
+      const point = (p: { day: string; price: string } | undefined) => {
+        if (!p) throw new Error(`no price known for "${asset}"`)
+        return { on: p.day, price: money(Number(p.price)) }
+      }
+      return { days: days.length, first: point(days[0]), last: point(days.at(-1)) }
+    },
   }
 }

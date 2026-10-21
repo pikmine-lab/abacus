@@ -14,7 +14,7 @@ useCase('catalog.actor.add-alias', async ({ arrange, act }) => {
     payee: 'Macdo',
     on: '2026-06-10',
   })
-  assert.deepEqual(await act.readActors(), [{ name: "McDonald's", activity: null }])
+  assert.deepEqual(await act.readActors(), [{ name: "McDonald's", activity: null, aliases: ['Macdo'] }])
   assert.deepEqual(await act.readFlows({ kind: 'expense', by: 'actor', month: '2026-06' }), [
     { label: "McDonald's", amount: eur('12.00') },
   ])

@@ -496,7 +496,7 @@ test('the whole referential corrects itself through the MCP surface', async () =
   assert.equal(actor.name, 'ACME Corp')
   assert.equal(actor.movementsLeftBehind, 0)
   assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
-    { name: 'ACME Corp', activity: 'Freelance' },
+    { name: 'ACME Corp', aliases: [], activity: 'Freelance' },
   ])
 
   // A closed account reopens: closing the wrong one is not a dead end.
@@ -580,7 +580,7 @@ test('a business activity is configured, closed and read back through the MCP su
   ).json() as { actorId: string }
   assert.ok(actor.actorId)
   assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
-    { name: 'Client A', activity: 'Conseil', invoiceVatRate: 21, invoiceWithholdingRate: 15 },
+    { name: 'Client A', aliases: [], activity: 'Conseil', invoiceVatRate: 21, invoiceWithholdingRate: 15 },
   ])
 
   // Closed, the activity refuses a later movement and says where it belongs.

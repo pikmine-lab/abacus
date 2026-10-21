@@ -17,6 +17,10 @@ interface ListedCommitment {
   cancelledOn?: string
   settledOn?: string
   nextDueOn?: string
+  payee?: string
+  category?: string
+  activity?: string
+  monthlyExpectedRefund?: { amount: string; currency: string }
 }
 
 export function commitmentsSteps({ call, batch }: McpContext): Partial<Steps> {
@@ -166,6 +170,16 @@ export function commitmentsSteps({ call, batch }: McpContext): Partial<Steps> {
         ...(c.judgment && c.judgment !== 'not judged' ? { judgment: c.judgment } : {}),
         ...(c.remainingDue !== undefined ? { remainingDue: money(c.remainingDue) } : {}),
         ...(c.reserve ? { reserveLeft: money(c.reserve.remaining) } : {}),
+      }
+    },
+    async readCommitmentTerms(label) {
+      const { payee, category, activity, monthlyExpectedRefund } = await listed(label)
+      if (!payee) throw new Error(`"${label}" pays nobody`)
+      return {
+        payee,
+        ...(category ? { category } : {}),
+        ...(activity ? { activity } : {}),
+        ...(monthlyExpectedRefund ? { monthlyExpectedRefund } : {}),
       }
     },
   }

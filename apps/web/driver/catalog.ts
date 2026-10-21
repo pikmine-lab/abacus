@@ -1,13 +1,13 @@
 import type { Steps } from '@abacus/use-case-language'
 import type { Page } from 'playwright'
-import type { WebContext } from './context.ts'
+import { longDay, type WebContext } from './context.ts'
 import { ledgerSteps } from './ledger.ts'
 
 /** The rows of a Réglages list, in the order shown: its group headings and its entries, from the pane with the search. */
 async function listed(
   page: Page,
   part: string,
-): Promise<{ heading?: string; name?: string; trailing?: string }[]> {
+): Promise<{ heading?: string; name?: string; detail?: string; trailing?: string }[]> {
   return await page.getByRole('searchbox').evaluate((search, part) => {
     let pane: typeof search | null = search
     while (pane && !pane.querySelector(`a[href*="part=${part}&entry="]`)) pane = pane.parentElement
@@ -19,6 +19,7 @@ async function listed(
           ? { heading: el.firstChild?.textContent ?? '' }
           : {
               name: el.firstElementChild?.firstElementChild?.textContent ?? '',
+              detail: el.firstElementChild?.children[1]?.textContent ?? undefined,
               trailing: el.querySelector(':scope > span.shrink-0')?.textContent ?? undefined,
             },
       )
@@ -137,7 +138,29 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       return (await listed(page, 'actors')).map((row) => ({
         name: row.name ?? '',
         activity: row.trailing ?? null,
+        // "aussi Macdo, McDo" under the name.
+        aliases: row.detail ? row.detail.replace(/^aussi\s+/, '').split(', ') : [],
       }))
+    },
+    async previewReattachActorHistory(actor) {
+      await exercised('countReattachableAction')
+      const sheet = await fiche('actors', actor)
+      await sheet
+        .getByRole('region', { name: 'Historique' })
+        .getByRole('button', { name: /^Rattacher l’historique/ })
+        .click()
+      // The confirmation counts before anything is given: read, then cancelled.
+      const dialog = page.getByRole('alertdialog')
+      const said = dialog.getByText(/passer(a|ont) sous|^Rien à rattacher/)
+      await said.waitFor()
+      const text = await said.innerText()
+      await dialog.getByRole('button', { name: 'Annuler' }).click()
+      await dialog.waitFor({ state: 'detached' })
+      if (text.startsWith('Rien à rattacher')) return { movements: 0, since: null }
+      const count = text.match(/^(\d+) mouvements?/)?.[1]
+      if (!count) throw new Error(`no count in "${text}"`)
+      const since = text.match(/depuis le (\d{1,2} \S+ \d{4})/)?.[1]
+      return { movements: Number(count), since: since ? longDay(since) : null }
     },
     async declareExpenseToUnknownPayee({ account, amount, payee, on }) {
       // The web asks nothing: the payee typed is created by the declaration,

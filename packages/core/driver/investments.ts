@@ -2,6 +2,7 @@ import { eur, type OperationRef, type Steps } from '@abacus/use-case-language'
 import { searchInstruments } from '../src/prices/search.ts'
 import { createAccount } from '../src/services/accounts.ts'
 import {
+  assetHistory,
   assetPrices,
   correctOperation,
   declareAsset,
@@ -155,6 +156,14 @@ export function investmentsSteps({ user, accountId }: PreparationContext): Parti
         performance: money(d.performance),
       })
       return { first: day(history.start), last: day(history.end) }
+    },
+    async readPriceHistory(asset) {
+      const prices = await assetHistory(user.id, await assetId(asset))
+      const point = (p: (typeof prices)[number] | undefined) => {
+        if (!p) throw new Error(`no price known for "${asset}"`)
+        return { on: p.quotedOn, price: money(p.price) }
+      }
+      return { days: prices.length, first: point(prices[0]), last: point(prices.at(-1)) }
     },
   }
 }

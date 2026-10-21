@@ -1,5 +1,7 @@
 import { eur, type Steps } from '@abacus/use-case-language'
 import { listAccounts } from '../src/services/accounts.ts'
+import { listActors } from '../src/services/actors.ts'
+import { listActivities, listCategories } from '../src/services/catalog.ts'
 import {
   cancelCommitment,
   changeAmount,
@@ -10,6 +12,7 @@ import {
   editCommitment,
   financingSchedule,
   listCommitmentsWithProgress,
+  monthlyExpectedRefundEur,
   moveAccount,
   reviseSchedule,
   setJudgment,
@@ -144,6 +147,47 @@ export function commitmentsSteps({ user, accountId, actorId }: PreparationContex
         ...(c.judgment ? { judgment: c.judgment } : {}),
         ...(c.progress ? { remainingDue: money(c.progress.remainingDue) } : {}),
         ...(c.reserve ? { reserveLeft: money(c.reserve.remaining) } : {}),
+      }
+    },
+    async correctCommitment({ commitment: label, category, activity, shares }) {
+      const [categories, activities] = await Promise.all([listCategories(user.id), listActivities(user.id)])
+      const named = <T extends { id: string; name: string }>(list: T[], name: string) => {
+        const found = list.find((e) => e.name === name)
+        if (!found) throw new Error(`no category or activity named "${name}"`)
+        return found.id
+      }
+      await editCommitment(user.id, await idOf(label), {
+        ...(category ? { categoryId: named(categories, category) } : {}),
+        ...(activity ? { activityId: named(activities, activity) } : {}),
+        ...(shares
+          ? {
+              refundShares: await Promise.all(
+                shares.map(async (share) => ({
+                  debtorActorId: await actorId(share.debtor),
+                  amount: amountOf(share.amount),
+                  perOccurrence: true,
+                })),
+              ),
+            }
+          : {}),
+      })
+    },
+    async readCommitmentTerms(label) {
+      const c = await commitment(label)
+      const [actors, categories, activities] = await Promise.all([
+        listActors(user.id),
+        listCategories(user.id),
+        listActivities(user.id),
+      ])
+      const payee = actors.find((a) => a.id === c.actorId)?.name
+      if (!payee) throw new Error(`"${label}" pays nobody`)
+      const category = categories.find((e) => e.id === c.categoryId)?.name
+      const activity = activities.find((e) => e.id === c.activityId)?.name
+      return {
+        payee,
+        ...(category ? { category } : {}),
+        ...(activity ? { activity } : {}),
+        ...(c.refundEur !== null ? { monthlyExpectedRefund: money(monthlyExpectedRefundEur(c)) } : {}),
       }
     },
   }

@@ -1,4 +1,5 @@
 import type { Money } from '../index.ts'
+import type { ShareOwed } from './ledger.ts'
 
 export type Judgment = 'essential' | 'reducible' | 'to_cancel'
 
@@ -16,6 +17,18 @@ export interface CommitmentView {
   remainingDue?: Money
   /** What was received for it and is not drawn yet. */
   reserveLeft?: Money
+}
+
+/**
+ * What a commitment is about: who it pays (a recurring income: who pays it),
+ * how its occurrences are filed, and what others are expected to pay back of
+ * it a month, in euros, absent when nobody does.
+ */
+export interface CommitmentTerms {
+  payee: string
+  category?: string
+  activity?: string
+  monthlyExpectedRefund?: Money
 }
 
 /** One instalment of a financing's written plan. */
@@ -90,4 +103,13 @@ export interface CommitmentsSteps {
   readCommitment(label: string): Promise<CommitmentView>
   /** The names of the commitments still running, of every kind, in alphabetical order. */
   readRunningCommitments(): Promise<string[]>
+  /** Files a commitment under a category and an activity, and states who pays part of each occurrence back. */
+  correctCommitment(input: {
+    commitment: string
+    category?: string
+    activity?: string
+    shares?: ShareOwed[]
+  }): Promise<void>
+  /** What a running commitment is about, read where the person reads it. */
+  readCommitmentTerms(label: string): Promise<CommitmentTerms>
 }

@@ -8,6 +8,10 @@ export interface ListedMovement {
   id: string
   counterparty?: string
   claims?: { claimId: string; debtor: string }[]
+  activity?: string
+  commitment?: string
+  invoice?: { reference?: string; issuedOn: string }
+  origin?: 'commitment' | 'balanceCheck'
 }
 
 /** The movement a case points at, found in the history of its day. */
@@ -94,6 +98,17 @@ export function ledgerSteps(ctx: McpContext): Partial<Steps> {
         actor: payee,
       })
       return eur((rows[0]?.net ?? 0).toFixed(2))
+    },
+    async readMovementLinks(movement) {
+      const { activity, commitment, invoice, origin } = await movementOf(ctx, movement)
+      if (invoice && !invoice.reference)
+        throw new Error(`the invoice of ${movement.counterparty} has no reference`)
+      return {
+        ...(activity ? { activity } : {}),
+        ...(commitment ? { commitment } : {}),
+        ...(invoice ? { invoice: invoice.reference } : {}),
+        ...(origin ? { origin } : {}),
+      }
     },
   }
 }

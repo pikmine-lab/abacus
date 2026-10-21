@@ -6,10 +6,21 @@ export interface CategoryRead {
   group: string | null
 }
 
-/** An actor as the person reads it: its name and the activity it passes on to its movements, if any. */
+/**
+ * An actor as the person reads it: its name, the activity it passes on to its
+ * movements, if any, and the other names that resolve to it, in alphabetical order.
+ */
 export interface ActorRead {
   name: string
   activity: string | null
+  aliases: string[]
+}
+
+/** What reattaching an actor's history would take: how many movements, and the day of the oldest. */
+export interface ReattachPreview {
+  movements: number
+  /** Null when there is nothing to take. */
+  since: string | null
 }
 
 /** The steps of actors, aliases, categories. */
@@ -31,6 +42,8 @@ export interface CatalogSteps {
   reattachActorHistory(actor: string): Promise<void>
   /** The actors, in alphabetical order. */
   readActors(): Promise<ActorRead[]>
+  /** What reattaching the actor's history would take, asked before doing it: nothing moves. */
+  previewReattachActorHistory(actor: string): Promise<ReattachPreview>
 
   /**
    * Declares an expense to a payee the person never named before, and ends

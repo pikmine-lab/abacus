@@ -13,6 +13,6 @@ useCase('catalog.actor.unknown-payee', async ({ arrange, act }) => {
     payee: 'Fromagerie Lenoir',
     on: '2026-06-10',
   })
-  assert.deepEqual(await act.readActors(), [{ name: 'Fromagerie Lenoir', activity: null }])
+  assert.deepEqual(await act.readActors(), [{ name: 'Fromagerie Lenoir', activity: null, aliases: [] }])
   assert.deepEqual(await act.readAccountBalance('Compte courant'), eur('987.50'))
 })

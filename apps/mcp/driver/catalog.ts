@@ -42,8 +42,17 @@ export function catalogSteps({ call, batch }: McpContext): Partial<Steps> {
       await call('manage_actors', { action: 'reattach_history', actor })
     },
     async readActors() {
-      const actors = await call<{ name: string; activity?: string }[]>('manage_actors', { action: 'list' })
-      return actors.map((a) => ({ name: a.name, activity: a.activity ?? null }))
+      const actors = await call<{ name: string; activity?: string; aliases: string[] }[]>('manage_actors', {
+        action: 'list',
+      })
+      return actors.map((a) => ({ name: a.name, activity: a.activity ?? null, aliases: a.aliases }))
+    },
+    async previewReattachActorHistory(actor) {
+      const preview = await call<{ movementsToReattach: number; since?: string }>('manage_actors', {
+        action: 'preview_reattach',
+        actor,
+      })
+      return { movements: preview.movementsToReattach, since: preview.since ?? null }
     },
     async declareExpenseToUnknownPayee({ account, amount, payee, on }) {
       const line = { type: 'expense', date: on, amount: Number(amount.amount), account, actor: payee }
