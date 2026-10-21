@@ -1,4 +1,5 @@
 import type { InstrumentKind, PriceSource } from '../domain/types.ts'
+import { coinGeckoUrl, yahooUrl } from './endpoints.ts'
 import { fetchYahoo, kindOfYahooType } from './sources.ts'
 
 /**
@@ -56,9 +57,7 @@ const RESCUED = 4
 const ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/
 
 async function searchYahoo(encodedQuery: string): Promise<YahooQuote[]> {
-  return await getJson(
-    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodedQuery}&quotesCount=25&newsCount=0`,
-  )
+  return await getJson(`${yahooUrl()}/v1/finance/search?q=${encodedQuery}&quotesCount=25&newsCount=0`)
     .then(parseYahooSearch)
     .catch(() => [] as YahooQuote[])
 }
@@ -189,7 +188,7 @@ export async function searchInstruments(query: string): Promise<InstrumentHit[]>
     // looked for. UCITS is not a preference, it is the regulatory frame of the
     // funds a European saver actually buys.
     isin || /ucits/i.test(term) ? Promise.resolve([] as YahooQuote[]) : searchYahoo(`${encoded}%20ucits`),
-    getJson(`https://api.coingecko.com/api/v3/search?query=${encoded}`)
+    getJson(`${coinGeckoUrl()}/api/v3/search?query=${encoded}`)
       .then(parseGeckoSearch)
       .catch(() => [] as InstrumentHit[]),
   ])
@@ -338,7 +337,7 @@ async function findEuroListing(name: string): Promise<{ euro?: PricedListing; ve
 async function priceSiblings(name: string): Promise<PricedListing[]> {
   try {
     const payload = await getJson(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(name)}&quotesCount=15&newsCount=0`,
+      `${yahooUrl()}/v1/finance/search?q=${encodeURIComponent(name)}&quotesCount=15&newsCount=0`,
     )
     // The exact name is the grouping key, so a near match is another fund.
     const siblings = parseYahooSearch(payload).filter(
@@ -368,7 +367,7 @@ async function priceCoins(coins: InstrumentHit[]): Promise<InstrumentHit[]> {
   try {
     const ids = coins.map((c) => encodeURIComponent(c.reference)).join(',')
     const payload = (await getJson(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=eur`,
+      `${coinGeckoUrl()}/api/v3/simple/price?ids=${ids}&vs_currencies=eur`,
     )) as Record<string, { eur?: number }>
     return coins.map((coin) => {
       const price = payload?.[coin.reference]?.eur
