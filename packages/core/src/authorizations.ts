@@ -1,5 +1,8 @@
 import { APIError } from 'better-auth/api'
 import { auth } from './auth.ts'
+import { clientDomain } from './services/connections.ts'
+
+export { clientDomain }
 
 /**
  * What a user has let into their account: one row per AI client they
@@ -16,23 +19,6 @@ export interface Authorization {
   grantedAt: Date
   /** Last token refresh; tokens last ten minutes, so it reads as "last used". */
   lastUsedAt: Date | null
-}
-
-/**
- * The domain a client is known by. A metadata-document client IS the URL of
- * its document, and its name comes from that document, so the host of the URL
- * is the one thing about it the client cannot choose. A pre-registered client
- * carries the product's site instead.
- */
-export function clientDomain(clientId: string, clientUri?: string | null): string | null {
-  for (const candidate of [clientId, clientUri]) {
-    if (!candidate) continue
-    try {
-      const url = new URL(candidate)
-      if (url.protocol === 'https:' || url.protocol === 'http:') return url.hostname
-    } catch {}
-  }
-  return null
 }
 
 export async function listAuthorizations(userId: string, headers: Headers): Promise<Authorization[]> {

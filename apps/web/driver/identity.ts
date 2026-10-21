@@ -112,6 +112,32 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
         ? 'token'
         : 'no-token'
     },
+    async readConnectedApps() {
+      await exercised('screen:/connect-ai')
+      await visit('/connect-ai')
+      const region = page.getByRole('region', { name: 'Applications' })
+      await region.waitFor()
+      const menus = await region.getByRole('button', { name: /^Actions sur l’accès de / }).all()
+      return Promise.all(
+        menus.map(async (menu) => {
+          const name = ((await menu.getAttribute('aria-label')) ?? '').replace(/^Actions sur l’accès de /, '')
+          const row = menu.locator('xpath=ancestor::*[.//p][1]')
+          const [, domain] = (await row.innerText()).split('\n').map((line) => line.trim())
+          return { name, domain: domain && !domain.startsWith('autorisée') ? domain : null }
+        }),
+      )
+    },
+    async revokeConnectedApp(name) {
+      await exercised('revokeAuthorizationAction')
+      await visit('/connect-ai')
+      await page.getByRole('button', { name: `Actions sur l’accès de ${name}` }).click()
+      await page.getByRole('menuitem', { name: 'Révoquer l’accès' }).click()
+      const answered = page.waitForResponse(
+        (response) => response.request().headers()['next-action'] !== undefined,
+      )
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Révoquer', exact: true }).click()
+      await answered
+    },
     async readAccountNames() {
       await exercised('screen:/accounts')
       await visit('/accounts')

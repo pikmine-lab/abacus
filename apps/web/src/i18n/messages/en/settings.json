@@ -102,7 +102,7 @@
       "menuLabel": "{name}’s access",
       "action": "Revoke access",
       "title": "Revoke access for “{name}”?",
-      "description": "It loses access within ten minutes at most. To connect it again, you will have to authorize it again.",
+      "description": "It loses access at once. To connect it again, you will have to authorize it again.",
       "cancel": "Cancel",
       "submit": "Revoke"
     }

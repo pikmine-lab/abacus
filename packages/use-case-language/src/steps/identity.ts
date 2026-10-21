@@ -28,6 +28,12 @@ export interface IdentitySteps {
   }): Promise<SomeoneElses>
   /** The names of the accounts the person sees. */
   readAccountNames(): Promise<string[]>
+  /** The AI applications the person let in: their name and the domain they come from. */
+  readConnectedApps(): Promise<{ name: string; domain: string | null }[]>
+  /** Cuts an application off, named as the person sees it. */
+  revokeConnectedApp(name: string): Promise<void>
+  /** Whether the AI application the case signed in with still reaches the person's data. */
+  connectedAppReaches(): Promise<boolean>
   /** Corrects a movement by its id: whether the correction went through. */
   correctSomeoneElsesMovement(movementId: string, amount: Money): Promise<'corrected' | 'refused'>
 }
