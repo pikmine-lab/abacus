@@ -9,3 +9,12 @@ node_modules
 vendors
 provision/.env
 **/.env*
+# Nothing of the tests reaches an image: test files and folders, the drivers,
+# the use case suite and its language (scripts/check-image-content.mjs checks
+# every image built in CI).
+**/*.test.*
+**/*.spec.*
+**/test
+**/driver
+packages/use-cases
+packages/use-case-language

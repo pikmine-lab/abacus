@@ -149,6 +149,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      # The same build, from the cache, unpacked to check what the image carries:
+      # no test file, test or driver folder, nothing of the use case suite.
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          outputs: type=local,dest=${{ runner.temp }}/image
+          cache-from: type=gha,scope=${{ matrix.name }}
+      - run: node scripts/check-image-content.mjs "$RUNNER_TEMP/image/app"
 
   deploy:
     needs: build
