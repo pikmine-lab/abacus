@@ -49,7 +49,7 @@ la skill `intent` capture, rédige et clôt. Avant de travailler un sujet, cherc
 précédents, ouverts comme fermés (`gh issue list --state all --search …`).
 
 Une fonctionnalité suit le cycle Spec Kit adapté au dépôt : `/speckit-specify`,
-`/speckit-plan`, `/speckit-tasks`, `/speckit-implement` (boucle test-first),
+`/speckit-plan`, `/speckit-tasks`, `/speckit-implement`,
 `/speckit-converge`. Un bug passe par `/speckit-bug-assess` puis `/speckit-bug-fix`. La
 branche se nomme `<numéro de l'issue>-<slug>`, et sa PR close l'issue.
 

@@ -13,8 +13,8 @@ Elles priment sur les instructions génériques qui suivent.
 - **Section « Stratégie de test »** : pour chaque cas de « Cas et refus », le niveau
   le plus bas qui l'éprouve vraiment (calcul pur du domaine, service contre la base,
   outil MCP en process, écran), les données que les tests ajoutent, et ce qui ne
-  s'automatise pas avec la façon de le valider. Les tâches et les boucles test-first
-  en partent ; un cas sans niveau est un plan incomplet.
+  s'automatise pas avec la façon de le valider. Les tâches et leurs tests en
+  partent ; un cas sans niveau est un plan incomplet.
 - **Section « Revue »** : le niveau d'effort de `/code-review` selon la taille de la
   fonctionnalité, et si `/security-review` est obligatoire, avec la raison. Elle est
   obligatoire dès que la fonctionnalité ajoute un champ saisi, une route, une règle

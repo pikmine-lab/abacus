@@ -11,7 +11,8 @@ l'extension `issue-sync` ou du preset `abacus` se fait ici, et seulement ici.
   script est testé (`test/`), et ces tests tournent avec le script `test` du dépôt.
 - **`presets/abacus/`** adapte les commandes et les gabarits de Spec Kit aux règles du
   dépôt : cas et refus numérotés dans la spec, stratégie de test et niveau de revue dans le
-  plan, tâches taillées pour la boucle test-first, `converge` jusqu'à la validation humaine.
+  plan, des tâches qui écrivent leurs tests avant leur code, `converge` par la revue du code
+  et des tests jusqu'à la validation humaine.
 
 ## Ce qui en est généré
 

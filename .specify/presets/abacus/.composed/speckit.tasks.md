@@ -1,6 +1,6 @@
 ---
-description: Generate the dependency-ordered tasks of the feature as test-first batches,
-  kept in its pull request.
+description: Generate the dependency-ordered tasks of the feature as batches that
+  each carry their tests, kept in its pull request.
 scripts:
   sh: scripts/bash/setup-tasks.sh --json
   ps: scripts/powershell/setup-tasks.ps1 -Json
@@ -23,10 +23,10 @@ Elles priment sur les instructions génériques qui suivent.
   gh pr create --draft --title "<titre de l'issue>" --body "Closes #<issue number>"
   ```
 
-- **Chaque tâche de code est un lot test-first** : elle cite les cas de « Cas et
-  refus » qu'elle couvre et leur niveau de test, pris dans la « Stratégie de test »
-  du plan. Jamais de tâche « écrire les tests » à part : à l'implémentation, la boucle
-  test-first de chaque tâche écrit ses tests. Les règles complètes sont à la fin du
+- **Chaque tâche de code est un lot qui porte ses tests** : elle cite les cas de « Cas
+  et refus » qu'elle couvre et leur niveau de test, pris dans la « Stratégie de test »
+  du plan. Jamais de tâche « écrire les tests » à part : à l'implémentation, chaque
+  tâche écrit ses tests avant son code. Les règles complètes sont à la fin du
   gabarit des tâches.
 - Chaque cas de « Cas et refus » est couvert par au moins une tâche ; un cas sans
   tâche est un trou du plan, à reprendre avant de continuer.

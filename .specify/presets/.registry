@@ -2,9 +2,9 @@
   "schema_version": "1.0",
   "presets": {
     "abacus": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "local",
-      "manifest_hash": "sha256:534a3cd2484a82953b46e0189509b79119b93b41f745e1ae2f8a89bb2c950abf",
+      "manifest_hash": "sha256:ecb96a75dae0c498ecaaf5cf98e512ec905ee521efd6102f769a3d333fc38342",
       "enabled": true,
       "priority": 10,
       "registered_commands": {
@@ -31,7 +31,7 @@
           "speckit-bug-fix"
         ]
       },
-      "installed_at": "2026-10-19T10:52:10.193398+00:00"
+      "installed_at": "2026-10-21T13:06:53.142841+00:00"
     }
   }
 }
