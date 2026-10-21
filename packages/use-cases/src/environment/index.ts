@@ -1,6 +1,8 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
-import { cpSync, globSync } from 'node:fs'
+import { cpSync, globSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { packageDatabaseUrl, prepareTestDatabase } from '../../../../scripts/test-db.mjs'
 import { globalSetup as startMarket, globalTeardown as stopMarket } from '../../../../scripts/test-market.mjs'
@@ -67,6 +69,24 @@ function serve(args: string[], env: NodeJS.ProcessEnv): ChildProcess {
   return server
 }
 
+/**
+ * Each run serves the MCP on a port of its own, so a resource of its own, which
+ * the auth server links every pre-registered client to. Kept from run to run
+ * in the suite's database, those links pile up, and past a hundred the auth
+ * server no longer reads the current one. Dropped before the servers start;
+ * they link the current address again as they come up.
+ */
+async function forgetFormerServers(databaseUrl: string): Promise<void> {
+  const postgres = createRequire(`${root}packages/core/package.json`)('postgres')
+  const sql = postgres(databaseUrl, { onnotice: () => {} })
+  try {
+    await sql`delete from auth_oauth_client_resource`
+    await sql`delete from auth_oauth_resource`
+  } finally {
+    await sql.end()
+  }
+}
+
 async function startServers(env: NodeJS.ProcessEnv, webPort: number, mcpPort: number): Promise<void> {
   const webServer = serve([`${web}.next/standalone/apps/web/server.js`], {
     ...env,
@@ -79,10 +99,13 @@ async function startServers(env: NodeJS.ProcessEnv, webPort: number, mcpPort: nu
 }
 
 export async function globalSetup(): Promise<void> {
+  // Where each driver notes what it really called, read back at the end.
+  process.env.ABACUS_CASES_EXERCISED = mkdtempSync(`${tmpdir()}/abacus-cases-`)
   const base = process.env.TEST_DATABASE_URL
   if (!base) throw new Error('TEST_DATABASE_URL is not set: run `nr db:test:env` to write .env.test')
   const databaseUrl = packageDatabaseUrl(base, '@abacus/use-cases')
   await prepareTestDatabase(databaseUrl)
+  await forgetFormerServers(databaseUrl)
   await startMarket()
 
   const [webPort, mcpPort] = [await freePort(), await freePort()]
@@ -134,4 +157,25 @@ export async function globalSetup(): Promise<void> {
 export async function globalTeardown(): Promise<void> {
   for (const server of servers) server.kill('SIGTERM')
   await stopMarket()
+  // Only a full run can say what no case covers: the package's test script
+  // asks for it, a run narrowed to some cases or some drivers does not.
+  if (process.env.ABACUS_CASES_COVERAGE === '1') await checkCoverage()
+}
+
+async function checkCoverage(): Promise<void> {
+  const { coverageProblems } = await import('../guards/inventory.ts')
+  const { realInterfaces } = await import('../guards/real-interfaces.ts')
+  const { gestures, informations } = await import('../inventory/index.ts')
+  const folder = process.env.ABACUS_CASES_EXERCISED as string
+  const exercised = readdirSync(folder).flatMap((file) =>
+    readFileSync(`${folder}/${file}`, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line)),
+  )
+  const problems = coverageProblems({ gestures, informations }, await realInterfaces(), exercised)
+  if (problems.length === 0) return
+  for (const problem of problems) console.error(problem)
+  console.error(`${problems.length} gestures or informations of the inventory are exercised by no case.`)
+  process.exitCode = 1
 }
