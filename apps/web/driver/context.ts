@@ -38,6 +38,9 @@ export function moneyOf(text: string): Money {
 /** A decimal string as a French keyboard types it. */
 export const typed = (money: Money) => money.amount.replace('.', ',')
 
+/** What Next renders in place of a page whose server code threw. */
+const CRASHED = /This page couldn.t load|Application error/
+
 const MONTHS = [
   'janvier',
   'février',
@@ -87,15 +90,21 @@ export function webContext(page: Page, env: WebEnvironment): WebContext {
     },
     async settle(panel) {
       // Whichever comes first: the form's refusal (a field or the form in the
-      // destructive colour), its acknowledgement (the polite "✓" line), or the
-      // panel closing on its own.
-      const refusal = panel.locator('.text-destructive').filter({ hasText: /\S/ })
+      // destructive colour, inside the form only: a panel may hold a danger
+      // zone in that colour too), its acknowledgement (the polite "✓" line),
+      // the panel closing on its own, or the page failing to render, which
+      // also makes the panel go and must not pass for a success.
+      const refusal = panel.locator('form .text-destructive').filter({ hasText: /\S/ })
       const done = panel.locator('[aria-live="polite"]').filter({ hasText: '✓' })
+      const crashed = page.getByText(CRASHED)
       await Promise.race([
         refusal.first().waitFor(),
         done.first().waitFor(),
         panel.waitFor({ state: 'detached' }),
+        crashed.first().waitFor(),
       ])
+      if (await crashed.count())
+        throw new Error(`the page failed to render: ${await crashed.first().innerText()}`)
       if (await refusal.count()) throw new Error((await refusal.allInnerTexts()).join(' ').trim())
     },
     async exercised(name) {

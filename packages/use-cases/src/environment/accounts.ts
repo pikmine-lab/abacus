@@ -17,8 +17,9 @@ const CLIENT_ID = PREREGISTERED_CLIENT_IDS.cursor
 const REDIRECT_URI = 'http://localhost:8787/callback'
 
 /**
- * A client address of its own for each sign-up: the auth server limits sign-ups
- * per address, and every case signs one up from the same machine. It reads the
+ * A client address of its own for each case user: the auth server limits
+ * sign-ups and token requests per address, and every case signs one up from
+ * the same machine. It reads the
  * address from x-forwarded-for when the header holds a single one.
  */
 function clientAddress(): string {
@@ -26,13 +27,13 @@ function clientAddress(): string {
   return `10.${a}.${b}.${c}`
 }
 
-async function signUp(): Promise<Omit<CaseUser, 'accessToken'>> {
+async function signUp(address: string): Promise<Omit<CaseUser, 'accessToken'>> {
   const { webUrl } = environment()
   const email = `case-${randomBytes(6).toString('hex')}@${SUITE_MARKER}.test`
   const password = `pw-${randomBytes(12).toString('hex')}`
   const response = await fetch(`${authIssuer(webUrl)}/sign-up/email`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', origin: webUrl, 'x-forwarded-for': clientAddress() },
+    headers: { 'content-type': 'application/json', origin: webUrl, 'x-forwarded-for': address },
     body: JSON.stringify({ name: 'Camille', email, password }),
   })
   if (!response.ok) throw new Error(`sign-up answered ${response.status}: ${await response.text()}`)
@@ -45,7 +46,7 @@ async function signUp(): Promise<Omit<CaseUser, 'accessToken'>> {
 }
 
 /** Authorize, consent and code exchange, as a browser and a client would. */
-export async function mcpAccessToken(cookie: string): Promise<string> {
+export async function mcpAccessToken(cookie: string, address = clientAddress()): Promise<string> {
   const { webUrl, mcpUrl } = environment()
   const issuer = authIssuer(webUrl)
   const verifier = randomBytes(32).toString('base64url')
@@ -60,7 +61,7 @@ export async function mcpAccessToken(cookie: string): Promise<string> {
     resource: mcpUrl,
   })
   const authorize = await fetch(`${issuer}/oauth2/authorize?${query}`, {
-    headers: { cookie },
+    headers: { cookie, 'x-forwarded-for': address },
     redirect: 'manual',
   })
   const location =
@@ -70,7 +71,7 @@ export async function mcpAccessToken(cookie: string): Promise<string> {
   const consentQuery = new URL(location ?? '', webUrl).search.slice(1)
   const consent = await fetch(`${issuer}/oauth2/consent`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie, origin: webUrl },
+    headers: { 'content-type': 'application/json', cookie, origin: webUrl, 'x-forwarded-for': address },
     body: JSON.stringify({ accept: true, oauth_query: consentQuery }),
   })
   const { url } = (await consent.json()) as { url: string }
@@ -78,7 +79,7 @@ export async function mcpAccessToken(cookie: string): Promise<string> {
   if (!code) throw new Error(`the consent gave no code: ${url}`)
   const token = await fetch(`${issuer}/oauth2/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': address },
     body: new URLSearchParams({
       client_id: CLIENT_ID,
       resource: mcpUrl,
@@ -93,6 +94,7 @@ export async function mcpAccessToken(cookie: string): Promise<string> {
 }
 
 export async function newUser(): Promise<CaseUser> {
-  const user = await signUp()
-  return { ...user, accessToken: await mcpAccessToken(user.cookie) }
+  const address = clientAddress()
+  const user = await signUp(address)
+  return { ...user, accessToken: await mcpAccessToken(user.cookie, address) }
 }
