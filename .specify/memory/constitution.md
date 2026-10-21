@@ -56,8 +56,7 @@ périodes ne se manipulent que par le module central de briques, qui les défini
 fois : deux calculs ne peuvent pas diverger.
 
 *Vérifié par* : le compilateur (type montant opaque, arithmétique flottante interdite par
-lint en erreur) ; la garde de dépendances ; les tests du module de briques, mutation
-comprise.
+lint en erreur) ; la garde de dépendances ; les tests du module de briques.
 
 ## VI. Aucune route sans règle d'accès
 
@@ -136,10 +135,11 @@ Chaque comportement, chaque cas et chaque refus d'une spec a un test qui échoue
 Rien ne se refond sans tests qui figent d'abord le comportement existant. Un test existant
 ne change qu'avec une raison qui lui est propre. Un test est isolé : aucun appel réseau
 vers l'extérieur (seuls les services locaux qu'il démarre), sa propre base. Chaque PR
-atteint le seuil de couverture et le score de mutation fixés pour le dépôt.
+atteint le seuil de couverture fixé pour le dépôt.
 
-*Vérifié par* : la porte de couverture et le job de mutation en CI ; la garde des tests ; le
-blocage du réseau extérieur dans les tests.
+*Vérifié par* : la porte de couverture en CI ; la revue des tests en fin de développement,
+qui juge aussi la raison de chaque test modifié ; le blocage du réseau extérieur dans les
+tests.
 
 ## XI. Ce qui passe aujourd'hui doit passer demain
 
