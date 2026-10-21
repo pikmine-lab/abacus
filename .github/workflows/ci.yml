@@ -98,6 +98,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The browser an agent validates a screen with is the repository's own,
+      # at its pinned version.
+      - run: pnpm exec agent-browser --version
       - run: pnpm lint
       - run: node scripts/check-test-placement.mjs
       - run: pnpm typecheck

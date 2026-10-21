@@ -6,6 +6,9 @@ packages:
 allowBuilds:
   '@parcel/watcher': false
   '@swc/core': false
+  # Its install script only marks its binary executable, which its launcher
+  # does again itself. Its browser is installed once per machine, never here.
+  agent-browser: false
 
 # The tests, run by `pnpm pipeline`: only the projects touched since the base
 # and those depending on them, each result restored from the cache when

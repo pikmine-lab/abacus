@@ -23,6 +23,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.9",
     "@types/node": "^26.1.2",
+    "agent-browser": "0.39.1",
     "typescript": "^7.0.2"
   }
 }
