@@ -24,5 +24,8 @@
   },
   "devDependencies": {
     "@types/pg": "^8.23.1"
+  },
+  "scripts": {
+    "test": "node --env-file-if-exists=../../.env.test --import ../../scripts/test-preload.mjs --test-global-setup=../../scripts/test-setup.mjs --test --test-concurrency=1"
   }
 }

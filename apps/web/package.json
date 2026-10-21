@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --env-file-if-exists=../../.env.test --import ../../scripts/test-preload.mjs --test-global-setup=../../scripts/test-setup.mjs --test"
   },
   "dependencies": {
     "@abacus/core": "workspace:*",

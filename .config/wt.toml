@@ -72,6 +72,12 @@ sed -i \
 migrate = "node --env-file=apps/web/.env.local packages/core/src/db/migrate.ts"
 
 [[pre-start]]
+# The tests never touch the dev database: each package of this worktree tests
+# against its own abacus_test_<branch>_<package>, created on its first run from
+# the base written here (scripts/test-db.mjs).
+test-db = "node scripts/test-db.mjs env"
+
+[[pre-start]]
 # This model is entered by hand, so an empty account means no functional
 # validation. The demo account is rewritten with this branch's code, its
 # history ending today: a clone of data seeded weeks ago would show nothing in
@@ -101,6 +107,10 @@ done
 echo 'dev server still running after 10 s' >&2
 exit 1
 """
+
+[[pre-remove]]
+# Every test database of this worktree, one per package that ran its tests.
+test-db = "node scripts/test-db.mjs drop"
 
 [[pre-remove]]
 # FORCE closes any connection still open, a plain DROP refusing a database in

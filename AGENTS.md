@@ -111,6 +111,10 @@ L'app web se lance avec `pnpm --filter @abacus/web dev` et lit le `.env.local` d
 (non commité) : `DATABASE_URL`, `BETTER_AUTH_SECRET`, `PUBLIC_URL` et `MCP_URL`, sans
 laquelle elle ne démarre pas. Un worktree reçoit le sien à sa création (`.config/wt.toml`).
 
+Les tests d'un paquet tournent sur sa propre base, sous l'adresse de `.env.test` (écrit à
+la création du worktree, `nr db:test:env` ailleurs). Un seul fichier :
+`pnpm --filter @abacus/core test test/fx.test.ts`, chemin relatif au paquet.
+
 ## Flux de travail
 
 - **`main` est la production**, déployée en continu. Tout passe par une PR dont la CI est
