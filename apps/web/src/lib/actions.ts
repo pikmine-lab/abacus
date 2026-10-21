@@ -314,6 +314,17 @@ async function sharesOf(
 }
 
 /**
+ * A movement's shares: owed once, of that movement. "Per occurrence" only
+ * means something on a commitment, where the domain refuses it elsewhere, and
+ * the share fields post it empty for a movement.
+ */
+function movementShares(
+  shares: Awaited<ReturnType<typeof sharesOf>>,
+): { debtorActorId: string; amount: number }[] | undefined {
+  return shares?.map(({ perOccurrence: _, ...share }) => share)
+}
+
+/**
  * What an income pays back, as the panel's choice encodes it: one claim, an
  * expense whose share of the sender it pays (created when they owed nothing
  * on it yet), or a commitment whose reserve it feeds. Empty: nothing.
@@ -391,7 +402,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
           ? { sourceAccountId: accountId, targetActorId: actorId }
           : { sourceActorId: actorId, targetAccountId: accountId }
     }
-    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : undefined
+    const shares = type === 'expense' ? movementShares(await sharesOf(userId, formData, n)) : undefined
     const currency = opt(formData, 'currency')
     const movement = await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
@@ -465,7 +476,7 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
     }
     // Only an expense can be an advance, so switching a movement away from
     // expense drops its shares rather than colliding with the domain rule.
-    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : null
+    const shares = type === 'expense' ? (movementShares(await sharesOf(userId, formData, n)) ?? null) : null
     // The form rebuilds the money side whole, so the currency travels even as
     // 'EUR': that is what drops a wrongly declared foreign original.
     const currency = type === 'transfer' ? undefined : opt(formData, 'currency')
