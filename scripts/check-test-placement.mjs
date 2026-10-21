@@ -16,7 +16,11 @@ const SCRIPT = /\.[cm]?[jt]sx?$/
 const WELL_NAMED = /\.test\.[cm]?[jt]sx?$/
 const OTHER_NAMING = /([.\-_](spec|test))\.[cm]?[jt]sx?$/
 const TEST_FOLDER = /(^|\/)(test|tests|__tests__)\//
-const KEPT_FOLDERS = [/^packages\/core\/test\//, /^speckit\/extensions\/[^/]+\/test\//, /^packages\/use-cases\//]
+const KEPT_FOLDERS = [
+  /^packages\/core\/test\//,
+  /^speckit\/extensions\/[^/]+\/test\//,
+  /^packages\/use-cases\//,
+]
 
 export function checkPlacement(files) {
   const errors = []
