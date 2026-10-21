@@ -449,7 +449,7 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await remove.waitFor({ state: 'detached' })
     },
     async readLevies(activity) {
-      await exercised('screen:/settings/activities')
+      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Règles')
       const levies = []
       for (let i = 0; i < (await entries('rules').count()); i++) {
@@ -554,7 +554,7 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await remove.waitFor({ state: 'detached' })
     },
     async readActivityFigures(activity) {
-      await exercised('screen:/settings/activities')
+      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Paramètres')
       const figures = []
       for (const entry of await entries('inputs').all()) {
@@ -599,7 +599,7 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await fiche.waitFor({ state: 'detached' })
     },
     async readThresholds(activity) {
-      await exercised('screen:/settings/activities')
+      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Seuils')
       const thresholds = []
       for (let i = 0; i < (await entries('thresholds').count()); i++) {

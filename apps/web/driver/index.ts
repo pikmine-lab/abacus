@@ -12,8 +12,10 @@ import { identitySteps } from './identity.ts'
 import { investmentsSteps } from './investments.ts'
 import { ledgerSteps } from './ledger.ts'
 import { reportingSteps } from './reporting.ts'
+import { venuesSteps } from './venues.ts'
 
 export { moneyOf, type WebEnvironment } from './context.ts'
+export { webSurface } from './surface.ts'
 
 /**
  * The web driver: plays each step in a real browser, by Playwright, against the
@@ -87,6 +89,7 @@ export function webDriver(env: WebEnvironment): Driver {
         ...advancesSteps(ctx),
         ...businessSteps(ctx),
         ...investmentsSteps(ctx),
+        ...venuesSteps(ctx),
         ...catalogSteps(ctx),
         ...reportingSteps(ctx),
         ...identitySteps(ctx),

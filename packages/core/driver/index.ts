@@ -11,6 +11,7 @@ import { identitySteps } from './identity.ts'
 import { investmentsSteps } from './investments.ts'
 import { ledgerSteps } from './ledger.ts'
 import { reportingSteps } from './reporting.ts'
+import { venuesSteps } from './venues.ts'
 
 /**
  * The preparation driver: builds the starting state of a case through the
@@ -31,6 +32,7 @@ export const preparationDriver: Driver = {
       ...advancesSteps(ctx),
       ...businessSteps(ctx),
       ...investmentsSteps(ctx),
+      ...venuesSteps(ctx),
       ...catalogSteps(ctx),
       ...reportingSteps(ctx),
       ...identitySteps(ctx),

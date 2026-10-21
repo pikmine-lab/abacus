@@ -4,7 +4,7 @@
 // ABACUS_MARKET_COINGECKO_URL (packages/core/src/prices/endpoints.ts). Started
 // once per test run by `--test-global-setup`, this server answers on the paths
 // the app calls, in the shapes the real sources use, with fixed data: one
-// share quoted in dollars, one fund in euros, one coin, and the USD/EUR and
+// share quoted in dollars, one fund in euros on two venues, one coin, and the USD/EUR and
 // GBP/EUR rates. Prices are flat over the year, so a result never depends on
 // the day the tests run. What the real source does not know gets its empty
 // answer, so the app's "nothing found" path is the one exercised.
@@ -31,6 +31,17 @@ const SECURITIES = {
     shortname: 'AMUNDI MSCI WORLD',
     longname: 'Amundi MSCI World UCITS ETF Acc',
     exchDisp: 'Paris',
+    typeDisp: 'ETF',
+  },
+  // The same fund on another venue, a few cents apart: what a search groups
+  // into one fund, its venues listed on demand.
+  'WRLD.DE': {
+    price: 520.5,
+    currency: 'EUR',
+    quoteType: 'ETF',
+    shortname: 'AMUNDI MSCI WORLD',
+    longname: 'Amundi MSCI World UCITS ETF Acc',
+    exchDisp: 'XETRA',
     typeDisp: 'ETF',
   },
   'USDEUR=X': { price: 0.86, currency: 'EUR', quoteType: 'CURRENCY', shortname: 'USD/EUR' },

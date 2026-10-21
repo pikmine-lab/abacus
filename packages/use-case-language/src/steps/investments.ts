@@ -94,4 +94,6 @@ export interface InvestmentsSteps {
   readInvestmentAccounts(): Promise<InvestmentAccountValue[]>
   /** The valuation history over everything since the first operation: its first and its last day. */
   readValuationHistory(): Promise<{ first: ValuationDay; last: ValuationDay }>
+  /** Every venue quoting the fund a search finds first: its ticker, its place and its price. */
+  readVenuesOf(query: string): Promise<{ ticker: string; venue: string; price: Money }[]>
 }

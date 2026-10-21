@@ -7,10 +7,14 @@ import { businessSteps } from './business.ts'
 import { catalogSteps } from './catalog.ts'
 import { commitmentsSteps } from './commitments.ts'
 import { mcpContext } from './context.ts'
+
+export { mcpSurface } from './surface.ts'
+
 import { identitySteps } from './identity.ts'
 import { investmentsSteps } from './investments.ts'
 import { ledgerSteps } from './ledger.ts'
 import { reportingSteps } from './reporting.ts'
+import { venuesSteps } from './venues.ts'
 
 /**
  * The MCP driver: plays each step through the MCP server the suite serves, over
@@ -36,6 +40,7 @@ export function mcpDriver(mcpUrl: string): Driver {
         ...advancesSteps(ctx),
         ...businessSteps(ctx),
         ...investmentsSteps(ctx),
+        ...venuesSteps(ctx),
         ...catalogSteps(ctx),
         ...reportingSteps(ctx),
         ...identitySteps(ctx),

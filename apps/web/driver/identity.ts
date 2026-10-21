@@ -90,7 +90,9 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
       // A redirect straight back to the client (an error) cuts the navigation.
       await visit(`/api/auth/oauth2/authorize?${query}`).catch(() => {})
       const button = page.getByRole('button', { name: answer === 'accept' ? 'Autoriser' : 'Refuser' })
-      if (new URL(page.url()).pathname === '/consent') await button.click()
+      // The consent page, or a redirect straight back when nothing is asked.
+      await Promise.race([button.waitFor(), back])
+      if (await button.isVisible()) await button.click()
       const returned = new URL((await back).url())
       if (returned.searchParams.get('error') && answer === 'accept')
         throw new Error(`the authorization came back with ${returned.search}`)
