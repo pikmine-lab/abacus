@@ -14,6 +14,8 @@ export interface CommitmentView {
   amount: Money
   nextDueOn?: string
   judgment?: Judgment
+  /** What the person wrote about that judgment, when they did. */
+  judgmentNote?: string
   remainingDue?: Money
   /** What was received for it and is not drawn yet. */
   reserveLeft?: Money
@@ -82,15 +84,16 @@ export interface CommitmentsSteps {
   confirmPlacement(input: { plan: string; quantity: string }): Promise<void>
   /** The oldest pending occurrence will not happen: a free month, a paused service. */
   skipOccurrence(commitment: string): Promise<void>
-  judgeSubscription(input: { subscription: string; judgment: Judgment }): Promise<void>
+  /** Judges a subscription, with a note when the person writes one. */
+  judgeSubscription(input: { subscription: string; judgment: Judgment; note?: string }): Promise<void>
   /** Corrects the name a commitment goes by. */
   renameCommitment(input: { commitment: string; label: string }): Promise<void>
   /** From today on, the commitment hits another account. */
   changeCommitmentAccount(input: { commitment: string; account: string }): Promise<void>
   /** From today on, each occurrence is worth that much. */
   changeCommitmentAmount(input: { commitment: string; amount: Money }): Promise<void>
-  /** Ends a commitment today: no more occurrences. */
-  endCommitment(commitment: string): Promise<void>
+  /** Ends a commitment, today unless said otherwise: no more occurrences. */
+  endCommitment(commitment: string, on?: string): Promise<void>
   /** Money someone gave for a commitment, held for its coming occurrences. */
   receiveForCommitment(input: {
     commitment: string
@@ -112,4 +115,6 @@ export interface CommitmentsSteps {
   }): Promise<void>
   /** What a running commitment is about, read where the person reads it. */
   readCommitmentTerms(label: string): Promise<CommitmentTerms>
+  /** The day an ended subscription, financing or recurring income ended, read among the ended ones. */
+  readCommitmentEnd(label: string): Promise<string>
 }

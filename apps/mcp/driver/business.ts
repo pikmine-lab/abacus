@@ -22,6 +22,9 @@ interface ListedInvoice {
   vat: number
   receivable: number
   remindedOn?: string
+  cancelledOn?: string
+  /** Absent when the invoice is in euros. */
+  currency?: string
 }
 
 interface ListedLevy {
@@ -125,32 +128,40 @@ export function businessSteps({ call, batch }: McpContext): Partial<Steps> {
             dueOn,
             baseAmount: Number(base.amount),
             vatRate: vatRate === undefined ? undefined : Number(vatRate),
+            ...(base.currency !== 'EUR' ? { currency: base.currency } : {}),
           },
         ],
         createUnknownActors: true,
       })
     },
-    async correctInvoice(reference, { base }) {
-      await call('fix_invoice', { invoice: reference, action: 'correct', baseAmount: Number(base.amount) })
+    async correctInvoice(reference, { base, currency }) {
+      await call('fix_invoice', {
+        invoice: reference,
+        action: 'correct',
+        baseAmount: base ? Number(base.amount) : undefined,
+        currency,
+      })
     },
-    async remindInvoice(reference) {
-      await call('fix_invoice', { invoice: reference, action: 'remind' })
+    async remindInvoice(reference, on) {
+      await call('fix_invoice', { invoice: reference, action: 'remind', on })
     },
-    async cancelInvoice(reference) {
-      await call('fix_invoice', { invoice: reference, action: 'cancel' })
+    async cancelInvoice(reference, on) {
+      await call('fix_invoice', { invoice: reference, action: 'cancel', on })
     },
     async settleInvoice({ reference, account, on }) {
       await call('settle_invoice', { invoice: reference, account, date: on })
     },
     async readInvoice(reference) {
       const invoice = await invoiceNamed(reference)
+      const inCurrency = (value: number) => ({ ...money(value), currency: invoice.currency ?? 'EUR' })
       return {
         client: invoice.client,
         issuedOn: invoice.issuedOn,
-        base: money(invoice.base),
-        vat: money(invoice.vat),
-        receivable: money(invoice.receivable),
+        base: inCurrency(invoice.base),
+        vat: inCurrency(invoice.vat),
+        receivable: inCurrency(invoice.receivable),
         state: invoice.state,
+        ...(invoice.cancelledOn ? { cancelledOn: invoice.cancelledOn } : {}),
       }
     },
     async readInvoiceReminder(reference) {

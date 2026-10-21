@@ -361,11 +361,12 @@ export default async function ActivityPage({
           description={t('newInvoice.description')}
         >
           <InvoiceForm
-            activities={businesses.map((a) => ({ id: a.id, name: a.name }))}
+            activities={businesses.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
             actors={clients}
             defaults={{
               activityId: activity.id,
               vatRate: activity.defaultVatRate ?? undefined,
+              currency: activity.currency,
             }}
             today={now}
           />
@@ -645,6 +646,7 @@ export default async function ActivityPage({
                 dueOn: invoice.dueOn ?? undefined,
                 remindedOn: invoice.remindedOn ?? undefined,
                 overdue: invoice.state === 'overdue',
+                currency: invoice.currency,
                 receivable: Number(invoice.receivableAmount),
                 paid: Number(invoice.paidAmount),
                 remaining: Number(invoice.remainingAmount),
@@ -659,6 +661,7 @@ export default async function ActivityPage({
                   vatAmount: invoice.vatAmount,
                   withholdingRate: invoice.withholdingRate,
                   withholdingAmount: invoice.withholdingAmount,
+                  currency: invoice.currency,
                   note: invoice.note ?? undefined,
                 },
               }))}
@@ -760,20 +763,20 @@ export default async function ActivityPage({
                       {invoice.reference ?? ''}
                     </TableCell>
                     <TableCell className="text-right font-mono text-[12.5px] tabular">
-                      {format.eur(Number(invoice.baseAmount), 2)}
+                      {format.money(Number(invoice.baseAmount), invoice.currency, 2)}
                     </TableCell>
                     <TableCell className="hidden text-right font-mono text-[12.5px] tabular text-muted-foreground md:table-cell">
-                      {format.eur(Number(invoice.vatAmount), 2)}
+                      {format.money(Number(invoice.vatAmount), invoice.currency, 2)}
                     </TableCell>
                     <TableCell className="hidden text-right font-mono text-[12.5px] tabular text-muted-foreground md:table-cell">
-                      {format.eur(Number(invoice.withholdingAmount), 2)}
+                      {format.money(Number(invoice.withholdingAmount), invoice.currency, 2)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-[13px] tabular">
-                      {format.eur(Number(invoice.receivableAmount), 2)}
+                      {format.money(Number(invoice.receivableAmount), invoice.currency, 2)}
                       {Number(invoice.paidAmount) > 0 && invoice.state !== 'paid' && (
                         <span className="block text-[11px] font-normal text-faint">
                           {t('invoices.remaining', {
-                            amount: format.eur(Number(invoice.remainingAmount), 2),
+                            amount: format.money(Number(invoice.remainingAmount), invoice.currency, 2),
                           })}
                         </span>
                       )}
@@ -788,6 +791,11 @@ export default async function ActivityPage({
                       }`}
                     >
                       {t(`invoiceState.${invoice.state}`)}
+                      {invoice.cancelledOn && (
+                        <span className="block text-[11px] text-faint">
+                          {t('invoices.cancelledOn', { date: format.date(invoice.cancelledOn) })}
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

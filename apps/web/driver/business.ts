@@ -54,6 +54,15 @@ const spelled = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number) as [number, number, number]
   return `${d} ${MONTHS[m - 1]} ${y}`
 }
+/**
+ * An amount as the screens write it in the currency it is in: "1 000,00 €",
+ * or "1 000,00 CHF" for a currency the French locale names by its code.
+ */
+function amountIn(text: string) {
+  const code = text.trim().match(/\s([A-Z]{3})$/)?.[1]
+  if (!code) return moneyOf(text)
+  return { ...moneyOf(text.trim().slice(0, -3)), currency: code }
+}
 /** A number as the screens write it ("21,2", "1 200"), back to a plain decimal string. */
 const numberOf = (text: string) => String(Number(text.replace(/[\s  %]/g, '').replace(',', '.')))
 
@@ -77,6 +86,12 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
   async function choose(combobox: Locator, option: string) {
     await combobox.click()
     await page.getByRole('option', { name: option, exact: true }).click()
+  }
+  /** Picks a currency by its code, searched as a person types it. */
+  async function currency(scope: Locator, code: string) {
+    await scope.getByRole('combobox', { name: 'Devise' }).click()
+    await page.getByPlaceholder('Code ou nom (USD, dollar…)').fill(code)
+    await page.getByRole('option', { name: new RegExp(`^${code}\\b`) }).click()
   }
   async function check(boxes: Locator, wanted: string[]) {
     for (const label of await boxes.all()) {
@@ -133,8 +148,7 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     const row = page
       .getByRole('row')
       .filter({ has: page.getByRole('cell', { name: reference, exact: true }) })
-    const cells = await row.getByRole('cell').allInnerTexts()
-    return cells.map((c) => c.split('\n')[0]!.trim())
+    return await row.getByRole('cell').allInnerTexts()
   }
 
   /** A due date's row in the schedule, folded sections opened. */
@@ -300,6 +314,7 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await panel.getByRole('combobox', { name: 'Client' }).press('Tab')
       await panel.getByRole('textbox', { name: 'Référence' }).fill(reference)
       await panel.getByRole('textbox', { name: 'Base HT' }).fill(typed(base))
+      if (base.currency !== 'EUR') await currency(panel, base.currency)
       await pickDate(panel, 'Émise le', issuedOn)
       if (dueOn) await pickDate(panel, 'Échéance', dueOn)
       if (vatRate !== undefined)
@@ -310,31 +325,41 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await panel.getByRole('button', { name: 'Enregistrer la facture' }).click()
       await settle(panel)
     },
-    async correctInvoice(reference, { base }) {
+    async correctInvoice(reference, { base, currency: code }) {
       await exercised('correctInvoiceAction')
       await statement()
       await waiting(reference).menu.click()
       await page.getByRole('menuitem', { name: 'Modifier' }).click()
       const panel = page.getByRole('dialog', { name: 'Modifier la facture' })
-      await panel.getByRole('textbox', { name: 'Base HT' }).fill(typed(base))
+      if (base) await panel.getByRole('textbox', { name: 'Base HT' }).fill(typed(base))
+      if (code) await currency(panel, code)
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(panel)
     },
-    async remindInvoice(reference) {
+    async remindInvoice(reference, on) {
       await exercised('remindInvoiceAction')
       await statement()
       const { menu, row } = waiting(reference)
       await menu.click()
+      if (on) {
+        await page.getByRole('menuitem', { name: 'Relancée à une autre date…' }).click()
+        const dialog = page.getByRole('dialog', { name: 'Relance' })
+        await pickDate(dialog, 'Relancée le', on)
+        await dialog.getByRole('button', { name: 'Enregistrer' }).click()
+        await row.getByText(`relancée le ${on.slice(8, 10)}/${on.slice(5, 7)}/${on.slice(2, 4)}`).waitFor()
+        return
+      }
       await page.getByRole('menuitem', { name: 'Relancée aujourd’hui' }).click()
       await row.getByText(/relancée le/).waitFor()
     },
-    async cancelInvoice(reference) {
+    async cancelInvoice(reference, on) {
       await exercised('cancelInvoiceAction')
       await statement()
       const { menu, row } = waiting(reference)
       await menu.click()
       await page.getByRole('menuitem', { name: 'Annuler la facture' }).click()
       const confirm = page.getByRole('alertdialog')
+      if (on) await pickDate(confirm, 'Annulée le', on)
       await confirm.getByRole('button', { name: 'Annuler la facture' }).click()
       // The confirmation closes on success only, and hides the list while it is open.
       await done(confirm)
@@ -353,14 +378,18 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     async readInvoice(reference) {
       await exercised('screen:/activity')
       await statement()
-      const [issuedOn, client, , base, vat, , receivable, state] = await invoiceRow(reference)
+      const cells = await invoiceRow(reference)
+      const [issuedOn, client, , base, vat, , receivable, state] = cells.map((c) => c.split('\n')[0]!.trim())
+      // A cancelled invoice says when under its state.
+      const cancelled = cells[7]?.match(/le (\d{2}\/\d{2}\/\d{2})/)?.[1]
       return {
         client: client!,
         issuedOn: isoOf(issuedOn!),
-        base: moneyOf(base!),
-        vat: moneyOf(vat!),
-        receivable: moneyOf(receivable!),
+        base: amountIn(base!),
+        vat: amountIn(vat!),
+        receivable: amountIn(receivable!),
         state: INVOICE_STATES[state!] ?? (state as InvoiceState),
+        ...(cancelled ? { cancelledOn: isoOf(cancelled) } : {}),
       }
     },
     async readInvoiceReminder(reference) {

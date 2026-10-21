@@ -99,7 +99,9 @@
     "toJudge": "undecided",
     "refundedInPart": "Who pays part of it back",
     "refundNote": "Each confirmed installment becomes an advance on these shares, tracked in the movements.",
-    "refundNoteFinancing": "A share of each installment becomes an advance on every confirmed one; a share of the total is paid back at its own pace. Both are tracked in the movements."
+    "refundNoteFinancing": "A share of each installment becomes an advance on every confirmed one; a share of the total is paid back at its own pace. Both are tracked in the movements.",
+    "judgmentNote": "Note",
+    "judgmentMissing": "Choose a judgment."
   },
   "row": {
     "perPeriod": "per {unit, select, week {{count, plural, =1 {week} other {# weeks}}} month {{count, plural, =1 {month} other {# months}}} other {{count, plural, =1 {year} other {# years}}}}",
@@ -133,8 +135,11 @@
     "editPlacement": "Edit what this contribution says about itself. The amount and the debited account have their own dated change.",
     "editCommitment": "Edit what this commitment says about itself. The amount and the account have their own dated change.",
     "reviseDescription": "The schedule is authoritative: the remaining due and the total follow what is written here. Editing an installment already paid also corrects its movement.",
-    "stopDescription": "It stops producing due payments from today. Its history and past movements stay intact.",
-    "dismiss": "Cancel"
+    "stopDescription": "It produces no more due payments. Its history and past movements stay intact.",
+    "dismiss": "Cancel",
+    "annotateJudgment": "Annotate the judgment",
+    "annotateDescription": "The judgment and what lies behind it, reread at the next review.",
+    "stopOn": "Ends on"
   },
   "pending": {
     "ahead": "Upcoming",
@@ -204,5 +209,6 @@
   "coveredBy": "{amount} covered by {debtors}",
   "receivedAhead": "{amount} received ahead",
   "reserveLeft": "Reserve: {remaining} left of {received} received",
-  "reserveReleased": "{amount} of reserve left unused, counted as income on {date}"
+  "reserveReleased": "{amount} of reserve left unused, counted as income on {date}",
+  "judgmentNote": "“{note}”"
 }

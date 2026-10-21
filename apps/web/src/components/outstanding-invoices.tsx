@@ -1,10 +1,10 @@
 'use client'
 
-import { BanIcon, CalendarIcon, PencilIcon, SendIcon } from 'lucide-react'
+import { BanIcon, CalendarClockIcon, CalendarIcon, PencilIcon, SendIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { DateField, FormSelect } from '@/components/forms'
+import { DateField, Field, FieldErrors, FormSelect, SubmitButton } from '@/components/forms'
 import { type InvoiceDraft, InvoiceForm } from '@/components/invoice-form'
 import { Rows } from '@/components/page-shell'
 import { RowMenu } from '@/components/row-menu'
@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cancelInvoiceAction, remindInvoiceAction, settleInvoiceAction } from '@/lib/actions'
@@ -37,6 +38,8 @@ export interface OpenInvoice {
   dueOn?: string
   remindedOn?: string
   overdue: boolean
+  /** The ISO code its amounts are in. */
+  currency: string
   receivable: number
   paid: number
   remaining: number
@@ -105,7 +108,10 @@ function InvoiceRow({
   const [dateOpen, setDateOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [reminding, setReminding] = useState(false)
   const [state, cancel, pending] = useActionState(cancelInvoiceAction, {})
+  const inCurrency = (value: number) =>
+    invoice.currency === 'EUR' ? format.eur(value, 2) : format.money(value, invoice.currency, 2)
   const late = invoice.dueOn ? daysBetween(invoice.dueOn, today) : 0
   const label = `${invoice.client}${invoice.reference ? ` · ${invoice.reference}` : ''}`
 
@@ -123,7 +129,7 @@ function InvoiceRow({
             t('outstanding.issuedOn', { date: format.date(invoice.issuedOn) }),
             invoice.dueOn && t('outstanding.dueOn', { date: format.date(invoice.dueOn) }),
             invoice.remindedOn && t('outstanding.remindedOn', { date: format.date(invoice.remindedOn) }),
-            invoice.paid > 0 && t('outstanding.alreadyPaid', { amount: format.eur(invoice.paid, 2) }),
+            invoice.paid > 0 && t('outstanding.alreadyPaid', { amount: inCurrency(invoice.paid) }),
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -138,7 +144,7 @@ function InvoiceRow({
         {invoice.overdue ? t('outstanding.overdue', { days: late }) : t('invoiceState.pending')}
       </span>
 
-      <span className="ml-auto font-mono text-[13px] tabular">{format.eur(invoice.receivable, 2)}</span>
+      <span className="ml-auto font-mono text-[13px] tabular">{inCurrency(invoice.receivable)}</span>
 
       <form action={settleInvoiceAction} className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
@@ -179,6 +185,10 @@ function InvoiceRow({
             </button>
           </form>
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setReminding(true)}>
+          <CalendarClockIcon />
+          {t('outstanding.remindedOtherDate')}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setDateOpen((v) => !v)}>
           <CalendarIcon />
           {dateOpen ? t('outstanding.collectedToday') : t('outstanding.collectedOtherDate')}
@@ -192,6 +202,30 @@ function InvoiceRow({
           {t('outstanding.cancel')}
         </DropdownMenuItem>
       </RowMenu>
+
+      {/* A reminder sent days ago is recorded on its day, so the row says how long ago. */}
+      <Dialog open={reminding} onOpenChange={setReminding}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">{t('outstanding.remindTitle')}</DialogTitle>
+          </DialogHeader>
+          <form
+            action={async (formData) => {
+              await remindInvoiceAction(formData)
+              setReminding(false)
+            }}
+            className="flex flex-col gap-3"
+          >
+            <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
+            <input type="hidden" name="back" value={back} />
+            <p className="text-[12px] text-muted-foreground">{label}</p>
+            <Field label={t('outstanding.remindedOnField')} name="remindedOn">
+              <DateField name="remindedOn" defaultValue={today} />
+            </Field>
+            <SubmitButton className="self-start">{t('outstanding.remindSave')}</SubmitButton>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Sheet open={editing} onOpenChange={setEditing}>
         <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
@@ -211,15 +245,25 @@ function InvoiceRow({
             <AlertDialogTitle>{t('outstanding.confirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('outstanding.confirmBody', { label })}</AlertDialogDescription>
           </AlertDialogHeader>
+          <form id={`cancel-${invoice.invoiceId}`} action={cancel}>
+            <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
+            <FieldErrors.Provider value={state.fields}>
+              <Field label={t('outstanding.cancelledOnField')} name="cancelledOn" className="w-44">
+                <DateField name="cancelledOn" defaultValue={today} />
+              </Field>
+            </FieldErrors.Provider>
+          </form>
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel>{t('outstanding.goBack')}</AlertDialogCancel>
-            <form action={cancel}>
-              <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
-              <Button type="submit" variant="destructive" disabled={pending}>
-                {pending ? '…' : t('outstanding.cancel')}
-              </Button>
-            </form>
+            <Button
+              type="submit"
+              form={`cancel-${invoice.invoiceId}`}
+              variant="destructive"
+              disabled={pending}
+            >
+              {pending ? '…' : t('outstanding.cancel')}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

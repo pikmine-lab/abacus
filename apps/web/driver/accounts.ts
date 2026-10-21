@@ -148,11 +148,12 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(panel)
     },
-    async closeAccount(account) {
+    async closeAccount(account, on) {
       await exercised('closeAccountAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Clore le compte')
       const dialog = page.getByRole('alertdialog', { name: `Clore « ${account} » ?` })
+      if (on) await pickDate(dialog, 'Clos le', on)
       await dialog.getByRole('button', { name: 'Clore', exact: true }).click()
       await settle(dialog)
     },
@@ -179,10 +180,12 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
         .getByRole('region', { name: 'Clos', exact: true })
         .getByText(account, { exact: true })
         .count()
+      const closedOn = (await row.innerText()).match(/clos le (\d{2}\/\d{2}\/\d{2})/)?.[1]
       return {
         ...((await institution.count()) > 0 ? { institution: await institution.innerText() } : {}),
         balance,
         closed: closed > 0,
+        ...(closed > 0 && closedOn ? { closedOn: dayShown(closedOn) } : {}),
       }
     },
 
@@ -295,20 +298,23 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       return statements
     },
 
-    async recordBalanceCheck({ account, balance }) {
+    async recordBalanceCheck({ account, balance, on, note }) {
       await exercised('recordBalanceCheckAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Pointer le solde')
       const panel = page.getByRole('dialog', { name: `Pointer ${account}` })
       await panel.getByRole('textbox', { name: 'Solde réel (€)' }).fill(typed(balance))
+      if (on) await pickDate(panel, 'Lu le', on)
+      if (note !== undefined) await panel.getByRole('textbox', { name: 'Note (optionnelle)' }).fill(note)
       await panel.getByRole('button', { name: 'Pointer', exact: true }).click()
       await settle(panel)
     },
-    async correctBalanceCheck({ account, on, balance }) {
+    async correctBalanceCheck({ account, on, balance, note }) {
       await exercised('correctBalanceCheckAction')
       await checkMenu(account, on, 'Corriger')
       const panel = page.getByRole('dialog', { name: `Pointage du ${shownDay(on)}` })
       await panel.getByRole('textbox', { name: 'Solde réel (€)' }).fill(typed(balance))
+      if (note !== undefined) await panel.getByRole('textbox', { name: 'Note (optionnelle)' }).fill(note)
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(panel)
     },
@@ -342,12 +348,15 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
           ReturnType<typeof moneyOf>,
         ]
         const gap = text.match(/écart de ([^\n·]*€)/)?.[1]
+        // What the person wrote is quoted under the gap, in their own words.
+        const note = await row.getByRole('note').allInnerTexts()
         checks.push({
           on: dayShown(on),
           declared,
           computed,
           gap: gap ? moneyOf(gap) : { amount: '0.00', currency: 'EUR' },
           settled: text.includes('soldé par un ajustement'),
+          ...(note[0] ? { note: note[0].trim().replace(/^« (.*) »$/, '$1') } : {}),
         })
       }
       return checks

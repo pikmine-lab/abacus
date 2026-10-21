@@ -47,7 +47,8 @@
     "openingBalance": "Opening balance (€)",
     "openedOn": "Opened on",
     "amountPlaceholder": "0.00",
-    "realBalance": "Actual balance (€)"
+    "realBalance": "Actual balance (€)",
+    "note": "Note (optional)"
   },
   "behaviors": {
     "payment": "Current account",
@@ -73,8 +74,9 @@
   },
   "close": {
     "title": "Close “{name}”?",
-    "description": "No more movements after today. Its history stays whole, and you can reopen it.",
-    "confirm": "Close"
+    "description": "No more movements after that day. Its history stays whole, and you can reopen it.",
+    "confirm": "Close",
+    "closedOn": "Closed on"
   },
   "reopen": {
     "title": "Reopen “{name}”?",
@@ -82,7 +84,7 @@
   },
   "check": {
     "title": "Check {name}",
-    "description": "The balance your bank shows, against the computed one: {amount}.",
+    "description": "The balance your bank shows, against today’s computed one: {amount}.",
     "submit": "Check"
   },
   "history": {
@@ -100,7 +102,8 @@
     "readOn": "Read on",
     "deleteTitle": "Delete the balance check of {date}?",
     "deleteSettled": "The adjustment that settled its gap is deleted with it: it existed only for this balance check.",
-    "deleteUnsettled": "The account’s movements are not touched: a balance check only sets them against reality."
+    "deleteUnsettled": "The account’s movements are not touched: a balance check only sets them against reality.",
+    "note": "“{note}”"
   },
   "settle": {
     "title": "Settle the gap",

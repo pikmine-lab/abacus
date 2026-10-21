@@ -5,6 +5,8 @@ export interface AccountView {
   institution?: string
   balance: Money
   closed: boolean
+  /** The day it was closed, when it is. */
+  closedOn?: string
 }
 
 /** A payment card, told apart by its name; a deferred one carries the two days of its schedule. */
@@ -26,6 +28,8 @@ export interface BalanceCheckView {
   computed: Money
   gap: Money
   settled: boolean
+  /** What the person wrote about it, when they did. */
+  note?: string
 }
 
 /** A balance check, pointed at by its account and the day the balance was read. */
@@ -46,8 +50,8 @@ export interface AccountsSteps {
     opening?: Money
     openedOn?: string
   }): Promise<void>
-  /** Closes an account today: it keeps its history. */
-  closeAccount(account: string): Promise<void>
+  /** Closes an account, today unless said otherwise: it keeps its history. */
+  closeAccount(account: string, on?: string): Promise<void>
   reopenAccount(account: string): Promise<void>
   readAccount(account: string): Promise<AccountView>
 
@@ -78,10 +82,13 @@ export interface AccountsSteps {
   /** The statements of a deferred card, most recent first. */
   readCardStatements(card: string): Promise<StatementView[]>
 
-  /** The balance the bank shows today, set against the computed one. */
-  recordBalanceCheck(input: { account: string; balance: Money }): Promise<void>
-  /** The balance of that check was misread: it is checked again with the right one. */
-  correctBalanceCheck(input: CheckRef & { balance: Money }): Promise<void>
+  /**
+   * The balance the bank showed, set against the computed one: read today
+   * unless said otherwise, with a note when the person writes one.
+   */
+  recordBalanceCheck(input: { account: string; balance: Money; on?: string; note?: string }): Promise<void>
+  /** The balance of that check was misread: it is checked again with the right one, and its note restated. */
+  correctBalanceCheck(input: CheckRef & { balance: Money; note?: string }): Promise<void>
   deleteBalanceCheck(check: CheckRef): Promise<void>
   /** Settles the gap of a check in one adjustment, attributed to an actor the person already knows. */
   settleCheckGap(input: CheckRef & { actor: string }): Promise<void>

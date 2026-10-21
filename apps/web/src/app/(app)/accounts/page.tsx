@@ -77,6 +77,7 @@ function checkEntries(entries: BalanceCheckEntry[]): CheckEntry[] {
     computed: Number(entry.check.computedBalance),
     gap: entry.gap,
     settled: entry.adjustmentId !== null,
+    note: entry.check.note,
   }))
 }
 
@@ -219,6 +220,7 @@ export default async function AccountsPage({
       newCard={
         account.behavior === 'payment' && !isClosed ? { accounts: cardAccounts, today: now } : undefined
       }
+      today={now}
     />
   )
 
@@ -257,6 +259,7 @@ export default async function AccountsPage({
                       checks={checkEntries(checks)}
                       settleOptions={settleOptions}
                       gap={!!check && check.openGap !== 0}
+                      today={now}
                       detail={
                         !check
                           ? t('toCheck.neverChecked')

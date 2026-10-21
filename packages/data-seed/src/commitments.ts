@@ -5,6 +5,7 @@ import {
   createFinancing,
   createSubscription,
   defaultSchedule,
+  setJudgment,
 } from '@abacus/core/services/commitments'
 import { declareMovement, refundShare } from '@abacus/core/services/movements'
 import { addDays, dayOfMonthAgo, daysAgo, firstMonthlyDue, TODAY } from './calendar.ts'
@@ -125,6 +126,9 @@ export async function commitments(userId: string, { accounts, categories, actors
       cardId: cards.deferred,
     })
     await confirmEach(userId, id, dueDates(first, 'month', 1, yesterday))
+    // Judged again during a review, with the reason written down.
+    if (label === 'CinéStream')
+      await setJudgment(userId, id, 'reducible', 'Formule avec publicité deux fois moins chère')
   }
 
   const gymFirst = firstMonthlyDue(3)

@@ -181,5 +181,15 @@
     "corrected": "Versement corrigé",
     "editNote": "La correction vaut pour les échéances à venir. Les versements déjà confirmés gardent leur compte et l’actif acheté : ils disent ce qui s’est passé."
   },
-  "securityType": "Titre"
+  "securityType": "Titre",
+  "handPrice": {
+    "label": "Saisir un cours",
+    "short": "Cours",
+    "title": "Cours de {name}",
+    "description": "Aucune source ne le cote : chaque cours saisi reste dans son historique, à sa date.",
+    "price": "Cours (€)",
+    "on": "Date du cours",
+    "submit": "Enregistrer le cours",
+    "success": "Cours enregistré"
+  }
 }

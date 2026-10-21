@@ -175,17 +175,21 @@ export function businessSteps({ user, accountId, actorId }: PreparationContext):
         issuedOn,
         dueOn,
         baseAmount: amountOf(base),
+        currency: base.currency,
         vatRate: vatRate === undefined ? undefined : Number(vatRate),
       })
     },
-    async correctInvoice(reference, { base }) {
-      await correctInvoice(userId, (await invoiceNamed(reference)).id, { baseAmount: amountOf(base) })
+    async correctInvoice(reference, { base, currency }) {
+      await correctInvoice(userId, (await invoiceNamed(reference)).id, {
+        baseAmount: base ? amountOf(base) : undefined,
+        currency,
+      })
     },
-    async remindInvoice(reference) {
-      await remindInvoice(userId, (await invoiceNamed(reference)).id)
+    async remindInvoice(reference, on) {
+      await remindInvoice(userId, (await invoiceNamed(reference)).id, on)
     },
-    async cancelInvoice(reference) {
-      await cancelInvoice(userId, (await invoiceNamed(reference)).id)
+    async cancelInvoice(reference, on) {
+      await cancelInvoice(userId, (await invoiceNamed(reference)).id, on)
     },
     async settleInvoice({ reference, account, on }) {
       await settleInvoice(userId, (await invoiceNamed(reference)).id, {
@@ -196,13 +200,15 @@ export function businessSteps({ user, accountId, actorId }: PreparationContext):
     async readInvoice(reference) {
       const invoice = await invoiceNamed(reference)
       const client = (await listActors(userId)).find((a) => a.id === invoice.actorId)
+      const inCurrency = (value: string) => ({ ...money(value), currency: invoice.currency })
       return {
         client: client?.name ?? '?',
         issuedOn: invoice.issuedOn,
-        base: money(invoice.baseAmount),
-        vat: money(invoice.vatAmount),
-        receivable: money(invoice.receivableAmount),
+        base: inCurrency(invoice.baseAmount),
+        vat: inCurrency(invoice.vatAmount),
+        receivable: inCurrency(invoice.receivableAmount),
         state: invoice.state,
+        ...(invoice.cancelledOn ? { cancelledOn: invoice.cancelledOn } : {}),
       }
     },
     async readInvoiceReminder(reference) {

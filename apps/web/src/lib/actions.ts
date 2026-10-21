@@ -579,8 +579,16 @@ export async function recordBalanceCheckAction(_prev: FormState, formData: FormD
   const raw = str(formData, 'balance')
   if (raw === '') return { fields: { balance: await fieldError('required') } }
   if (!Number.isFinite(n.num('balance'))) return { fields: { balance: await fieldError('invalidAmount') } }
+  const invalid = await checkFields(formData, [{ name: 'checkedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await recordBalanceCheck(userId, str(formData, 'accountId'), n.num('balance'))
+    await recordBalanceCheck(
+      userId,
+      str(formData, 'accountId'),
+      n.num('balance'),
+      str(formData, 'checkedOn'),
+      opt(formData, 'note'),
+    )
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -605,6 +613,8 @@ export async function correctBalanceCheckAction(_prev: FormState, formData: Form
     await correctBalanceCheck(userId, str(formData, 'checkId'), {
       declaredBalance: n.num('balance'),
       checkedOn: str(formData, 'checkedOn'),
+      // The panel carries the note as it stands: emptied, it is cleared.
+      note: opt(formData, 'note') ?? null,
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -707,8 +717,10 @@ export async function reopenAccountAction(_prev: FormState, formData: FormData):
 
 export async function closeAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await closeAccount(userId, str(formData, 'accountId'))
+    await closeAccount(userId, str(formData, 'accountId'), str(formData, 'closedOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -1004,12 +1016,18 @@ export async function skipOccurrenceAction(formData: FormData): Promise<void> {
 /**
  * Judges a subscription. Called straight from the row rather than through a
  * form: the judgment travels as an argument, so there is no empty field to
- * swallow, and a refusal comes back to the row that asked for it.
+ * swallow, and a refusal comes back to the row that asked for it. The note
+ * comes from the panel that annotates the judgment; the row's selector sends
+ * none, which keeps the note already written.
  */
-export async function setJudgmentAction(commitmentId: string, judgment: Judgment): Promise<string | null> {
+export async function setJudgmentAction(
+  commitmentId: string,
+  judgment: Judgment,
+  note?: string,
+): Promise<string | null> {
   const userId = await requireUserId()
   try {
-    await setJudgment(userId, commitmentId, judgment)
+    await setJudgment(userId, commitmentId, judgment, note?.trim())
   } catch (e) {
     return refusal(e)
   }
@@ -1094,10 +1112,13 @@ export async function changeCommitmentAccountAction(
 export async function changePriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const n = await numbersOf(formData)
-  const invalid = await checkFields(formData, [{ name: 'amount', kind: 'amount' }])
+  const invalid = await checkFields(formData, [
+    { name: 'amount', kind: 'amount' },
+    { name: 'effectiveOn', kind: 'date' },
+  ])
   if (invalid) return { fields: invalid }
   try {
-    await changeAmount(userId, str(formData, 'commitmentId'), n.num('amount'), undefined, {
+    await changeAmount(userId, str(formData, 'commitmentId'), n.num('amount'), str(formData, 'effectiveOn'), {
       currency: opt(formData, 'currency'),
     })
   } catch (e) {
@@ -1109,8 +1130,10 @@ export async function changePriceAction(_prev: FormState, formData: FormData): P
 
 export async function cancelCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'effectiveOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await cancelCommitment(userId, str(formData, 'commitmentId'))
+    await cancelCommitment(userId, str(formData, 'commitmentId'), str(formData, 'effectiveOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -1201,6 +1224,7 @@ function invoiceFigures(formData: FormData, n: Numbers) {
     vatAmount: n.optNum('vatAmount'),
     withholdingRate: n.optNum('withholdingRate'),
     withholdingAmount: n.optNum('withholdingAmount'),
+    currency: opt(formData, 'currency'),
     note: opt(formData, 'note'),
   }
 }
@@ -1265,10 +1289,14 @@ export async function settleInvoiceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
+/** "Relancée": today from the row's menu, or on the day its panel says. */
 export async function remindInvoiceAction(formData: FormData): Promise<void> {
   const userId = await requireUserId()
+  const remindedOn = opt(formData, 'remindedOn')
+  if (remindedOn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(remindedOn))
+    errorRedirect(formData, await fieldError('invalidDate'))
   try {
-    await remindInvoice(userId, str(formData, 'invoiceId'))
+    await remindInvoice(userId, str(formData, 'invoiceId'), remindedOn)
   } catch (e) {
     errorRedirect(formData, await refusal(e))
   }
@@ -1339,8 +1367,10 @@ export async function confirmLevyPaymentAction(formData: FormData): Promise<void
 
 export async function cancelInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'cancelledOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await cancelInvoice(userId, str(formData, 'invoiceId'))
+    await cancelInvoice(userId, str(formData, 'invoiceId'), str(formData, 'cancelledOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }

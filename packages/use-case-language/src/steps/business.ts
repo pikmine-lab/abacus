@@ -23,7 +23,7 @@ export interface ActivityRead {
   exceptions: string[]
 }
 
-/** An invoice as it is printed: the base excluding VAT, the VAT rate in percent. */
+/** An invoice as it is printed: the base excluding VAT, in the currency it is written in, the VAT rate in percent. */
 export interface NewInvoice {
   activity: string
   client: string
@@ -44,6 +44,8 @@ export interface InvoiceRead {
   vat: Money
   receivable: Money
   state: InvoiceState
+  /** The day it was cancelled, when it was. */
+  cancelledOn?: string
 }
 
 /**
@@ -151,11 +153,12 @@ export interface BusinessSteps {
   readActivity(activity: string): Promise<ActivityRead>
 
   declareInvoice(input: NewInvoice): Promise<void>
-  correctInvoice(reference: string, changes: { base: Money }): Promise<void>
-  /** The client was reminded today. */
-  remindInvoice(reference: string): Promise<void>
-  /** The client will never pay: cancelled today. */
-  cancelInvoice(reference: string): Promise<void>
+  /** Corrects what was mistyped: the base, the currency it is written in. */
+  correctInvoice(reference: string, changes: { base?: Money; currency?: string }): Promise<void>
+  /** The client was reminded, today unless said otherwise. */
+  remindInvoice(reference: string, on?: string): Promise<void>
+  /** The client will never pay: cancelled, today unless said otherwise. */
+  cancelInvoice(reference: string, on?: string): Promise<void>
   /** The client paid what was left, onto that account, on that day. */
   settleInvoice(input: { reference: string; account: string; on: string }): Promise<void>
   readInvoice(reference: string): Promise<InvoiceRead>

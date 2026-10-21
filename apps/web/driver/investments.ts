@@ -60,6 +60,12 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
     await page.waitForTimeout(100)
   }
 
+  /** A holding's own page, reached from its line in the positions. */
+  async function openAssetPage(asset: string): Promise<void> {
+    await visit('/investments')
+    await page.locator('a[href^="/investments/"]').filter({ hasText: asset }).first().click()
+    await page.waitForURL(/\/investments\/[^/?]+/)
+  }
   async function openFollow(): Promise<Locator> {
     await visit('/investments')
     await page.getByRole('main').getByRole('button', { name: 'Suivre', exact: true }).click()
@@ -326,12 +332,19 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       }
       return { first: day(value.first, performance.first), last: day(value.last, performance.last) }
     },
+    async setAssetPrice({ asset, price, on }) {
+      await exercised('setAssetPriceAction')
+      await openAssetPage(asset)
+      await page.getByRole('button', { name: 'Saisir un cours' }).click()
+      const panel = page.getByRole('dialog', { name: `Cours de ${asset}` })
+      await panel.getByRole('textbox', { name: 'Cours (€)' }).fill(typed(price))
+      await pickDate(panel, 'Date du cours', on)
+      await panel.getByRole('button', { name: 'Enregistrer le cours' }).click()
+      await settle(panel)
+    },
     async readPriceHistory(asset) {
       await exercised('screen:/investments/[assetId]')
-      // A holding's own page is reached from its line in the positions.
-      await visit('/investments')
-      await page.locator('a[href^="/investments/"]').filter({ hasText: asset }).first().click()
-      await page.waitForURL(/\/investments\/[^/?]+/)
+      await openAssetPage(asset)
       const chart = page.getByRole('region', { name: 'Cours' })
       const days = Number((await chart.getByText(/séances connues$/).innerText()).match(/^(\d+)/)?.[1])
       // The curve, read at its two ends by pointing at them.

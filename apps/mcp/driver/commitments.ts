@@ -12,6 +12,7 @@ interface ListedCommitment {
   amount?: number
   installment?: number
   judgment?: Judgment | 'not judged'
+  judgmentNote?: string
   remainingDue?: number
   reserve?: { remaining: number }
   cancelledOn?: string
@@ -107,8 +108,13 @@ export function commitmentsSteps({ call, batch }: McpContext): Partial<Steps> {
     async skipOccurrence(commitment) {
       await occurrence({ commitment, action: 'skip' })
     },
-    async judgeSubscription({ subscription, judgment }) {
-      await call('manage_subscription', { action: 'set_judgment', commitment: subscription, judgment })
+    async judgeSubscription({ subscription, judgment, note }) {
+      await call('manage_subscription', {
+        action: 'set_judgment',
+        commitment: subscription,
+        judgment,
+        judgmentNote: note,
+      })
     },
     async renameCommitment({ commitment, label }) {
       await call('update_commitment', { commitment, label })
@@ -131,11 +137,12 @@ export function commitmentsSteps({ call, batch }: McpContext): Partial<Steps> {
           amount: Number(amount.amount),
         })
     },
-    async endCommitment(commitment) {
+    async endCommitment(commitment, on) {
       const { type } = await listed(commitment)
       await call(type === 'investment_plan' ? 'manage_investment_plan' : 'manage_subscription', {
         action: 'cancel',
         commitment,
+        effectiveOn: on,
       })
     },
     async receiveForCommitment({ commitment, account, payer, amount, on }) {
@@ -168,9 +175,16 @@ export function commitmentsSteps({ call, batch }: McpContext): Partial<Steps> {
         amount: money(c.type === 'financing' ? c.installment! : c.amount!),
         ...(ended || !c.nextDueOn ? {} : { nextDueOn: c.nextDueOn }),
         ...(c.judgment && c.judgment !== 'not judged' ? { judgment: c.judgment } : {}),
+        ...(c.judgmentNote ? { judgmentNote: c.judgmentNote } : {}),
         ...(c.remainingDue !== undefined ? { remainingDue: money(c.remainingDue) } : {}),
         ...(c.reserve ? { reserveLeft: money(c.reserve.remaining) } : {}),
       }
+    },
+    async readCommitmentEnd(label) {
+      const { cancelledOn, settledOn } = await listed(label)
+      const endedOn = cancelledOn ?? settledOn
+      if (!endedOn) throw new Error(`"${label}" has not ended`)
+      return endedOn
     },
     async readCommitmentTerms(label) {
       const { payee, category, activity, monthlyExpectedRefund } = await listed(label)

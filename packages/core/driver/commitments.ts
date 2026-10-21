@@ -106,8 +106,8 @@ export function commitmentsSteps({ user, accountId, actorId }: PreparationContex
     async skipOccurrence(label) {
       await skipNextOccurrence(user.id, await idOf(label))
     },
-    async judgeSubscription({ subscription, judgment }) {
-      await setJudgment(user.id, await idOf(subscription), judgment)
+    async judgeSubscription({ subscription, judgment, note }) {
+      await setJudgment(user.id, await idOf(subscription), judgment, note)
     },
     async renameCommitment({ commitment: label, label: renamed }) {
       await editCommitment(user.id, await idOf(label), { label: renamed })
@@ -118,8 +118,8 @@ export function commitmentsSteps({ user, accountId, actorId }: PreparationContex
     async changeCommitmentAmount({ commitment: label, amount }) {
       await changeAmount(user.id, await idOf(label), amountOf(amount))
     },
-    async endCommitment(label) {
-      await cancelCommitment(user.id, await idOf(label))
+    async endCommitment(label, on) {
+      await cancelCommitment(user.id, await idOf(label), on)
     },
     async receiveForCommitment({ commitment: label, account, payer, amount, on }) {
       await declareMovement(user.id, {
@@ -145,6 +145,7 @@ export function commitmentsSteps({ user, accountId, actorId }: PreparationContex
         amount: money(c.amount),
         ...(ended ? {} : { nextDueOn: c.nextDueOn }),
         ...(c.judgment ? { judgment: c.judgment } : {}),
+        ...(c.judgmentNote ? { judgmentNote: c.judgmentNote } : {}),
         ...(c.progress ? { remainingDue: money(c.progress.remainingDue) } : {}),
         ...(c.reserve ? { reserveLeft: money(c.reserve.remaining) } : {}),
       }
@@ -189,6 +190,12 @@ export function commitmentsSteps({ user, accountId, actorId }: PreparationContex
         ...(activity ? { activity } : {}),
         ...(c.refundEur !== null ? { monthlyExpectedRefund: money(monthlyExpectedRefundEur(c)) } : {}),
       }
+    },
+    async readCommitmentEnd(label) {
+      const c = (await listCommitmentsWithProgress(user.id, true)).find((e) => e.label === label)
+      const endedOn = c?.cancelledOn ?? c?.settledOn
+      if (!endedOn) throw new Error(`no ended commitment named "${label}"`)
+      return endedOn
     },
   }
 }

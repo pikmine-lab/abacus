@@ -26,6 +26,7 @@ interface ListedCheck {
   computed: number
   gap: number
   settledByMovement?: string
+  note?: string
 }
 
 export function accountsSteps({ call, batch }: McpContext): Partial<Steps> {
@@ -67,8 +68,8 @@ export function accountsSteps({ call, batch }: McpContext): Partial<Steps> {
         openedOn,
       })
     },
-    async closeAccount(name) {
-      await call('manage_accounts', { action: 'close', name })
+    async closeAccount(name, on) {
+      await call('manage_accounts', { action: 'close', name, closedOn: on })
     },
     async reopenAccount(name) {
       await call('manage_accounts', { action: 'reopen', name })
@@ -79,6 +80,7 @@ export function accountsSteps({ call, batch }: McpContext): Partial<Steps> {
         ...(found.institution ? { institution: found.institution } : {}),
         balance: money(found.balance),
         closed: found.closedOn !== undefined,
+        ...(found.closedOn ? { closedOn: found.closedOn } : {}),
       }
     },
 
@@ -154,14 +156,15 @@ export function accountsSteps({ call, batch }: McpContext): Partial<Steps> {
       }))
     },
 
-    async recordBalanceCheck({ account: name, balance }) {
-      await call('record_balance_check', { account: name, balance: Number(balance.amount) })
+    async recordBalanceCheck({ account: name, balance, on, note }) {
+      await call('record_balance_check', { account: name, balance: Number(balance.amount), date: on, note })
     },
-    async correctBalanceCheck({ account: name, on, balance }) {
+    async correctBalanceCheck({ account: name, on, balance, note }) {
       await call('manage_balance_checks', {
         action: 'correct',
         check: await checkId(name, on),
         balance: Number(balance.amount),
+        note,
       })
     },
     async deleteBalanceCheck({ account: name, on }) {
@@ -177,6 +180,7 @@ export function accountsSteps({ call, batch }: McpContext): Partial<Steps> {
         computed: money(c.computed),
         gap: money(c.gap),
         settled: c.settledByMovement !== undefined,
+        ...(c.note ? { note: c.note } : {}),
       }))
     },
   }

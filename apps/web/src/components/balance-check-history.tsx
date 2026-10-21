@@ -31,6 +31,8 @@ export interface CheckEntry {
   gap: number
   /** Whether an adjustment movement settled the gap. */
   settled: boolean
+  /** What the person wrote when pointing it. */
+  note: string | null
 }
 
 /** What the settling form offers to attribute and file the adjustment. */
@@ -78,6 +80,11 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
           {check.gap === 0 ? t('history.noGap') : t('history.gapOf', { amount: format.eur(check.gap, 2) })}
           {check.settled && ` · ${t('history.settledByAdjustment')}`}
         </span>
+        {check.note && (
+          <span role="note" className="truncate text-[11px] text-muted-foreground">
+            {t('history.note', { note: check.note })}
+          </span>
+        )}
       </div>
       <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
         <span className="font-mono text-[12.5px] tabular">{format.eur(check.declared, 2)}</span>
@@ -119,6 +126,12 @@ function CheckRow({ check, options }: { check: CheckEntry; options: SettleOption
             <Field label={t('history.readOn')} name="checkedOn">
               <DateField name="checkedOn" defaultValue={check.checkedOn} />
             </Field>
+            <TextField
+              name="note"
+              label={t('fields.note')}
+              defaultValue={check.note ?? ''}
+              autoComplete="off"
+            />
             <SubmitButton className="self-start">{t('actions.save')}</SubmitButton>
           </ActionForm>
         </DialogContent>

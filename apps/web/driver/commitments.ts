@@ -263,8 +263,18 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await page.getByRole('menuitem', { name: 'Passer cette échéance' }).getByRole('button').click()
       await confirmed(occurrence)
     },
-    async judgeSubscription({ subscription, judgment }) {
+    async judgeSubscription({ subscription, judgment, note }) {
       await exercised('setJudgmentAction')
+      if (note !== undefined) {
+        // A note is written in a panel of its own, the judgment posed with it.
+        await rowMenu(subscription, 'Annoter le jugement')
+        const panel = page.getByRole('dialog', { name: subscription })
+        await choose(panel, 'Jugement', JUDGMENT_LABELS[judgment])
+        await panel.getByRole('textbox', { name: 'Note' }).fill(note)
+        await panel.getByRole('button', { name: 'Enregistrer' }).click()
+        await settle(panel)
+        return
+      }
       const { row } = await locate(subscription)
       const field = row.getByRole('combobox', { name: 'Jugement' })
       await field.click()
@@ -301,7 +311,7 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(panel)
     },
-    async endCommitment(commitment) {
+    async endCommitment(commitment, on) {
       await exercised('cancelCommitmentAction')
       const { row } = await locate(commitment)
       await row.getByRole('button', { name: `Actions sur ${commitment}`, exact: true }).click()
@@ -310,6 +320,7 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       const word = await item.innerText()
       await item.click()
       const dialog = page.getByRole('alertdialog', { name: `${word} « ${commitment} » ?` })
+      if (on) await pickDate(dialog, 'Prend fin le', on)
       await dialog.getByRole('button', { name: word, exact: true }).click()
       await settle(dialog)
     },
@@ -349,6 +360,9 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
         const said = (await judgment.innerText()).trim() as keyof typeof JUDGMENTS
         if (JUDGMENTS[said]) view.judgment = JUDGMENTS[said]
       }
+      // The person's own words about the judgment, quoted on the row.
+      const judgmentNote = text.match(/« (.+?) »/)?.[1]
+      if (judgmentNote) view.judgmentNote = judgmentNote
       const remaining = text.match(/reste ([\d\u202f\u00a0 ]+(?:,\d{2})?)\s*€/)?.[1]
       if (remaining) view.remainingDue = moneyOf(remaining)
       const reserve = text.match(/Réserve : (.+?€) restants/)?.[1]
@@ -389,6 +403,26 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
         ...(activity !== '(perso)' ? { activity } : {}),
         ...(monthlyExpectedRefund ? { monthlyExpectedRefund } : {}),
       }
+    },
+    async readCommitmentEnd(label) {
+      // Ended expenses fold at the end of their page, stopped incomes at the end of theirs.
+      for (const [path, fold] of [
+        [EXPENSES, 'Terminés'],
+        [INCOMES, 'Arrêtés'],
+      ] as const) {
+        await exercised(`screen:${path}`)
+        await visit(path)
+        const details = page.locator('details', {
+          has: page.getByRole('heading', { name: fold, exact: true }),
+        })
+        if (!(await details.count())) continue
+        if ((await details.getAttribute('open')) === null) await details.locator('summary').click()
+        const row = details.locator('div', { has: page.getByText(label, { exact: true }) }).last()
+        if (!(await row.count())) continue
+        const day = (await row.innerText()).match(/(?:résilié|soldé|arrêté) le (\d{2}\/\d{2}\/\d{2})/)?.[1]
+        if (day) return dayShown(day)
+      }
+      throw new Error(`no ended commitment named "${label}"`)
     },
     async readRunningCommitments() {
       return [

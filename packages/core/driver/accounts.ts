@@ -68,8 +68,8 @@ export function accountsSteps({ user, accountId, actorId }: PreparationContext):
         openedOn,
       })
     },
-    async closeAccount(account) {
-      await closeAccount(user.id, await accountId(account))
+    async closeAccount(account, on) {
+      await closeAccount(user.id, await accountId(account), on)
     },
     async reopenAccount(account) {
       await reopenAccount(user.id, await accountId(account))
@@ -81,6 +81,7 @@ export function accountsSteps({ user, accountId, actorId }: PreparationContext):
         ...(found.institution ? { institution: found.institution } : {}),
         balance: money(found.balance),
         closed: found.closedOn !== null,
+        ...(found.closedOn ? { closedOn: found.closedOn } : {}),
       }
     },
 
@@ -144,11 +145,14 @@ export function accountsSteps({ user, accountId, actorId }: PreparationContext):
       }))
     },
 
-    async recordBalanceCheck({ account, balance }) {
-      await recordBalanceCheck(user.id, await accountId(account), amountOf(balance))
+    async recordBalanceCheck({ account, balance, on, note }) {
+      await recordBalanceCheck(user.id, await accountId(account), amountOf(balance), on, note)
     },
-    async correctBalanceCheck({ account, on, balance }) {
-      await correctBalanceCheck(user.id, await checkId(account, on), { declaredBalance: amountOf(balance) })
+    async correctBalanceCheck({ account, on, balance, note }) {
+      await correctBalanceCheck(user.id, await checkId(account, on), {
+        declaredBalance: amountOf(balance),
+        note,
+      })
     },
     async deleteBalanceCheck({ account, on }) {
       await deleteBalanceCheck(user.id, await checkId(account, on))
@@ -163,6 +167,7 @@ export function accountsSteps({ user, accountId, actorId }: PreparationContext):
         computed: money(e.check.computedBalance),
         gap: money(e.gap),
         settled: e.adjustmentId !== null,
+        ...(e.check.note ? { note: e.check.note } : {}),
       }))
     },
   }

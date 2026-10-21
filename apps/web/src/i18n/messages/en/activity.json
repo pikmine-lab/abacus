@@ -154,7 +154,12 @@
     "editDescription": "Fix what was entered wrong. Income already collected on it keeps its link.",
     "confirmTitle": "Cancel this invoice?",
     "confirmBody": "{label}. It leaves the pending invoices and keeps its dates. An invoice already collected, even partly, cannot be canceled: detach the linked income first.",
-    "goBack": "Go back"
+    "goBack": "Go back",
+    "remindedOtherDate": "Reminded on another date…",
+    "remindTitle": "Reminder",
+    "remindedOnField": "Reminded on",
+    "remindSave": "Save",
+    "cancelledOnField": "Canceled on"
   },
   "ranks": {
     "revenueTitle": "Revenue by client",
@@ -184,7 +189,8 @@
     "withholding": "Withholding",
     "receivable": "To receive",
     "state": "Status",
-    "remaining": "{amount} left"
+    "remaining": "{amount} left",
+    "cancelledOn": "on {date}"
   },
   "invoiceForm": {
     "corrected": "Invoice corrected",
@@ -201,7 +207,7 @@
     "vat": "VAT collected",
     "withholding": "Withholding",
     "rate": "Rate (%)",
-    "orAmount": "or in €",
+    "orAmount": "or in {unit}",
     "receivable": "to receive <value>{amount}</value>",
     "note": "Note (optional)",
     "save": "Save",

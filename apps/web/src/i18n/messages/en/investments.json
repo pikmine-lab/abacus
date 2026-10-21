@@ -181,5 +181,15 @@
     "corrected": "Contribution corrected",
     "editNote": "The correction applies to upcoming due payments. Contributions already confirmed keep their account and the asset bought: they record what happened."
   },
-  "securityType": "Security"
+  "securityType": "Security",
+  "handPrice": {
+    "label": "Enter a price",
+    "short": "Price",
+    "title": "Price of {name}",
+    "description": "No source quotes it: every price entered stays in its history, on its date.",
+    "price": "Price (€)",
+    "on": "Price date",
+    "submit": "Save the price",
+    "success": "Price saved"
+  }
 }

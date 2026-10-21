@@ -16,7 +16,7 @@ import { getTranslations } from 'next-intl/server'
 import { BalanceChart } from '@/components/balance-chart'
 import { Block, Figure, FigureRow } from '@/components/composition'
 import { BAND } from '@/components/expense-list'
-import { OperationRows } from '@/components/investment-forms'
+import { HandPriceEntry, OperationRows } from '@/components/investment-forms'
 import { PageBody, PageHeader } from '@/components/page-shell'
 import { WindowTabs } from '@/components/window-tabs'
 import { resolveChartWindow } from '@/lib/chart-window'
@@ -77,7 +77,10 @@ export default async function AssetPage({
             .filter(Boolean)
             .join(' · ') || undefined
         }
-      />
+      >
+        {/* Only what no source quotes takes a price by hand: a quoted one has its answer. */}
+        {!asset.instrumentId && <HandPriceEntry assetId={asset.id} name={asset.name} today={today()} />}
+      </PageHeader>
       <PageBody className="@container gap-10">
         {/* The figure that dominates beside what explains it: a holding's worth
             moves with its price, drawn next to it. */}

@@ -98,6 +98,9 @@ export function CommitmentRow({
               ` · ${t('monthlyApprox', { amount: format.eur(monthlyEquivalentEur(c), 2) })}`}
           </span>
           <span>{t('nextOn', { date: format.date(c.nextDueOn) })}</span>
+          {showJudgment && c.judgmentNote && (
+            <span className="text-muted-foreground">{t('judgmentNote', { note: c.judgmentNote })}</span>
+          )}
           {/* A move already declared: the only place it shows before its date. */}
           {c.nextAccountMove && (
             <span>
@@ -155,6 +158,7 @@ export function CommitmentRow({
         today={today}
         options={options}
         defaults={defaults}
+        judgment={showJudgment ? { value: c.judgment, note: c.judgmentNote } : undefined}
         placement={
           placement && c.targetAccountId && c.assetId
             ? {
