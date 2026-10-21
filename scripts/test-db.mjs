@@ -97,13 +97,17 @@ export async function dropTestDatabases(base) {
   assertTestDatabase(withName(base, `${nameOf(base)}_x`))
   const name = nameOf(base)
   await onServer(base, async (sql) => {
-    const rows = await sql`select datname from pg_database where datname = ${name} or starts_with(datname, ${`${name}_`})`
+    const rows =
+      await sql`select datname from pg_database where datname = ${name} or starts_with(datname, ${`${name}_`})`
     for (const { datname } of rows) await sql.unsafe(`drop database if exists "${datname}" with (force)`)
   })
 }
 
 function branchBase() {
-  const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+  const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
   return `postgresql://abacus:abacus@127.0.0.1:5544/abacus_test_${sanitize(branch)}`
 }
 

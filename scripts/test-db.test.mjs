@@ -3,12 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { after, test } from 'node:test'
-import {
-  assertTestDatabase,
-  dropTestDatabases,
-  packageDatabaseUrl,
-  prepareTestDatabase,
-} from './test-db.mjs'
+import { assertTestDatabase, dropTestDatabases, packageDatabaseUrl, prepareTestDatabase } from './test-db.mjs'
 
 /**
  * Each package of each worktree tests against its own database, and nothing
@@ -57,11 +52,15 @@ test('a database whose name is not a test one is refused, before anything is wri
 test('the test helpers refuse to load against a database that is not a test one', () => {
   assert.throws(
     () =>
-      execFileSync(process.execPath, ['--input-type=module', '-e', "await import('./packages/core/test/helpers.ts')"], {
-        cwd: root,
-        env: { ...process.env, DATABASE_URL: urlOf('abacus') },
-        stdio: 'pipe',
-      }),
+      execFileSync(
+        process.execPath,
+        ['--input-type=module', '-e', "await import('./packages/core/test/helpers.ts')"],
+        {
+          cwd: root,
+          env: { ...process.env, DATABASE_URL: urlOf('abacus') },
+          stdio: 'pipe',
+        },
+      ),
     (error) => String(error.stderr).includes('not_a_test_database'),
   )
 })
@@ -69,8 +68,14 @@ test('the test helpers refuse to load against a database that is not a test one'
 test('a package database is named after the base and the package', () => {
   const base = urlOf('abacus_test_189_x')
   assert.equal(new URL(packageDatabaseUrl(base, '@abacus/core')).pathname, '/abacus_test_189_x_core')
-  assert.equal(new URL(packageDatabaseUrl(base, '@abacus/data-seed')).pathname, '/abacus_test_189_x_data_seed')
-  assert.equal(new URL(packageDatabaseUrl(base, '@abacus/use-cases')).pathname, '/abacus_test_189_x_use_cases')
+  assert.equal(
+    new URL(packageDatabaseUrl(base, '@abacus/data-seed')).pathname,
+    '/abacus_test_189_x_data_seed',
+  )
+  assert.equal(
+    new URL(packageDatabaseUrl(base, '@abacus/use-cases')).pathname,
+    '/abacus_test_189_x_use_cases',
+  )
 })
 
 test('a test database is created on first use, with its extensions, and migrated', async () => {
@@ -82,7 +87,8 @@ test('a test database is created on first use, with its extensions, and migrated
     const [{ count }] = await sql`select count(*)::int as count from schema_migrations`
     assert.equal(count, migrations.length)
     const extensions = (await sql`select extname from pg_extension`).map((row) => row.extname)
-    for (const extension of ['vector', 'pg_trgm', 'unaccent']) assert.ok(extensions.includes(extension), extension)
+    for (const extension of ['vector', 'pg_trgm', 'unaccent'])
+      assert.ok(extensions.includes(extension), extension)
   })
 })
 
