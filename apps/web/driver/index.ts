@@ -1,12 +1,17 @@
-import {
-  type CaseUser,
-  type Driver,
-  eur,
-  type Money,
-  recordExercised,
-  type Steps,
-} from '@abacus/use-case-language'
-import { type Browser, type BrowserContext, chromium, type Page } from 'playwright'
+import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
+import { type Browser, type BrowserContext, chromium } from 'playwright'
+import { accountsSteps } from './accounts.ts'
+import { advancesSteps } from './advances.ts'
+import { businessSteps } from './business.ts'
+import { catalogSteps } from './catalog.ts'
+import { commitmentsSteps } from './commitments.ts'
+import { type WebEnvironment, webContext } from './context.ts'
+import { identitySteps } from './identity.ts'
+import { investmentsSteps } from './investments.ts'
+import { ledgerSteps } from './ledger.ts'
+import { reportingSteps } from './reporting.ts'
+
+export { moneyOf, type WebEnvironment } from './context.ts'
 
 /**
  * The web driver: plays each step in a real browser, by Playwright, against the
@@ -14,46 +19,13 @@ import { type Browser, type BrowserContext, chromium, type Page } from 'playwrig
  * their labels and their roles, never by calling a server action. Each case
  * gets its own browser context, signed in with the case user's cookie, its
  * clock on the suite's day, and every request that is not local cut. Each
- * gesture notes the server action it triggers, for the coverage guards.
+ * gesture notes the server action it triggers, for the coverage guards. The
+ * steps live in one module per domain.
  *
- * The browser speaks French: the labels below are those of the French catalog.
+ * The browser speaks French: the labels are those of the French catalog.
  */
 
-export interface WebEnvironment {
-  webUrl: string
-  today: string
-  timeoutMs: number
-}
-
 const LOCAL = new Set(['127.0.0.1', 'localhost', '[::1]'])
-
-/** "1 000,00 €" or "−12,50 €" as the screen formats it, back to a decimal string. */
-export function moneyOf(text: string): Money {
-  const cleaned = text
-    .replace(/[\s  €]/g, '')
-    .replace('−', '-')
-    .replace(',', '.')
-  if (!/^-?\d+(\.\d+)?$/.test(cleaned)) throw new Error(`not an amount: "${text}"`)
-  return eur(Number(cleaned).toFixed(2))
-}
-
-/** A decimal string as a French keyboard types it. */
-const typed = (money: Money) => money.amount.replace('.', ',')
-
-const MONTHS = [
-  'janvier',
-  'février',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'août',
-  'septembre',
-  'octobre',
-  'novembre',
-  'décembre',
-]
 
 export function webDriver(env: WebEnvironment): Driver {
   let browser: Browser | undefined
@@ -81,83 +53,17 @@ export function webDriver(env: WebEnvironment): Driver {
     async open(user) {
       const context = await signedIn(user)
       const page = await context.newPage()
-
-      async function visit(path: string): Promise<void> {
-        await page.goto(`${env.webUrl}${path}`)
-      }
-
-      /** Picks a day in the calendar a date field opens, moving month by month. */
-      async function pickDate(
-        scope: ReturnType<Page['getByRole']>,
-        label: string,
-        day: string,
-      ): Promise<void> {
-        await scope.getByRole('button', { name: label }).click()
-        const [year, month, date] = day.split('-').map(Number) as [number, number, number]
-        const calendar = page.getByRole('grid').last()
-        const caption = () =>
-          page
-            .locator(
-              '[role="dialog"] .rdp-caption_label, [data-radix-popper-content-wrapper] .rdp-caption_label',
-            )
-            .last()
-            .innerText()
-        for (let i = 0; i < 240; i++) {
-          const [shownMonth, shownYear] = (await caption()).toLowerCase().split(' ')
-          const shown = Number(shownYear) * 12 + MONTHS.indexOf(shownMonth as string)
-          const wanted = year * 12 + month - 1
-          if (shown === wanted) break
-          await page
-            .getByRole('button', { name: shown < wanted ? /suivant/i : /précédent/i })
-            .last()
-            .click()
-        }
-        await calendar
-          .getByRole('button', { name: new RegExp(`\\b${date} ${MONTHS[month - 1]} ${year}`) })
-          .click()
-      }
-
+      const ctx = webContext(page, env)
       const steps: Partial<Steps> = {
-        async declareExpense({ account, amount, payee, on }) {
-          await recordExercised({ driver: 'web', name: 'declareMovementAction' })
-          await visit('/movements')
-          await page.getByRole('button', { name: 'Déclarer', exact: true }).click()
-          const panel = page.getByRole('dialog', { name: 'Déclarer un mouvement' })
-          await pickDate(panel, 'Date', on)
-          await panel.getByRole('textbox', { name: 'Montant' }).fill(typed(amount))
-          await panel.getByRole('combobox', { name: 'Compte débité' }).click()
-          await page.getByRole('option', { name: account, exact: true }).click()
-          await panel.getByRole('combobox', { name: 'Payé à (acteur)' }).fill(payee)
-          await panel.getByRole('combobox', { name: 'Payé à (acteur)' }).press('Tab')
-          await panel.getByRole('button', { name: 'Déclarer', exact: true }).click()
-          await refusalOrSuccess(panel)
-        },
-        async readAccountBalance(account) {
-          await visit('/accounts')
-          const row = page
-            .getByRole('button', { name: `Actions sur ${account}`, exact: true })
-            .locator('xpath=ancestor::*[contains(normalize-space(.), "€")][1]')
-          const text = await row.innerText()
-          const amounts = text.match(/−?-?[\d\s  ]+,\d{2}\s?€/g)
-          if (!amounts) throw new Error(`no balance on the row of "${account}": ${text}`)
-          return moneyOf(amounts[amounts.length - 1] as string)
-        },
-      }
-
-      /**
-       * After a submit, whichever comes first: the form's refusal (a field or the
-       * form in the destructive colour), its acknowledgement (the polite "✓"
-       * line), or the panel closing on its own.
-       */
-      async function refusalOrSuccess(panel: ReturnType<Page['getByRole']>): Promise<void> {
-        const refusal = panel.locator('.text-destructive').filter({ hasText: /\S/ })
-        const done = panel.locator('[aria-live="polite"]').filter({ hasText: '✓' })
-        await Promise.race([
-          refusal.first().waitFor(),
-          done.first().waitFor(),
-          panel.waitFor({ state: 'detached' }),
-        ])
-        if (await refusal.count()) throw new Error((await refusal.allInnerTexts()).join(' ').trim())
+        ...ledgerSteps(ctx),
+        ...accountsSteps(ctx),
+        ...commitmentsSteps(ctx),
+        ...advancesSteps(ctx),
+        ...businessSteps(ctx),
+        ...investmentsSteps(ctx),
+        ...catalogSteps(ctx),
+        ...reportingSteps(ctx),
+        ...identitySteps(ctx),
       }
 
       // A failed step leaves a picture of the screen it failed on, when the

@@ -11,6 +11,16 @@
  * the same case reads the same on every interface.
  */
 
+import type { AccountsSteps } from './steps/accounts.ts'
+import type { AdvancesSteps } from './steps/advances.ts'
+import type { BusinessSteps } from './steps/business.ts'
+import type { CatalogSteps } from './steps/catalog.ts'
+import type { CommitmentsSteps } from './steps/commitments.ts'
+import type { IdentitySteps } from './steps/identity.ts'
+import type { InvestmentsSteps } from './steps/investments.ts'
+import type { LedgerSteps } from './steps/ledger.ts'
+import type { ReportingSteps } from './steps/reporting.ts'
+
 /** An amount as the domain writes it: a decimal string and its currency, never a float. */
 export interface Money {
   amount: string
@@ -32,12 +42,17 @@ export interface CaseUser {
   accessToken: string
 }
 
-/** Every step a case can take. */
-export interface Steps {
-  createAccount(input: { name: string; opening?: Money; openedOn?: string }): Promise<void>
-  declareExpense(input: { account: string; amount: Money; payee: string; on: string }): Promise<void>
-  readAccountBalance(account: string): Promise<Money>
-}
+/** Every step a case can take, one file per domain under steps/. */
+export interface Steps
+  extends LedgerSteps,
+    AccountsSteps,
+    CommitmentsSteps,
+    AdvancesSteps,
+    BusinessSteps,
+    InvestmentsSteps,
+    CatalogSteps,
+    ReportingSteps,
+    IdentitySteps {}
 
 export type StepName = keyof Steps
 
