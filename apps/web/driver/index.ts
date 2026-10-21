@@ -3,6 +3,7 @@ import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
 import { type Browser, type BrowserContext, chromium } from 'playwright'
 import { accountsSteps } from './accounts.ts'
 import { advancesSteps } from './advances.ts'
+import { balanceHistorySteps } from './balance-history.ts'
 import { businessSteps } from './business.ts'
 import { catalogSteps } from './catalog.ts'
 import { commitmentsSteps } from './commitments.ts'
@@ -81,6 +82,7 @@ export function webDriver(env: WebEnvironment): Driver {
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
         ...accountsSteps(ctx),
+        ...balanceHistorySteps(ctx),
         ...commitmentsSteps(ctx),
         ...advancesSteps(ctx),
         ...businessSteps(ctx),

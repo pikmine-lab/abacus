@@ -87,4 +87,15 @@ export interface AccountsSteps {
   settleCheckGap(input: CheckRef & { actor: string }): Promise<void>
   /** The checks of an account, most recent first. */
   readBalanceChecks(account: string): Promise<BalanceCheckView[]>
+  /**
+   * An account's balance day by day over the window the home opens on (this
+   * month, from the first declared day), read at its first and its last day.
+   */
+  readBalanceAcrossTheMonth(account: string): Promise<{ first: DayBalance; last: DayBalance }>
+}
+
+/** What an account held on one day. */
+export interface DayBalance {
+  on: string
+  balance: Money
 }

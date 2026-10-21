@@ -2,6 +2,7 @@ import type { Driver, Steps } from '@abacus/use-case-language'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { accountsSteps } from './accounts.ts'
 import { advancesSteps } from './advances.ts'
+import { balanceHistorySteps } from './balance-history.ts'
 import { businessSteps } from './business.ts'
 import { catalogSteps } from './catalog.ts'
 import { commitmentsSteps } from './commitments.ts'
@@ -30,6 +31,7 @@ export function mcpDriver(mcpUrl: string): Driver {
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
         ...accountsSteps(ctx),
+        ...balanceHistorySteps(ctx),
         ...commitmentsSteps(ctx),
         ...advancesSteps(ctx),
         ...businessSteps(ctx),

@@ -2,6 +2,7 @@ import type { Driver, Steps } from '@abacus/use-case-language'
 import { closeDb } from '../src/db/client.ts'
 import { accountsSteps } from './accounts.ts'
 import { advancesSteps } from './advances.ts'
+import { balanceHistorySteps } from './balance-history.ts'
 import { businessSteps } from './business.ts'
 import { catalogSteps } from './catalog.ts'
 import { commitmentsSteps } from './commitments.ts'
@@ -25,6 +26,7 @@ export const preparationDriver: Driver = {
     const steps: Partial<Steps> = {
       ...ledgerSteps(ctx),
       ...accountsSteps(ctx),
+      ...balanceHistorySteps(ctx),
       ...commitmentsSteps(ctx),
       ...advancesSteps(ctx),
       ...businessSteps(ctx),
