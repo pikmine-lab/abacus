@@ -22,7 +22,7 @@ import { venuesSteps } from './venues.ts'
  * Every tool it calls is noted with its action, for the coverage guards. The
  * steps live in one module per domain.
  */
-export function mcpDriver(mcpUrl: string): Driver {
+export function mcpDriver({ mcpUrl, timeoutMs }: { mcpUrl: string; timeoutMs: number }): Driver {
   return {
     name: 'mcp',
     async open(user) {
@@ -31,7 +31,7 @@ export function mcpDriver(mcpUrl: string): Driver {
       })
       const client = new Client({ name: 'abacus-use-cases', version: '0.0.0' })
       await client.connect(transport)
-      const ctx = mcpContext(client, mcpUrl)
+      const ctx = mcpContext(client, mcpUrl, timeoutMs)
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
         ...accountsSteps(ctx),

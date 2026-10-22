@@ -22,7 +22,7 @@ const AMOUNT = /−?[\d\s  ]+,\d{2}\s?€/
  * person and per expense: its menu is named after both, and the line around it
  * carries what is owed, the plan's next payment and the refund's own gesture.
  */
-export function advancesSteps({ page, visit, pickDate, exercised, env }: WebContext): Partial<Steps> {
+export function advancesSteps({ page, visit, pickDate, env }: WebContext): Partial<Steps> {
   const claims = () => page.getByRole('region', { name: 'À récupérer' })
   const menuName = ({ expense, debtor }: ShareRef) =>
     `Actions sur ${debtor} · ${expense.counterparty} du ${shortDate(expense.on)}`
@@ -74,7 +74,6 @@ export function advancesSteps({ page, visit, pickDate, exercised, env }: WebCont
 
   return {
     async refundShare({ amount, on, ...share }) {
-      await exercised('refundShareAction')
       const { line, menu } = await claimLine(share)
       if (on !== env.today) {
         await menu.click()
@@ -85,7 +84,6 @@ export function advancesSteps({ page, visit, pickDate, exercised, env }: WebCont
       await sent(line.getByRole('button', { name: 'Remboursé', exact: true }))
     },
     async removeShare(share) {
-      await exercised('removeShareAction')
       const panel = await correcting(share)
       await panel.getByRole('button', { name: `Retirer la part de ${share.debtor}`, exact: true }).click()
       const confirm = page.getByRole('alertdialog', { name: `Retirer la part de ${share.debtor} ?` })
@@ -103,7 +101,6 @@ export function advancesSteps({ page, visit, pickDate, exercised, env }: WebCont
       if (await refusal.count()) throw new Error((await refusal.allInnerTexts()).join(' ').trim())
     },
     async planShare({ count, firstDueOn, ...share }) {
-      await exercised('planShareAction')
       const sheet = await planning(share)
       await sheet.getByRole('textbox', { name: 'Nombre d’échéances' }).fill(String(count))
       await pickDate(sheet, 'Première échéance', firstDueOn)
@@ -111,20 +108,17 @@ export function advancesSteps({ page, visit, pickDate, exercised, env }: WebCont
       await sheet.waitFor({ state: 'detached' })
     },
     async dropSharePlan(share) {
-      await exercised('planShareAction')
       const sheet = await planning(share)
       await sheet.getByRole('button', { name: 'Retirer l’échéancier' }).click()
       // The panel stays open on the claim without a plan: the plan it showed goes.
       await sheet.getByText('Échéancier actuel').waitFor({ state: 'detached' })
     },
     async writeOffShare(share) {
-      await exercised('closeShareAction')
       const { menu } = await claimLine(share)
       await menu.click()
       await sent(page.getByRole('menuitem', { name: 'Solder : rien de plus ne reviendra' }))
     },
     async readOpenClaims() {
-      await exercised('screen:/movements')
       await visit('/movements')
       await page.getByRole('heading', { name: 'Mouvements', level: 1 }).waitFor()
       if ((await claims().count()) === 0) return []

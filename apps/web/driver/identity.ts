@@ -10,7 +10,7 @@ import { typed, type WebContext } from './context.ts'
 const CLIENT_ID = 'microsoft-365-copilot'
 const REDIRECT_URI = 'https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect'
 
-export function identitySteps({ page, env, visit, settle, exercised }: WebContext): Partial<Steps> {
+export function identitySteps({ page, env, visit, settle }: WebContext): Partial<Steps> {
   // The person signed in on the page: the case user until a sign-up replaces them.
   let person = 'Camille'
 
@@ -29,7 +29,6 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
 
   return {
     async signUp({ name, email, password }) {
-      await exercised('screen:/login')
       await page.context().clearCookies()
       await loginForm()
       await page.getByRole('button', { name: 'Créer un compte' }).click()
@@ -41,21 +40,23 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
       person = name
     },
     async signOut() {
-      await exercised('screen:/')
       await visit('/')
       await page.getByRole('button', { name: new RegExp(`${person}$`) }).click()
       await page.getByRole('menuitem', { name: 'Se déconnecter' }).click()
       await landedOn('/login')
     },
     async signIn({ email, password }) {
-      await exercised('screen:/login')
       await loginForm()
       await page.getByRole('textbox', { name: 'Email' }).fill(email)
       await page.getByRole('textbox', { name: 'Mot de passe' }).fill(password)
+      // Read by its effect, not its wording: whether the sign-in opened a session.
+      const answered = page.waitForResponse((r) =>
+        new URL(r.url()).pathname.endsWith('/api/auth/sign-in/email'),
+      )
       await page.getByRole('button', { name: 'Se connecter' }).click()
-      const refused = page.getByText('Email ou mot de passe incorrect.')
-      const landed = landedOn('/').then(() => 'signed-in' as const)
-      return await Promise.race([landed, refused.waitFor().then(() => 'refused' as const)])
+      if (!(await answered).ok()) return 'refused'
+      await landedOn('/')
+      return 'signed-in'
     },
     async reachesTheApp() {
       await visit('/')
@@ -66,15 +67,14 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
       try {
         const visitor = await anonymous.newPage()
         await visitor.goto(`${env.webUrl}/accounts`)
-        return new URL(visitor.url()).pathname === '/login' ? 'refused' : 'let-in'
+        return new URL(visitor.url()).pathname === '/login' ? 'sent-to-sign-in' : 'let-in'
       } finally {
         await anonymous.close()
       }
     },
     async answerAccessRequest(answer) {
-      await exercised('screen:/consent')
       const verifier = randomBytes(32).toString('base64url')
-      const mcpUrl = process.env.ABACUS_CASES_MCP_URL as string
+      const { mcpUrl } = env
       const query = new URLSearchParams({
         response_type: 'code',
         client_id: CLIENT_ID,
@@ -110,12 +110,31 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
           redirect_uri: REDIRECT_URI,
         }),
       })
-      return token.ok && ((await token.json()) as { access_token?: string }).access_token
-        ? 'token'
-        : 'no-token'
+      const accessToken = token.ok
+        ? ((await token.json()) as { access_token?: string }).access_token
+        : undefined
+      if (!accessToken) return 'no-token'
+      // What the client does next: a tool, called with that token.
+      const called = await fetch(mcpUrl, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'get_overview', arguments: {} },
+        }),
+      })
+      const reply = await called.text()
+      if (!called.ok || !reply.includes('"result"') || reply.includes('"isError":true'))
+        throw new Error(`the client got a token but its call failed: ${called.status} ${reply.slice(0, 200)}`)
+      return 'reaches-data'
     },
     async readConnectedApps() {
-      await exercised('screen:/connect-ai')
       await visit('/connect-ai')
       const region = page.getByRole('region', { name: 'Applications' })
       await region.waitFor()
@@ -130,7 +149,6 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
       )
     },
     async revokeConnectedApp(name) {
-      await exercised('revokeAuthorizationAction')
       await visit('/connect-ai')
       await page.getByRole('button', { name: `Actions sur l’accès de ${name}` }).click()
       await page.getByRole('menuitem', { name: 'Révoquer l’accès' }).click()
@@ -141,7 +159,6 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
       await answered
     },
     async readAccountNames() {
-      await exercised('screen:/accounts')
       await visit('/accounts')
       await page.getByRole('heading', { name: 'Comptes', level: 1 }).waitFor()
       const actions = await page.getByRole('button', { name: /^Actions sur / }).all()
@@ -149,18 +166,42 @@ export function identitySteps({ page, env, visit, settle, exercised }: WebContex
         actions.map(async (b) => ((await b.getAttribute('aria-label')) ?? '').replace(/^Actions sur /, '')),
       )
     },
+    async readMovementCounterparties() {
+      await visit('/movements')
+      await page.getByRole('heading', { level: 1 }).first().waitFor()
+      const rows = await page.getByRole('button', { name: /^Ouvrir / }).all()
+      return Promise.all(
+        rows.map(async (row) => ((await row.getAttribute('aria-label')) ?? '').split(' · ')[1] as string),
+      )
+    },
     async correctSomeoneElsesMovement(movementId, amount) {
+      // The panel asks the app for the movement: the data, not a button, says whether it is there.
+      const read = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith(`/api/movements/${movementId}`),
+      )
       await visit(`/movements?movement=${encodeURIComponent(movementId)}`)
+      if (!(await read).ok()) return 'refused'
       const correct = page.getByRole('dialog').getByRole('button', { name: 'Corriger' })
-      try {
-        await correct.waitFor({ timeout: 3000 })
-      } catch {
-        return 'refused'
-      }
-      await exercised('correctMovementAction')
       await correct.click()
       const panel = page.getByRole('dialog').last()
       await panel.getByRole('textbox', { name: 'Montant' }).fill(typed(amount))
+      await panel.getByRole('button', { name: 'Enregistrer' }).click()
+      await settle(panel)
+      return 'corrected'
+    },
+    async correctSomeoneElsesCommitment(commitmentId, label) {
+      // A link to a commitment leads to its row; the row is the data.
+      await visit(`/recurring-expenses?commitment=${encodeURIComponent(commitmentId)}`)
+      await page.getByRole('heading', { level: 1 }).first().waitFor()
+      const row = page.locator(`[data-commitment="${commitmentId}"]`)
+      if ((await row.count()) === 0) return 'refused'
+      await row
+        .getByRole('button', { name: /^Actions sur / })
+        .first()
+        .click()
+      await page.getByRole('menuitem', { name: 'Modifier' }).click()
+      const panel = page.getByRole('dialog').last()
+      await panel.getByRole('textbox', { name: 'Nom' }).fill(label)
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(panel)
       return 'corrected'

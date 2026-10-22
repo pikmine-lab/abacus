@@ -98,6 +98,28 @@ async function startServers(env: NodeJS.ProcessEnv, webPort: number, mcpPort: nu
   await waitFor(`http://127.0.0.1:${mcpPort}/.well-known/oauth-protected-resource`, mcpServer)
 }
 
+/**
+ * What the build and the servers of the suite run with: its database and
+ * addresses, and, in every process, the network cut and the clock on SUITE_DAY.
+ */
+export function serverEnvironment(at: {
+  databaseUrl: string
+  webUrl: string
+  mcpUrl: string
+}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    DATABASE_URL: at.databaseUrl,
+    // Fixed, not drawn per run: the signing keys stay in the suite's database,
+    // encrypted with it. A test value, guarding nothing but test users.
+    BETTER_AUTH_SECRET: 'abacus-use-case-suite-only-secret-not-for-anything-else',
+    PUBLIC_URL: at.webUrl,
+    MCP_URL: at.mcpUrl,
+    ABACUS_TEST_TODAY: SUITE_DAY,
+    NODE_OPTIONS: `--import=${import.meta.resolve('@abacus/test-harness/preload')}`,
+  }
+}
+
 export async function globalSetup(): Promise<void> {
   // Where each driver notes what it really called, read back at the end.
   process.env.ABACUS_CASES_EXERCISED = mkdtempSync(`${tmpdir()}/abacus-cases-`)
@@ -111,17 +133,7 @@ export async function globalSetup(): Promise<void> {
   const [webPort, mcpPort] = [await freePort(), await freePort()]
   const webUrl = `http://127.0.0.1:${webPort}`
   const mcpUrl = `http://127.0.0.1:${mcpPort}/mcp`
-  const env = {
-    ...process.env,
-    DATABASE_URL: databaseUrl,
-    // Fixed, not drawn per run: the signing keys stay in the suite's database,
-    // encrypted with it. A test value, guarding nothing but test users.
-    BETTER_AUTH_SECRET: 'abacus-use-case-suite-only-secret-not-for-anything-else',
-    PUBLIC_URL: webUrl,
-    MCP_URL: mcpUrl,
-    ABACUS_TEST_TODAY: SUITE_DAY,
-    NODE_OPTIONS: `--import=${import.meta.resolve('@abacus/test-harness/preload')}`,
-  }
+  const env = serverEnvironment({ databaseUrl, webUrl, mcpUrl })
 
   // ABACUS_CASES_REUSE_BUILD=1 serves the last build, to go faster while writing
   // a case whose app code did not change; the suite in CI always builds.

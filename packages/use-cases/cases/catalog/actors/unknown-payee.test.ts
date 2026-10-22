@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { eur } from '@abacus/use-case-language'
 import { useCase } from '../../../src/play.ts'
 
-// The one case where the interfaces are meant to differ (C65): the step
-// itself checks that each one creates an unknown payee its own way, the web
-// on the spot and the MCP only once asked to. Both end in the same state.
+// The one gesture meant to differ from one interface to another: the step
+// itself checks that each creates an unknown payee its own way, on the spot or
+// only once asked to. All end in the same state.
 useCase('catalog.actor.unknown-payee', async ({ arrange, act }) => {
   await arrange.createAccount({ name: 'Compte courant', opening: eur('1000.00') })
   await act.declareExpenseToUnknownPayee({

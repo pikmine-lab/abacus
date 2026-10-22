@@ -30,6 +30,12 @@ export interface ReportingSteps {
   readFlows(input: { kind: 'expense' | 'income'; by: FlowDimension; month: string }): Promise<FlowRow[]>
   /** What the person owns: every account's balance, and the holdings at their last known price. */
   readWealth(): Promise<Money>
+  /** What the running subscriptions and financings cost a month, in euros. */
+  readCommittedMonthlyCost(): Promise<Money>
+  /** How many occurrences have reached their date and wait to be confirmed. */
+  readOccurrencesToConfirm(): Promise<number>
+  /** The thresholds of the activities crossed, or about to be, this fiscal year. */
+  readThresholdAlerts(): Promise<{ about: string; state: 'crossed' | 'near' }[]>
 
   readPreferences(): Promise<Preferences>
   setReadingPreference(reading: Reading): Promise<void>

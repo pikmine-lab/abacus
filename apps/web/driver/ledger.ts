@@ -36,7 +36,7 @@ async function corrected(panel: Locator): Promise<void> {
 }
 
 export function ledgerSteps(ctx: WebContext): Partial<Steps> {
-  const { page, visit, pickDate, settle, exercised } = ctx
+  const { page, visit, pickDate, settle } = ctx
 
   /** Opens the declaration panel on a kind of movement, its date and amount filled. */
   async function declaring(kind: 'Dépense' | 'Revenu' | 'Virement', on: string, amount: Money) {
@@ -80,28 +80,24 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
 
   return {
     async declareExpense({ account, amount, payee, on }) {
-      await exercised('declareMovementAction')
       const panel = await declaring('Dépense', on, amount)
       await choose(panel, 'Compte débité', account)
       await actor(panel, 'Payé à (acteur)', payee)
       await submit(panel)
     },
     async declareIncome({ account, amount, payer, on }) {
-      await exercised('declareMovementAction')
       const panel = await declaring('Revenu', on, amount)
       await choose(panel, 'Compte crédité', account)
       await actor(panel, 'Reçu de (acteur)', payer)
       await submit(panel)
     },
     async declareTransfer({ from, to, amount, on }) {
-      await exercised('declareMovementAction')
       const panel = await declaring('Virement', on, amount)
       await choose(panel, 'Compte débité', from)
       await choose(panel, 'Vers le compte', to)
       await submit(panel)
     },
     async declareSharedExpense({ account, amount, payee, on, shares }) {
-      await exercised('declareMovementAction')
       const panel = await declaring('Dépense', on, amount)
       await choose(panel, 'Compte débité', account)
       await actor(panel, 'Payé à (acteur)', payee)
@@ -113,7 +109,6 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       await submit(panel)
     },
     async declareRefund({ account, amount, debtor, on, refunds }) {
-      await exercised('declareMovementAction')
       const panel = await declaring('Revenu', on, amount)
       await choose(panel, 'Compte crédité', account)
       await actor(panel, 'Reçu de (acteur)', debtor)
@@ -130,14 +125,12 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       await submit(panel)
     },
     async correctMovementAmount({ movement, amount }) {
-      await exercised('correctMovementAction')
       const panel = await correcting(movement)
       await panel.getByRole('textbox', { name: 'Montant' }).fill(typed(amount))
       await panel.getByRole('button', { name: 'Enregistrer' }).click()
       await corrected(panel)
     },
     async deleteMovement(movement) {
-      await exercised('deleteMovementAction')
       const panel = await correcting(movement)
       await panel.getByRole('button', { name: 'Supprimer', exact: true }).click()
       const confirm = page.getByRole('alertdialog', { name: 'Supprimer ce mouvement ?' })
@@ -147,7 +140,6 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       await panel.waitFor({ state: 'detached' })
     },
     async unlinkRefund(refund) {
-      await exercised('unlinkRefundAction')
       const panel = await correcting(refund)
       await panel.getByRole('button', { name: 'Détacher ce remboursement' }).click()
       const confirm = page.getByRole('alertdialog', { name: 'Détacher ce remboursement ?' })
@@ -164,7 +156,6 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       if (await refusal.count()) throw new Error((await refusal.allInnerTexts()).join(' ').trim())
     },
     async readNetSpent({ payee, month }) {
-      await exercised('screen:/analysis')
       await visit(`/analysis?period=month&ref=${month}&by=actor`)
       const ranking = page.getByRole('region', { name: 'Dépenses par acteur' })
       await ranking.waitFor()
@@ -176,7 +167,6 @@ export function ledgerSteps(ctx: WebContext): Partial<Steps> {
       return moneyOf(label.slice(payee.length + 2).split(', ')[0] as string)
     },
     async readMovementLinks({ counterparty, on }) {
-      await exercised('screen:/movements')
       await visit('/movements')
       await page
         .getByRole('button', {

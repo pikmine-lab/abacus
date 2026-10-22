@@ -8,13 +8,16 @@ export interface PreparationContext {
   accountId(name: string): Promise<string>
   /** The actor of that name, created when the user has none yet. */
   actorId(name: string): Promise<string>
+  /** The MCP endpoint the suite serves, for what a client of it does. */
+  mcpUrl: string
 }
 
 export const amountOf = (money: Money) => Number(money.amount)
 
-export function preparationContext(user: CaseUser): PreparationContext {
+export function preparationContext(user: CaseUser, mcpUrl: string): PreparationContext {
   return {
     user,
+    mcpUrl,
     async accountId(name) {
       const account = (await listAccounts(user.id)).find((a) => a.name === name)
       if (!account) throw new Error(`no account named "${name}"`)

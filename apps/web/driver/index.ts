@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
+import { fileURLToPath } from 'node:url'
+import { type CaseUser, type Driver, recordExercised, type Steps } from '@abacus/use-case-language'
 import { type Browser, type BrowserContext, chromium } from 'playwright'
 import { accountsSteps } from './accounts.ts'
 import { advancesSteps } from './advances.ts'
@@ -11,6 +12,7 @@ import { type WebEnvironment, webContext } from './context.ts'
 import { identitySteps } from './identity.ts'
 import { investmentsSteps } from './investments.ts'
 import { ledgerSteps } from './ledger.ts'
+import { actionNames, actionOf, screenOf } from './record.ts'
 import { reportingSteps } from './reporting.ts'
 import { venuesSteps } from './venues.ts'
 
@@ -22,9 +24,9 @@ export { webSurface } from './surface.ts'
  * web app the suite serves, the way a person uses it: through the screens,
  * their labels and their roles, never by calling a server action. Each case
  * gets its own browser context, signed in with the case user's cookie, its
- * clock on the suite's day, and every request that is not local cut. Each
- * gesture notes the server action it triggers, for the coverage guards. The
- * steps live in one module per domain.
+ * clock on the suite's day, and every request that is not local cut. What the
+ * page really sends is noted for the coverage guards: each server action it
+ * calls and each screen it lands on. The steps live in one module per domain.
  *
  * The browser speaks French: the labels are those of the French catalog.
  */
@@ -33,6 +35,7 @@ const LOCAL = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 export function webDriver(env: WebEnvironment): Driver {
   let browser: Browser | undefined
+  let actions: Map<string, string> | undefined
 
   async function signedIn(user: CaseUser): Promise<BrowserContext> {
     browser ??= await chromium.launch()
@@ -80,6 +83,19 @@ export function webDriver(env: WebEnvironment): Driver {
     async open(user) {
       const context = await signedIn(user)
       const page = await context.newPage()
+      actions ??= actionNames(
+        fileURLToPath(new URL('../.next/server/server-reference-manifest.json', import.meta.url)),
+      )
+      const names = actions
+      const noted: Promise<void>[] = []
+      const note = (name: string) => noted.push(recordExercised({ driver: 'web', name }))
+      page.on('request', (request) => {
+        const action = actionOf(request.headers(), names)
+        if (action) note(action)
+      })
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) note(screenOf(frame.url()))
+      })
       const ctx = webContext(page, env)
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
@@ -115,7 +131,13 @@ export function webDriver(env: WebEnvironment): Driver {
         ]),
       ) as Partial<Steps>
 
-      return { steps: pictured, close: () => context.close() }
+      return {
+        steps: pictured,
+        async close() {
+          await context.close()
+          await Promise.all(noted)
+        },
+      }
     },
     async shutdown() {
       await browser?.close()

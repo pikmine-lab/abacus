@@ -27,12 +27,14 @@ export type Offering = string | string[] | Missing
 export type Entry = Record<string, Offering>
 
 const PROTOCOL =
-  'An OAuth sign-in and consent are web pages by construction of the protocol: an MCP client opens them in the browser.'
+  'Signing up, signing in and consenting are web pages by construction of OAuth: an MCP client opens them in the browser, then holds a token.'
+const NO_SESSION =
+  'An MCP client holds a token, not a session: it has nothing to sign out of, and cutting its access is revoking its connection.'
 
 export const gestures: Record<string, Entry> = {
   'auth.sign-up': { web: 'screen:/login', mcp: { missingReason: PROTOCOL } },
   'auth.sign-in': { web: 'screen:/login', mcp: { missingReason: PROTOCOL } },
-  'auth.sign-out': { web: 'screen:/', mcp: { missingReason: PROTOCOL } },
+  'auth.sign-out': { web: 'screen:/', mcp: { missingReason: NO_SESSION } },
   'auth.consent': { web: 'screen:/consent', mcp: { missingReason: PROTOCOL } },
   'connection.revoke': { web: 'revokeAuthorizationAction', mcp: 'manage_connections · revoke' },
 

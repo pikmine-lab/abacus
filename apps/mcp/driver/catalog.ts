@@ -63,7 +63,10 @@ export function catalogSteps({ call, batch }: McpContext): Partial<Steps> {
       )
       if (refusal === null)
         throw new Error(`the expense to "${payee}" went through without creating it explicitly`)
-      if (!refusal.startsWith(`Unknown actor "${payee}"`)) throw new Error(refusal)
+      // Refused for that reason, read by its effect: no actor of that name came of it.
+      const actors = await call<{ name: string }[]>('manage_actors', { action: 'list' })
+      if (actors.some((a) => a.name === payee))
+        throw new Error(`the refused expense created "${payee}" all the same: ${refusal}`)
       await batch('declare_movements', { movements: [line], createUnknownActors: true })
     },
   }

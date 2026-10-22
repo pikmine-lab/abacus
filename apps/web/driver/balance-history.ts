@@ -22,10 +22,9 @@ function dayFromLong(text: string): string {
   return `${year}-${String(MONTHS.indexOf(month.toLowerCase()) + 1).padStart(2, '0')}-${date.padStart(2, '0')}`
 }
 
-export function balanceHistorySteps({ page, visit, exercised }: WebContext): Partial<Steps> {
+export function balanceHistorySteps({ page, visit }: WebContext): Partial<Steps> {
   return {
     async readBalanceAcrossTheMonth(account) {
-      await exercised('screen:/')
       await visit('/')
       // The home chart, read at its two ends the way a person reads it: by pointing at them.
       const wrap = page.getByRole('region', { name: 'Soldes' }).getByRole('img').first().locator('xpath=..')

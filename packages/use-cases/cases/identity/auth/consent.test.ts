@@ -7,7 +7,7 @@ useCase(
   'identity.auth.consent-refused-then-granted',
   async ({ act }) => {
     assert.equal(await act.answerAccessRequest('refuse'), 'no-token')
-    assert.equal(await act.answerAccessRequest('accept'), 'token')
+    assert.equal(await act.answerAccessRequest('accept'), 'reaches-data')
   },
   { gesture: 'auth.consent' },
 )

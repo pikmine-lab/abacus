@@ -1,5 +1,11 @@
 import { eur, type Steps } from '@abacus/use-case-language'
 import { listAccounts } from '../src/services/accounts.ts'
+import { activityAlerts } from '../src/services/activityAlerts.ts'
+import {
+  listCommitmentsWithProgress,
+  monthlyEquivalentEur,
+  pendingOccurrences,
+} from '../src/services/commitments.ts'
 import { holdingsValue } from '../src/services/investments.ts'
 import {
   languagePreference,
@@ -29,6 +35,25 @@ export function reportingSteps({ user }: PreparationContext): Partial<Steps> {
     async readWealth() {
       const balances = (await listAccounts(user.id)).reduce((sum, a) => sum + Number(a.balance), 0)
       return money(balances + (await holdingsValue(user.id)).value)
+    },
+    async readCommittedMonthlyCost() {
+      const running = (await listCommitmentsWithProgress(user.id)).filter(
+        (c) => !c.cancelledOn && c.direction === 'outgoing' && c.kind !== 'investment_plan',
+      )
+      return money(running.reduce((sum, c) => sum + monthlyEquivalentEur(c), 0))
+    },
+    async readOccurrencesToConfirm() {
+      return (await pendingOccurrences(user.id)).filter((p) => !p.ahead).length
+    },
+    async readThresholdAlerts() {
+      return (await activityAlerts(user.id)).flatMap(
+        ({ kind, subject }): { about: string; state: 'crossed' | 'near' }[] =>
+          kind === 'threshold_crossed'
+            ? [{ about: subject, state: 'crossed' }]
+            : kind === 'threshold_near'
+              ? [{ about: subject, state: 'near' }]
+              : [],
+      )
     },
     async readPreferences() {
       return {

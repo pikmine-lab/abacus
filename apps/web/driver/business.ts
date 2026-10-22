@@ -66,7 +66,7 @@ function amountIn(text: string) {
 /** A number as the screens write it ("21,2", "1 200"), back to a plain decimal string. */
 const numberOf = (text: string) => String(Number(text.replace(/[\s  %]/g, '').replace(',', '.')))
 
-export function businessSteps({ page, env, visit, pickDate, settle, exercised }: WebContext): Partial<Steps> {
+export function businessSteps({ page, env, visit, pickDate, settle }: WebContext): Partial<Steps> {
   /** Settles a panel whose success also resets it: its refusal, or any acknowledgement in it. */
   async function done(panel: Locator) {
     const refusal = panel.locator('.text-destructive').filter({ hasText: /\S/ })
@@ -222,7 +222,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
 
   return {
     async createActivity({ name, kind = 'business', startedOn, accounts, regimeLabel }) {
-      await exercised('createActivityAction')
       await visit('/settings?part=activities')
       await page.getByRole('button', { name: 'Activité', exact: true }).click()
       const wizard = page.getByRole('dialog', { name: 'Nouvelle activité' })
@@ -241,7 +240,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await done(wizard)
     },
     async editActivity(activity, { name, regimeLabel }) {
-      await exercised('editActivityAction')
       const fiche = await sheet(activity)
       if (name) await fiche.getByRole('textbox', { name: 'Nom' }).fill(name)
       if (regimeLabel !== undefined) await fiche.getByRole('textbox', { name: 'Régime' }).fill(regimeLabel)
@@ -251,7 +249,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
     async setActivityAccounts(activity, accounts) {
       // The sheet's form states the whole list, which is how the web corrects it.
-      await exercised('editActivityAction')
       const fiche = await sheet(activity)
       const form = fiche.locator('form').first()
       await check(accountBoxes(form), accounts)
@@ -259,27 +256,23 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(form)
     },
     async closeActivity(activity, on) {
-      await exercised('closeActivityAction')
       const region = (await sheet(activity)).getByRole('region', { name: 'Clore' })
       await pickDate(region, 'Dernier jour', on)
       await region.getByRole('button', { name: 'Clore' }).click()
       await settle(region)
     },
     async reopenActivity(activity) {
-      await exercised('reopenActivityAction')
       const region = (await sheet(activity)).getByRole('region', { name: 'Réouvrir' })
       await region.getByRole('button', { name: 'Réouvrir' }).click()
       await settle(region)
     },
     async setActivityExceptions(activity, categories) {
-      await exercised('setActivityExceptionsAction')
       const region = (await sheet(activity)).getByRole('region', { name: 'Exceptions de catégories' })
       await check(region.locator('label'), categories)
       await region.getByRole('button', { name: 'Enregistrer' }).click()
       await settle(region)
     },
     async readActivity(activity) {
-      await exercised('screen:/settings')
       const fiche = await sheet(activity)
       const listed = await page.getByRole('link', { name: leading(activity) }).innerText()
       const closed = listed.match(/close le (\d{2}\/\d{2}\/\d{2})/)
@@ -305,7 +298,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async declareInvoice({ activity, client, reference, issuedOn, dueOn, base, vatRate }) {
-      await exercised('declareInvoiceAction')
       await statement(activity)
       await page.getByRole('button', { name: 'Facture', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Enregistrer une facture' })
@@ -326,7 +318,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async correctInvoice(reference, { base, currency: code }) {
-      await exercised('correctInvoiceAction')
       await statement()
       await waiting(reference).menu.click()
       await page.getByRole('menuitem', { name: 'Modifier' }).click()
@@ -337,7 +328,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async remindInvoice(reference, on) {
-      await exercised('remindInvoiceAction')
       await statement()
       const { menu, row } = waiting(reference)
       await menu.click()
@@ -353,7 +343,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await row.getByText(/relancée le/).waitFor()
     },
     async cancelInvoice(reference, on) {
-      await exercised('cancelInvoiceAction')
       await statement()
       const { menu, row } = waiting(reference)
       await menu.click()
@@ -366,7 +355,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await gone(row)
     },
     async settleInvoice({ reference, account, on }) {
-      await exercised('settleInvoiceAction')
       await statement()
       const { row } = waiting(reference)
       const label = (await row.locator('p').first().innerText()).trim()
@@ -376,7 +364,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await gone(row)
     },
     async readInvoice(reference) {
-      await exercised('screen:/activity')
       await statement()
       const cells = await invoiceRow(reference)
       const [issuedOn, client, , base, vat, , receivable, state] = cells.map((c) => c.split('\n')[0]!.trim())
@@ -393,7 +380,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       }
     },
     async readInvoiceReminder(reference) {
-      await exercised('screen:/activity')
       await statement()
       const { row } = waiting(reference)
       if (!(await row.count())) return null
@@ -402,7 +388,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async createLevy({ activity, name, kind, validFrom, rate, period, source, settledIn }) {
-      await exercised('createLevyAction')
       await regime(activity, 'Règles')
       await page.getByRole('button', { name: 'Règle', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Nouvelle règle' })
@@ -418,7 +403,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async correctLevyRate(activity, levy, rate) {
-      await exercised('editLevyAction')
       const fiche = await rule(activity, levy)
       await fiche.getByRole('button', { name: 'Modifier' }).click()
       const panel = page.getByRole('dialog', { name: levy })
@@ -427,7 +411,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async supersedeLevy(activity, levy, { from, rate, source }) {
-      await exercised('supersedeLevyAction')
       const fiche = await rule(activity, levy)
       await fiche.getByRole('button', { name: 'Remplacer à une date' }).click()
       const panel = page.getByRole('dialog', { name: `Remplacer « ${levy} »` })
@@ -439,14 +422,12 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async closeLevy(activity, levy, on) {
-      await exercised('closeLevyAction')
       const region = (await rule(activity, levy)).getByRole('region', { name: 'Clore' })
       await pickDate(region, 'Dernier jour d’application', on)
       await region.getByRole('button', { name: 'Clore' }).click()
       await settle(region)
     },
     async deleteLevy(activity, levy) {
-      await exercised('deleteLevyAction')
       const fiche = await rule(activity, levy)
       await fiche
         .getByRole('region', { name: 'Supprimer' })
@@ -458,7 +439,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await fiche.waitFor({ state: 'detached' })
     },
     async addLevyModifier(activity, levy, { label, rateFactor, months }) {
-      await exercised('addModifierAction')
       const fiche = await rule(activity, levy)
       await fiche.getByRole('button', { name: 'Ajouter un modificateur' }).click()
       const panel = page.getByRole('dialog', { name: `Modificateur de ${levy}` })
@@ -471,14 +451,12 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(panel)
     },
     async removeLevyModifier(activity, levy, label) {
-      await exercised('removeModifierAction')
       const fiche = await rule(activity, levy)
       const remove = fiche.getByRole('button', { name: `Retirer ${label}` })
       await remove.click()
       await remove.waitFor({ state: 'detached' })
     },
     async readLevies(activity) {
-      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Règles')
       const levies = []
       for (let i = 0; i < (await entries('rules').count()); i++) {
@@ -502,7 +480,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async readStatement(activity, year) {
-      await exercised('screen:/activity')
       await statement(activity, year)
       const text = await page.getByRole('main').first().innerText()
       const revenue = text.match(/Chiffre d’affaires (?:encaissé|facturé)\n+([^\n]+)/)
@@ -511,7 +488,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       return { revenue: moneyOf(revenue[1]!), net: moneyOf(net[1]!), reserve: moneyOf(net[2]!) }
     },
     async readDueDate(due) {
-      await exercised('screen:/activity')
       const { row } = await dueRow(due)
       const text = await row.innerText()
       let status: DueStatus
@@ -528,7 +504,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       return { amount, status }
     },
     async declareNilReturn(due) {
-      await exercised('confirmNilReturnAction')
       const { row } = await dueRow(due)
       const file = row.getByRole('button', { name: 'Déclarée à 0' })
       await file.click()
@@ -536,7 +511,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await gone(file)
     },
     async withdrawNilReturn(due) {
-      await exercised('withdrawNilReturnAction')
       const { row, menuName } = await dueRow(due)
       await row.getByRole('button', { name: menuName }).click()
       // The menu closes before the server answers: wait for the action itself.
@@ -548,7 +522,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await gone(row.getByRole('button', { name: menuName }))
     },
     async payLevy({ amount, on, account, payee, ...due }) {
-      await exercised('confirmLevyPaymentAction')
       const { row, menuName } = await dueRow(due)
       await otherDay(row, menuName, 'Payé à une autre date…', on)
       await row.getByRole('textbox', { name: /^Montant réellement payé pour / }).fill(typed(amount))
@@ -560,7 +533,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async setActivityFigure(activity, { name, validFrom, value }) {
-      await exercised('setInputAction')
       await regime(activity, 'Paramètres')
       await page.getByRole('link', { name: 'Paramètre', exact: true }).click()
       const fiche = page.getByRole('article', { name: 'Nouveau paramètre' })
@@ -571,7 +543,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(fiche)
     },
     async removeActivityFigure(activity, { name, validFrom }) {
-      await exercised('removeInputAction')
       await regime(activity, 'Paramètres')
       const [y, m, d] = validFrom.split('-')
       await entries('inputs')
@@ -588,7 +559,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await remove.waitFor({ state: 'detached' })
     },
     async readActivityFigures(activity) {
-      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Paramètres')
       const figures = []
       for (const entry of await entries('inputs').all()) {
@@ -601,7 +571,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async createThreshold({ activity, label, value, consequence }) {
-      await exercised('createThresholdAction')
       await regime(activity, 'Seuils')
       await page.getByRole('link', { name: 'Seuil', exact: true }).click()
       const fiche = page.getByRole('article', { name: 'Nouveau seuil' })
@@ -612,7 +581,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(fiche)
     },
     async editThreshold(activity, label, { value }) {
-      await exercised('editThresholdAction')
       await regime(activity, 'Seuils')
       await entries('thresholds').filter({ hasText: label }).click()
       const fiche = page.getByRole('article', { name: label })
@@ -622,7 +590,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await settle(form)
     },
     async removeThreshold(activity, label) {
-      await exercised('removeThresholdAction')
       await regime(activity, 'Seuils')
       await entries('thresholds').filter({ hasText: label }).click()
       const fiche = page.getByRole('article', { name: label })
@@ -633,7 +600,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       await fiche.waitFor({ state: 'detached' })
     },
     async readThresholds(activity) {
-      await exercised('screen:/settings/activities/[activityId]')
       await regime(activity, 'Seuils')
       const thresholds = []
       for (let i = 0; i < (await entries('thresholds').count()); i++) {
@@ -648,8 +614,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
     },
 
     async previewRegime(walked) {
-      await exercised('regimeStepAction')
-      await exercised('regimePreviewAction')
       const wizard = await walk(walked, 'Aperçu')
       const block = wizard.getByRole('heading', { name: 'Les règles' }).locator('xpath=../..')
       // A rule's line opens on its name, before its status badge.
@@ -660,9 +624,6 @@ export function businessSteps({ page, env, visit, pickDate, settle, exercised }:
       return { model: model.trim(), rules }
     },
     async createActivityFromRegime({ name, startedOn, accounts, ...walked }) {
-      await exercised('regimeStepAction')
-      await exercised('regimePreviewAction')
-      await exercised('createActivityFromRegimeAction')
       const wizard = await walk(walked, name)
       await wizard.getByRole('button', { name: 'Continuer' }).click()
       await pickDate(wizard, 'Début', startedOn)

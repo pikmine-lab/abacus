@@ -1,5 +1,16 @@
-import type { Steps } from '@abacus/use-case-language'
-import type { McpContext } from './context.ts'
+import { directsToSignIn, type Steps } from '@abacus/use-case-language'
+import { type McpContext, ToolRefusal } from './context.ts'
+
+/** A refusal of the server, as the case reads it; any other failure is not one. */
+async function refusedOr(gesture: () => Promise<unknown>): Promise<'corrected' | 'refused'> {
+  try {
+    await gesture()
+    return 'corrected'
+  } catch (error) {
+    if (error instanceof ToolRefusal) return 'refused'
+    throw error
+  }
+}
 
 export function identitySteps({ url, call }: McpContext): Partial<Steps> {
   return {
@@ -9,6 +20,7 @@ export function identitySteps({ url, call }: McpContext): Partial<Steps> {
         headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
       })
+      if (await directsToSignIn(response)) return 'sent-to-sign-in'
       return response.status === 401 ? 'refused' : 'let-in'
     },
     async readConnectedApps() {
@@ -33,13 +45,17 @@ export function identitySteps({ url, call }: McpContext): Partial<Steps> {
       const { accounts } = await call<{ accounts: { name: string }[] }>('manage_accounts', { action: 'list' })
       return accounts.map((a) => a.name)
     },
+    async readMovementCounterparties() {
+      const { movements } = await call<{ movements: { counterparty: string }[] }>('list_movements', {})
+      return movements.map((m) => m.counterparty)
+    },
     async correctSomeoneElsesMovement(movementId, amount) {
-      try {
-        await call('fix_movement', { movement: movementId, action: 'correct', amount: Number(amount.amount) })
-        return 'corrected'
-      } catch {
-        return 'refused'
-      }
+      return refusedOr(() =>
+        call('fix_movement', { movement: movementId, action: 'correct', amount: Number(amount.amount) }),
+      )
+    },
+    async correctSomeoneElsesCommitment(commitmentId, label) {
+      return refusedOr(() => call('update_commitment', { commitment: commitmentId, label }))
     },
   }
 }

@@ -36,6 +36,30 @@ export function reportingSteps({ call }: McpContext): Partial<Steps> {
       const balances = overview.accounts.reduce((sum, a) => sum + a.balance, 0)
       return money(balances + (overview.holdings?.value ?? 0))
     },
+    async readCommittedMonthlyCost() {
+      return money((await call<{ monthlyCommittedCost: number }>('get_overview', {})).monthlyCommittedCost)
+    },
+    async readOccurrencesToConfirm() {
+      const { pendingOccurrences } = await call<{ pendingOccurrences: { ahead?: string }[] }>(
+        'get_overview',
+        {},
+      )
+      return pendingOccurrences.filter((p) => !p.ahead).length
+    },
+    async readThresholdAlerts() {
+      const { activityAlerts } = await call<{ activityAlerts?: { alert: string; about: string }[] }>(
+        'get_overview',
+        {},
+      )
+      return (activityAlerts ?? []).flatMap(
+        ({ alert, about }): { about: string; state: 'crossed' | 'near' }[] =>
+          alert === 'threshold_crossed'
+            ? [{ about, state: 'crossed' }]
+            : alert === 'threshold_near'
+              ? [{ about, state: 'near' }]
+              : [],
+      )
+    },
     async readPreferences() {
       return await call<Preferences>('manage_preferences', { action: 'show' })
     },

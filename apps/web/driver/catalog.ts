@@ -27,7 +27,7 @@ async function listed(
 }
 
 export function catalogSteps(context: WebContext): Partial<Steps> {
-  const { page, visit, settle, exercised } = context
+  const { page, visit, settle } = context
   /** The fiche of an entry, opened from its row in the list. */
   async function fiche(part: string, name: string) {
     await visit(`/settings?part=${part}`)
@@ -43,7 +43,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
 
   return {
     async createCategory({ name, group }) {
-      await exercised('createCategoryAction')
       await visit('/settings?part=categories&entry=new')
       const sheet = page.getByRole('main').getByRole('article', { name: 'Nouvelle catégorie' })
       await sheet.getByRole('textbox', { name: 'Nom' }).fill(name)
@@ -56,7 +55,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(sheet)
     },
     async editCategory({ category, name, group }) {
-      await exercised('editCategoryAction')
       const sheet = await fiche('categories', category)
       if (name) await sheet.getByRole('textbox', { name: 'Nom' }).fill(name)
       if (group !== undefined) {
@@ -69,7 +67,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(sheet)
     },
     async readCategories() {
-      await exercised('screen:/settings')
       await visit('/settings?part=categories')
       const categories = []
       let group: string | null = null
@@ -81,7 +78,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       return categories
     },
     async createActor(name) {
-      await exercised('createActorAction')
       await visit('/settings?part=actors&entry=new')
       const sheet = page.getByRole('main').getByRole('article', { name: 'Nouvel acteur' })
       await sheet.getByRole('textbox', { name: 'Nom' }).fill(name)
@@ -89,7 +85,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(sheet)
     },
     async editActor({ actor, name, activity }) {
-      await exercised('editActorAction')
       const sheet = await fiche('actors', actor)
       if (name) await sheet.getByRole('textbox', { name: 'Nom' }).fill(name)
       if (activity !== undefined) {
@@ -100,7 +95,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(sheet)
     },
     async addAlias({ actor, alias }) {
-      await exercised('addAliasAction')
       const sheet = await fiche('actors', actor)
       const aliases = sheet.getByRole('region', { name: 'Alias' })
       await aliases.getByRole('textbox', { name: 'Nouvel alias' }).fill(alias)
@@ -108,7 +102,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(aliases)
     },
     async mergeActors({ keep, absorb }) {
-      await exercised('mergeActorsAction')
       const sheet = await fiche('actors', absorb)
       const merge = sheet.getByRole('region', { name: 'Fusionner' })
       await merge.getByRole('combobox', { name: 'Fusionner dans' }).click()
@@ -119,8 +112,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
     },
     async reattachActorHistory(actor) {
       // The confirmation counts what it will take before it is given.
-      await exercised('countReattachableAction')
-      await exercised('reattachActorHistoryAction')
       const sheet = await fiche('actors', actor)
       await sheet
         .getByRole('region', { name: 'Historique' })
@@ -132,7 +123,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       await settle(dialog)
     },
     async readActors() {
-      await exercised('screen:/settings')
       await visit('/settings?part=actors')
       if ((await page.getByRole('searchbox').count()) === 0) return []
       return (await listed(page, 'actors')).map((row) => ({
@@ -143,7 +133,6 @@ export function catalogSteps(context: WebContext): Partial<Steps> {
       }))
     },
     async previewReattachActorHistory(actor) {
-      await exercised('countReattachableAction')
       const sheet = await fiche('actors', actor)
       await sheet
         .getByRole('region', { name: 'Historique' })

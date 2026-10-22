@@ -50,7 +50,7 @@ function amountLabel(type: OperationType): string {
   return 'Montant des frais'
 }
 
-export function investmentsSteps({ page, visit, pickDate, settle, exercised }: WebContext): Partial<Steps> {
+export function investmentsSteps({ page, visit, pickDate, settle }: WebContext): Partial<Steps> {
   /** Types a query in a search field and waits for the market's answer to be drawn. */
   async function searchIn(panel: Locator, query: string): Promise<void> {
     const answered = page.waitForResponse((r) => r.url().includes('/api/instruments/search'))
@@ -89,7 +89,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
 
   return {
     async searchInstruments(query) {
-      await exercised('screen:/investments')
       const panel = await openFollow()
       await searchIn(panel, query)
       const hits = await panel.locator('[cmdk-item][data-value^="new:"]').evaluateAll((items) =>
@@ -109,7 +108,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       })
     },
     async followInstrument({ query, ticker, as }) {
-      await exercised('declareAssetAction')
       const panel = await openFollow()
       await searchIn(panel, query)
       await panel.locator(`[cmdk-item][data-value="new:${ticker}" i]`).click()
@@ -118,7 +116,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async followUnquotedAsset({ name, nature }) {
-      await exercised('declareAssetAction')
       const panel = await openFollow()
       await panel.getByRole('button', { name: /Aucune source ne le cote/ }).click()
       await panel.getByRole('textbox', { name: 'Sous quel nom' }).fill(name)
@@ -128,7 +125,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async renameAsset({ asset, to }) {
-      await exercised('renameAssetAction')
       await visit('/investments')
       await page
         .getByRole('button', { name: `Actions sur ${asset}`, exact: true })
@@ -141,7 +137,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async stopFollowing(asset) {
-      await exercised('stopFollowingAction')
       await visit('/investments')
       await page.getByRole('button', { name: `Actions sur ${asset}`, exact: true }).click()
       await page.getByRole('menuitem', { name: 'Arrêter de suivre' }).click()
@@ -151,11 +146,9 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
     },
     async refreshPrices() {
       // Prices are refreshed as the screen is read.
-      await exercised('screen:/investments')
       await visit('/investments')
     },
     async readFollowedAssets() {
-      await exercised('screen:/investments')
       await visit('/investments')
       const block = page.getByRole('region', { name: 'Suivis' })
       if ((await block.count()) === 0) return []
@@ -168,7 +161,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       return rows.map((row) => ({ name: row.name, price: row.price === '—' ? null : moneyOf(row.price) }))
     },
     async recordOperation({ account, type, asset, quantity, amount, on }) {
-      await exercised('recordOperationAction')
       await visit('/investments')
       await page.getByRole('button', { name: 'Déclarer une opération' }).click()
       const panel = page.getByRole('dialog', { name: 'Opération' })
@@ -198,7 +190,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async correctOperation(ref, { amount, quantity, on }) {
-      await exercised('correctOperationAction')
       await (await operationMenu(ref)).click()
       await page.getByRole('menuitem', { name: 'Corriger' }).click()
       const panel = page.getByRole('dialog', {
@@ -212,7 +203,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async deleteOperation(ref) {
-      await exercised('deleteOperationAction')
       await (await operationMenu(ref)).click()
       await page.getByRole('menuitem', { name: 'Supprimer' }).click()
       const dialog = page.getByRole('alertdialog')
@@ -220,7 +210,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(dialog)
     },
     async readOperations() {
-      await exercised('screen:/investments')
       await visit('/investments')
       const block = page.getByRole('region', { name: 'Opérations' })
       const rows = await block.getByRole('button', { name: /^Actions sur / }).evaluateAll((buttons) =>
@@ -248,7 +237,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       }))
     },
     async readPositions() {
-      await exercised('screen:/investments')
       await visit('/investments')
       const block = page.getByRole('region', { name: 'Positions' })
       if ((await block.count()) === 0) return []
@@ -281,7 +269,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       })
     },
     async readInvestmentAccounts() {
-      await exercised('screen:/investments')
       await visit('/investments')
       const block = page.getByRole('region', { name: 'Comptes' })
       const figures = await block
@@ -300,7 +287,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       })
     },
     async readValuationHistory() {
-      await exercised('screen:/investments')
       // The curve, read at its two ends the way a person reads it: by
       // pointing at them. Each reading has its own chart.
       const read = async (chart: 'value' | 'performance') => {
@@ -333,7 +319,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       return { first: day(value.first, performance.first), last: day(value.last, performance.last) }
     },
     async setAssetPrice({ asset, price, on }) {
-      await exercised('setAssetPriceAction')
       await openAssetPage(asset)
       await page.getByRole('button', { name: 'Saisir un cours' }).click()
       const panel = page.getByRole('dialog', { name: `Cours de ${asset}` })
@@ -343,7 +328,6 @@ export function investmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async readPriceHistory(asset) {
-      await exercised('screen:/investments/[assetId]')
       await openAssetPage(asset)
       const chart = page.getByRole('region', { name: 'Cours' })
       const days = Number((await chart.getByText(/séances connues$/).innerText()).match(/^(\d+)/)?.[1])

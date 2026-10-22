@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { type CaseUser, type Driver, eur, type Steps } from '@abacus/use-case-language'
-import { caseTestOptions, playCase } from './play.ts'
+import { caseTestOptions, playCase, playedOn } from './play.ts'
 
 /** The fake back every fake driver writes to, one ledger per user, as real drivers share the app. */
 const ledgers = new Map<string, Map<string, number>>()
@@ -138,4 +138,16 @@ test('a case marked unstable with its reason is played, and its failure is repor
 
 test('a case not marked unstable is an ordinary test', () => {
   assert.deepEqual(caseTestOptions('x', {}), {})
+})
+
+test('a third declared driver plays every case, and a case about a gesture wherever the inventory does not say it is missing', () => {
+  const declared = [{ name: 'web' }, { name: 'mcp' }, { name: 'cli' }]
+  assert.deepEqual(
+    playedOn({}, declared).map((d) => d.name),
+    ['web', 'mcp', 'cli'],
+  )
+  assert.deepEqual(
+    playedOn({ gesture: 'auth.sign-up' }, declared).map((d) => d.name),
+    ['web', 'cli'],
+  )
 })

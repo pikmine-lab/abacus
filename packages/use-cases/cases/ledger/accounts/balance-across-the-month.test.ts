@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { eur } from '@abacus/use-case-language'
 import { useCase } from '../../../src/play.ts'
 
-// Round amounts: the web draws the balances to the euro.
+// Round amounts: some interfaces draw the balances to the euro.
 useCase('ledger.account.balance-across-the-month', async ({ arrange, act }) => {
   await arrange.createAccount({ name: 'Compte courant', opening: eur('1000.00'), openedOn: '2026-06-01' })
   await arrange.declareExpense({

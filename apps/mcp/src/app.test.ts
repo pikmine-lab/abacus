@@ -69,10 +69,15 @@ function pkce(): { verifier: string; challenge: string } {
 }
 
 /** Runs authorize then consent, as the browser does, and returns the code. */
-async function authorize(cookie: string, redirectUri: string, challenge: string): Promise<string> {
+async function authorize(
+  cookie: string,
+  redirectUri: string,
+  challenge: string,
+  clientId: string = CLIENT_ID,
+): Promise<string> {
   const query = new URLSearchParams({
     response_type: 'code',
-    client_id: CLIENT_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     scope: `${MCP_SCOPE} offline_access`,
     state: 'state-1',
@@ -296,4 +301,26 @@ test('the MCP lists the connected applications as the web does, and revokes one'
   const again = await call({ action: 'revoke', connectionId: web!.consentId })
   assert.equal(again.isError, true)
   assert.equal((await call({ action: 'revoke' })).isError, true)
+})
+
+test('the MCP lists the connected applications page by page', async () => {
+  const { cookie, userId } = await signUp()
+  await connect(cookie)
+  await authorize(
+    cookie,
+    'https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect',
+    pkce().challenge,
+    PREREGISTERED_CLIENT_IDS.microsoft365Copilot,
+  )
+  const call = await toolsOf(userId)
+  const page = async (offset: number) =>
+    ((await call({ action: 'list', limit: 1, offset })).json.connections as { name: string }[]).map(
+      (c) => c.name,
+    )
+
+  const [first, second, third] = [await page(0), await page(1), await page(2)]
+  assert.equal(first.length, 1)
+  assert.equal(second.length, 1)
+  assert.deepEqual([...first, ...second].sort(), ['Cursor', 'Microsoft 365 Copilot'])
+  assert.deepEqual(third, [])
 })

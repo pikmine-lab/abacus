@@ -62,7 +62,7 @@ async function pickDayOfMonth(page: Page, scope: Locator, label: string, day: nu
     .click()
 }
 
-export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebContext): Partial<Steps> {
+export function accountsSteps({ page, visit, pickDate, settle }: WebContext): Partial<Steps> {
   /** The row of an account in its list, the closed ones included. */
   function accountRow(account: string) {
     return page
@@ -113,7 +113,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
 
   return {
     async createAccount({ name, opening, openedOn }) {
-      await exercised('createAccountAction')
       await visit('/accounts')
       await page.getByRole('button', { name: 'Ajouter un compte' }).click()
       const panel = page.getByRole('dialog', { name: 'Nouveau compte' })
@@ -125,7 +124,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async readAccountBalance(account) {
-      await exercised('screen:/accounts')
       await visit('/accounts')
       const row = page
         .getByRole('button', { name: `Actions sur ${account}`, exact: true })
@@ -136,7 +134,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       return moneyOf(amounts[amounts.length - 1] as string)
     },
     async editAccount({ account, name, institution, opening, openedOn }) {
-      await exercised('editAccountAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Modifier')
       const panel = page.getByRole('dialog', { name: account })
@@ -149,7 +146,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async closeAccount(account, on) {
-      await exercised('closeAccountAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Clore le compte')
       const dialog = page.getByRole('alertdialog', { name: `Clore « ${account} » ?` })
@@ -158,7 +154,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(dialog)
     },
     async reopenAccount(account) {
-      await exercised('reopenAccountAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Réouvrir')
       const dialog = page.getByRole('alertdialog', { name: `Réouvrir « ${account} » ?` })
@@ -166,7 +161,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(dialog)
     },
     async readAccount(account) {
-      await exercised('screen:/accounts')
       await visit('/accounts')
       const row = accountRow(account)
       const amounts = amountsIn(await row.innerText())
@@ -190,7 +184,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
     },
 
     async createCard(input) {
-      await exercised('createCardAction')
       await visit('/accounts')
       await openAccountMenu(input.account, 'Ajouter une carte')
       const panel = page.getByRole('dialog', { name: 'Nouvelle carte' })
@@ -206,7 +199,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async editCard({ card, name, expiry }) {
-      await exercised('editCardAction')
       await visit('/accounts')
       await revealCards()
       await page.getByRole('button', { name: `Actions sur ${card}`, exact: true }).click()
@@ -218,7 +210,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async deleteCard(card) {
-      await exercised('deleteCardAction')
       await visit('/accounts')
       await revealCards()
       await page.getByRole('button', { name: `Actions sur ${card}`, exact: true }).click()
@@ -228,7 +219,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(dialog)
     },
     async readCards(account) {
-      await exercised('screen:/accounts')
       await visit('/accounts')
       await revealCards()
       const row = page.getByRole('group').filter({ has: page.getByText(account, { exact: true }) })
@@ -260,7 +250,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       return found
     },
     async validateStatement({ card, cutOff, debitedOn }) {
-      await exercised('confirmStatementAction')
       await visitCard(card)
       await statementFold(cutOff).getByRole('button', { name: 'Valider', exact: true }).click()
       const panel = page.getByRole('dialog', { name: `Relevé de ${card}` })
@@ -269,7 +258,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async undoStatement({ card, cutOff }) {
-      await exercised('undoStatementAction')
       await visitCard(card)
       await statementFold(cutOff).getByRole('button', { name: 'Corriger', exact: true }).click()
       const panel = page.getByRole('dialog', { name: `Relevé de ${card}` })
@@ -277,7 +265,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async readCardStatements(card) {
-      await exercised('screen:/accounts/cards/[cardId]')
       await visitCard(card)
       const folds = page.getByRole('region', { name: 'Relevés' }).getByRole('group')
       const statements = []
@@ -299,7 +286,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
     },
 
     async recordBalanceCheck({ account, balance, on, note }) {
-      await exercised('recordBalanceCheckAction')
       await visit('/accounts')
       await openAccountMenu(account, 'Pointer le solde')
       const panel = page.getByRole('dialog', { name: `Pointer ${account}` })
@@ -310,7 +296,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async correctBalanceCheck({ account, on, balance, note }) {
-      await exercised('correctBalanceCheckAction')
       await checkMenu(account, on, 'Corriger')
       const panel = page.getByRole('dialog', { name: `Pointage du ${shownDay(on)}` })
       await panel.getByRole('textbox', { name: 'Solde réel (€)' }).fill(typed(balance))
@@ -319,14 +304,12 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async deleteBalanceCheck({ account, on }) {
-      await exercised('deleteBalanceCheckAction')
       await checkMenu(account, on, 'Supprimer')
       const dialog = page.getByRole('alertdialog', { name: `Supprimer le pointage du ${shownDay(on)} ?` })
       await dialog.getByRole('button', { name: 'Supprimer', exact: true }).click()
       await settle(dialog)
     },
     async settleCheckGap({ account, on, actor }) {
-      await exercised('settleCheckGapAction')
       await checkMenu(account, on, 'Solder l’écart')
       const panel = page.getByRole('dialog', { name: 'Solder l’écart' })
       await panel.getByRole('combobox', { name: 'Attribué à' }).fill(actor)
@@ -334,7 +317,6 @@ export function accountsSteps({ page, visit, pickDate, settle, exercised }: WebC
       await settle(panel)
     },
     async readBalanceChecks(account) {
-      await exercised('screen:/accounts')
       const sheet = await openChecks(account)
       const menus = sheet.getByRole('button', { name: /^Actions sur le pointage du / })
       const checks: Awaited<ReturnType<Steps['readBalanceChecks']>> = []

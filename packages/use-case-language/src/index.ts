@@ -94,3 +94,16 @@ export async function recordExercised(entry: Exercised): Promise<void> {
 export type * from './steps/catalog.ts'
 export type * from './steps/investments.ts'
 export type * from './steps/reporting.ts'
+
+/**
+ * Whether a refusal of the MCP server tells its client where to sign in: a 401
+ * whose challenge names the protected resource's metadata, which names the
+ * authorization server to go to.
+ */
+export async function directsToSignIn(response: Response): Promise<boolean> {
+  if (response.status !== 401) return false
+  const metadata = /resource_metadata="([^"]+)"/.exec(response.headers.get('www-authenticate') ?? '')?.[1]
+  if (!metadata) return false
+  const document = (await (await fetch(metadata)).json()) as { authorization_servers?: string[] }
+  return (document.authorization_servers ?? []).length > 0
+}

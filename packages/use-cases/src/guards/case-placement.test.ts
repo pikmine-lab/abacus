@@ -30,6 +30,27 @@ test('a case that imports a driver or an interface is refused with case_outside_
   )
 })
 
+test('a case that reaches a driver by a dynamic import or a re-export is refused with case_outside_suite', () => {
+  assert.deepEqual(
+    problems({
+      'packages/use-cases/cases/ledger/movements/x.test.ts':
+        "const { webDriver } = await import('@abacus/web/driver')\nuseCase('x', async () => {})",
+      'packages/use-cases/cases/ledger/movements/y.test.ts':
+        "export { mcpDriver } from '@abacus/mcp/driver'\nuseCase('y', async () => {})",
+    }),
+    [
+      'case_outside_suite packages/use-cases/cases/ledger/movements/x.test.ts imports @abacus/web/driver',
+      'case_outside_suite packages/use-cases/cases/ledger/movements/y.test.ts imports @abacus/mcp/driver',
+    ],
+  )
+})
+
+test('the code of the suite itself is searched, its player aside', () => {
+  const paths = repositorySources().map((source) => source.path)
+  assert.ok(paths.includes('packages/use-cases/src/play.test.ts'))
+  assert.ok(!paths.includes('packages/use-cases/src/play.ts'))
+})
+
 test('a case that imports only the language, the player and Node passes', () => {
   assert.deepEqual(
     problems({

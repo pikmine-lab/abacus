@@ -1,10 +1,9 @@
 import type { Steps } from '@abacus/use-case-language'
 import type { WebContext } from './context.ts'
 
-export function venuesSteps({ page, visit, exercised }: WebContext): Partial<Steps> {
+export function venuesSteps({ page, visit }: WebContext): Partial<Steps> {
   return {
     async readVenuesOf(query) {
-      await exercised('screen:/investments')
       await visit('/investments')
       await page.getByRole('main').getByRole('button', { name: 'Suivre', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Suivre un actif' })

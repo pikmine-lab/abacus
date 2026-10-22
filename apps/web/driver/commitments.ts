@@ -39,7 +39,7 @@ const EXPENSES = '/recurring-expenses'
 const INCOMES = '/recurring-income'
 const PLACEMENTS = '/investments'
 
-export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: WebContext): Partial<Steps> {
+export function commitmentsSteps({ page, visit, pickDate, settle }: WebContext): Partial<Steps> {
   /** Picks an option of a select, by its label. */
   async function choose(scope: Locator, label: string, option: string) {
     await scope.getByRole('combobox', { name: label, exact: true }).click()
@@ -121,7 +121,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
   }
 
   async function readRows(path: string): Promise<string[]> {
-    await exercised(`screen:${path}`)
     await visit(path)
     if (path === PLACEMENTS) {
       await unfoldPlacements()
@@ -153,7 +152,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
 
   return {
     async createSubscription({ label, payee, account, amount, firstDueOn }) {
-      await exercised('createSubscriptionAction')
       await visit(EXPENSES)
       await page.getByRole('button', { name: 'Ajouter', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Nouvelle dépense récurrente' })
@@ -166,7 +164,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async createRecurringIncome({ label, payer, account, amount, firstDueOn }) {
-      await exercised('createSubscriptionAction')
       await visit(INCOMES)
       await page.getByRole('button', { name: 'Ajouter', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Nouveau revenu récurrent' })
@@ -179,7 +176,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async createInvestmentPlan({ label, from, to, asset, amount, firstDueOn }) {
-      await exercised('createInvestmentPlanAction')
       await visit(PLACEMENTS)
       await page.getByRole('button', { name: 'Programmer un versement' }).click()
       const panel = page.getByRole('dialog', { name: 'Versement programmé' })
@@ -195,7 +191,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async createFinancing({ label, creditor, account, total, instalments, firstDueOn }) {
-      await exercised('createFinancingAction')
       await visit(EXPENSES)
       await page.getByRole('button', { name: 'Ajouter', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Nouvelle dépense récurrente' })
@@ -210,7 +205,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async reviseSchedule({ financing, plan }) {
-      await exercised('reviseScheduleAction')
       const { panel, amounts } = await scheduleLines(financing)
       while ((await amounts.count()) < plan.length)
         await panel.getByRole('button', { name: 'Ajouter une échéance' }).click()
@@ -231,7 +225,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async readSchedule(financing) {
-      await exercised(`screen:${EXPENSES}`)
       const { amounts } = await scheduleLines(financing)
       const lines = []
       for (const amount of await amounts.all()) {
@@ -242,13 +235,11 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       return lines
     },
     async confirmOccurrence(label) {
-      await exercised('confirmOccurrenceAction')
       const occurrence = await pending(label)
       await occurrence.getByRole('button', { name: 'Confirmer', exact: true }).click()
       await confirmed(occurrence)
     },
     async confirmPlacement({ plan, quantity }) {
-      await exercised('confirmOccurrenceAction')
       const occurrence = await pending(plan)
       await occurrence
         .getByRole('textbox', { name: 'Quantité achetée, telle que le courtier l’affiche' })
@@ -257,14 +248,12 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await confirmed(occurrence)
     },
     async skipOccurrence(label) {
-      await exercised('skipOccurrenceAction')
       const occurrence = await pending(label)
       await occurrence.getByRole('button', { name: `Actions sur ${label}`, exact: true }).click()
       await page.getByRole('menuitem', { name: 'Passer cette échéance' }).getByRole('button').click()
       await confirmed(occurrence)
     },
     async judgeSubscription({ subscription, judgment, note }) {
-      await exercised('setJudgmentAction')
       if (note !== undefined) {
         // A note is written in a panel of its own, the judgment posed with it.
         await rowMenu(subscription, 'Annoter le jugement')
@@ -287,7 +276,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
         .waitFor()
     },
     async renameCommitment({ commitment, label }) {
-      await exercised('editCommitmentAction')
       await rowMenu(commitment, 'Modifier')
       const panel = page.getByRole('dialog', { name: commitment })
       await panel.getByRole('textbox', { name: 'Nom' }).fill(label)
@@ -295,7 +283,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async changeCommitmentAccount({ commitment, account }) {
-      await exercised('changeCommitmentAccountAction')
       await rowMenu(commitment, 'Changer de compte')
       const panel = page.getByRole('dialog', { name: commitment })
       await panel.getByRole('combobox').first().click()
@@ -304,7 +291,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async changeCommitmentAmount({ commitment, amount }) {
-      await exercised('changePriceAction')
       await rowMenu(commitment, /^Changer (le prix|le montant)$/)
       const panel = page.getByRole('dialog', { name: commitment })
       await panel.getByRole('textbox').first().fill(typed(amount))
@@ -312,7 +298,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(panel)
     },
     async endCommitment(commitment, on) {
-      await exercised('cancelCommitmentAction')
       const { row } = await locate(commitment)
       await row.getByRole('button', { name: `Actions sur ${commitment}`, exact: true }).click()
       // Each kind words its end: a subscription is cancelled, a financing closed, a placement stopped.
@@ -325,7 +310,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
       await settle(dialog)
     },
     async receiveForCommitment({ commitment, account, payer, amount, on }) {
-      await exercised('declareMovementAction')
       await visit('/movements')
       await page.getByRole('button', { name: 'Déclarer', exact: true }).click()
       const panel = page.getByRole('dialog', { name: 'Déclarer un mouvement' })
@@ -342,7 +326,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
     },
     async readCommitment(label) {
       const { path, row, account } = await locate(label)
-      await exercised(`screen:${path}`)
       const text = await row.innerText()
       const amount = amountsIn(text).pop()
       if (!amount) throw new Error(`no amount on the row of "${label}": ${text}`)
@@ -371,7 +354,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
     },
     async readCommitmentTerms(label) {
       const { path, row } = await locate(label)
-      await exercised(`screen:${path}`)
       // Partly paid back: the row says what comes back of each occurrence and
       // from whom, and the page no month's worth per line. Read on monthly
       // subscriptions only, where each occurrence is a month: the row does not
@@ -410,7 +392,6 @@ export function commitmentsSteps({ page, visit, pickDate, settle, exercised }: W
         [EXPENSES, 'Terminés'],
         [INCOMES, 'Arrêtés'],
       ] as const) {
-        await exercised(`screen:${path}`)
         await visit(path)
         const details = page.locator('details', {
           has: page.getByRole('heading', { name: fold, exact: true }),

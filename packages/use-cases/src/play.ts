@@ -94,6 +94,16 @@ export function caseTestOptions(id: string, options: CaseOptions): { todo?: stri
 }
 
 /**
+ * The drivers a case is played on, among those declared: all of them, or, for a
+ * case about a gesture, each one the inventory does not give a reason for not
+ * offering it. A driver the inventory says nothing of plays it too.
+ */
+export function playedOn<D extends { name: string }>(options: CaseOptions, declared: D[]): D[] {
+  const entry = options.gesture === undefined ? undefined : gestures[options.gesture]
+  return declared.filter((d) => offers(entry, d.name))
+}
+
+/**
  * Declares a use case, played as one test per declared driver. Called only from
  * a file under cases/, one case per file. A case about a gesture some interface
  * does not offer names it: it is then played only where the inventory says the
@@ -102,16 +112,15 @@ export function caseTestOptions(id: string, options: CaseOptions): { todo?: stri
 export function useCase(id: string, body: UseCase['body'], options: CaseOptions = {}): void {
   const declared = drivers()
   const testOptions = caseTestOptions(id, options)
-  const entry = options.gesture === undefined ? undefined : gestures[options.gesture]
-  if (options.gesture !== undefined && !entry)
+  if (options.gesture !== undefined && !gestures[options.gesture])
     throw new Error(`${id}: no gesture ${options.gesture} in the inventory`)
   describe(id, () => {
-    for (const driver of declared.filter((d) => offers(entry, d.name)))
+    for (const driver of playedOn(options, declared))
       test(driver.name, testOptions, () =>
-        playCase({ id, body }, driver, { preparation: preparationDriver, newUser }),
+        playCase({ id, body }, driver, { preparation: preparationDriver(), newUser }),
       )
     after(async () => {
-      for (const driver of [...declared, preparationDriver]) await driver.shutdown?.()
+      for (const driver of [...declared, preparationDriver()]) await driver.shutdown?.()
     })
   })
 }

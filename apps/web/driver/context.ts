@@ -1,4 +1,4 @@
-import { eur, type Money, recordExercised } from '@abacus/use-case-language'
+import { eur, type Money } from '@abacus/use-case-language'
 import type { Locator, Page } from 'playwright'
 
 /**
@@ -15,12 +15,12 @@ export interface WebContext {
   pickDate(scope: Locator, label: string, day: string): Promise<void>
   /** After a submit: throws the form's refusal, returns on its acknowledgement or when the panel closes. */
   settle(panel: Locator): Promise<void>
-  /** Notes the server action a gesture triggers, or the screen a read reads (`screen:/accounts`). */
-  exercised(name: string): Promise<void>
 }
 
 export interface WebEnvironment {
   webUrl: string
+  /** The MCP endpoint the suite serves, for what an AI client does once let in. */
+  mcpUrl: string
   today: string
   timeoutMs: number
 }
@@ -114,9 +114,6 @@ export function webContext(page: Page, env: WebEnvironment): WebContext {
       if (await crashed.count())
         throw new Error(`the page failed to render: ${await crashed.first().innerText()}`)
       if (await refusal.count()) throw new Error((await refusal.allInnerTexts()).join(' ').trim())
-    },
-    async exercised(name) {
-      await recordExercised({ driver: 'web', name })
     },
   }
 }

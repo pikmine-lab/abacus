@@ -13,7 +13,7 @@ const DIMENSIONS: Record<FlowDimension, string> = {
 
 const LANGUAGES: Record<string, Language> = { Navigateur: null, Browser: null, Français: 'fr', English: 'en' }
 
-export function reportingSteps({ page, visit, exercised }: WebContext): Partial<Steps> {
+export function reportingSteps({ page, visit }: WebContext): Partial<Steps> {
   /** The two tablists of the preferences, by their place: the reading, then the ranking's drawing. */
   async function preferences() {
     await visit('/settings?part=preferences')
@@ -31,7 +31,6 @@ export function reportingSteps({ page, visit, exercised }: WebContext): Partial<
 
   return {
     async readFlows({ kind, by, month }) {
-      await exercised('screen:/analysis')
       await visit(`/analysis?period=month&ref=${month}&by=${by}&flow=${kind}`)
       const section = page.getByRole('region', {
         name: `${kind === 'income' ? 'Revenus' : 'Dépenses'} par ${DIMENSIONS[by]}`,
@@ -54,13 +53,36 @@ export function reportingSteps({ page, visit, exercised }: WebContext): Partial<
       }))
     },
     async readWealth() {
-      await exercised('screen:/')
       await visit('/')
       const figure = page.getByRole('link', { name: /^Patrimoine/ })
       return moneyOf((await figure.getByRole('paragraph').nth(1).textContent()) ?? '')
     },
+    async readCommittedMonthlyCost() {
+      await visit('/')
+      const figure = page.getByRole('link', { name: /^Engagé/ })
+      return moneyOf(((await figure.getByRole('paragraph').nth(1).textContent()) ?? '').replace('/mois', ''))
+    },
+    async readOccurrencesToConfirm() {
+      await visit('/')
+      await page.getByRole('heading', { level: 1 }).first().waitFor()
+      const lines = await page
+        .getByText(/^\d+ (prélèvements?|versements?( programmés?)?) à confirmer$/)
+        .allInnerTexts()
+      return lines.reduce((sum, line) => sum + Number.parseInt(line, 10), 0)
+    },
+    async readThresholdAlerts() {
+      await visit('/')
+      await page.getByRole('heading', { level: 1 }).first().waitFor()
+      const lines = await page.getByText(/ (franchi|bientôt atteint)$/).allInnerTexts()
+      return lines.map((line) => {
+        const crossed = line.endsWith(' franchi')
+        return {
+          about: line.replace(crossed ? / franchi$/ : / bientôt atteint$/, ''),
+          state: crossed ? ('crossed' as const) : ('near' as const),
+        }
+      })
+    },
     async readPreferences() {
-      await exercised('screen:/settings')
       const { reading, ranking } = await preferences()
       const selected = async (list: typeof reading) =>
         list
@@ -78,17 +100,14 @@ export function reportingSteps({ page, visit, exercised }: WebContext): Partial<
       }
     },
     async setReadingPreference(value) {
-      await exercised('setReadingPreferenceAction')
       const { reading } = await preferences()
       await choose(reading.getByRole('tab').nth(value === 'accrual' ? 1 : 0))
     },
     async setRankingViewPreference(view) {
-      await exercised('setRankingViewPreferenceAction')
       const { ranking } = await preferences()
       await choose(ranking.getByRole('tab').nth(view === 'bars' ? 1 : 0))
     },
     async setLanguagePreference(language) {
-      await exercised('setLanguagePreferenceAction')
       await preferences()
       await page.getByRole('main').getByRole('combobox').click()
       // The choice is named in the language the screen speaks at that moment.

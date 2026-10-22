@@ -1,4 +1,4 @@
-import { preparationDriver } from '@abacus/core/driver'
+import { preparationDriver as preparationOf } from '@abacus/core/driver'
 import { mcpDriver, mcpSurface } from '@abacus/mcp/driver'
 import type { Driver } from '@abacus/use-case-language'
 import { webDriver, webSurface } from '@abacus/web/driver'
@@ -18,7 +18,7 @@ export const DECLARED: {
   surface(): Promise<RealInterface> | RealInterface
 }[] = [
   { name: 'web', make: (env) => webDriver(env), surface: webSurface },
-  { name: 'mcp', make: (env) => mcpDriver(env.mcpUrl), surface: mcpSurface },
+  { name: 'mcp', make: (env) => mcpDriver(env), surface: mcpSurface },
 ]
 
 export function driverNames(): string[] {
@@ -31,4 +31,10 @@ export function drivers(): Driver[] {
   return DECLARED.filter((d) => !only || only.includes(d.name)).map((d) => d.make(env))
 }
 
-export { preparationDriver }
+let preparation: Driver | undefined
+
+/** The driver that builds each case's starting state through the back, on the same configuration. */
+export function preparationDriver(): Driver {
+  preparation ??= preparationOf(environment())
+  return preparation
+}
