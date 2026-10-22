@@ -14,10 +14,10 @@
 //
 // Usage, for the worktree hooks:
 //   node packages/test-harness/src/database.ts env    write .env.test for the current branch
-//   node packages/test-harness/src/database.ts drop   drop every database under its base
+//   node packages/test-harness/src/database.ts drop   drop the base and its package databases
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
 
@@ -92,13 +92,36 @@ export async function prepareTestDatabase(url: string): Promise<void> {
   })
 }
 
-/** Drops the base database and every `<base>_…` one, open connections closed. */
+/** The suffix of each package of the repository: `@abacus/data-seed` → `data_seed`. */
+function packageSuffixes(): string[] {
+  return ['apps', 'packages'].flatMap((folder) =>
+    readdirSync(new URL(`${folder}/`, root), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => {
+        try {
+          const { name } = JSON.parse(
+            readFileSync(new URL(`${folder}/${entry.name}/package.json`, root), 'utf8'),
+          ) as { name: string }
+          return [sanitize(name.replace(/^@abacus\//, ''))]
+        } catch {
+          return []
+        }
+      }),
+  )
+}
+
+/**
+ * Drops the base database and the database of each package under it, open
+ * connections closed. Only those: the base of a branch whose name begins with
+ * this one's (`…_189_freeze_current_behavior` under `…_189_freeze`) is another
+ * worktree's.
+ */
 export async function dropTestDatabases(base: string): Promise<void> {
   assertTestDatabase(withName(base, `${nameOf(base)}_x`))
   const name = nameOf(base)
+  const names = [name, ...packageSuffixes().map((suffix) => `${name}_${suffix}`)]
   await onServer(base, async (sql) => {
-    const rows =
-      await sql`select datname from pg_database where datname = ${name} or starts_with(datname, ${`${name}_`})`
+    const rows = await sql`select datname from pg_database where datname = any(${names})`
     for (const { datname } of rows) await sql.unsafe(`drop database if exists "${datname}" with (force)`)
   })
 }

@@ -106,12 +106,12 @@ jobs:
       - run: pnpm typecheck
       # The web driver of the use case suite plays its cases in Chromium.
       - run: pnpm --filter @abacus/web exec playwright install --with-deps chromium --only-shell
-      # The tests of the harness itself and of the Spec Kit extensions, outside
-      # every package: always run, they take seconds.
+      # The tests of the repository's own scripts and of the Spec Kit
+      # extensions, which belong to no package: always run, they take seconds.
       - run: pnpm run test:repo
       # The package tests and the use cases go through pnpm pipeline. On a pull
       # request, only the projects touched since main and those depending on
-      # them run, the others restored from the cache; on main and in the merge
+      # them run, the others not at all; on main and in the merge
       # queue, everything runs, nothing taken from a cache, since main goes to
       # production. No retry anywhere: a flaky test is fixed, not replayed.
       # The migrations decide results from outside every package: they reach

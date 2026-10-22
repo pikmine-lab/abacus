@@ -113,7 +113,10 @@ laquelle elle ne démarre pas. Un worktree reçoit le sien à sa création (`.co
 
 Les tests d'un paquet tournent sur sa propre base, sous l'adresse de `.env.test` (écrit à
 la création du worktree, `nr db:test:env` ailleurs). Un seul fichier :
-`pnpm --filter @abacus/core test test/fx.test.ts`, chemin relatif au paquet.
+`pnpm --filter @abacus/core test test/endpoints.test.ts`, chemin relatif au paquet.
+
+Un écran se valide avec `pnpm exec agent-browser`, la version épinglée du dépôt, pas une
+version installée sur la machine.
 
 ## Flux de travail
 

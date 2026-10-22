@@ -34,7 +34,11 @@ const databases = () =>
     (await sql`select datname from pg_database`).map((row) => row.datname as string),
   )
 
-after(() => dropTestDatabases(urlOf(run)))
+// Each base the tests below use, dropped by name: a drop reaches its own packages only.
+after(async () => {
+  for (const base of ['a', 'one', 'two', 'drop', 'dropother', 'br', 'br_longer'])
+    await dropTestDatabases(urlOf(`${run}_${base}`))
+})
 
 test('a database whose name is not a test one is refused, before anything is written', async () => {
   for (const name of ['abacus', 'abacus_main', 'abacus_test', 'abacus_189_freeze', 'abacus_test_']) {
@@ -101,4 +105,15 @@ test('dropping a base drops every package database under it, and only those', as
   assert.ok(!left.includes(`${base}_core`))
   assert.ok(!left.includes(`${base}_mcp`))
   assert.ok(left.includes(other))
+})
+
+test('dropping a branch leaves a branch whose name it begins', async () => {
+  const short = `${run}_br`
+  const long = `${run}_br_longer`
+  await prepareTestDatabase(urlOf(`${short}_core`))
+  await prepareTestDatabase(urlOf(`${long}_core`))
+  await dropTestDatabases(urlOf(short))
+  const left = await databases()
+  assert.ok(!left.includes(`${short}_core`))
+  assert.ok(left.includes(`${long}_core`))
 })

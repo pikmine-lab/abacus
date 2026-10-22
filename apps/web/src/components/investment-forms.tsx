@@ -673,11 +673,6 @@ export function FollowForm() {
 }
 
 /**
- * What can be done to an asset from its row. Only a followed one can be
- * forgotten: an asset carrying operations is part of the account's history, so
- * the entry is not offered rather than offered and refused.
- */
-/**
  * A price typed by hand, for what no source quotes: an SCPI revalued, a flat
  * reappraised. Dated, because a price is, and kept open after a save, since a
  * history taken over is entered valuation after valuation.
@@ -707,6 +702,11 @@ export function HandPriceEntry({ assetId, name, today }: { assetId: string; name
   )
 }
 
+/**
+ * What can be done to an asset from its row. Only a followed one can be
+ * forgotten: an asset carrying operations is part of the account's history, so
+ * the entry is not offered rather than offered and refused.
+ */
 export function AssetMenu({ id, name, followed = false }: { id: string; name: string; followed?: boolean }) {
   const t = useTranslations('investments')
   const [editing, setEditing] = useState(false)

@@ -9,8 +9,8 @@
 // the day the tests run. What the real source does not know gets its empty
 // answer, so the app's "nothing found" path is the one exercised.
 //
-// It lives outside every package: packages/core tests need it, and so does the
-// use case suite, which depends on packages/core.
+// It lives in the harness, which depends on no package of abacus: packages/core
+// tests need it, and so does the use case suite, which depends on packages/core.
 
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
