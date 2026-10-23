@@ -1,4 +1,3 @@
-import { NOTE_MAX_LENGTH } from '@abacus/core/domain/note'
 import { listAccounts } from '@abacus/core/services/accounts'
 import {
   correctBalanceCheck,
@@ -10,7 +9,7 @@ import {
 import type { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod'
 import { requireAccountByName, requireActorByName, requireCategoryByName } from '../resolve.ts'
-import { clearable, fail, isoDate, ok, run } from './shared.ts'
+import { clearable, fail, freeNote, isoDate, ok, run } from './shared.ts'
 
 export function registerBalanceCheckTools(server: McpServer, userId: string): void {
   server.registerTool(
@@ -22,7 +21,7 @@ export function registerBalanceCheckTools(server: McpServer, userId: string): vo
         account: z.string().describe('Name of the checked account'),
         balance: z.number().describe('Actual balance read in the banking app (may be negative)'),
         date: isoDate.optional().describe('Defaults to today'),
-        note: z.string().max(NOTE_MAX_LENGTH).optional(),
+        note: freeNote.optional(),
       }),
     },
     async ({ account, balance, date, note }) =>
@@ -98,11 +97,7 @@ export function registerBalanceCheckTools(server: McpServer, userId: string): vo
           .optional()
           .describe('correct: the balance as it should have been read (may be negative)'),
         date: isoDate.optional().describe('correct: the day the balance was actually read'),
-        note: z
-          .string()
-          .max(NOTE_MAX_LENGTH)
-          .optional()
-          .describe('correct: free note, or "none" to clear it'),
+        note: freeNote.optional().describe('correct: free note, or "none" to clear it'),
         limit: z.number().int().min(1).max(200).optional().describe('list: default 50'),
       }),
     },

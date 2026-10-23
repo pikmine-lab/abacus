@@ -1,5 +1,4 @@
 import { DomainError } from '@abacus/core/domain/errors'
-import { NOTE_MAX_LENGTH } from '@abacus/core/domain/note'
 import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
@@ -39,7 +38,7 @@ import {
   requireCommitment,
 } from '../resolve.ts'
 import { expectedRefunds, sharesOf } from './movements.ts'
-import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
+import { clearable, fail, freeNote, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 /** Who owes what of a commitment: per occurrence, or, on a financing, on its total. */
 const commitmentRefunds = z
@@ -116,7 +115,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .optional()
           .describe('create: sphere of the generated movements (e.g. Freelance)'),
         judgment: z.enum(['essential', 'reducible', 'to_cancel']).optional().describe('create/set_judgment'),
-        judgmentNote: z.string().max(NOTE_MAX_LENGTH).optional(),
+        judgmentNote: freeNote.optional(),
         engagedUntil: isoDate.optional().describe('create: end of the contractual lock-in period, if any'),
         card: z
           .string()

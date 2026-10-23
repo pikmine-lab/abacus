@@ -121,3 +121,33 @@ test('list_commitments says who a commitment pays, how it is filed, and what com
     },
   ])
 })
+
+test('a judgment note is counted in characters: 500 emojis are kept, 501 refused', async () => {
+  const userId = await seedUser()
+  const account = await createAccount({
+    userId,
+    name: 'Courant',
+    behavior: 'payment',
+    openedOn: '2026-03-01',
+  })
+  const provider = await createActor(userId, { name: 'Diffuseur' })
+  await createSubscription(userId, {
+    label: 'Streaming',
+    actorId: provider.id,
+    accountId: account.id,
+    amount: 12,
+    periodUnit: 'month',
+    firstDueOn: '2026-03-05',
+  })
+  const judge = (judgmentNote: string) =>
+    call(userId, 'manage_subscription', {
+      action: 'set_judgment',
+      commitment: 'Streaming',
+      judgment: 'reducible',
+      judgmentNote,
+    })
+  const note = '🙂'.repeat(500)
+  const kept = await judge(note)
+  assert.equal(kept.isError, false, kept.text)
+  assert.equal((await judge(`${note}🙂`)).isError, true)
+})
