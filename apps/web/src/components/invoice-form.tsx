@@ -121,8 +121,6 @@ export function InvoiceForm({
   // which is the rule of the service when none is given.
   const defaultCurrency = draft?.currency ?? defaults?.currency ?? 'EUR'
   const [currency, setCurrency] = useState(defaultCurrency)
-  const inCurrency = (value: number) =>
-    currency === 'EUR' ? format.eur(value, 2) : format.money(value, currency, 2)
 
   // The base comes from AmountInput as a machine value ("1234.50").
   const baseAmount = Number(base)
@@ -241,7 +239,7 @@ export function InvoiceForm({
       {baseAmount > 0 && (
         <p className="text-[12px] text-muted-foreground">
           {t.rich('receivable', {
-            amount: inCurrency(net),
+            amount: format.money(net, currency, 2),
             value: (chunks) => <span className="font-mono tabular text-foreground">{chunks}</span>,
           })}
         </p>
