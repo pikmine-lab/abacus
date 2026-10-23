@@ -108,3 +108,15 @@ test('manage_assets history refuses a window it cannot answer in one call', asyn
   assert.equal((await history({ from: '2026-01-01' })).isError, true)
   assert.equal((await history({ from: '2025-01-01', to: '2025-12-31' })).isError, false)
 })
+
+test('manage_assets history answers a window of exactly 366 days', async () => {
+  const userId = await seedUser()
+  await declareAsset(userId, { name: 'Parts', nature: 'other' })
+  const reply = await call(userId, 'manage_assets', {
+    action: 'history',
+    name: 'Parts',
+    from: '2025-01-01',
+    to: '2026-01-01',
+  })
+  assert.equal(reply.isError, false, reply.text)
+})

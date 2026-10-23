@@ -77,6 +77,73 @@ test('with no window, the one the web home shows: this month, from the first dec
   assert.equal(days.at(-1)!.day, last)
 })
 
+const monthEnd = () => {
+  const month = today().slice(0, 7)
+  const [y, m] = month.split('-').map(Number) as [number, number]
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+}
+
+test('with no window and nothing declared, the single day the web home draws: the end of this month', async () => {
+  const userId = await seedUser()
+  await createAccount({ userId, name: 'Courant', behavior: 'payment', openedOn: '2026-03-01' })
+  const reply = await call(userId, { account: 'Courant' })
+  assert.equal(reply.isError, false, reply.text)
+  assert.deepEqual(reply.json().days, [{ day: monthEnd(), balance: '0.00' }])
+})
+
+test('with no window and a history that starts after this month, no day, as the web home draws none', async () => {
+  const userId = await seedUser()
+  const account = await createAccount({
+    userId,
+    name: 'Courant',
+    behavior: 'payment',
+    openedOn: '2026-03-01',
+  })
+  const shop = await createActor(userId, { name: 'Épicerie' })
+  const later = new Date(Date.parse(`${monthEnd()}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+  await declareMovement(userId, {
+    happenedOn: later,
+    amount: 10,
+    sourceAccountId: account.id,
+    targetActorId: shop.id,
+  })
+  const reply = await call(userId, { account: 'Courant' })
+  assert.equal(reply.isError, false, reply.text)
+  assert.deepEqual(reply.json().days, [])
+})
+
+test('the balance of the account asked for only, other accounts left out', async () => {
+  const userId = await seedUser()
+  await accountWithOneExpense(userId)
+  await createAccount({
+    userId,
+    name: 'Livret',
+    behavior: 'savings',
+    openingBalance: 500,
+    openedOn: '2026-03-01',
+  })
+  const reply = await call(userId, { account: 'Livret', from: '2026-03-05', to: '2026-03-05' })
+  assert.deepEqual(reply.json().days, [{ day: '2026-03-05', balance: '500.00' }])
+})
+
+test('a window of exactly 366 days is answered', async () => {
+  const userId = await seedUser()
+  await accountWithOneExpense(userId)
+  const reply = await call(userId, { account: 'Courant', from: '2025-03-06', to: '2026-03-06' })
+  assert.equal(reply.isError, false, reply.text)
+  assert.equal(reply.json().days.length, 366)
+})
+
+test('from without to, or to without from, is refused', async () => {
+  const userId = await seedUser()
+  await accountWithOneExpense(userId)
+  for (const window of [{ from: '2026-03-04' }, { to: '2026-03-06' }]) {
+    const reply = await call(userId, { account: 'Courant', ...window })
+    assert.equal(reply.isError, true, JSON.stringify(window))
+    assert.match(reply.text, /both from and to/)
+  }
+})
+
 test('a window longer than 366 days, reversed, or an unknown account is refused', async () => {
   const userId = await seedUser()
   await accountWithOneExpense(userId)

@@ -212,8 +212,13 @@ export async function flowLeaves(
   return await flowMovementsDs(db(), userId, from, to, kind, reading, {}, limit, per)
 }
 
-export async function balanceSeries(userId: string, from: string, to: string): Promise<BalancePoint[]> {
-  return await balanceSeriesDs(db(), userId, from, to)
+export async function balanceSeries(
+  userId: string,
+  from: string,
+  to: string,
+  accountId?: string,
+): Promise<BalancePoint[]> {
+  return await balanceSeriesDs(db(), userId, from, to, accountId)
 }
 
 export async function flowTotals(

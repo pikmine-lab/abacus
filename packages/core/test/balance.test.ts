@@ -191,6 +191,27 @@ test('balance series runs the daily cumulative sum per account', async () => {
   assert.equal(at('2026-05-05', savings.id), '300.00')
 })
 
+test('balance series of one account leaves the other accounts out', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  await declareMovement(user, {
+    happenedOn: '2026-05-02',
+    amount: 300,
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+  })
+
+  const rows = await balanceSeries(user, '2026-05-01', '2026-05-02', savings.id)
+  assert.deepEqual(
+    rows.map((r) => [r.day, r.accountId, r.balance]),
+    [
+      ['2026-05-01', savings.id, '0.00'],
+      ['2026-05-02', savings.id, '300.00'],
+    ],
+  )
+})
+
 /** Re-reads a movement: the service exposes lists, not a get by id. */
 async function reread(userId: string, id: string) {
   const found = (await listMovements(userId)).find((m) => m.id === id)
