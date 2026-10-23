@@ -184,18 +184,23 @@ export function businessSteps({ page, env, visit, pickDate, settle }: WebContext
   /** The entries of a part's list, without the link that opens a new one. */
   const entries = (part: string) =>
     page.locator(`main a[href*="part=${part}&entry="]:not([href$="entry=new"])`)
-  /** Opens one entry of a list and waits for its sheet. */
+  /**
+   * Opens one entry of a list and waits for its sheet. Until the page answers,
+   * the sheet shown is the first entry's, with buttons of the same names: the
+   * list marks the entry once the sheet beside it is its own.
+   */
   async function open(entry: Locator) {
     const href = (await entry.getAttribute('href')) as string
     await entry.click()
     await page.waitForURL((url) => href.endsWith(`${url.pathname}${url.search}`) || url.href.endsWith(href))
+    await entry.and(page.locator('[aria-current="true"]')).waitFor()
     await page.waitForLoadState('networkidle')
     return page.getByRole('article')
   }
   /** The rule of that name: the row in force, the last one listed. */
   async function rule(activity: string, levy: string) {
     await regime(activity, 'Règles')
-    await entries('rules').filter({ hasText: levy }).last().click()
+    await open(entries('rules').filter({ hasText: levy }).last())
     const fiche = page.getByRole('article', { name: levy })
     await fiche.waitFor()
     return fiche
@@ -545,11 +550,12 @@ export function businessSteps({ page, env, visit, pickDate, settle }: WebContext
     async removeActivityFigure(activity, { name, validFrom }) {
       await regime(activity, 'Paramètres')
       const [y, m, d] = validFrom.split('-')
-      await entries('inputs')
-        .filter({ hasText: name })
-        .filter({ hasText: `à partir du ${d}/${m}/${y!.slice(2)}` })
-        .click()
-      const remove = page.getByRole('button', { name: `Retirer ${name}` })
+      const fiche = await open(
+        entries('inputs')
+          .filter({ hasText: name })
+          .filter({ hasText: `à partir du ${d}/${m}/${y!.slice(2)}` }),
+      )
+      const remove = fiche.getByRole('button', { name: `Retirer ${name}` })
       // The fiche goes before the server answers: wait for the action itself.
       const answered = page.waitForResponse(
         (response) => response.request().headers()['next-action'] !== undefined,
