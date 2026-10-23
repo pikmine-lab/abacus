@@ -17,11 +17,14 @@
 //   node packages/test-harness/src/database.ts drop   drop the base and its package databases
 
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
 
 const TEST_DATABASE = /^abacus_test(_[a-z0-9_]+)+$/
+// Postgres keeps the first 63 bytes of a name and silently drops the rest.
+const MAX_NAME = 63
 const EXTENSIONS = ['vector', 'pg_trgm', 'unaccent']
 const root = new URL('../../../', import.meta.url)
 
@@ -52,9 +55,18 @@ export function assertTestDatabase(url: string): void {
   }
 }
 
-/** The database of one package under a worktree's base: `@abacus/data-seed` → `<base>_data_seed`. */
+/**
+ * The database of one package under a worktree's base: `@abacus/data-seed` →
+ * `<base>_data_seed`. When a long branch would push the name past what Postgres
+ * keeps, the base is cut and followed by a digest of its full name, so each
+ * package and each branch keeps a database of its own.
+ */
 export function packageDatabaseUrl(base: string, packageName: string): string {
-  return withName(base, `${nameOf(base)}_${sanitize(packageName.replace(/^@abacus\//, ''))}`)
+  const name = nameOf(base)
+  const suffix = sanitize(packageName.replace(/^@abacus\//, ''))
+  if (name.length + 1 + suffix.length <= MAX_NAME) return withName(base, `${name}_${suffix}`)
+  const digest = createHash('sha256').update(name).digest('hex').slice(0, 8)
+  return withName(base, `${name.slice(0, MAX_NAME - suffix.length - digest.length - 2)}_${digest}_${suffix}`)
 }
 
 async function onServer<T>(url: string, run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
@@ -92,8 +104,8 @@ export async function prepareTestDatabase(url: string): Promise<void> {
   })
 }
 
-/** The suffix of each package of the repository: `@abacus/data-seed` → `data_seed`. */
-function packageSuffixes(): string[] {
+/** The name of each package of the repository. */
+function packageNames(): string[] {
   return ['apps', 'packages'].flatMap((folder) =>
     readdirSync(new URL(`${folder}/`, root), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -102,7 +114,7 @@ function packageSuffixes(): string[] {
           const { name } = JSON.parse(
             readFileSync(new URL(`${folder}/${entry.name}/package.json`, root), 'utf8'),
           ) as { name: string }
-          return [sanitize(name.replace(/^@abacus\//, ''))]
+          return [name]
         } catch {
           return []
         }
@@ -119,7 +131,7 @@ function packageSuffixes(): string[] {
 export async function dropTestDatabases(base: string): Promise<void> {
   assertTestDatabase(withName(base, `${nameOf(base)}_x`))
   const name = nameOf(base)
-  const names = [name, ...packageSuffixes().map((suffix) => `${name}_${suffix}`)]
+  const names = [name, ...packageNames().map((pkg) => nameOf(packageDatabaseUrl(base, pkg)))]
   await onServer(base, async (sql) => {
     const rows = await sql`select datname from pg_database where datname = any(${names})`
     for (const { datname } of rows) await sql.unsafe(`drop database if exists "${datname}" with (force)`)

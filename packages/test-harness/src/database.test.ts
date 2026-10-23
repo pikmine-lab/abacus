@@ -67,6 +67,35 @@ test('a package database is named after the base and the package', () => {
   )
 })
 
+// Postgres cuts a database name at 63 bytes: past that, two packages would share one.
+const longBranch = (letter: string) => `${run}_${letter.repeat(60)}`
+
+test('a long branch keeps one database per package, each under the length Postgres keeps', () => {
+  const packages = ['core', 'mcp', 'web', 'data-seed', 'use-cases', 'use-case-language', 'test-harness']
+  const names = [longBranch('l'), longBranch('m')].flatMap((branch) =>
+    packages.map((name) => new URL(packageDatabaseUrl(urlOf(branch), `@abacus/${name}`)).pathname.slice(1)),
+  )
+  for (const name of names) {
+    assert.ok(Buffer.byteLength(name) <= 63, `${name} is ${Buffer.byteLength(name)} bytes`)
+    assert.doesNotThrow(() => assertTestDatabase(urlOf(name)), name)
+  }
+  assert.equal(new Set(names).size, names.length)
+})
+
+test('dropping a long branch drops its package databases', async () => {
+  const base = urlOf(longBranch('d'))
+  const core = packageDatabaseUrl(base, '@abacus/core')
+  const mcp = packageDatabaseUrl(base, '@abacus/mcp')
+  await prepareTestDatabase(core)
+  await prepareTestDatabase(mcp)
+  const names = [core, mcp].map((url) => new URL(url).pathname.slice(1))
+  const created = await databases()
+  for (const name of names) assert.ok(created.includes(name), `${name} was not created`)
+  await dropTestDatabases(base)
+  const left = await databases()
+  for (const name of names) assert.ok(!left.includes(name), `${name} was not dropped`)
+})
+
 test('a test database is created on first use, with its extensions, and migrated', async () => {
   const name = `${run}_a_core`
   await prepareTestDatabase(urlOf(name))
