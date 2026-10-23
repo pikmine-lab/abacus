@@ -109,19 +109,9 @@ function InvoiceRow({
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [reminding, setReminding] = useState(false)
-  const [state, cancel, pending] = useActionState(cancelInvoiceAction, {})
   const [reminded, remind] = useActionState(remindInvoiceAction, {})
   const late = invoice.dueOn ? daysBetween(invoice.dueOn, today) : 0
   const label = `${invoice.client}${invoice.reference ? ` · ${invoice.reference}` : ''}`
-
-  // Close on success only: a refused cancellation has a reason to show.
-  useEffect(() => {
-    if (state.ok) setConfirming(false)
-  }, [state.ok])
-  // Keyed on the whole state: a second reminder from the panel is a new success.
-  useEffect(() => {
-    if (reminded.ok) setReminding(false)
-  }, [reminded])
 
   return (
     <div className="flex flex-wrap items-center gap-2 py-2.5">
@@ -180,7 +170,7 @@ function InvoiceRow({
         </Button>
       </form>
 
-      {reminded.error && !reminding && <p className="text-xs text-destructive">{reminded.error}</p>}
+      {reminded.error && <p className="text-xs text-destructive">{reminded.error}</p>}
       <RowMenu label={label}>
         <DropdownMenuItem asChild>
           <form action={remind}>
@@ -215,17 +205,12 @@ function InvoiceRow({
           <DialogHeader>
             <DialogTitle className="text-[15px]">{t('outstanding.remindTitle')}</DialogTitle>
           </DialogHeader>
-          <form action={remind} className="flex flex-col gap-3">
-            <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
-            <p className="text-[12px] text-muted-foreground">{label}</p>
-            <FieldErrors.Provider value={reminded.fields}>
-              <Field label={t('outstanding.remindedOnField')} name="remindedOn">
-                <DateField name="remindedOn" defaultValue={today} />
-              </Field>
-            </FieldErrors.Provider>
-            {reminded.error && <p className="text-xs text-destructive">{reminded.error}</p>}
-            <SubmitButton className="self-start">{t('outstanding.remindSave')}</SubmitButton>
-          </form>
+          <RemindPanel
+            invoiceId={invoice.invoiceId}
+            label={label}
+            today={today}
+            onSaved={() => setReminding(false)}
+          />
         </DialogContent>
       </Dialog>
 
@@ -247,28 +232,84 @@ function InvoiceRow({
             <AlertDialogTitle>{t('outstanding.confirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('outstanding.confirmBody', { label })}</AlertDialogDescription>
           </AlertDialogHeader>
-          <form id={`cancel-${invoice.invoiceId}`} action={cancel}>
-            <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
-            <FieldErrors.Provider value={state.fields}>
-              <Field label={t('outstanding.cancelledOnField')} name="cancelledOn" className="w-44">
-                <DateField name="cancelledOn" defaultValue={today} />
-              </Field>
-            </FieldErrors.Provider>
-          </form>
-          {state.error && <p className="text-xs text-destructive">{state.error}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('outstanding.goBack')}</AlertDialogCancel>
-            <Button
-              type="submit"
-              form={`cancel-${invoice.invoiceId}`}
-              variant="destructive"
-              disabled={pending}
-            >
-              {pending ? '…' : t('outstanding.cancel')}
-            </Button>
-          </AlertDialogFooter>
+          <CancelPanel invoiceId={invoice.invoiceId} today={today} onCancelled={() => setConfirming(false)} />
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+// The panels below hold their own action state and live inside their dialog,
+// which unmounts them on close: a refusal does not outlive the panel it was
+// made in, and a reopened panel starts clean beside its fresh date.
+
+function RemindPanel({
+  invoiceId,
+  label,
+  today,
+  onSaved,
+}: {
+  invoiceId: string
+  label: string
+  today: string
+  onSaved: () => void
+}) {
+  const t = useTranslations('activity')
+  const [reminded, remind] = useActionState(remindInvoiceAction, {})
+
+  useEffect(() => {
+    if (reminded.ok) onSaved()
+  }, [reminded.ok, onSaved])
+
+  return (
+    <form action={remind} className="flex flex-col gap-3">
+      <input type="hidden" name="invoiceId" value={invoiceId} />
+      <p className="text-[12px] text-muted-foreground">{label}</p>
+      <FieldErrors.Provider value={reminded.fields}>
+        <Field label={t('outstanding.remindedOnField')} name="remindedOn">
+          <DateField name="remindedOn" defaultValue={today} />
+        </Field>
+      </FieldErrors.Provider>
+      {reminded.error && <p className="text-xs text-destructive">{reminded.error}</p>}
+      <SubmitButton className="self-start">{t('outstanding.remindSave')}</SubmitButton>
+    </form>
+  )
+}
+
+function CancelPanel({
+  invoiceId,
+  today,
+  onCancelled,
+}: {
+  invoiceId: string
+  today: string
+  onCancelled: () => void
+}) {
+  const t = useTranslations('activity')
+  const [state, cancel, pending] = useActionState(cancelInvoiceAction, {})
+
+  // Close on success only: a refused cancellation has a reason to show.
+  useEffect(() => {
+    if (state.ok) onCancelled()
+  }, [state.ok, onCancelled])
+
+  return (
+    <>
+      <form id={`cancel-${invoiceId}`} action={cancel}>
+        <input type="hidden" name="invoiceId" value={invoiceId} />
+        <FieldErrors.Provider value={state.fields}>
+          <Field label={t('outstanding.cancelledOnField')} name="cancelledOn" className="w-44">
+            <DateField name="cancelledOn" defaultValue={today} />
+          </Field>
+        </FieldErrors.Provider>
+      </form>
+      {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+      <AlertDialogFooter>
+        <AlertDialogCancel>{t('outstanding.goBack')}</AlertDialogCancel>
+        <Button type="submit" form={`cancel-${invoiceId}`} variant="destructive" disabled={pending}>
+          {pending ? '…' : t('outstanding.cancel')}
+        </Button>
+      </AlertDialogFooter>
+    </>
   )
 }
