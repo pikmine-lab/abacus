@@ -300,7 +300,10 @@ Si la vérification Spec Kit a ajouté des tâches, s'arrêter là : la prochain
 est `/speckit-implement`, puis `/speckit-converge` de nouveau.
 
 Sinon, enchaîner dans cet ordre, sans modifier de code (une trouvaille devient une
-tâche, jamais un correctif direct) :
+tâche, jamais un correctif direct). Chaque revue (étapes 1 à 3) tourne si elle n'a
+jamais tourné sur la fonctionnalité, ou si la dernière note de `/speckit-implement` la
+demande (« Revues à relancer », dans `issue.md`). Sinon elle est sautée, et le rapport
+le dit. La note de fin de `converge` nomme les revues qui ont tourné.
 
 1. **Revue de code** : `/code-review` au niveau déclaré par la section « Revue » du
    plan, sans `--fix`.
@@ -325,11 +328,12 @@ le code sans toucher aux tests ; un test manquant ou faible se complète ; un pl
 repasse par la spec et le plan d'abord, puis les tests.
 Puis renvoyer les tâches dans la description de la PR (`/speckit-issue-sync-push`),
 et reprendre
-`/speckit-implement` puis `/speckit-converge`. Après une petite retouche, revalider
-ce qui a été touché ; après un changement structurant, tout.
+`/speckit-implement` puis `/speckit-converge`. Pour les validations fonctionnelle et
+humaine : après une petite retouche, revalider ce qui a été touché ; après un
+changement structurant, tout.
 
-La fonctionnalité n'est « convergée » que lorsqu'aucune des six étapes ne trouve
-plus rien.
+La fonctionnalité n'est « convergée » que lorsqu'aucune des étapes qui ont tourné ne
+trouve plus rien.
 
 **Amélioration continue** : pour chaque trouvaille qui pourrait revenir au-delà de
 cette fonctionnalité, se demander ce qui l'aurait évitée (un contrôle d'abord, sinon

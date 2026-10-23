@@ -28,6 +28,16 @@ Elles priment sur les instructions génériques qui suivent, en particulier sur 
   `after_implement` fait le dernier envoi.
 - La suite complète et les vérifications du dépôt entier tournent en CI : en local,
   seuls les tests de ce qui a été modifié.
+- **En fin d'étape, dire quelles revues relancer**, quand `converge` en a déjà fait. La
+  revue de code, celle des tests et celle de sécurité se jugent chacune à part. Une
+  revue déjà faite ne se refait que si l'étape a produit du code qu'elle n'a pas lu, et
+  en quantité : un module, un flux ou une interface réécrits ; pour la sécurité, une
+  surface nouvelle (authentification, saisie, dépendance, route). Corriger les
+  trouvailles d'une revue, ou retoucher une petite partie du code, ne relance rien :
+  relire du code déjà relu trouve des détails toujours plus fins et ne s'arrête jamais.
+  En cas de doute, aucune. Le verdict, avec sa raison, s'écrit dans la note du dernier
+  `/speckit-issue-sync-push` : « Revues à relancer : aucune », ou « Revues à relancer :
+  code (le flux d'autorisation a été réécrit) ».
 
 
 ## User Input
