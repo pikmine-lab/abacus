@@ -189,6 +189,29 @@ test('judging a subscription keeps the note when none is given', async () => {
   assert.equal(types.filter((t) => t === 'judgment_changed').length, 2)
 })
 
+test('a judgment note holds 500 characters at most, and an emptied one is none', async () => {
+  const user = await seedUser()
+  const { subscription, account, actor } = await subscriptionFixture(user)
+  await assert.rejects(
+    setJudgment(user, subscription.id, 'reducible', 'x'.repeat(501)),
+    (e: DomainError) => e.code === 'note_too_long',
+  )
+  await assert.rejects(
+    createSubscription(user, {
+      label: 'Spotify',
+      actorId: actor.id,
+      accountId: account.id,
+      amount: 10.99,
+      periodUnit: 'month',
+      firstDueOn: '2026-05-01',
+      judgmentNote: 'x'.repeat(501),
+    }),
+    (e: DomainError) => e.code === 'note_too_long',
+  )
+  await setJudgment(user, subscription.id, 'reducible', 'x'.repeat(500))
+  assert.equal((await setJudgment(user, subscription.id, 'reducible', '  ')).judgmentNote, null)
+})
+
 test('a cancelled subscription stops generating occurrences', async () => {
   const user = await seedUser()
   const { subscription } = await subscriptionFixture(user)

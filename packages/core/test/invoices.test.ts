@@ -453,3 +453,23 @@ test('the fiscal year of a day follows the activity’s opening date', () => {
   assert.deepEqual(fiscalYearOf('2026-03-05', 4, 6), { from: '2025-04-06', to: '2026-04-05' })
   assert.deepEqual(fiscalYearOf('2026-04-06', 4, 6), { from: '2026-04-06', to: '2027-04-05' })
 })
+
+test('an invoice takes a currency of the closed list only, at declaration as at correction', async () => {
+  const user = await seedUser()
+  const activity = await businessActivity(user, 'Consulting')
+  const acme = await client(user, 'ACME')
+  const invoice = (currency: string) =>
+    declareInvoice(user, {
+      activityId: activity.id,
+      actorId: acme.id,
+      issuedOn: '2026-03-01',
+      baseAmount: 100,
+      currency,
+    })
+
+  await rejects(invoice('XYZ'), 'unknown_currency')
+  const declared = await invoice('chf')
+  assert.equal(declared.currency, 'CHF')
+  await rejects(correctInvoice(user, declared.id, { currency: 'ABC' }), 'unknown_currency')
+  assert.equal((await correctInvoice(user, declared.id, { currency: 'USD' })).currency, 'USD')
+})

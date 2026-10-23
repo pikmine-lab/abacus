@@ -68,6 +68,17 @@ export type InvoiceView = Invoice & {
   state: InvoiceState
 }
 
+/** The closed list the interface offers its currency from: the runtime's ISO 4217 codes. */
+const CURRENCIES = new Set(Intl.supportedValuesOf('currency'))
+
+/** A currency code as stored, upper case; refused when the closed list does not hold it. */
+function knownCurrency(code: string): string {
+  const upper = code.toUpperCase()
+  if (!CURRENCIES.has(upper))
+    throw new DomainError('unknown_currency', `${code} is not an ISO 4217 currency code`)
+  return upper
+}
+
 /** Money arithmetic in cents, so 0.1 + 0.2 never leaks into a stored amount. */
 function cents(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -141,7 +152,7 @@ export async function declareInvoice(userId: string, input: DeclareInvoiceInput)
       reference: input.reference?.trim() || null,
       issuedOn: input.issuedOn,
       dueOn: input.dueOn ?? null,
-      currency: (input.currency ?? activity.currency).toUpperCase(),
+      currency: input.currency !== undefined ? knownCurrency(input.currency) : activity.currency,
       baseAmount: cents(input.baseAmount),
       vatRate,
       vatAmount: input.vatAmount !== undefined ? cents(input.vatAmount) : ofRate(input.baseAmount, vatRate),
@@ -219,7 +230,7 @@ export async function correctInvoice(
       reference: input.reference !== undefined ? input.reference?.trim() || null : current.reference,
       issuedOn,
       dueOn: input.dueOn !== undefined ? input.dueOn : current.dueOn,
-      currency: (input.currency ?? current.currency).toUpperCase(),
+      currency: input.currency !== undefined ? knownCurrency(input.currency) : current.currency,
       baseAmount,
       vatRate,
       vatAmount: amountOf(input.vatAmount, current.vatAmount, vatRate, vatRate !== Number(current.vatRate)),
@@ -372,6 +383,8 @@ function withState(invoice: Invoice, paid: string, on?: string): InvoiceView {
 }
 
 export interface ListInvoicesFilters {
+  /** These invoices only: the ones a list of movements settles. */
+  ids?: string[]
   activityId?: string
   actorId?: string
   state?: InvoiceState
@@ -381,7 +394,11 @@ export interface ListInvoicesFilters {
 
 /** Every invoice of the selection with its state, newest issue first. */
 export async function listInvoices(userId: string, f: ListInvoicesFilters = {}): Promise<InvoiceView[]> {
-  const rows = await listInvoicesDs(db(), userId, { activityId: f.activityId, actorId: f.actorId })
+  const rows = await listInvoicesDs(db(), userId, {
+    ids: f.ids,
+    activityId: f.activityId,
+    actorId: f.actorId,
+  })
   const views = rows.map((row: InvoiceWithPayments) => withState(row, row.paidAmount, f.on))
   return f.state ? views.filter((invoice) => invoice.state === f.state) : views
 }

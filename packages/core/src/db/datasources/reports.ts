@@ -144,12 +144,15 @@ export interface BalancePoint {
  *
  * No reading to pick here, and there never will be one: a balance is the money
  * on the account on that day, so it sums settlement days and nothing else.
+ *
+ * Given an account, only its own balance is built.
  */
 export async function balanceSeries(
   tx: Executor,
   userId: string,
   from: string,
   to: string,
+  accountId?: string,
 ): Promise<BalancePoint[]> {
   return await tx<BalancePoint[]>`
     with days as (
@@ -173,7 +176,7 @@ export async function balanceSeries(
     from days d
     cross join account a
     left join flows fl on fl.account_id = a.id
-    where a.user_id = ${userId} and a.closed_on is null
+    where a.user_id = ${userId} and a.closed_on is null ${accountId ? tx`and a.id = ${accountId}` : tx``}
     group by d.day, a.id
     order by d.day
   `

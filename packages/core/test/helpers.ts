@@ -1,11 +1,10 @@
+import { assertTestDatabase } from '@abacus/test-harness/database'
 import { closeDb, db } from '../src/db/client.ts'
 import { migrate } from '../src/db/migrate.ts'
 
 // Guard against a misconfigured environment wiping the dev database: these
 // helpers truncate everything, so they refuse to run anywhere else.
-if (!process.env.DATABASE_URL?.includes('abacus_test')) {
-  throw new Error('Tests must run against the abacus_test database')
-}
+assertTestDatabase(process.env.DATABASE_URL ?? 'postgresql://unset/')
 
 export async function setupDb(): Promise<void> {
   await migrate()

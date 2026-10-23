@@ -63,10 +63,9 @@ export const auth = betterAuth({
       // A person authorizes an AI client, nothing else: no machine-to-machine
       // grant to advertise or to defend.
       grantTypes: ['authorization_code', 'refresh_token'],
-      // The MCP server verifies access tokens offline, so revoking an
-      // authorization cannot reach one already issued: it lives until it
-      // expires. Ten minutes bounds that delay; the client renews silently
-      // with its refresh token, which revocation does delete.
+      // Ten minutes, renewed silently with the refresh token, which revoking
+      // an authorization deletes: a revoked client keeps what it holds until
+      // it expires, and no longer.
       accessTokenExpiresIn: 600,
       // Lets the sign-in page name the AI client an authorization is waiting
       // for, before anyone is signed in. Better Auth answers only with the

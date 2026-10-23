@@ -154,7 +154,12 @@
     "editDescription": "Corrige ce qui a été mal saisi. Les revenus déjà encaissés dessus gardent leur lien.",
     "confirmTitle": "Annuler cette facture ?",
     "confirmBody": "{label}. Elle quitte les factures en attente et garde ses dates. Une facture déjà encaissée, même en partie, ne s’annule pas : détache d’abord les revenus liés.",
-    "goBack": "Revenir"
+    "goBack": "Revenir",
+    "remindedOtherDate": "Relancée à une autre date…",
+    "remindTitle": "Relance",
+    "remindedOnField": "Relancée le",
+    "remindSave": "Enregistrer",
+    "cancelledOnField": "Annulée le"
   },
   "ranks": {
     "revenueTitle": "Recettes par client",
@@ -184,7 +189,8 @@
     "withholding": "Retenue",
     "receivable": "À recevoir",
     "state": "État",
-    "remaining": "reste {amount}"
+    "remaining": "reste {amount}",
+    "cancelledOn": "le {date}"
   },
   "invoiceForm": {
     "corrected": "Facture corrigée",
@@ -201,7 +207,7 @@
     "vat": "TVA collectée",
     "withholding": "Retenue à la source",
     "rate": "Taux (%)",
-    "orAmount": "ou en €",
+    "orAmount": "ou en {unit}",
     "receivable": "à recevoir <value>{amount}</value>",
     "note": "Note (optionnelle)",
     "save": "Enregistrer",

@@ -11,6 +11,7 @@ import {
   findAssetByInstrument,
   getAsset,
   getOperation,
+  type HistoryWindow,
   hasPriceHistory,
   heldQuantity,
   insertAsset,
@@ -693,12 +694,13 @@ export async function valuationHistory(
   }
 }
 
-/** The price history of one asset, for its own view. */
+/** The price history of one asset, for its own view; all of it without a window. */
 export async function assetHistory(
   userId: string,
   assetId: string,
+  window?: HistoryWindow,
 ): Promise<{ quotedOn: string; price: string }[]> {
-  return await assetHistoryDs(db(), userId, assetId)
+  return await assetHistoryDs(db(), userId, assetId, window)
 }
 
 /** The last known price of each asset, followed ones included. */

@@ -47,7 +47,8 @@
     "openingBalance": "Solde d’ouverture (€)",
     "openedOn": "Ouvert le",
     "amountPlaceholder": "0,00",
-    "realBalance": "Solde réel (€)"
+    "realBalance": "Solde réel (€)",
+    "note": "Note (optionnelle)"
   },
   "behaviors": {
     "payment": "Courant",
@@ -73,8 +74,9 @@
   },
   "close": {
     "title": "Clore « {name} » ?",
-    "description": "Plus aucun mouvement après aujourd’hui. Son historique reste entier, et tu peux le réouvrir.",
-    "confirm": "Clore"
+    "description": "Plus aucun mouvement après ce jour. Son historique reste entier, et tu peux le réouvrir.",
+    "confirm": "Clore",
+    "closedOn": "Clos le"
   },
   "reopen": {
     "title": "Réouvrir « {name} » ?",
@@ -82,7 +84,7 @@
   },
   "check": {
     "title": "Pointer {name}",
-    "description": "Le solde que ta banque affiche, face au calculé : {amount}.",
+    "description": "Le solde que ta banque affiche, face au calculé aujourd’hui : {amount}.",
     "submit": "Pointer"
   },
   "history": {
@@ -100,7 +102,8 @@
     "readOn": "Lu le",
     "deleteTitle": "Supprimer le pointage du {date} ?",
     "deleteSettled": "L’ajustement qui soldait son écart est supprimé avec lui : il n’existait que pour ce pointage.",
-    "deleteUnsettled": "Les mouvements du compte ne sont pas touchés : un pointage ne fait que les confronter à la réalité."
+    "deleteUnsettled": "Les mouvements du compte ne sont pas touchés : un pointage ne fait que les confronter à la réalité.",
+    "note": "« {note} »"
   },
   "settle": {
     "title": "Solder l’écart",

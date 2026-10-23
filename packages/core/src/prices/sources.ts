@@ -1,4 +1,5 @@
 import type { InstrumentKind, PriceSource } from '../domain/types.ts'
+import { coinGeckoUrl, yahooUrl } from './endpoints.ts'
 
 /**
  * A price as a source gave it, with the moment the market made it. Never the
@@ -98,7 +99,7 @@ export function parseYahoo(payload: unknown): Quote {
 }
 
 export async function fetchYahoo(reference: string): Promise<Quote> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(reference)}?interval=1d&range=1d`
+  const url = `${yahooUrl()}/v8/finance/chart/${encodeURIComponent(reference)}?interval=1d&range=1d`
   return parseYahoo(await getJson(url))
 }
 
@@ -116,7 +117,7 @@ export function parseCoinGecko(payload: unknown, reference: string): Quote {
 }
 
 export async function fetchCoinGecko(reference: string): Promise<Quote> {
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(reference)}&vs_currencies=eur&include_last_updated_at=true`
+  const url = `${coinGeckoUrl()}/api/v3/simple/price?ids=${encodeURIComponent(reference)}&vs_currencies=eur&include_last_updated_at=true`
   return parseCoinGecko(await getJson(url), reference)
 }
 
@@ -133,7 +134,7 @@ export interface HistoricalPrice {
  * declared today has no history of its own before it.
  */
 export async function fetchYahooHistory(reference: string): Promise<HistoricalPrice[]> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(reference)}?interval=1d&range=1y`
+  const url = `${yahooUrl()}/v8/finance/chart/${encodeURIComponent(reference)}?interval=1d&range=1y`
   return parseYahooHistory(await getJson(url))
 }
 
@@ -162,7 +163,7 @@ export function parseYahooHistory(payload: unknown): HistoricalPrice[] {
 }
 
 export async function fetchCoinGeckoHistory(reference: string): Promise<HistoricalPrice[]> {
-  const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(reference)}/market_chart?vs_currency=eur&days=365&interval=daily`
+  const url = `${coinGeckoUrl()}/api/v3/coins/${encodeURIComponent(reference)}/market_chart?vs_currency=eur&days=365&interval=daily`
   return parseCoinGeckoHistory(await getJson(url))
 }
 

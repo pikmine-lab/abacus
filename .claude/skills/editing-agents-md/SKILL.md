@@ -46,7 +46,7 @@ sentences.
 ## 4. Run the check
 
 ```
-node scripts/check-agents-md.mjs --base origin/main
+node scripts/checks/agents-md.mjs --base origin/main
 ```
 
 Fix every violation it names, then run it again until it passes.

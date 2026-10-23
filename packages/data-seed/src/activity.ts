@@ -67,6 +67,19 @@ export async function activity(userId: string, { accounts, categories }: Ledger,
       await settleInvoice(userId, invoice.id, { accountId: accounts.business, date: paidOn })
   }
 
+  // A client abroad is invoiced in its own currency, and has not paid yet.
+  const abroad = await actor('Atelier Lugano')
+  const abroadOn = daysAgo(10)
+  await declareInvoice(userId, {
+    activityId: activity.id,
+    actorId: abroad,
+    reference: `F-${abroadOn.slice(0, 7)}-CH`,
+    issuedOn: abroadOn,
+    dueOn: addDays(abroadOn, 30),
+    baseAmount: 2400,
+    currency: 'CHF',
+  })
+
   for (const [label, actorId, categoryId, amount, day, cardId] of [
     ['Suite bureautique', office, categories.software, 14.4, 2, cards.business],
     ['Tenue de compte pro', bank, categories.bankFees, 4.9, 1, undefined],

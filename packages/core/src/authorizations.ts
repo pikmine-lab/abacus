@@ -72,8 +72,8 @@ export async function listAuthorizations(userId: string, headers: Headers): Prom
  * Cuts a client off. Better Auth only deletes the consent row: the refresh
  * grant never reads it, so the client would keep renewing its tokens for as
  * long as it kept using them. The tokens of that client for that user go with
- * it, and the access token already issued expires within its ten minutes,
- * since the MCP server verifies it without asking the database.
+ * it, so it can no longer renew its access; the access token already issued
+ * holds until it expires, ten minutes at most.
  */
 export async function revokeAuthorization(
   userId: string,

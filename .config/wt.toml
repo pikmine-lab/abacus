@@ -50,6 +50,21 @@ wt config state vars set mcp-url="$(portless get --no-worktree {{ branch | sanit
 """
 
 [[pre-start]]
+# A Claude Code session opened here talks to this worktree's MCP server: the
+# project's .mcp.json reads MCP_URL from the env block of the local settings,
+# and without it points at a dead address rather than at production. Merged,
+# so what the file already holds stays.
+claude-mcp = """
+node -e '
+const fs = require("node:fs")
+const path = ".claude/settings.local.json"
+const settings = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : {}
+settings.env = { ...settings.env, MCP_URL: process.argv[1] }
+fs.writeFileSync(path, JSON.stringify(settings, null, 2) + "\\n")
+' '{{ vars["mcp-url"] }}'
+"""
+
+[[pre-start]]
 # PUBLIC_URL matters as much as DATABASE_URL here: Better Auth validates the
 # base URL, so leaving the source worktree's value breaks sign-in in this one.
 # MCP_URL is required too, and a source file predating it has no line to edit:
@@ -72,6 +87,12 @@ sed -i \
 migrate = "node --env-file=apps/web/.env.local packages/core/src/db/migrate.ts"
 
 [[pre-start]]
+# The tests never touch the dev database: each package of this worktree tests
+# against its own abacus_test_<branch>_<package>, created on its first run from
+# the base written here (packages/test-harness/src/database.ts).
+test-db = "node packages/test-harness/src/database.ts env"
+
+[[pre-start]]
 # This model is entered by hand, so an empty account means no functional
 # validation. The demo account is rewritten with this branch's code, its
 # history ending today: a clone of data seeded weeks ago would show nothing in
@@ -82,6 +103,13 @@ seed = "node --env-file=apps/web/.env.local packages/data-seed/src/main.ts"
 # portless names the route instead of allocating a port, and `wt step tether`
 # kills the dev server when the worktree is removed.
 web = "wt step tether -- portless {{ branch | sanitize }}.abacus pnpm --filter @abacus/web dev"
+# The MCP server on the worktree's MCP_URL, reading the web's keys behind the
+# local HTTPS (hence the system CA).
+mcp = """
+wt step tether -- env MCP_ALLOWED_HOSTS="$(node -e 'console.log(new URL(process.argv[1]).host)' '{{ vars["mcp-url"] }}')" \\
+  NODE_OPTIONS=--use-system-ca portless {{ branch | sanitize }}-mcp.abacus \\
+  node --env-file=apps/web/.env.local apps/mcp/src/main.ts
+"""
 
 [list]
 url = '{{ vars["dev-url"] }}'
@@ -101,6 +129,16 @@ done
 echo 'dev server still running after 10 s' >&2
 exit 1
 """
+
+[[pre-remove]]
+# The MCP server, stopped like the web one: portless stops it on SIGTERM.
+mcp-server = """
+pkill -TERM -f '[/]portless {{ branch | sanitize }}-mcp.abacus ' || true
+"""
+
+[[pre-remove]]
+# Every test database of this worktree, one per package that ran its tests.
+test-db = "node packages/test-harness/src/database.ts drop"
 
 [[pre-remove]]
 # FORCE closes any connection still open, a plain DROP refusing a database in

@@ -507,3 +507,49 @@ export function JudgmentSelect({ commitmentId, value }: { commitmentId: string; 
     </div>
   )
 }
+
+/**
+ * The judgment with the reason behind it, for when one word is not enough to
+ * remember why (“shared with the flatmate”, “cheaper plan with ads”). The
+ * same gesture as the row's selector, through a panel because a note is
+ * typed and sent, where the selector sends itself.
+ */
+export function JudgmentNoteForm({
+  commitmentId,
+  judgment,
+  note,
+  onDone,
+}: {
+  commitmentId: string
+  judgment: Judgment | null
+  note: string | null
+  onDone?: () => void
+}) {
+  const t = useTranslations('recurring')
+  return (
+    <ActionForm
+      action={async (_prev, formData) => {
+        const chosen = String(formData.get('judgment') ?? '')
+        if (!chosen) return { fields: { judgment: t('form.judgmentMissing') } }
+        const error = await setJudgmentAction(
+          commitmentId,
+          chosen as Judgment,
+          String(formData.get('note') ?? ''),
+        )
+        return error ? { error } : { ok: true }
+      }}
+      onSuccess={onDone}
+    >
+      <Field label={t('judgment')} name="judgment">
+        <FormSelect
+          name="judgment"
+          placeholder={t('form.toJudge')}
+          defaultValue={judgment ?? ''}
+          options={JUDGMENTS.map((value) => ({ value, label: t(`judgments.${value}`) }))}
+        />
+      </Field>
+      <TextField name="note" label={t('form.judgmentNote')} defaultValue={note ?? ''} autoComplete="off" />
+      <SubmitButton className="self-start">{t('form.save')}</SubmitButton>
+    </ActionForm>
+  )
+}

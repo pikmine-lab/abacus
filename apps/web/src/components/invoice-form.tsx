@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
+import { CurrencySelect } from '@/components/currency-select'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { Input } from '@/components/ui/input'
 import { correctInvoiceAction, declareInvoiceAction } from '@/lib/actions'
@@ -31,6 +32,8 @@ export interface InvoiceDraft {
   vatAmount: string
   withholdingRate: string
   withholdingAmount: string
+  /** The ISO code it is written in. */
+  currency: string
   note?: string
 }
 
@@ -94,11 +97,11 @@ export function InvoiceForm({
   draft,
   today,
 }: {
-  /** Business activities the invoice can belong to; absent when correcting. */
-  activities?: Option[]
+  /** Business activities the invoice can belong to, with the currency each invoices in; absent when correcting. */
+  activities?: (Option & { currency: string })[]
   actors: ClientOption[]
-  /** What a new invoice opens on: the activity, and its own VAT rate. */
-  defaults?: { activityId?: string; vatRate?: string }
+  /** What a new invoice opens on: the activity, its own VAT rate and its currency. */
+  defaults?: { activityId?: string; vatRate?: string; currency?: string }
   draft?: InvoiceDraft
   today: string
 }) {
@@ -114,6 +117,10 @@ export function InvoiceForm({
   const [withholding, setWithholding] = useState<Share>(
     initialShare(format, draft?.withholdingRate, draft?.withholdingAmount),
   )
+  // The currency the activity invoices in unless the invoice says otherwise,
+  // which is the rule of the service when none is given.
+  const defaultCurrency = draft?.currency ?? defaults?.currency ?? 'EUR'
+  const [currency, setCurrency] = useState(defaultCurrency)
 
   // The base comes from AmountInput as a machine value ("1234.50").
   const baseAmount = Number(base)
@@ -129,6 +136,7 @@ export function InvoiceForm({
         setBase('')
         setVat(initialShare(format, defaults?.vatRate))
         setWithholding(initialShare(format))
+        setCurrency(defaultCurrency)
       }}
     >
       {editing && <input type="hidden" name="invoiceId" value={draft.id} />}
@@ -141,6 +149,10 @@ export function InvoiceForm({
               placeholder={t('activityPlaceholder')}
               options={activities.map((a) => ({ value: a.id, label: a.name }))}
               defaultValue={defaults?.activityId ?? ''}
+              onValueChange={(id) => {
+                const chosen = activities.find((a) => a.id === id)
+                if (chosen) setCurrency(chosen.currency)
+              }}
             />
           </Field>
         ) : (
@@ -170,7 +182,9 @@ export function InvoiceForm({
         ))}
       </datalist>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Stacked on a phone: the base shares its half with the currency, and
+          a half of a phone is too narrow for an amount beside a code. */}
+      <div className="grid gap-3 sm:grid-cols-2">
         <TextField
           name="reference"
           label={t('reference')}
@@ -180,13 +194,17 @@ export function InvoiceForm({
         />
         <Field label={t('base')} name="baseAmount">
           {/* The stored value, not the live one: a success remounts the form,
-              and a live default would restore what was just submitted. */}
-          <AmountInput
-            name="baseAmount"
-            placeholder={t('basePlaceholder')}
-            defaultValue={draft?.baseAmount ?? ''}
-            onValueChange={setBase}
-          />
+              and a live default would restore what was just submitted. The
+              currency qualifies the amount, so it sits beside it. */}
+          <div className="flex gap-2">
+            <AmountInput
+              name="baseAmount"
+              placeholder={t('basePlaceholder')}
+              defaultValue={draft?.baseAmount ?? ''}
+              onValueChange={setBase}
+            />
+            <CurrencySelect value={currency} onValueChange={setCurrency} />
+          </div>
         </Field>
       </div>
 
@@ -204,6 +222,7 @@ export function InvoiceForm({
         rateName="vatRate"
         amountName="vatAmount"
         base={baseAmount}
+        unit={currency}
         share={vat}
         onChange={setVat}
       />
@@ -212,6 +231,7 @@ export function InvoiceForm({
         rateName="withholdingRate"
         amountName="withholdingAmount"
         base={baseAmount}
+        unit={currency}
         share={withholding}
         onChange={setWithholding}
       />
@@ -219,7 +239,7 @@ export function InvoiceForm({
       {baseAmount > 0 && (
         <p className="text-[12px] text-muted-foreground">
           {t.rich('receivable', {
-            amount: format.eur(net, 2),
+            amount: format.money(net, currency, 2),
             value: (chunks) => <span className="font-mono tabular text-foreground">{chunks}</span>,
           })}
         </p>
@@ -241,6 +261,7 @@ function RateAndAmount({
   rateName,
   amountName,
   base,
+  unit,
   share,
   onChange,
 }: {
@@ -248,6 +269,8 @@ function RateAndAmount({
   rateName: string
   amountName: string
   base: number
+  /** The currency the amounts are in, which the amount field names. */
+  unit: string
   share: Share
   onChange: (share: Share) => void
 }) {
@@ -276,7 +299,7 @@ function RateAndAmount({
           onChange={(e) => onChange({ value: e.target.value, unit: 'rate' })}
         />
       </Field>
-      <Field label={t('orAmount')}>
+      <Field label={t('orAmount', { unit: unit === 'EUR' ? '€' : unit })}>
         <Input
           inputMode="decimal"
           autoComplete="off"

@@ -102,7 +102,7 @@
       "menuLabel": "l’accès de {name}",
       "action": "Révoquer l’accès",
       "title": "Révoquer l’accès de « {name} » ?",
-      "description": "Il perd l’accès d’ici dix minutes au plus. Pour le rebrancher, il faudra l’autoriser à nouveau.",
+      "description": "Il perd l’accès dans les dix minutes au plus. Pour le rebrancher, il faudra l’autoriser à nouveau.",
       "cancel": "Annuler",
       "submit": "Révoquer"
     }

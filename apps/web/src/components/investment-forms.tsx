@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { useEntryPanel } from '@/components/entry-dock'
+import { EntrySheet } from '@/components/entry-sheet'
 import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
 import { MassFold } from '@/components/mass-fold'
 import { Rows } from '@/components/page-shell'
@@ -40,6 +41,7 @@ import {
   deleteOperationAction,
   recordOperationAction,
   renameAssetAction,
+  setAssetPriceAction,
   stopFollowingAction,
 } from '@/lib/actions'
 import { type Format, useFormat } from '@/lib/format'
@@ -667,6 +669,36 @@ export function FollowForm() {
       {!picked && <NatureField />}
       <SubmitButton className="self-start">{t('forms.follow')}</SubmitButton>
     </ActionForm>
+  )
+}
+
+/**
+ * A price typed by hand, for what no source quotes: an SCPI revalued, a flat
+ * reappraised. Dated, because a price is, and kept open after a save, since a
+ * history taken over is entered valuation after valuation.
+ */
+export function HandPriceEntry({ assetId, name, today }: { assetId: string; name: string; today: string }) {
+  const t = useTranslations('investments.handPrice')
+  return (
+    <EntrySheet
+      label={t('label')}
+      short={t('short')}
+      title={t('title', { name })}
+      description={t('description')}
+    >
+      <ActionForm action={setAssetPriceAction} successLabel={t('success')}>
+        <input type="hidden" name="assetId" value={assetId} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('price')} name="price">
+            <AmountInput name="price" />
+          </Field>
+          <Field label={t('on')} name="pricedOn">
+            <DateField name="pricedOn" defaultValue={today} />
+          </Field>
+        </div>
+        <SubmitButton className="self-start">{t('submit')}</SubmitButton>
+      </ActionForm>
+    </EntrySheet>
   )
 }
 

@@ -23,12 +23,6 @@ se branche pas.
 Le serveur de production (`abacus-mcp.payangar.dev`) porte des données réelles : un
 changement se vérifie contre le serveur local et le compte de démo, jamais contre lui.
 
-Pour éprouver le flux OAuth avec un vrai client, lancer le serveur sur le `MCP_URL` du
-worktree, depuis la racine :
-
-```sh
-MCP_ALLOWED_HOSTS=<hôte de MCP_URL> NODE_OPTIONS=--use-system-ca \
-  portless <branche>-mcp.abacus node --env-file=apps/web/.env.local apps/mcp/src/main.ts
-```
-
-L'option CA lui fait lire les clés du web derrière le HTTPS local.
+Un worktree lance son serveur sur son `MCP_URL` à sa création (`.config/wt.toml`). Une
+session Claude Code ouverte dans le worktree le voit sous le nom `abacus` (`.mcp.json`),
+qui masque le serveur de production de même nom.

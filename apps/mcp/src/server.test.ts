@@ -1,0 +1,2576 @@
+import assert from 'node:assert/strict'
+import { after, before, beforeEach, test } from 'node:test'
+import { db } from '@abacus/core/db'
+import { addPeriod, today } from '@abacus/core/domain/period'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import type { AuthInfo } from '@modelcontextprotocol/server'
+import { createMcpHandler } from '@modelcontextprotocol/server'
+import { seedUser, setupDb, teardownDb, truncateAll } from '../../../packages/core/test/helpers.ts'
+import { userIdOf } from './auth.ts'
+import { buildServer } from './server.ts'
+
+before(setupDb)
+beforeEach(truncateAll)
+after(teardownDb)
+
+/**
+ * Exercises the real MCP surface in-process: same handler as production, with
+ * a pre-verified AuthInfo standing in for the API-key gate.
+ */
+async function clientFor(userId: string): Promise<Client> {
+  const authInfo: AuthInfo = { token: 'test', clientId: userId, scopes: ['mcp'], extra: { userId } }
+  const handler = createMcpHandler(({ authInfo: info }) => buildServer(userIdOf(info)))
+  const transport = new StreamableHTTPClientTransport(new URL('http://in-process.test/mcp'), {
+    fetch: (url, init) => handler.fetch(new Request(url, init), { authInfo }),
+  })
+  const client = new Client({ name: 'test-client', version: '0.0.0' })
+  await client.connect(transport)
+  return client
+}
+
+interface ToolReply {
+  isError?: boolean
+  text: string
+  json: () => unknown
+}
+
+/**
+ * The rows of a list tool. They travel under their own key, beside the order
+ * the tool used: a list is nearly always cut by a limit, so which rows came
+ * back depends on how it was sorted, and the answer says it.
+ */
+function rows<T>(reply: ToolReply, key: string): T[] {
+  return (reply.json() as Record<string, T[]>)[key]!
+}
+
+async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<ToolReply> {
+  const result = (await client.callTool({ name, arguments: args })) as {
+    isError?: boolean
+    content: { type: string; text: string }[]
+  }
+  const text = result.content.map((c) => c.text).join('\n')
+  return { isError: result.isError, text, json: () => JSON.parse(text) }
+}
+
+test('full declarative session through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+  await call(client, 'manage_actors', { action: 'create', name: "McDonald's", aliases: ['McDo', 'Macdo'] })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME', activity: 'Freelance' })
+
+  // Unknown actor: the line fails with guidance, the rest of the batch passes.
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-08-01', amount: 1500, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-08-02', amount: 300, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
+      {
+        date: '2026-08-03',
+        amount: 12.5,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Macdo',
+        category: 'Courses',
+      },
+      { date: '2026-08-04', amount: 20, type: 'expense', account: 'Courant', actor: 'Glovo' },
+    ],
+  })
+  const batch = declared.json() as {
+    declared: number
+    failed: number
+    results: { ok: boolean; error?: string }[]
+  }
+  assert.equal(batch.declared, 3)
+  assert.equal(batch.failed, 1)
+  assert.match(batch.results[3]!.error!, /createUnknownActors/)
+
+  // Retry the failed line with explicit creation.
+  const retried = await call(client, 'declare_movements', {
+    movements: [{ date: '2026-08-04', amount: 20, type: 'expense', account: 'Courant', actor: 'Glovo' }],
+    createUnknownActors: true,
+  })
+  assert.equal((retried.json() as { declared: number }).declared, 1)
+
+  // The freelance income inherited its activity from the actor.
+  const byActivity = await call(client, 'list_movements', { activity: 'Freelance' })
+  assert.equal(rows(byActivity, 'movements').length, 1)
+
+  // A search is read word by word, the number as the start of an amount.
+  const searched = await call(client, 'list_movements', { search: 'glov 20' })
+  assert.deepEqual(
+    rows<{ amount: number }>(searched, 'movements').map((m) => m.amount),
+    [20],
+  )
+
+  // Overview: balances reflect the movements, transfer stayed neutral.
+  const overview = (await call(client, 'get_overview')).json() as {
+    accounts: { name: string; balance: number }[]
+    monthlyCommittedCost: number
+  }
+  const balances = Object.fromEntries(overview.accounts.map((a) => [a.name, a.balance]))
+  assert.equal(balances.Courant, 1167.5)
+  assert.equal(balances.Livret, 300)
+
+  // Balance check: reality says 1150, so 17.50 of spending is missing.
+  const check = (
+    await call(client, 'record_balance_check', { account: 'Courant', balance: 1150, date: '2026-08-10' })
+  ).json() as { checkId: string; gap: number; guidance: string }
+  assert.equal(check.gap, -17.5)
+  await call(client, 'manage_actors', { action: 'create', name: 'Inconnu' })
+  const settled = (
+    await call(client, 'settle_check_gap', { checkId: check.checkId, actor: 'Inconnu' })
+  ).json() as { amount: number; kind: string }
+  assert.equal(settled.amount, 17.5)
+  assert.equal(settled.kind, 'expense')
+
+  // Settled: the overview stops reporting a gap on that account, where the
+  // check's own history keeps saying what it found.
+  const afterSettling = (await call(client, 'get_overview')).json() as {
+    accounts: { name: string; lastCheck: unknown }[]
+  }
+  const courant = afterSettling.accounts.find((a) => a.name === 'Courant')!
+  assert.deepEqual(courant.lastCheck, { on: '2026-08-10', openGap: 0 })
+})
+
+test('subscription lifecycle through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Netflix',
+    actor: 'Netflix',
+    account: 'Courant',
+    amount: 13.49,
+    firstDueOn: '2026-08-01',
+  })
+
+  const overview = (await call(client, 'get_overview')).json() as {
+    pendingOccurrences: { commitment: string; dueOn: string }[]
+    monthlyCommittedCost: number
+  }
+  assert.deepEqual(overview.pendingOccurrences[0], {
+    commitment: 'Netflix',
+    dueOn: '2026-08-01',
+    amount: 13.49,
+    direction: 'outgoing',
+    account: 'Courant',
+  })
+  assert.equal(overview.monthlyCommittedCost, 13.49)
+
+  // The real debit was higher. Confirmed without qualifying it, the divergence
+  // is a one-off: the reference amount is left alone and the answer says so.
+  const oneOff = (
+    await call(client, 'confirm_due_movements', {
+      items: [{ commitment: 'Netflix', action: 'confirm', amount: 15.99 }],
+    })
+  ).json() as { results: { amount: number; expected?: number; reference?: string }[] }
+  assert.equal(oneOff.results[0]!.amount, 15.99)
+  assert.equal(oneOff.results[0]!.expected, 13.49)
+  assert.match(oneOff.results[0]!.reference!, /one-off/)
+  assert.equal(
+    rows<{ amount: number }>(await call(client, 'list_commitments'), 'commitments')[0]!.amount,
+    13.49,
+  )
+
+  // Said to be the new norm, the same gesture also moves the reference and
+  // records it, so the price history shows when it changed.
+  const permanent = (
+    await call(client, 'confirm_due_movements', {
+      items: [{ commitment: 'Netflix', action: 'confirm', amount: 15.99, amountIsTheNewNorm: true }],
+    })
+  ).json() as { results: { reference?: string }[] }
+  assert.match(permanent.results[0]!.reference!, /Updated/)
+  await call(client, 'manage_subscription', {
+    action: 'set_judgment',
+    commitment: 'Netflix',
+    judgment: 'reducible',
+    judgmentNote: 'Passer au palier avec pub ?',
+  })
+
+  const commitments = rows<{
+    label: string
+    monthlyEquivalent: number
+    judgment: string
+  }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(commitments[0]!.monthlyEquivalent, 15.99)
+  assert.equal(commitments[0]!.judgment, 'reducible')
+
+  // Renamed: a correction, and it carries no date.
+  const corrected = (
+    await call(client, 'update_commitment', {
+      commitment: 'Netflix',
+      label: 'Netflix Standard',
+      periodUnit: 'year',
+    })
+  ).json() as { label: string; every: string; note: string }
+  assert.equal(corrected.label, 'Netflix Standard')
+  assert.equal(corrected.every, '1 year')
+  assert.match(corrected.note, /already recorded are unchanged/)
+
+  // The debit moving to another account is the other kind of gesture: dated,
+  // declarable before it happens. Until that date the review shows both the
+  // account in force and the move to come.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Second', behavior: 'payment' })
+  const moveOn = addPeriod(today(), 'year', 1)
+  const moved = (
+    await call(client, 'change_commitment_account', {
+      commitment: 'Netflix Standard',
+      account: 'Second',
+      effectiveOn: moveOn,
+    })
+  ).json() as { account: string; effectiveOn: string; note: string }
+  assert.equal(moved.account, 'Second')
+  assert.match(moved.note, /still land on the previous account/)
+  const [reviewed] = rows<{
+    account: string
+    movingTo?: { account: string; on: string }
+  }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(reviewed!.account, 'Courant')
+  assert.deepEqual(reviewed!.movingTo, { account: 'Second', on: moveOn })
+
+  // The movements already recorded keep the account they happened on.
+  const onOldAccount = rows(
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Courant' }),
+    'movements',
+  )
+  const onNewAccount = rows(
+    await call(client, 'list_movements', { from: '2026-01-01', to: '2026-12-31', account: 'Second' }),
+    'movements',
+  )
+  assert.equal(onOldAccount.length, 2)
+  assert.equal(onNewAccount.length, 0)
+
+  // Errors come back as guidance, not stack traces.
+  const unknown = await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Spotify', action: 'confirm' }],
+  })
+  assert.match((unknown.json() as { results: { error: string }[] }).results[0]!.error, /No commitment/)
+})
+
+test('a subscription partly refunded by someone through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Navigo',
+    actor: 'RATP',
+    account: 'Courant',
+    amount: 86.4,
+    firstDueOn: '2026-08-01',
+    expectedRefunds: [{ from: 'Employeur', amount: 43.2 }],
+  })
+  const listed = await call(client, 'list_commitments')
+  const [line] = rows<{
+    expectedRefunds: { from: string; amount: number; onTotal?: boolean }[]
+    monthlyEquivalent: number
+  }>(listed, 'commitments')
+  assert.deepEqual(line!.expectedRefunds, [{ from: 'Employeur', amount: 43.2 }])
+  // The share is still to come back: the cost is what leaves the account.
+  assert.equal(line!.monthlyEquivalent, 86.4)
+  const [cost] = (listed.json() as { costByAccount: { monthlyCost: number }[] }).costByAccount
+  assert.equal(cost!.monthlyCost, 86.4)
+  const overview = (await call(client, 'get_overview')).json() as { monthlyCommittedCost: number }
+  assert.equal(overview.monthlyCommittedCost, 86.4)
+
+  // The confirmed occurrence is an ordinary advance on the share.
+  await call(client, 'confirm_due_movements', { items: [{ commitment: 'Navigo', action: 'confirm' }] })
+  const [claim] = (await call(client, 'list_outstanding_advances')).json() as {
+    owed: number
+    debtor: string
+  }[]
+  assert.equal(claim!.owed, 43.2)
+  assert.equal(claim!.debtor, 'Employeur')
+
+  const below = await call(client, 'manage_subscription', {
+    action: 'change_price',
+    commitment: 'Navigo',
+    amount: 40,
+  })
+  assert.equal(below.isError, true)
+  assert.match(below.text, /update_commitment/)
+
+  await call(client, 'update_commitment', { commitment: 'Navigo', expectedRefundFrom: 'none' })
+  const [dropped] = rows<{ expectedRefundFrom?: string; monthlyEquivalent: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(dropped!.expectedRefundFrom, undefined)
+  assert.equal(dropped!.monthlyEquivalent, 86.4)
+})
+
+test('financing tracked to settlement through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  // Stated the way the contract states it: a total over N installments.
+  const financing = (
+    await call(client, 'declare_financing', {
+      label: 'Canapé en 4x',
+      actor: 'BigStore',
+      account: 'Courant',
+      totalAmount: 1000,
+      installmentsTotal: 4,
+      firstDueOn: '2026-08-05',
+    })
+  ).json() as { totalAmount: number; schedule: { dueOn: string; amount: number }[] }
+  assert.equal(financing.totalAmount, 1000)
+  // The plan it wrote comes back, so an agent can report it without asking again.
+  assert.deepEqual(
+    financing.schedule.map((i) => [i.dueOn, i.amount]),
+    [
+      ['2026-08-05', 250],
+      ['2026-09-05', 250],
+      ['2026-10-05', 250],
+      ['2026-11-05', 250],
+    ],
+  )
+
+  await call(client, 'confirm_due_movements', {
+    items: [
+      { commitment: 'Canapé en 4x', action: 'confirm' },
+      { commitment: 'Canapé en 4x', action: 'confirm' },
+    ],
+  })
+
+  const commitments = rows<{
+    label: string
+    paidInstallments: string
+    remainingDue: number
+  }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(commitments[0]!.paidInstallments, '2/4')
+  assert.equal(commitments[0]!.remainingDue, 500)
+
+  // The store pushes the last installment back and knocks 50 off it: the plan
+  // is revised as a whole, from the ids it just read.
+  interface ScheduleView {
+    totalAmount: number
+    installments: { id: string; position: number; dueOn: string; amount: number; status: string }[]
+  }
+  const shown = (
+    await call(client, 'manage_financing_schedule', { action: 'show', commitment: 'Canapé en 4x' })
+  ).json() as ScheduleView
+  assert.deepEqual(
+    shown.installments.map((i) => i.status),
+    ['paid', 'paid', 'due', 'due'],
+  )
+
+  const revised = (
+    await call(client, 'manage_financing_schedule', {
+      action: 'revise',
+      commitment: 'Canapé en 4x',
+      installments: shown.installments.map((i) => ({
+        id: i.id,
+        dueOn: i.position === 4 ? '2026-12-05' : i.dueOn,
+        amount: i.position === 4 ? 200 : i.amount,
+      })),
+    })
+  ).json() as ScheduleView
+  assert.equal(revised.totalAmount, 950)
+  assert.deepEqual(revised.installments[3], {
+    id: shown.installments[3]!.id,
+    position: 4,
+    dueOn: '2026-12-05',
+    amount: 200,
+    status: 'due',
+  })
+
+  const after = rows<{ remainingDue: number }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(after[0]!.remainingDue, 450)
+})
+
+test('a mistyped movement is repaired through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 90,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Carrefour',
+        category: 'Courses',
+      },
+    ],
+  })
+  const [declared] = rows<{ id: string; amount: number }>(await call(client, 'list_movements'), 'movements')
+
+  // A typo on the amount: corrected in place, everything else untouched.
+  const fixed = (
+    await call(client, 'fix_movement', { movement: declared!.id, action: 'correct', amount: 79.9 })
+  ).json() as { amount: number; kind: string }
+  assert.equal(fixed.amount, 79.9)
+  assert.equal(fixed.kind, 'expense')
+
+  // It was not an expense at all but a transfer between two owned accounts:
+  // the kind is re-derived and the category cannot survive it.
+  const retyped = (
+    await call(client, 'fix_movement', {
+      movement: declared!.id,
+      action: 'correct',
+      type: 'transfer',
+      account: 'Courant',
+      toAccount: 'Livret',
+      category: 'none',
+    })
+  ).json() as { kind: string }
+  assert.equal(retyped.kind, 'transfer')
+
+  // An unknown id is guidance, not a stack trace.
+  const missing = await call(client, 'fix_movement', {
+    movement: '00000000-0000-0000-0000-000000000000',
+    action: 'delete',
+  })
+  assert.equal(missing.isError, true)
+  assert.match(missing.text, /list_movements/)
+
+  await call(client, 'fix_movement', { movement: declared!.id, action: 'delete' })
+  assert.deepEqual(rows(await call(client, 'list_movements'), 'movements'), [])
+})
+
+test('the whole referential corrects itself through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', {
+    action: 'create',
+    name: 'Curent',
+    behavior: 'payment',
+    institution: 'Banque',
+  })
+  await call(client, 'manage_activities', { action: 'create', name: 'Frelance' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Corses', group: 'Quotidien' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME Crop' })
+
+  const account = (
+    await call(client, 'manage_accounts', {
+      action: 'update',
+      name: 'Curent',
+      newName: 'Courant',
+      behavior: 'savings',
+      institution: 'none',
+    })
+  ).json() as { name: string; behavior: string; institution?: string }
+  assert.deepEqual(account.name, 'Courant')
+  assert.equal(account.behavior, 'savings')
+  assert.equal(account.institution, undefined)
+
+  const activity = (
+    await call(client, 'manage_activities', { action: 'update', name: 'Frelance', newName: 'Freelance' })
+  ).json() as { name: string }
+  assert.equal(activity.name, 'Freelance')
+
+  const category = (
+    await call(client, 'manage_categories', {
+      action: 'update',
+      name: 'Corses',
+      newName: 'Courses',
+      group: 'none',
+    })
+  ).json() as { name: string; group?: string }
+  assert.equal(category.name, 'Courses')
+  assert.equal(category.group, undefined)
+
+  // The actor takes the corrected name and the activity that was missing.
+  const actor = (
+    await call(client, 'manage_actors', {
+      action: 'update',
+      actor: 'ACME Crop',
+      newName: 'ACME Corp',
+      activity: 'Freelance',
+    })
+  ).json() as { name: string; movementsLeftBehind: number }
+  assert.equal(actor.name, 'ACME Corp')
+  assert.equal(actor.movementsLeftBehind, 0)
+  assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
+    { name: 'ACME Corp', aliases: [], activity: 'Freelance' },
+  ])
+
+  // A closed account reopens: closing the wrong one is not a dead end.
+  await call(client, 'manage_accounts', { action: 'close', name: 'Courant', closedOn: '2026-07-31' })
+  const reopened = (await call(client, 'manage_accounts', { action: 'reopen', name: 'Courant' })).json() as {
+    closedOn: null
+  }
+  assert.equal(reopened.closedOn, null)
+
+  // A name already taken comes back as guidance.
+  await call(client, 'manage_categories', { action: 'create', name: 'Loyer' })
+  const taken = await call(client, 'manage_categories', {
+    action: 'update',
+    name: 'Courses',
+    newName: 'loyer',
+  })
+  assert.equal(taken.isError, true)
+  assert.match(taken.text, /already uses that name/)
+})
+
+test('a business activity is configured, closed and read back through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_categories', { action: 'create', name: 'Repas' })
+
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      revenueBasis: 'invoiced',
+      vatRegistered: true,
+      defaultVatRate: 21,
+      deductibleExpenses: 'all',
+      regimeLabel: 'Régime de contrôle',
+      fiscalYearStartMonth: 4,
+      fiscalYearStartDay: 6,
+    })
+  ).json() as { revenueBasis: string; fiscalYearStart: string; defaultVatRate: number }
+  assert.equal(created.revenueBasis, 'invoiced')
+  assert.equal(created.fiscalYearStart, '04-06')
+  assert.equal(created.defaultVatRate, 21)
+
+  await call(client, 'manage_activities', {
+    action: 'set_exceptions',
+    name: 'Conseil',
+    categories: ['Repas'],
+  })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    categoryExceptions?: string[]
+  }[]
+  assert.deepEqual(listed[0]!.categoryExceptions, ['Repas'])
+
+  // The activity says what it lives on, and a personal one lives on nothing.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Conseil',
+    accounts: ['Pro'],
+  })
+  await call(client, 'manage_activities', { action: 'create', name: 'Location' })
+  const wrongKind = await call(client, 'manage_activities', {
+    action: 'set_accounts',
+    name: 'Location',
+    accounts: ['Pro'],
+  })
+  assert.equal(wrongKind.isError, true)
+  assert.match(wrongKind.text, /Only a business activity/)
+
+  // A client carries what it does to an invoice.
+  const actor = (
+    await call(client, 'manage_actors', {
+      action: 'create',
+      name: 'Client A',
+      activity: 'Conseil',
+      invoiceVatRate: 21,
+      invoiceWithholdingRate: 15,
+    })
+  ).json() as { actorId: string }
+  assert.ok(actor.actorId)
+  assert.deepEqual((await call(client, 'manage_actors', { action: 'list' })).json(), [
+    { name: 'Client A', aliases: [], activity: 'Conseil', invoiceVatRate: 21, invoiceWithholdingRate: 15 },
+  ])
+
+  // Closed, the activity refuses a later movement and says where it belongs.
+  await call(client, 'manage_activities', { action: 'close', name: 'Conseil', closedOn: '2026-06-30' })
+  const late = await call(client, 'declare_movements', {
+    movements: [{ date: '2026-07-01', amount: 900, type: 'income', account: 'Pro', actor: 'Client A' }],
+  })
+  assert.match((late.json() as { results: { error?: string }[] }).results[0]!.error!, /closed at that date/)
+  const reopened = (
+    await call(client, 'manage_activities', { action: 'reopen', name: 'Conseil' })
+  ).json() as { closedOn: null }
+  assert.equal(reopened.closedOn, null)
+})
+
+test('two activities declare the same account, and each says so through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+
+  // Declared from the activity, at creation for one and by correction for the
+  // other: the same account serves both.
+  const created = (
+    await call(client, 'manage_activities', {
+      action: 'create',
+      name: 'Conseil',
+      kind: 'business',
+      startedOn: '2026-01-01',
+      accounts: ['Courant', 'Livret'],
+    })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(created.accounts, ['Courant', 'Livret'])
+  await call(client, 'manage_activities', { action: 'create', name: 'Photo', kind: 'business' })
+  const updated = (
+    await call(client, 'manage_activities', { action: 'update', name: 'Photo', accounts: ['Courant'] })
+  ).json() as { accounts: string[] }
+  assert.deepEqual(updated.accounts, ['Courant'])
+
+  // Every account answers with the activities living on it, so the sharing is
+  // never something the AI has to deduce.
+  const accounts = (await call(client, 'manage_accounts', { action: 'list' })).json() as {
+    accounts: { name: string; activities?: string[] }[]
+  }
+  assert.deepEqual(
+    accounts.accounts.map((a) => [a.name, a.activities]),
+    [
+      ['Courant', ['Conseil', 'Photo']],
+      ['Livret', ['Conseil']],
+    ],
+  )
+
+  // The list replaces: an empty one detaches, and the neighbour keeps its own.
+  await call(client, 'manage_activities', { action: 'set_accounts', name: 'Photo', accounts: [] })
+  const listed = (await call(client, 'manage_activities', { action: 'list' })).json() as {
+    name: string
+    accounts?: string[]
+  }[]
+  assert.deepEqual(
+    listed.map((a) => [a.name, a.accounts]),
+    [
+      ['Conseil', ['Courant', 'Livret']],
+      ['Photo', []],
+    ],
+  )
+})
+
+test('a movement reads back with its account and its counterparty', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-01',
+        amount: 40,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Carrefour',
+        category: 'Courses',
+      },
+      { date: '2026-08-02', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-08-03', amount: 200, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
+    ],
+  })
+
+  const listed = rows<{
+    kind: string
+    account: string
+    counterparty: string
+    category?: string
+  }>(await call(client, 'list_movements'), 'movements')
+  assert.deepEqual(
+    listed.map((m) => [m.kind, m.account, m.counterparty, m.category]),
+    [
+      ['transfer', 'Courant', 'Livret', undefined],
+      ['income', 'Courant', 'ACME', undefined],
+      ['expense', 'Courant', 'Carrefour', 'Courses'],
+    ],
+  )
+})
+
+test('a foreign-currency expense through the MCP surface, statement euros given', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  // eurAmount short-circuits the rate lookup, so no price source is hit here;
+  // the computed-rate path is covered by the core tests with a stubbed source.
+  const declared = await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [
+      {
+        date: '2026-08-01',
+        amount: 99,
+        currency: 'USD',
+        eurAmount: 91.35,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Diner',
+      },
+    ],
+  })
+  const [line] = (declared.json() as { results: { paid?: string; eurAmount?: number }[] }).results
+  assert.equal(line?.paid, '99 USD')
+  assert.equal(line?.eurAmount, 91.35)
+
+  const [row] = rows<{ amount: number; paid?: string }>(await call(client, 'list_movements'), 'movements')
+  assert.equal(row?.amount, 91.35)
+  assert.equal(row?.paid, '99 USD')
+
+  // A transfer moves euros between owned accounts: a currency on it is refused.
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  const refused = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 50,
+        currency: 'USD',
+        type: 'transfer',
+        account: 'Courant',
+        toAccount: 'Livret',
+      },
+    ],
+  })
+  assert.match(refused.text, /euros/)
+})
+
+test('a USD subscription through the MCP surface, converted where euros are needed', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  // The pair is seeded so no price source is hit: the conversion machinery
+  // itself is covered by the core tests with a stubbed source.
+  const sql = db()
+  const [pair] = await sql<{ id: string }[]>`
+    insert into instrument (kind, price_source, price_source_ref, name, symbol, currency)
+    values ('currency', 'yahoo', 'USDEUR=X', 'USD/EUR', 'USD', 'EUR')
+    returning id
+  `
+  await sql`insert into instrument_price (instrument_id, quoted_on, price) values (${pair!.id}, ${today()}, 0.9)`
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'US SaaS',
+    actor: 'SaaS Inc',
+    account: 'Courant',
+    amount: 10,
+    currency: 'USD',
+    firstDueOn: today(),
+  })
+
+  // The committed cost is in euros at the latest rate; the row says its currency.
+  const overview = (await call(client, 'get_overview')).json() as {
+    monthlyCommittedCost: number
+    pendingOccurrences: { amount: number; currency?: string; ahead?: string }[]
+  }
+  assert.equal(overview.monthlyCommittedCost, 9)
+  assert.deepEqual(
+    overview.pendingOccurrences.filter((p) => !p.ahead).map((p) => [p.amount, p.currency]),
+    [[10, 'USD']],
+  )
+
+  // Confirmed with the bank's own euros: the movement carries both sides.
+  const confirmed = (
+    await call(client, 'confirm_due_movements', {
+      items: [{ commitment: 'US SaaS', action: 'confirm', eurAmount: 9.12 }],
+    })
+  ).json() as { results: { amount: number; paid?: string }[] }
+  assert.equal(confirmed.results[0]!.amount, 9.12)
+  assert.equal(confirmed.results[0]!.paid, '10 USD')
+})
+
+test('a balance check is corrected through the MCP surface, adjustment included', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Inconnu' })
+  await call(client, 'declare_movements', {
+    createUnknownActors: true,
+    movements: [{ date: '2026-08-01', amount: 1000, type: 'income', account: 'Courant', actor: 'ACME' }],
+  })
+  const check = (
+    await call(client, 'record_balance_check', { account: 'Courant', balance: 950, date: '2026-08-10' })
+  ).json() as { checkId: string }
+  await call(client, 'settle_check_gap', { checkId: check.checkId, actor: 'Inconnu' })
+
+  const listed = (await call(client, 'manage_balance_checks', { action: 'list' })).json() as {
+    checkId: string
+    account: string
+    gap: number
+    settledByMovement?: string
+  }[]
+  assert.equal(listed.length, 1)
+  assert.equal(listed[0]!.account, 'Courant')
+  assert.equal(listed[0]!.gap, -50)
+  assert.ok(listed[0]!.settledByMovement)
+
+  // 900 was the real balance: the gap widens and the adjustment follows.
+  const wider = (
+    await call(client, 'manage_balance_checks', {
+      action: 'correct',
+      check: check.checkId,
+      balance: 900,
+    })
+  ).json() as { gap: number; adjustment: string }
+  assert.equal(wider.gap, -100)
+  assert.match(wider.adjustment, /realigned/)
+  const adjustment = rows<{ amount: number }>(await call(client, 'list_movements'), 'movements')[0]
+  assert.equal(adjustment!.amount, 100)
+
+  // Nothing left to settle: the adjustment is removed with the gap.
+  const settled = (
+    await call(client, 'manage_balance_checks', {
+      action: 'correct',
+      check: check.checkId,
+      balance: 1000,
+    })
+  ).json() as { gap: number; adjustment: string }
+  assert.equal(settled.gap, 0)
+  assert.match(settled.adjustment, /removed/)
+  assert.equal(rows(await call(client, 'list_movements'), 'movements').length, 1)
+
+  await call(client, 'manage_balance_checks', { action: 'delete', check: check.checkId })
+  assert.deepEqual((await call(client, 'manage_balance_checks', { action: 'list' })).json(), [])
+
+  const gone = await call(client, 'manage_balance_checks', {
+    action: 'correct',
+    check: check.checkId,
+    balance: 10,
+  })
+  assert.equal(gone.isError, true)
+  assert.match(gone.text, /manage_balance_checks/)
+})
+
+test('an advance and its refund through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Restaurant' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Alex' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Sam' })
+
+  // Shares beyond the bill are refused, with what to do about it.
+  const tooMuch = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefunds: [
+          { from: 'Alex', amount: 90 },
+          { from: 'Sam', amount: 40 },
+        ],
+      },
+    ],
+  })
+  assert.match(tooMuch.text, /cannot add up to more than what was paid/)
+
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefunds: [
+          { from: 'Alex', amount: 60 },
+          { from: 'Sam', amount: 30 },
+        ],
+      },
+    ],
+  })
+
+  // One claim per person, each telling what is owed and where a refund lands.
+  type Claim = {
+    claimId: string
+    debtor: string
+    owed: number
+    remaining: number
+    account: string
+    advancedOn: { movementId?: string; paid?: number; financing?: string }
+    nextDueOn?: string
+    late?: number
+  }
+  const open = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  assert.deepEqual(
+    open.map((c) => [c.debtor, c.owed, c.remaining, c.account, c.advancedOn.paid]),
+    [
+      ['Alex', 60, 60, 'Courant', 120],
+      ['Sam', 30, 30, 'Courant', 120],
+    ],
+  )
+  const bill = open[0]!.advancedOn.movementId!
+
+  // Alex pays back in two steps, Sam has not yet: the claims close one by one.
+  for (const [date, amount] of [
+    ['2026-08-12', 40],
+    ['2026-08-13', 20],
+  ] as const)
+    await call(client, 'declare_movements', {
+      movements: [
+        { date, amount, type: 'income', account: 'Courant', actor: 'Alex', claimId: open[0]!.claimId },
+      ],
+    })
+  const left = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  assert.deepEqual(
+    left.map((c) => c.debtor),
+    ['Sam'],
+  )
+
+  // The bill reads back with each person's claim, and the refunds with what they pay back.
+  const history = (await call(client, 'list_movements', { advances: 'open' })).json() as {
+    movements: { id: string; claimState: string; claims: Record<string, unknown>[] }[]
+  }
+  assert.deepEqual(
+    history.movements.map((m) => [m.id, m.claimState, m.claims.map(({ claimId: _, ...rest }) => rest)]),
+    [
+      [
+        bill,
+        'open',
+        [
+          { debtor: 'Alex', owed: 60, refunded: 60, state: 'settled', lastRefundedOn: '2026-08-13' },
+          { debtor: 'Sam', owed: 30, refunded: 0, state: 'open' },
+        ],
+      ],
+    ],
+  )
+  const refunds = (
+    await call(client, 'list_movements', { advances: 'refunds', from: '2026-08-13', to: '2026-08-13' })
+  ).json() as { movements: { amount: number; refunds?: string }[] }
+  assert.deepEqual(
+    refunds.movements.map((m) => [m.amount, m.refunds]),
+    [[20, bill]],
+  )
+
+  // A refund from the wrong person, or beyond the share, is refused.
+  const wrong = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-14',
+        amount: 10,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Sam',
+        claimId: open[0]!.claimId,
+      },
+    ],
+  })
+  assert.match(wrong.text, /comes from someone else/)
+
+  // Sam paid by a transfer already declared as a plain income: linked afterwards, then unlinked.
+  const plain = (
+    await call(client, 'declare_movements', {
+      movements: [{ date: '2026-08-15', amount: 30, type: 'income', account: 'Courant', actor: 'Sam' }],
+    })
+  ).json() as { results: { movementId: string }[] }
+  const income = plain.results[0]!.movementId
+  await call(client, 'fix_movement', { movement: income, action: 'correct', refundsMovementId: bill })
+  assert.deepEqual((await call(client, 'list_outstanding_advances')).json(), [])
+  await call(client, 'fix_movement', { movement: income, action: 'correct', refundsMovementId: 'none' })
+  assert.equal(((await call(client, 'list_outstanding_advances')).json() as Claim[]).length, 1)
+
+  // Sam promises three monthly payments, and is late on the first by October.
+  const [sam] = (await call(client, 'list_outstanding_advances')).json() as Claim[]
+  const planned = await call(client, 'manage_claims', {
+    claimId: sam!.claimId,
+    action: 'plan',
+    count: 3,
+    firstDueOn: '2026-09-01',
+  })
+  assert.deepEqual(
+    (planned.json() as { plan: { amount: number }[] }).plan.map((l) => l.amount),
+    [10, 10, 10],
+  )
+
+  // Refunded on the spot: both movements, no claim left behind.
+  const sameDay = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-14',
+        amount: 60,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefunds: [{ from: 'Alex', amount: 30 }],
+        alreadyRefunded: true,
+      },
+    ],
+  })
+  assert.equal((sameDay.json() as { declared: number; failed: number }).declared, 1)
+  assert.equal(((await call(client, 'list_outstanding_advances')).json() as Claim[]).length, 1)
+
+  // The shares are repairable: restated, then dropped entirely.
+  await call(client, 'fix_movement', {
+    movement: bill,
+    action: 'correct',
+    expectedRefunds: [
+      { from: 'Alex', amount: 60 },
+      { from: 'Sam', amount: 30 },
+    ],
+  })
+  const dropping = await call(client, 'fix_movement', {
+    movement: bill,
+    action: 'correct',
+    expectedRefunds: 'none',
+  })
+  assert.match(dropping.text, /manage_claims remove/)
+})
+
+test('a purchase financed for someone else is one claim, planned and paid back on its own rhythm', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+
+  await call(client, 'declare_financing', {
+    label: 'Laptop',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 300,
+    installmentsTotal: 3,
+    firstDueOn: '2026-07-01',
+    expectedRefunds: [{ from: 'Lea', amount: 300, onTotal: true }],
+  })
+  const [line] = rows<{ expectedRefunds: unknown }>(await call(client, 'list_commitments'), 'commitments')
+  assert.deepEqual(line!.expectedRefunds, [{ from: 'Lea', amount: 300, onTotal: true }])
+
+  const [claim] = (await call(client, 'list_outstanding_advances')).json() as {
+    claimId: string
+    advancedOn: { financing: string }
+    remaining: number
+  }[]
+  assert.equal(claim!.advancedOn.financing, 'Laptop')
+  await call(client, 'manage_claims', {
+    claimId: claim!.claimId,
+    action: 'plan',
+    lines: [
+      { dueOn: '2026-07-15', amount: 100 },
+      { dueOn: '2026-09-15', amount: 200 },
+    ],
+  })
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-07-20',
+        amount: 50,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Lea',
+        claimId: claim!.claimId,
+      },
+    ],
+  })
+  const [after] = (await call(client, 'list_outstanding_advances')).json() as {
+    remaining: number
+    nextDueOn: string
+    nextDueAmount: number
+  }[]
+  assert.equal(after!.remaining, 250)
+  assert.equal(after!.nextDueOn, '2026-07-15')
+  assert.equal(after!.nextDueAmount, 50)
+
+  // Nothing paid yet: what came back is ahead of the installments, deducted from nothing.
+  const [financing] = rows<{ coveredByRefunds: number; refundedAhead: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(financing!.coveredByRefunds, 0)
+  assert.equal(financing!.refundedAhead, 50)
+})
+
+test('spending reads back by category group through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Commerce' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Livraison', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Divers' })
+
+  const line = (date: string, amount: number, category: string) => ({
+    date,
+    amount,
+    type: 'expense',
+    account: 'Courant',
+    actor: 'Commerce',
+    category,
+  })
+  await call(client, 'declare_movements', {
+    movements: [
+      line('2026-08-02', 60, 'Courses'),
+      line('2026-08-03', 30, 'Livraison'),
+      line('2026-08-04', 10, 'Divers'),
+    ],
+  })
+
+  // Two categories, one mass; the groupless one is named as such. A mass comes
+  // with what it merges, already totalled and ranked, so the caller never has
+  // to add figures up or ask a second time to see inside it.
+  const byGroup = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'categoryGroup',
+  })
+  // The side read and the reading travel with the figures: neither is in the
+  // tool's name any more, and the same month has two legitimate totals, so a
+  // table without those labels could not be read out loud.
+  assert.deepEqual(byGroup.json(), {
+    kind: 'expense',
+    reading: 'cash',
+    window: 'movements settled between 2026-08-01 and 2026-08-31',
+    rows: [
+      {
+        categoryGroup: 'Vie quotidienne',
+        gross: 90,
+        net: 90,
+        movements: 2,
+        categories: [
+          { category: 'Courses', gross: 60, net: 60, movements: 1 },
+          { category: 'Livraison', gross: 30, net: 30, movements: 1 },
+        ],
+      },
+      {
+        categoryGroup: '(none)',
+        gross: 10,
+        net: 10,
+        movements: 1,
+        categories: [{ category: 'Divers', gross: 10, net: 10, movements: 1 }],
+      },
+    ],
+  })
+
+  // The other axes answer flat, and every row says how many movements make it,
+  // which is what turns a line into a list_movements call.
+  const byCategory = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+  })
+  assert.deepEqual((byCategory.json() as { rows: unknown[] }).rows, [
+    { category: 'Courses', gross: 60, net: 60, movements: 1 },
+    { category: 'Livraison', gross: 30, net: 30, movements: 1 },
+    { category: 'Divers', gross: 10, net: 10, movements: 1 },
+  ])
+})
+
+test('an analysis narrows to an activity, a category or an actor and drills to the movements that make a row', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Marché' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Boulangerie' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Ami' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses', group: 'Vie quotidienne' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Matériel', group: 'Travail' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Atelier' })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      movements: [
+        {
+          date: '2026-08-02',
+          amount: 80,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Courses',
+          expectedRefundFrom: 'Ami',
+          expectedRefundAmount: 40,
+        },
+        {
+          date: '2026-08-04',
+          amount: 50,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Boulangerie',
+          category: 'Courses',
+        },
+        {
+          date: '2026-08-05',
+          amount: 20,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Courses',
+        },
+        {
+          date: '2026-08-06',
+          amount: 300,
+          type: 'expense',
+          account: 'Courant',
+          actor: 'Marché',
+          category: 'Matériel',
+          activity: 'Atelier',
+        },
+      ],
+    })
+  ).json() as { results: { movementId: string }[] }
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-10',
+        amount: 40,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Ami',
+        refundsMovementId: declared.results[0]!.movementId,
+      },
+    ],
+  })
+
+  // Narrowed to the activity, the masses are only its own.
+  const own = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'categoryGroup',
+    activity: 'Atelier',
+  })
+  const ownJson = own.json() as { activity: string; rows: { categoryGroup: string; net: number }[] }
+  assert.equal(ownJson.activity, 'Atelier')
+  assert.deepEqual(
+    ownJson.rows.map((r) => [r.categoryGroup, r.net]),
+    [['Travail', 300]],
+  )
+
+  // Narrowed to an actor, by category: what it was paid for.
+  const paid = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+    actor: 'Marché',
+  })
+  const paidJson = paid.json() as { actor: string; rows: { category: string; gross: number; net: number }[] }
+  assert.equal(paidJson.actor, 'Marché')
+  assert.deepEqual(
+    paidJson.rows.map((r) => [r.category, r.gross, r.net]),
+    [
+      ['Matériel', 300, 300],
+      ['Courses', 100, 60],
+    ],
+  )
+
+  // The movements of a category, net of what came back, add up to its row;
+  // past the limit, the rest is one sum.
+  const leaves = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'movement',
+    category: 'Courses',
+    limit: 2,
+  })
+  const leavesJson = leaves.json() as {
+    category: string
+    rows: { movementId: string; date: string; actor: string; gross: number; net: number }[]
+    rest: { movements: number; gross: number; net: number }
+  }
+  assert.equal(leavesJson.category, 'Courses')
+  assert.deepEqual(
+    leavesJson.rows.map((r) => [r.date, r.actor, r.gross, r.net]),
+    [
+      ['2026-08-04', 'Boulangerie', 50, 50],
+      ['2026-08-02', 'Marché', 80, 40],
+    ],
+  )
+  assert.equal(leavesJson.rows[1]!.movementId, declared.results[0]!.movementId)
+  assert.deepEqual(leavesJson.rest, { movements: 1, gross: 20, net: 20 })
+  const [courses] = (
+    (
+      await call(client, 'analyze_flows', {
+        from: '2026-08-01',
+        to: '2026-08-31',
+        groupBy: 'category',
+        category: 'Courses',
+      })
+    ).json() as { rows: { net: number }[] }
+  ).rows
+  assert.equal(courses!.net, 110)
+
+  const unknown = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'movement',
+    category: 'Loisirs',
+  })
+  assert.match(unknown.text, /No category "Loisirs"/)
+})
+
+test('the uncategorised row of an analysis drills into its movements', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Commerce' })
+  await call(client, 'manage_categories', { action: 'create', name: 'Courses' })
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 60,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Commerce',
+        category: 'Courses',
+      },
+      { date: '2026-08-03', amount: 25, type: 'expense', account: 'Courant', actor: 'Commerce' },
+      { date: '2026-08-04', amount: 200, type: 'transfer', account: 'Courant', toAccount: 'Livret' },
+    ],
+  })
+
+  const byCategory = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'category',
+  })
+  assert.deepEqual((byCategory.json() as { rows: unknown[] }).rows, [
+    { category: 'Courses', gross: 60, net: 60, movements: 1 },
+    { category: '(none)', gross: 25, net: 25, movements: 1 },
+  ])
+
+  // "none" selects what is left to categorise: the transfer carries no
+  // category either, but it never could, so it is not part of that row.
+  const uncategorised = rows<{ amount: number }>(
+    await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', category: 'none' }),
+    'movements',
+  )
+  assert.deepEqual(
+    uncategorised.map((m) => m.amount),
+    [25],
+  )
+  // No activity is a plain absence, transfers included.
+  assert.equal(
+    rows(
+      await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', activity: 'none' }),
+      'movements',
+    ).length,
+    3,
+  )
+})
+
+test('incomes read back by who paid them through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME', activity: 'Freelance' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Restaurant' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Alex' })
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-08-01', amount: 2000, type: 'income', account: 'Courant', actor: 'Employeur' },
+      { date: '2026-08-05', amount: 800, type: 'income', account: 'Courant', actor: 'ACME' },
+      {
+        date: '2026-08-10',
+        amount: 120,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Restaurant',
+        expectedRefundFrom: 'Alex',
+        expectedRefundAmount: 90,
+      },
+    ],
+  })
+  const results = (declared.json() as { results: { movementId: string }[] }).results
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-12',
+        amount: 90,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Alex',
+        refundsMovementId: results[2]!.movementId,
+      },
+    ],
+  })
+
+  // One figure per row on this side, and Alex is not one of them: the 90 that
+  // came back is an advance closing, not money earned.
+  const byActor = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'actor',
+    kind: 'income',
+  })
+  assert.deepEqual(byActor.json(), {
+    kind: 'income',
+    reading: 'cash',
+    window: 'movements settled between 2026-08-01 and 2026-08-31',
+    rows: [
+      { actor: 'Employeur', amount: 2000, movements: 1 },
+      { actor: 'ACME', amount: 800, movements: 1 },
+    ],
+  })
+
+  // The freelance question, answered in one call: the activity travels with
+  // the actor, so what is not freelance lands in the row no activity accounts
+  // for.
+  const byActivity = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'activity',
+    kind: 'income',
+  })
+  assert.deepEqual((byActivity.json() as { rows: unknown[] }).rows, [
+    { activity: '(none)', amount: 2000, movements: 1 },
+    { activity: 'Freelance', amount: 800, movements: 1 },
+  ])
+})
+
+test('a movement declared for another month reads back in that month', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+
+  // August's salary, paid on the 2nd of September.
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-09-02',
+        amount: 2400,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Employeur',
+        month: '2026-08',
+      },
+    ],
+  })
+  assert.equal((declared.json() as { results: { month?: string }[] }).results[0]!.month, '2026-08')
+
+  const inAugust = async (reading?: string) =>
+    rows<{ id: string; month?: string }>(
+      await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31', reading }),
+      'movements',
+    )
+
+  assert.equal((await inAugust()).length, 0)
+  const [attached] = await inAugust('accrual')
+  assert.equal(attached!.month, '2026-08')
+
+  // Detaching it puts it back on its own date, on both sides.
+  const fixed = await call(client, 'fix_movement', {
+    movement: attached!.id,
+    action: 'correct',
+    month: 'none',
+  })
+  assert.equal((fixed.json() as { month?: string }).month, undefined)
+  assert.equal((await inAugust('accrual')).length, 0)
+})
+
+test('the settled reading is the one the tools answer in when none is asked for', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Employeur' })
+  await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-09-02',
+        amount: 2400,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Employeur',
+        month: '2026-08',
+      },
+    ],
+  })
+
+  const august = async () => await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' })
+
+  // Nothing settled yet: the default, and the answer says so.
+  assert.deepEqual((await call(client, 'manage_preferences', { action: 'show' })).json(), {
+    reading: 'cash',
+    rankingView: 'strip',
+    language: null,
+  })
+  assert.deepEqual((await august()).json(), { order: 'date desc', reading: 'cash', movements: [] })
+
+  assert.deepEqual(
+    (await call(client, 'manage_preferences', { action: 'update', reading: 'accrual' })).json(),
+    { reading: 'accrual', rankingView: 'strip', language: null },
+  )
+  // A display preference settles on its own, and leaves the reading alone.
+  assert.deepEqual(
+    (await call(client, 'manage_preferences', { action: 'update', rankingView: 'bars' })).json(),
+    { reading: 'accrual', rankingView: 'bars', language: null },
+  )
+  // The language is chosen, then handed back to the browser.
+  assert.deepEqual((await call(client, 'manage_preferences', { action: 'update', language: 'en' })).json(), {
+    reading: 'accrual',
+    rankingView: 'bars',
+    language: 'en',
+  })
+  assert.deepEqual(
+    (await call(client, 'manage_preferences', { action: 'update', language: 'browser' })).json(),
+    { reading: 'accrual', rankingView: 'bars', language: null },
+  )
+
+  // Same call, no reading passed: August is now the month the salary is about.
+  const listed = await august()
+  assert.equal((listed.json() as { reading: string }).reading, 'accrual')
+  assert.equal(rows<{ month?: string }>(listed, 'movements')[0]!.month, '2026-08')
+
+  const flows = await call(client, 'analyze_flows', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    groupBy: 'actor',
+    kind: 'income',
+  })
+  assert.deepEqual(flows.json(), {
+    kind: 'income',
+    reading: 'accrual',
+    window: 'movements attached to 2026-08 → 2026-08 (whole months)',
+    rows: [{ actor: 'Employeur', amount: 2400, movements: 1 }],
+  })
+
+  // The state to take over from carries it, so an analysis can be named.
+  const overview = (await call(client, 'get_overview')).json() as { reading: string }
+  assert.equal(overview.reading, 'accrual')
+
+  // An explicit reading still wins: the preference is a default, not a lock.
+  const cash = await call(client, 'list_movements', {
+    from: '2026-08-01',
+    to: '2026-08-31',
+    reading: 'cash',
+  })
+  assert.deepEqual(cash.json(), { order: 'date desc', reading: 'cash', movements: [] })
+})
+
+test('a ghost movement reads back in the list and in no analysis', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Boulangerie' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Inconnu' })
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-08-10', amount: 40, type: 'expense', account: 'Courant', actor: 'Boulangerie' },
+      {
+        date: '2026-08-12',
+        amount: 500,
+        type: 'expense',
+        account: 'Courant',
+        actor: 'Inconnu',
+        ghost: true,
+      },
+    ],
+  })
+  const results = (declared.json() as { results: { movementId: string; ghost?: boolean }[] }).results
+  assert.equal(results[1]!.ghost, true)
+
+  const byActor = async () =>
+    (
+      await call(client, 'analyze_flows', {
+        from: '2026-08-01',
+        to: '2026-08-31',
+        groupBy: 'actor',
+      })
+    ).json() as { rows: { actor: string; gross: number }[] }
+  assert.deepEqual((await byActor()).rows, [{ actor: 'Boulangerie', gross: 40, net: 40, movements: 1 }])
+
+  // Still there to be read and repaired, and saying so.
+  const listed = rows<{ id: string; ghost?: boolean }>(
+    await call(client, 'list_movements', { from: '2026-08-01', to: '2026-08-31' }),
+    'movements',
+  )
+  assert.equal(listed.length, 2)
+  assert.equal(listed.find((m) => m.id === results[1]!.movementId)!.ghost, true)
+
+  // Marked by mistake: bringing it back puts its amount in the analysis again.
+  await call(client, 'fix_movement', { movement: results[1]!.movementId, action: 'correct', ghost: false })
+  assert.equal((await byActor()).rows.length, 2)
+})
+
+test('a scheduled placement is declared once, then confirmed with its quantity', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Espèces', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Titres', behavior: 'investment' })
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Monde',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+    description: 'Amundi MSCI World',
+  })
+
+  const created = await call(client, 'manage_investment_plan', {
+    action: 'create',
+    label: 'Versement Monde',
+    account: 'Espèces',
+    targetAccount: 'Titres',
+    asset: 'Monde',
+    amount: 200,
+    firstDueOn: today(),
+  })
+  assert.equal((created.json() as { buys: string; into: string }).buys, 'Monde')
+  assert.equal((created.json() as { into: string }).into, 'Titres')
+
+  // The overview announces what the occurrence needs, so the confirmation is
+  // not attempted without it.
+  const overview = (await call(client, 'get_overview')).json() as {
+    pendingOccurrences: { commitment: string; needs?: string }[]
+    monthlyCommittedCost: number
+    monthlyScheduledInvestment?: number
+  }
+  assert.match(overview.pendingOccurrences[0]!.needs!, /quantity/)
+  // Saving is counted apart from what is spent: adding it into the cost would
+  // answer "what do I spend" with money the user still has.
+  assert.equal(overview.monthlyCommittedCost, 0)
+  assert.equal(overview.monthlyScheduledInvestment, 200)
+
+  const refused = await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Versement Monde', action: 'confirm' }],
+  })
+  assert.match(JSON.stringify(refused.json()), /never work them out from a price/)
+
+  const confirmed = await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Versement Monde', action: 'confirm', quantity: 3, investedAmount: 195 }],
+  })
+  const [result] = rows<{ bought: number; invested: number; leftAsCash?: number }>(confirmed, 'results')
+  assert.equal(result!.bought, 3)
+  assert.equal(result!.invested, 195)
+  // The five euros the broker did not invest are where they really are.
+  assert.equal(result!.leftAsCash, 5)
+
+  // The purchase is there, once, and the account cash holds the remainder.
+  // Read through the operations and the balances rather than get_portfolio,
+  // which refreshes prices: a test must not depend on a market being up.
+  const operations = rows<{ type: string; asset?: string; quantity?: string; amount: number }>(
+    await call(client, 'list_investment_operations', { account: 'Titres' }),
+    'operations',
+  )
+  assert.equal(operations.length, 1)
+  assert.equal(operations[0]!.type, 'buy')
+  assert.equal(operations[0]!.asset, 'Monde')
+  assert.equal(Number(operations[0]!.quantity), 3)
+  assert.equal(operations[0]!.amount, 195)
+  const balances = (await call(client, 'get_overview')).json() as {
+    accounts: { name: string; balance: number }[]
+  }
+  assert.equal(balances.accounts.find((a) => a.name === 'Titres')!.balance, 5)
+  assert.equal(balances.accounts.find((a) => a.name === 'Espèces')!.balance, -200)
+
+  // A placement is neither a subscription nor a financing in the review, and it
+  // says what it buys.
+  const listed = rows<{ type: string; buys?: string; monthlyInvested?: number }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.equal(listed[0]!.type, 'investment_plan')
+  assert.equal(listed[0]!.buys, 'Monde')
+
+  // And the transfer it wrote is no expense: the analysis ignores it.
+  const flows = await call(client, 'analyze_flows', {
+    from: '2026-01-01',
+    to: '2027-12-31',
+    groupBy: 'category',
+  })
+  assert.equal((flows.json() as { rows: unknown[] }).rows.length, 0)
+})
+
+test('investments: funding is a movement, what happens inside is an operation', async () => {
+  // get_portfolio refreshes prices as it runs, and a test must not depend on
+  // Yahoo being up or on what the market did today: the network is cut, which
+  // also asserts that a dead source leaves the read working.
+  const realFetch = globalThis.fetch
+  globalThis.fetch = () => Promise.reject(new Error('no network in tests'))
+  after(() => {
+    globalThis.fetch = realFetch
+  })
+
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'PEA', behavior: 'investment' })
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Monde',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+    description: 'Amundi MSCI World',
+  })
+
+  await call(client, 'declare_movements', {
+    movements: [{ date: '2026-01-02', amount: 5000, type: 'transfer', account: 'Courant', toAccount: 'PEA' }],
+  })
+  const recorded = await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-05', account: 'PEA', type: 'buy', asset: 'Monde', quantity: 5, amount: 3000 },
+      { date: '2026-01-05', account: 'PEA', type: 'fee', amount: 12 },
+      { date: '2026-02-10', account: 'PEA', type: 'dividend', asset: 'Monde', amount: 40 },
+    ],
+  })
+  assert.equal((recorded.json() as { recorded: number }).recorded, 3)
+
+  // No price is reachable, so nothing is valued and the return says so rather
+  // than counting the holding as worthless.
+  const unpriced = (await call(client, 'get_portfolio')).json() as {
+    accounts: { cash: number; value: number; totalReturn: number | null; unpricedPositions?: number }[]
+  }
+  assert.equal(unpriced.accounts[0]!.cash, 2028) // 5000 - 3000 - 12 + 40
+  assert.equal(unpriced.accounts[0]!.value, 2028)
+  assert.equal(unpriced.accounts[0]!.totalReturn, null)
+  assert.equal(unpriced.accounts[0]!.unpricedPositions, 1)
+
+  // A hand-typed price only belongs to what no source quotes.
+  const refused = await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'Monde',
+    price: 700,
+    pricedOn: '2026-03-01',
+  })
+  assert.ok(refused.isError)
+  assert.match(refused.text, /its price comes from the market/)
+
+  await call(client, 'manage_assets', { action: 'create', name: 'SCPI' })
+  await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-06', account: 'PEA', type: 'buy', asset: 'SCPI', quantity: 10, amount: 1000 },
+    ],
+  })
+  const priced = await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 108,
+    pricedOn: '2026-03-01',
+  })
+  assert.deepEqual(priced.json(), { name: 'SCPI', price: 108, on: '2026-03-01' })
+  const withPrice = (await call(client, 'get_portfolio', { account: 'PEA' })).json() as {
+    accounts: { positions: { asset: string; value: number | null; unrealizedGain: number | null }[] }[]
+  }
+  const scpi = withPrice.accounts[0]!.positions.find((p) => p.asset === 'SCPI')
+  assert.equal(scpi!.value, 1080)
+  assert.equal(scpi!.unrealizedGain, 80)
+
+  // The purchase is nowhere near the expenses: it is not one.
+  const spending = await call(client, 'analyze_flows', {
+    from: '2026-01-01',
+    to: '2026-12-31',
+    groupBy: 'category',
+  })
+  assert.equal((spending.json() as { rows: unknown[] }).rows.length, 0)
+
+  // What the interface must refuse, and say why.
+  const onChecking = await call(client, 'record_investment_operations', {
+    operations: [{ date: '2026-01-05', account: 'Courant', type: 'fee', amount: 5 }],
+  })
+  assert.ok(onChecking.isError)
+  assert.match(onChecking.text, /Only an investment account carries operations/)
+
+  const tooMany = await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-03-05', account: 'PEA', type: 'sell', asset: 'Monde', quantity: 9, amount: 100 },
+    ],
+  })
+  assert.ok(tooMany.isError)
+  assert.match(tooMany.text, /sell more than the account holds/)
+
+  const unknown = await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-03-05', account: 'PEA', type: 'buy', asset: 'Nasdaq', quantity: 1, amount: 100 },
+    ],
+  })
+  assert.ok(unknown.isError)
+  assert.match(unknown.text, /No asset named "Nasdaq"/)
+
+  // One instrument is one holding, so declaring it again hands back what is
+  // already there under its own name instead of splitting the position in half.
+  const twice = await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'World',
+    source: 'yahoo',
+    reference: 'CW8.PA',
+    kind: 'security',
+  })
+  assert.ok(!twice.isError, twice.text)
+  assert.equal((twice.json() as { name: string }).name, 'Monde')
+
+  // A price a share, which is what a broker displays: the MCP multiplies nothing
+  // itself, so the cost basis cannot pick up a rounding of its own.
+  const byUnit = await call(client, 'record_investment_operations', {
+    operations: [
+      {
+        date: '2026-04-02',
+        account: 'PEA',
+        type: 'buy',
+        asset: 'Monde',
+        quantity: 12.5,
+        unitPrice: 22.57,
+      },
+    ],
+  })
+  assert.ok(!byUnit.isError, byUnit.text)
+  assert.equal((byUnit.json() as { operations: { amount: number }[] }).operations[0]!.amount, 282.13)
+
+  const both = await call(client, 'record_investment_operations', {
+    operations: [
+      {
+        date: '2026-04-02',
+        account: 'PEA',
+        type: 'buy',
+        asset: 'Monde',
+        quantity: 1,
+        amount: 20,
+        unitPrice: 22.57,
+      },
+    ],
+  })
+  assert.ok(both.isError)
+  assert.match(both.text, /either a total amount or a unit price/)
+
+  // The listing says which assets are held and which are only watched, and a
+  // watched one can be forgotten while a held one cannot.
+  await call(client, 'manage_assets', {
+    action: 'create',
+    name: 'Nasdaq',
+    source: 'yahoo',
+    reference: 'EQQQ.PA',
+    kind: 'security',
+  })
+  const listed = (await call(client, 'manage_assets', { action: 'list' })).json() as {
+    name: string
+    status: string
+  }[]
+  assert.equal(listed.find((a) => a.name === 'Nasdaq')!.status, 'followed')
+  assert.equal(listed.find((a) => a.name === 'Monde')!.status, 'held')
+
+  const dropped = await call(client, 'manage_assets', { action: 'unfollow', name: 'Nasdaq' })
+  assert.ok(!dropped.isError, dropped.text)
+  const stillHeld = await call(client, 'manage_assets', { action: 'unfollow', name: 'Monde' })
+  assert.ok(stillHeld.isError)
+  assert.match(stillHeld.text, /part of the history/)
+
+  const operations = await call(client, 'list_investment_operations', { account: 'PEA' })
+  assert.equal(rows(operations, 'operations').length, 5)
+})
+
+test('investments: the history answers "what did it make", already totalled', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'PEA', behavior: 'investment' })
+
+  // Nothing bought yet is not a flat history, it is no history at all, and the
+  // answer says so in words rather than handing back an empty shape.
+  const empty = (await call(client, 'get_portfolio_history')).json() as { history: null; note: string }
+  assert.equal(empty.history, null)
+  assert.match(empty.note, /Nothing has been bought/)
+
+  await call(client, 'manage_assets', { action: 'create', name: 'SCPI' })
+  await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 100,
+    pricedOn: '2026-01-01',
+  })
+  await call(client, 'declare_movements', {
+    movements: [{ date: '2026-01-01', amount: 1000, type: 'transfer', account: 'Courant', toAccount: 'PEA' }],
+  })
+  await call(client, 'record_investment_operations', {
+    operations: [
+      { date: '2026-01-01', account: 'PEA', type: 'buy', asset: 'SCPI', quantity: 10, amount: 1000 },
+    ],
+  })
+  await call(client, 'manage_assets', {
+    action: 'set_price',
+    name: 'SCPI',
+    price: 130,
+    pricedOn: '2026-01-06',
+  })
+
+  const history = (
+    await call(client, 'get_portfolio_history', {
+      from: '2026-01-01',
+      to: '2026-01-08',
+    })
+  ).json() as {
+    step: string
+    start: { performance: number }
+    end: { performance: number; value: number }
+    high: { day: string; performance: number }
+    milestones: unknown[]
+  }
+  assert.equal(history.step, 'day')
+  assert.equal(history.start.performance, 0)
+  // 10 units at 130 against 1000 put in: the reader never has to do that itself.
+  assert.equal(history.end.value, 1300)
+  assert.equal(history.end.performance, 300)
+  // The first day the peak was reached, not the last one holding it: "at its
+  // high since the 6th" is what a reader can do something with.
+  assert.equal(history.high.day, '2026-01-06')
+  assert.equal(history.milestones.length, 8)
+})
+
+test('attaching an activity to an actor names its history left behind, and reattaches it on request', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Formation' })
+  await call(client, 'manage_actors', { action: 'create', name: 'ACME' })
+  await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-01-10', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      { date: '2026-03-05', amount: 900, type: 'income', account: 'Courant', actor: 'ACME' },
+      {
+        date: '2026-02-01',
+        amount: 900,
+        type: 'income',
+        account: 'Courant',
+        actor: 'ACME',
+        activity: 'Formation',
+      },
+    ],
+  })
+
+  // The update does not reclassify: it says how many it left, and what to call.
+  const updated = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Freelance' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(updated.movementsLeftBehind, 2)
+  assert.match(updated.note, /reattach_history/)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 0)
+
+  const fromMarch = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME', from: '2026-03-01' })
+  ).json() as { movementsReattached: number }
+  assert.equal(fromMarch.movementsReattached, 1)
+  const rest = (
+    await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  ).json() as {
+    movementsReattached: number
+  }
+  assert.equal(rest.movementsReattached, 1)
+  // The movement filed under Formation on purpose stays there.
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Freelance' }), 'movements').length, 2)
+  assert.equal(rows(await call(client, 'list_movements', { activity: 'Formation' }), 'movements').length, 1)
+
+  // Moving the actor to another activity: the former one travels by name.
+  const moved = (
+    await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'Formation' })
+  ).json() as { movementsLeftBehind: number; note: string }
+  assert.equal(moved.movementsLeftBehind, 2)
+  assert.match(moved.note, /previousActivity "Freelance"/)
+  const named = (
+    await call(client, 'manage_actors', {
+      action: 'reattach_history',
+      actor: 'ACME',
+      previousActivity: 'Freelance',
+    })
+  ).json() as { movementsReattached: number }
+  assert.equal(named.movementsReattached, 2)
+
+  // Without an activity, there is nothing to reattach to.
+  await call(client, 'manage_actors', { action: 'update', actor: 'ACME', activity: 'none' })
+  const refused = await call(client, 'manage_actors', { action: 'reattach_history', actor: 'ACME' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /no activity/)
+})
+
+test('a regime is configured as dated, sourced rules through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_activities', { action: 'create', name: 'Freelance' })
+  // The catalog tool of this branch still creates personal activities; the
+  // business kind is another issue's gesture, so the fixture types it in SQL.
+  await db()`update activity set kind = 'business', started_on = '2026-01-01' where user_id = ${user}`
+  await call(client, 'manage_categories', { action: 'create', name: 'Cotisations' })
+
+  // A rule is worth its source: no check date, no rule.
+  const unsourced = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Cotisations',
+    kind: 'social',
+    validFrom: '2026-01-01',
+    baseMeasure: 'revenue',
+    amountForm: 'rate',
+    rate: 21.2,
+    period: 'month',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(unsourced.isError, true)
+  assert.match(unsourced.text, /verifiedOn/)
+
+  const created = (
+    await call(client, 'manage_levies', {
+      action: 'create',
+      activity: 'Freelance',
+      name: 'Cotisations',
+      kind: 'social',
+      validFrom: '2026-01-01',
+      sourceUrl: 'https://example.test/social',
+      verifiedOn: '2026-01-10',
+      reviewOn: '2027-01-01',
+      baseMeasure: 'revenue',
+      amountForm: 'rate',
+      rate: 21.2,
+      period: 'month',
+      due: { type: 'end_of_next_month' },
+      settlementCategory: 'Cotisations',
+    })
+  ).json() as { created: { levyId: string; amount: { rate: number }; settlement: { category: string } } }
+  assert.equal(created.created.amount.rate, 21.2)
+  assert.equal(created.created.settlement.category, 'Cotisations')
+
+  await call(client, 'manage_levies', {
+    action: 'add_modifier',
+    activity: 'Freelance',
+    levy: 'Cotisations',
+    modifierLabel: 'Taux réduit de début',
+    effect: 'rate_factor',
+    value: 0.75,
+    durationMonths: 12,
+    condition: 'first year of activity',
+  })
+
+  // Rules read each other by name.
+  const annual = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Impôt annuel',
+    kind: 'income_tax',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/tax',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'profit',
+    basePeriodRef: 'ytd',
+    baseCredits: [{ source: 'paid', levy: 'Cotisations' }, { source: 'withholdings' }],
+    amountForm: 'brackets',
+    brackets: {
+      mode: 'progressive',
+      rows: [
+        { upTo: 10000, rate: 10 },
+        { upTo: null, rate: 30 },
+      ],
+    },
+    period: 'year',
+    due: { type: 'fixed_dates', dates: [{ month: 6, day: 30, yearOffset: 1 }] },
+  })
+  assert.equal(annual.isError, undefined, annual.text)
+  const wrongForm = await call(client, 'manage_levies', {
+    action: 'create',
+    activity: 'Freelance',
+    name: 'Mal formée',
+    kind: 'other',
+    validFrom: '2026-01-01',
+    sourceUrl: 'https://example.test/x',
+    verifiedOn: '2026-01-10',
+    baseMeasure: 'none',
+    amountForm: 'fixed',
+    period: 'year',
+    due: { type: 'end_of_next_month' },
+  })
+  assert.equal(wrongForm.isError, true)
+  assert.match(wrongForm.text, /fixedAmount or fixedInputName/)
+
+  // The rate changes on a date: a supersede, and the old row keeps its rate.
+  const superseded = (
+    await call(client, 'manage_levies', {
+      action: 'supersede',
+      activity: 'Freelance',
+      levy: 'Cotisations',
+      validFrom: '2027-01-01',
+      rate: 22,
+      sourceUrl: 'https://example.test/social-2027',
+      verifiedOn: '2027-01-05',
+    })
+  ).json() as {
+    closed: { validTo: string }
+    created: { validFrom: string; amount: { rate: number }; modifiers: { label: string }[] }
+  }
+  assert.equal(superseded.closed.validTo, '2026-12-31')
+  assert.equal(superseded.created.validFrom, '2027-01-01')
+  assert.equal(superseded.created.amount.rate, 22)
+  assert.deepEqual(
+    superseded.created.modifiers.map((m) => m.label),
+    ['Taux réduit de début'],
+  )
+
+  const listed = (await call(client, 'manage_levies', { action: 'list', activity: 'Freelance' })).json() as {
+    levies: { name: string; validFrom: string; base: { credits?: { source: string; levy?: string }[] } }[]
+  }
+  assert.deepEqual(
+    listed.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2026-01-01'],
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+  assert.equal(listed.levies[2]!.base.credits![0]!.levy, 'Cotisations')
+  const inForce = (
+    await call(client, 'manage_levies', { action: 'list', activity: 'Freelance', at: '2027-06-01' })
+  ).json() as { levies: { name: string; validFrom: string }[] }
+  assert.deepEqual(
+    inForce.levies.map((l) => [l.name, l.validFrom]),
+    [
+      ['Cotisations', '2027-01-01'],
+      ['Impôt annuel', '2026-01-01'],
+    ],
+  )
+
+  // A rule another one reads stays, with guidance.
+  const kept = await call(client, 'manage_levies', {
+    action: 'delete',
+    activity: 'Freelance',
+    levy: created.created.levyId,
+  })
+  assert.equal(kept.isError, true)
+  assert.match(kept.text, /Another rule reads this one/)
+
+  // Dated figures, and the thresholds the regime hinges on.
+  await call(client, 'set_activity_inputs', {
+    action: 'set',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+    value: 950,
+  })
+  const inputs = (
+    await call(client, 'set_activity_inputs', { action: 'list', activity: 'Freelance' })
+  ).json() as {
+    inputs: { name: string; value: number }[]
+  }
+  assert.deepEqual(inputs.inputs, [{ name: 'contribution_base', validFrom: '2026-01-01', value: 950 }])
+  await call(client, 'set_activity_inputs', {
+    action: 'remove',
+    activity: 'Freelance',
+    name: 'contribution_base',
+    validFrom: '2026-01-01',
+  })
+
+  const threshold = (
+    await call(client, 'manage_thresholds', {
+      action: 'create',
+      activity: 'Freelance',
+      label: 'Franchise',
+      measure: 'revenue',
+      value: 37500,
+      consequence: 'VAT becomes due from the first day of overshoot',
+      sourceUrl: 'https://example.test/vat',
+      verifiedOn: '2026-01-10',
+    })
+  ).json() as { periodRef: string; comparison: string }
+  assert.equal(threshold.periodRef, 'ytd')
+  assert.equal(threshold.comparison, 'lte')
+  const updated = (
+    await call(client, 'manage_thresholds', {
+      action: 'update',
+      activity: 'Freelance',
+      threshold: 'Franchise',
+      periodRef: 'year-1',
+    })
+  ).json() as { periodRef: string; value: number }
+  assert.equal(updated.periodRef, 'year-1')
+  assert.equal(updated.value, 37500)
+})
+
+test('invoices are declared, followed and settled through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Pro', behavior: 'payment' })
+  await call(client, 'manage_activities', { action: 'create', name: 'Studio' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client A' })
+  await call(client, 'manage_actors', { action: 'create', name: 'Client B' })
+  // The regime and the client defaults are written straight to the columns:
+  // this test is about the invoice tools, not about the gestures that set them.
+  const sql = db()
+  await sql`update activity set kind = 'business', vat_registered = true, default_vat_rate = 20 where name = 'Studio'`
+  await sql`update actor set invoice_withholding_rate = 15 where name = 'Client A'`
+
+  // One line per invoice, each on its own: the unknown client fails with guidance.
+  const declared = (
+    await call(client, 'declare_invoices', {
+      invoices: [
+        {
+          activity: 'Studio',
+          client: 'Client A',
+          reference: 'F-1',
+          issuedOn: '2026-03-01',
+          dueOn: '2026-03-31',
+          baseAmount: 1000,
+        },
+        {
+          activity: 'Studio',
+          client: 'Client B',
+          reference: 'F-2',
+          issuedOn: '2026-03-05',
+          dueOn: '2999-01-01',
+          baseAmount: 500,
+          vatRate: 0,
+        },
+        { activity: 'Studio', client: 'Nobody', issuedOn: '2026-03-06', baseAmount: 10 },
+      ],
+    })
+  ).json() as {
+    declared: number
+    failed: number
+    results: { ok: boolean; total?: number; receivable?: number; state?: string; error?: string }[]
+  }
+  assert.equal(declared.declared, 2)
+  assert.equal(declared.failed, 1)
+  // 20 % VAT from the activity, 15 % withheld by the client: owed 1200, received 1050.
+  assert.equal(declared.results[0]!.total, 1200)
+  assert.equal(declared.results[0]!.receivable, 1050)
+  assert.equal(declared.results[0]!.state, 'overdue')
+  assert.equal(declared.results[1]!.total, 500)
+  assert.match(declared.results[2]!.error!, /createUnknownActors/)
+
+  // What is owed, already grouped by urgency.
+  const listed = (await call(client, 'list_invoices', { activity: 'Studio' })).json() as {
+    outstanding: {
+      pending: { count: number; remaining: number }
+      overdue: { count: number; remaining: number }
+    }
+    invoices: { reference: string; client: string; state: string; remaining: number }[]
+  }
+  assert.deepEqual(listed.outstanding, {
+    pending: { count: 1, remaining: 500 },
+    overdue: { count: 1, remaining: 1050 },
+  })
+  assert.deepEqual(
+    listed.invoices.map((i) => [i.reference, i.client, i.state]),
+    [
+      ['F-2', 'Client B', 'pending'],
+      ['F-1', 'Client A', 'overdue'],
+    ],
+  )
+
+  // A partial payment: the income is written, the invoice stays open for the rest.
+  const partial = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 500, date: '2026-04-02' })
+  ).json() as {
+    amount: number
+    account: string
+    invoice: { reference: string; paid: number; remaining: number; state: string }
+  }
+  assert.equal(partial.amount, 500)
+  assert.equal(partial.account, 'Pro')
+  assert.equal(partial.invoice.reference, 'F-1')
+  assert.equal(partial.invoice.paid, 500)
+  assert.equal(partial.invoice.remaining, 550)
+  assert.equal(partial.invoice.state, 'overdue')
+
+  const reminded = (
+    await call(client, 'fix_invoice', { invoice: 'F-1', action: 'remind', on: '2026-04-10' })
+  ).json() as {
+    remindedOn: string
+  }
+  assert.equal(reminded.remindedOn, '2026-04-10')
+
+  // Beyond the remainder is a typo or another invoice, never a payment.
+  const tooMuch = await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', amount: 600 })
+  assert.equal(tooMuch.isError, true)
+  assert.match(tooMuch.text, /left to receive/)
+
+  // The rest, by default: paid, and the incomes read back in the activity.
+  const rest = (
+    await call(client, 'settle_invoice', { invoice: 'F-1', account: 'Pro', date: '2026-04-15' })
+  ).json() as {
+    amount: number
+    invoice: { state: string }
+  }
+  assert.equal(rest.amount, 550)
+  assert.equal(rest.invoice.state, 'paid')
+  const incomes = rows<{ kind: string; counterparty: string; amount: number }>(
+    await call(client, 'list_movements', { activity: 'Studio' }),
+    'movements',
+  )
+  assert.deepEqual(
+    incomes.map((m) => [m.kind, m.counterparty, m.amount]),
+    [
+      ['income', 'Client A', 550],
+      ['income', 'Client A', 500],
+    ],
+  )
+
+  // Paid money is a fact the invoice cannot shrink under.
+  const below = await call(client, 'fix_invoice', { invoice: 'F-1', action: 'correct', baseAmount: 100 })
+  assert.equal(below.isError, true)
+  assert.match(below.text, /already been received/)
+
+  // Cancelled: out of the outstanding list, still readable under its state.
+  const cancelled = (
+    await call(client, 'fix_invoice', { invoice: 'F-2', action: 'cancel', on: '2026-05-01' })
+  ).json() as {
+    state: string
+    cancelledOn: string
+  }
+  assert.equal(cancelled.state, 'cancelled')
+  assert.equal(cancelled.cancelledOn, '2026-05-01')
+  const after = (await call(client, 'list_invoices', { state: 'cancelled' })).json() as {
+    outstanding: { pending: { count: number }; overdue: { count: number } }
+    invoices: { reference: string }[]
+  }
+  assert.deepEqual(
+    after.invoices.map((i) => i.reference),
+    ['F-2'],
+  )
+  assert.equal(after.outstanding.pending.count, 0)
+
+  // An unknown invoice is guidance, not a stack trace.
+  const missing = await call(client, 'settle_invoice', { invoice: 'F-9', account: 'Pro' })
+  assert.equal(missing.isError, true)
+  assert.match(missing.text, /list_invoices/)
+})
+
+test('a deferred card groups its purchases in statements validated through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_accounts', { action: 'create', name: 'Livret', behavior: 'savings' })
+
+  const created = await call(client, 'manage_cards', {
+    action: 'create',
+    name: 'Gold',
+    account: 'Courant',
+    expiry: '2029-09',
+    debit: 'deferred',
+    cutOffDay: 25,
+    cutOffShift: 'none',
+    debitDay: 31,
+    debitShift: 'previous',
+  })
+  assert.ok(!created.isError, created.text)
+
+  const declared = await call(client, 'declare_movements', {
+    movements: [
+      { date: '2026-01-26', amount: 80, type: 'expense', account: 'Courant', actor: 'Shop', card: 'Gold' },
+      {
+        date: '2026-01-26',
+        amount: 50,
+        type: 'transfer',
+        account: 'Courant',
+        toAccount: 'Livret',
+        card: 'Gold',
+      },
+    ],
+    createUnknownActors: true,
+  })
+  const [purchase, transfer] = (declared.json() as { results: Record<string, unknown>[] }).results
+  assert.equal(purchase!.purchasedOn, '2026-01-26')
+  assert.equal(purchase!.expectedDebitOn, '2026-02-27')
+  assert.equal(purchase!.awaitingDebit, true)
+  assert.equal(transfer!.ok, false)
+  assert.match(String(transfer!.error), /never moves money between two owned accounts/)
+
+  const [line] = rows<Record<string, unknown>>(
+    await call(client, 'list_movements', { kind: 'expense' }),
+    'movements',
+  )
+  assert.equal(line!.date, '2026-02-27')
+  assert.equal(line!.purchasedOn, '2026-01-26')
+  assert.equal(line!.awaitingDebit, true)
+  assert.equal(line!.card, 'Gold')
+
+  const [card] = rows<Record<string, unknown>>(
+    await call(client, 'manage_cards', { action: 'list' }),
+    'cards',
+  )
+  assert.equal(card!.debit, 'deferred')
+  assert.equal(card!.cutOffDay, 25)
+  assert.deepEqual(card!.statementsToValidate, [
+    { cutOff: '2026-02-25', expectedOn: '2026-02-27', amount: 80, purchases: 1, toValidate: true },
+  ])
+
+  // Past its expected day, the overview says it waits.
+  const overview = (await call(client, 'get_overview')).json() as {
+    cardStatementsToValidate?: { card: string; expectedOn: string }[]
+  }
+  assert.deepEqual(
+    overview.cardStatementsToValidate?.map((s) => [s.card, s.expectedOn]),
+    [['Gold', '2026-02-27']],
+  )
+
+  // The bank took it on the 26th: validating moves the purchase there.
+  const validated = await call(client, 'manage_card_statements', {
+    action: 'validate',
+    card: 'Gold',
+    debitedOn: '2026-02-26',
+  })
+  assert.ok(!validated.isError, validated.text)
+  const [debited] = rows<Record<string, unknown>>(
+    await call(client, 'list_movements', { kind: 'expense' }),
+    'movements',
+  )
+  assert.equal(debited!.date, '2026-02-26')
+  assert.equal(debited!.awaitingDebit, undefined)
+
+  const refused = await call(client, 'manage_cards', { action: 'delete', name: 'Gold' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.text, /Something was paid with this card/)
+
+  const fixed = await call(client, 'fix_movement', { movement: line!.id, action: 'correct', card: 'none' })
+  assert.equal((fixed.json() as { date: string }).date, '2026-01-26')
+
+  const subscribed = await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Streaming',
+    actor: 'Shop',
+    account: 'Courant',
+    amount: 13,
+    firstDueOn: '2026-10-05',
+    card: 'Gold',
+  })
+  assert.ok(!subscribed.isError, subscribed.text)
+  const [streaming] = rows<Record<string, unknown>>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(streaming!.card, 'Gold')
+
+  const financed = await call(client, 'declare_financing', {
+    label: 'Sofa x3',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 900,
+    installmentsTotal: 3,
+    firstDueOn: '2026-10-05',
+    card: 'Gold',
+  })
+  assert.ok(!financed.isError, financed.text)
+  const sofa = rows<Record<string, unknown>>(await call(client, 'list_commitments'), 'commitments').find(
+    (c) => c.label === 'Sofa x3',
+  )
+  assert.equal(sofa!.card, 'Gold')
+
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Box',
+    actor: 'Shop',
+    account: 'Courant',
+    amount: 30,
+    firstDueOn: '2026-10-05',
+  })
+  // What the account has to cover and what pays it, totalled by the server
+  // rather than left to an agent's arithmetic.
+  const { costByAccount } = (await call(client, 'list_commitments')).json() as {
+    costByAccount: unknown[]
+  }
+  assert.deepEqual(costByAccount, [
+    {
+      account: 'Courant',
+      monthlyCost: 343,
+      paidBy: [
+        {
+          card: 'Gold',
+          monthlyCost: 313,
+          subscriptions: { monthlyCost: 13, commitments: ['Streaming'] },
+          financings: { monthlyCost: 300, commitments: ['Sofa x3'] },
+        },
+        {
+          directDebit: true,
+          monthlyCost: 30,
+          subscriptions: { monthlyCost: 30, commitments: ['Box'] },
+          financings: { monthlyCost: 0, commitments: [] },
+        },
+      ],
+    },
+  ])
+})
+
+test('a paid-off financing leaves the review, and says when it was settled', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'declare_financing', {
+    label: 'Phone x2',
+    actor: 'Shop',
+    account: 'Courant',
+    totalAmount: 400,
+    installmentsTotal: 2,
+    firstDueOn: '2026-08-05',
+  })
+  await call(client, 'confirm_due_movements', {
+    items: [
+      { commitment: 'Phone x2', action: 'confirm' },
+      { commitment: 'Phone x2', action: 'confirm' },
+    ],
+  })
+
+  const running = (await call(client, 'list_commitments')).json() as {
+    commitments: unknown[]
+    costByAccount: unknown[]
+  }
+  assert.deepEqual(running.commitments, [])
+  assert.deepEqual(running.costByAccount, [])
+  const [ended] = rows<Record<string, unknown>>(
+    await call(client, 'list_commitments', { includeCancelled: true }),
+    'commitments',
+  )
+  assert.equal(ended!.settledOn, '2026-09-05')
+  assert.equal(ended!.nextDueOn, undefined)
+})
+
+test('money received for a subscription feeds its reserve through the MCP surface', async () => {
+  const user = await seedUser()
+  const client = await clientFor(user)
+  await call(client, 'manage_accounts', { action: 'create', name: 'Courant', behavior: 'payment' })
+  await call(client, 'manage_subscription', {
+    action: 'create',
+    label: 'Salle de sport',
+    actor: 'Gym',
+    account: 'Courant',
+    amount: 79,
+    firstDueOn: '2026-08-05',
+  })
+
+  const declared = (
+    await call(client, 'declare_movements', {
+      movements: [
+        {
+          date: '2026-08-01',
+          amount: 100,
+          type: 'income',
+          account: 'Courant',
+          actor: 'Parent',
+          forCommitment: 'Salle de sport',
+        },
+      ],
+      createUnknownActors: true,
+    })
+  ).json() as { results: { movementId: string }[] }
+  await call(client, 'confirm_due_movements', {
+    items: [{ commitment: 'Salle de sport', action: 'confirm' }],
+  })
+
+  const [line] = rows<{ reserve: { received: number; drawn: number; remaining: number } }>(
+    await call(client, 'list_commitments'),
+    'commitments',
+  )
+  assert.deepEqual(line!.reserve, { received: 100, drawn: 79, remaining: 21 })
+  const listed = rows<{ id: string; forCommitment?: string; drawnFromReserve?: number }>(
+    await call(client, 'list_movements', {}),
+    'movements',
+  )
+  assert.equal(listed.find((m) => m.id === declared.results[0]!.movementId)!.forCommitment, 'Salle de sport')
+  assert.equal(listed.find((m) => m.drawnFromReserve)!.drawnFromReserve, 79)
+
+  const both = await call(client, 'declare_movements', {
+    movements: [
+      {
+        date: '2026-08-02',
+        amount: 10,
+        type: 'income',
+        account: 'Courant',
+        actor: 'Parent',
+        forCommitment: 'Salle de sport',
+        refundsMovementId: declared.results[0]!.movementId,
+      },
+    ],
+  })
+  assert.match(both.text, /never both/)
+
+  await call(client, 'fix_movement', {
+    action: 'correct',
+    movement: declared.results[0]!.movementId,
+    forCommitment: 'none',
+  })
+  const [unlinked] = rows<{ reserve?: unknown }>(await call(client, 'list_commitments'), 'commitments')
+  assert.equal(unlinked!.reserve, undefined)
+})

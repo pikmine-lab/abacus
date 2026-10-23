@@ -4,5 +4,11 @@
   "type": "module",
   "dependencies": {
     "@abacus/core": "workspace:*"
+  },
+  "scripts": {
+    "test": "node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./node_modules/@abacus/test-harness/src/setup.ts --test --test-concurrency=1"
+  },
+  "devDependencies": {
+    "@abacus/test-harness": "workspace:*"
   }
 }

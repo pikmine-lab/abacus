@@ -91,7 +91,7 @@ Spec Kit est versionné : un clone n'a rien à installer. Ce qu'abacus y ajoute
 ## Développement local
 
 Base Postgres jetable en Docker, iso socle (même image, rôle et base `abacus`, extensions
-créées par `scripts/dev-db-init.sql`). Jamais de travail sur la base de production en local.
+créées par `scripts/dev-db/init.sql`). Jamais de travail sur la base de production en local.
 
 ```sh
 nr db:up         # démarre la base (port local 5544)
@@ -110,6 +110,13 @@ quoi déclarer enrichit ce jeu dans la même PR, avec des noms inventés.
 L'app web se lance avec `pnpm --filter @abacus/web dev` et lit le `.env.local` d'`apps/web`
 (non commité) : `DATABASE_URL`, `BETTER_AUTH_SECRET`, `PUBLIC_URL` et `MCP_URL`, sans
 laquelle elle ne démarre pas. Un worktree reçoit le sien à sa création (`.config/wt.toml`).
+
+Les tests d'un paquet tournent sur sa propre base, sous l'adresse de `.env.test` (écrit à
+la création du worktree, `nr db:test:env` ailleurs). Un seul fichier :
+`pnpm --filter @abacus/core test test/endpoints.test.ts`, chemin relatif au paquet.
+
+Un écran se valide avec `pnpm exec agent-browser`, la version épinglée du dépôt, pas une
+version installée sur la machine.
 
 ## Flux de travail
 

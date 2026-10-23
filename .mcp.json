@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "abacus": {
+      "type": "http",
+      "url": "${MCP_URL:-https://mcp-url-not-set.invalid/mcp}"
+    }
+  }
+}

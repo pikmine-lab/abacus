@@ -60,6 +60,8 @@ export async function paidSoFar(tx: Executor, invoiceId: string, except?: string
 }
 
 export interface InvoiceFilters {
+  /** These invoices only: the ones a list of movements settles. */
+  ids?: string[]
   activityId?: string
   actorId?: string
 }
@@ -82,6 +84,7 @@ export async function listInvoices(
       from movement m where m.invoice_id = i.id
     ) p on true
     where i.user_id = ${userId}
+    ${f.ids ? tx`and i.id::text = any(${f.ids}::text[])` : tx``}
     ${f.activityId ? tx`and i.activity_id = ${f.activityId}` : tx``}
     ${f.actorId ? tx`and i.actor_id = ${f.actorId}` : tx``}
     order by i.issued_on desc, i.created_at desc

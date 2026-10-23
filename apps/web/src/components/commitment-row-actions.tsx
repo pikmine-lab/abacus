@@ -1,14 +1,26 @@
 'use client'
 
-import type { CommitmentKind } from '@abacus/core/domain'
-import { ArrowRightLeftIcon, BanIcon, BanknoteIcon, CalendarClockIcon, PencilIcon } from 'lucide-react'
+import type { CommitmentKind, Judgment } from '@abacus/core/domain'
+import {
+  ArrowRightLeftIcon,
+  BanIcon,
+  BanknoteIcon,
+  CalendarClockIcon,
+  NotebookPenIcon,
+  PencilIcon,
+} from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
-import { type CommitmentOptions, EditCommitmentForm, MoveAccountForm } from '@/components/commitment-forms'
+import {
+  type CommitmentOptions,
+  EditCommitmentForm,
+  JudgmentNoteForm,
+  MoveAccountForm,
+} from '@/components/commitment-forms'
 import { CurrencySelect } from '@/components/currency-select'
 import { FinancingScheduleForm, type ScheduleLine } from '@/components/financing-schedule-form'
-import { ActionForm, Field, SubmitButton } from '@/components/forms'
+import { ActionForm, DateField, Field, FieldErrors, SubmitButton } from '@/components/forms'
 import { EditInvestmentPlanForm, type PlacementOptions } from '@/components/investment-plan-forms'
 import { RowMenu } from '@/components/row-menu'
 import {
@@ -47,6 +59,7 @@ export function CommitmentRowActions({
   options,
   defaults,
   placement,
+  judgment,
 }: {
   commitmentId: string
   label: string
@@ -82,12 +95,15 @@ export function CommitmentRowActions({
     targetAccountId: string
     assetId: string
   }
+  /** Subscriptions only: the judgment as it stands, annotated from the menu. */
+  judgment?: { value: Judgment | null; note: string | null }
 }) {
   const [pricing, setPricing] = useState(false)
   const [moving, setMoving] = useState(false)
   const [editing, setEditing] = useState(false)
   const [revising, setRevising] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [annotating, setAnnotating] = useState(false)
   const [cancelState, cancel, cancelPending] = useActionState(cancelCommitmentAction, {})
 
   useEffect(() => {
@@ -114,6 +130,12 @@ export function CommitmentRowActions({
           <DropdownMenuItem onSelect={() => setPricing(true)}>
             <BanknoteIcon />
             {incoming || placementKind ? t('changeAmount') : t('changePrice')}
+          </DropdownMenuItem>
+        )}
+        {judgment && (
+          <DropdownMenuItem onSelect={() => setAnnotating(true)}>
+            <NotebookPenIcon />
+            {t('annotateJudgment')}
           </DropdownMenuItem>
         )}
         {options && today && (
@@ -154,10 +176,30 @@ export function CommitmentRowActions({
                 {!placementKind && <CurrencySelect defaultValue={currency} />}
               </div>
             </Field>
+            <Field label={tForm('effectiveOn')} name="effectiveOn" className="w-44">
+              <DateField name="effectiveOn" defaultValue={today} />
+            </Field>
             <SubmitButton className="self-start">{tForm('save')}</SubmitButton>
           </ActionForm>
         </DialogContent>
       </Dialog>
+
+      {judgment && (
+        <Dialog open={annotating} onOpenChange={setAnnotating}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-[15px]">{label}</DialogTitle>
+              <DialogDescription className="text-[12px]">{t('annotateDescription')}</DialogDescription>
+            </DialogHeader>
+            <JudgmentNoteForm
+              commitmentId={commitmentId}
+              judgment={judgment.value}
+              note={judgment.note}
+              onDone={() => setAnnotating(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Dated on purpose: a move is usually known before it happens, and an
           occurrence confirmed after it left the account that was right then. */}
@@ -250,15 +292,26 @@ export function CommitmentRowActions({
             <AlertDialogTitle>{t(`stopTitle.${stop}`, { label })}</AlertDialogTitle>
             <AlertDialogDescription>{t('stopDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
+          {/* Dated: a cancellation with notice ends on the day the notice runs out. */}
+          <form id={`stop-${commitmentId}`} action={cancel}>
+            <input type="hidden" name="commitmentId" value={commitmentId} />
+            <FieldErrors.Provider value={cancelState.fields}>
+              <Field label={t('stopOn')} name="effectiveOn" className="w-44">
+                <DateField name="effectiveOn" defaultValue={today} />
+              </Field>
+            </FieldErrors.Provider>
+          </form>
           {cancelState.error && <p className="text-xs text-destructive">{cancelState.error}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel>{t('dismiss')}</AlertDialogCancel>
-            <form action={cancel}>
-              <input type="hidden" name="commitmentId" value={commitmentId} />
-              <Button type="submit" variant="destructive" disabled={cancelPending}>
-                {cancelPending ? '…' : stopVerb}
-              </Button>
-            </form>
+            <Button
+              type="submit"
+              form={`stop-${commitmentId}`}
+              variant="destructive"
+              disabled={cancelPending}
+            >
+              {cancelPending ? '…' : stopVerb}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

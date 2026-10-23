@@ -14,7 +14,15 @@ import { useActionState, useEffect, useState } from 'react'
 import { AmountInput } from '@/components/amount-input'
 import { BalanceCheckHistory, type CheckEntry, type SettleOptions } from '@/components/balance-check-history'
 import { NewCardForm } from '@/components/card-forms'
-import { ActionForm, DateField, Field, FormSelect, SubmitButton, TextField } from '@/components/forms'
+import {
+  ActionForm,
+  DateField,
+  Field,
+  FieldErrors,
+  FormSelect,
+  SubmitButton,
+  TextField,
+} from '@/components/forms'
 import { RowMenu } from '@/components/row-menu'
 import {
   AlertDialog,
@@ -58,6 +66,7 @@ export function AccountRowActions({
   checks,
   settleOptions,
   newCard,
+  today,
 }: {
   accountId: string
   name: string
@@ -77,6 +86,8 @@ export function AccountRowActions({
    * from the account it debits, which is where it will be listed.
    */
   newCard?: { accounts: { id: string; name: string }[]; today: string }
+  /** What the dated gestures open on: a check, a close. */
+  today: string
 }) {
   const t = useTranslations('accounts')
   const [checking, setChecking] = useState(false)
@@ -135,6 +146,7 @@ export function AccountRowActions({
         accountId={accountId}
         name={name}
         computedBalance={computedBalance}
+        today={today}
         open={checking}
         onOpenChange={setChecking}
       />
@@ -207,15 +219,22 @@ export function AccountRowActions({
             <AlertDialogTitle>{t('close.title', { name })}</AlertDialogTitle>
             <AlertDialogDescription>{t('close.description')}</AlertDialogDescription>
           </AlertDialogHeader>
+          {/* The day matters: an account is closed on the day it really was,
+              often learnt afterwards, and no movement is accepted after it. */}
+          <form id={`close-${accountId}`} action={close}>
+            <input type="hidden" name="accountId" value={accountId} />
+            <FieldErrors.Provider value={closeState.fields}>
+              <Field label={t('close.closedOn')} name="closedOn" className="w-44">
+                <DateField name="closedOn" defaultValue={today} />
+              </Field>
+            </FieldErrors.Provider>
+          </form>
           {closeState.error && <p className="text-xs text-destructive">{closeState.error}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
-            <form action={close}>
-              <input type="hidden" name="accountId" value={accountId} />
-              <Button type="submit" variant="destructive" disabled={closePending}>
-                {closePending ? '…' : t('close.confirm')}
-              </Button>
-            </form>
+            <Button type="submit" form={`close-${accountId}`} variant="destructive" disabled={closePending}>
+              {closePending ? '…' : t('close.confirm')}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -251,12 +270,14 @@ function CheckDialog({
   accountId,
   name,
   computedBalance,
+  today,
   open,
   onOpenChange,
 }: {
   accountId: string
   name: string
   computedBalance: number
+  today: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -273,9 +294,17 @@ function CheckDialog({
         </DialogHeader>
         <ActionForm action={recordBalanceCheckAction} onSuccess={() => onOpenChange(false)}>
           <input type="hidden" name="accountId" value={accountId} />
-          <Field label={t('fields.realBalance')} name="balance">
-            <AmountInput name="balance" placeholder={t('fields.amountPlaceholder')} />
-          </Field>
+          {/* The day the bank was read opens on today: a balance read
+              yesterday is set against what the books said yesterday. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('fields.realBalance')} name="balance">
+              <AmountInput name="balance" placeholder={t('fields.amountPlaceholder')} />
+            </Field>
+            <Field label={t('history.readOn')} name="checkedOn">
+              <DateField name="checkedOn" defaultValue={today} />
+            </Field>
+          </div>
+          <TextField name="note" label={t('fields.note')} autoComplete="off" />
           <SubmitButton className="self-start">{t('check.submit')}</SubmitButton>
         </ActionForm>
       </DialogContent>
@@ -328,10 +357,12 @@ export function PendingCheck({
   settleOptions,
   detail,
   gap,
+  today,
 }: {
   accountId: string
   name: string
   computedBalance: number
+  today: string
   checks: CheckEntry[]
   settleOptions: SettleOptions
   /** What is wrong with it, in a few words: the gap, or the age of the last check. */
@@ -368,6 +399,7 @@ export function PendingCheck({
           accountId={accountId}
           name={name}
           computedBalance={computedBalance}
+          today={today}
           open={open}
           onOpenChange={setOpen}
         />

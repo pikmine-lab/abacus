@@ -1,4 +1,5 @@
 import { DomainError } from '@abacus/core/domain/errors'
+import { NOTE_MAX_LENGTH } from '@abacus/core/domain/note'
 import type { SortChoice } from '@abacus/core/domain/sort'
 import * as z from 'zod'
 
@@ -294,6 +295,28 @@ export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .describe('Date in YYYY-MM-DD format')
+
+/**
+ * A free note, bounded as the services bound it: in characters, so an emoji
+ * counts once (zod's max counts UTF-16 units, and would refuse what the web keeps).
+ */
+export const freeNote = z
+  .string()
+  .refine((text) => [...text].length <= NOTE_MAX_LENGTH, `At most ${NOTE_MAX_LENGTH} characters`)
+  .meta({ maxLength: NOTE_MAX_LENGTH })
+
+/** The longest window a day-by-day series answers in one call: a year of days, leap day included. */
+export const MAX_WINDOW_DAYS = 366
+
+const dayIndex = (day: string) => Date.parse(`${day}T00:00:00Z`) / 86_400_000
+
+/** Why a day-by-day window cannot be answered in one call; null when it can. */
+export function windowProblem(from: string, to: string): string | null {
+  if (from > to) return `from (${from}) comes after to (${to}).`
+  if (dayIndex(to) - dayIndex(from) + 1 > MAX_WINDOW_DAYS)
+    return `At most ${MAX_WINDOW_DAYS} days per call: split ${from}..${to} in several calls.`
+  return null
+}
 
 /**
  * How a list tool takes the way its order runs. Absent, the criterion decides:

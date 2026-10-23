@@ -314,6 +314,17 @@ async function sharesOf(
 }
 
 /**
+ * A movement's shares: owed once, of that movement. "Per occurrence" only
+ * means something on a commitment, where the domain refuses it elsewhere, and
+ * the share fields post it empty for a movement.
+ */
+function movementShares(
+  shares: Awaited<ReturnType<typeof sharesOf>>,
+): { debtorActorId: string; amount: number }[] | undefined {
+  return shares?.map(({ perOccurrence: _, ...share }) => share)
+}
+
+/**
  * What an income pays back, as the panel's choice encodes it: one claim, an
  * expense whose share of the sender it pays (created when they owed nothing
  * on it yet), or a commitment whose reserve it feeds. Empty: nothing.
@@ -391,7 +402,7 @@ export async function declareMovementAction(_prev: FormState, formData: FormData
           ? { sourceAccountId: accountId, targetActorId: actorId }
           : { sourceActorId: actorId, targetAccountId: accountId }
     }
-    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : undefined
+    const shares = type === 'expense' ? movementShares(await sharesOf(userId, formData, n)) : undefined
     const currency = opt(formData, 'currency')
     const movement = await declareMovement(userId, {
       happenedOn: str(formData, 'date'),
@@ -465,7 +476,7 @@ export async function correctMovementAction(_prev: FormState, formData: FormData
     }
     // Only an expense can be an advance, so switching a movement away from
     // expense drops its shares rather than colliding with the domain rule.
-    const shares = type === 'expense' ? await sharesOf(userId, formData, n) : null
+    const shares = type === 'expense' ? (movementShares(await sharesOf(userId, formData, n)) ?? null) : null
     // The form rebuilds the money side whole, so the currency travels even as
     // 'EUR': that is what drops a wrongly declared foreign original.
     const currency = type === 'transfer' ? undefined : opt(formData, 'currency')
@@ -568,8 +579,16 @@ export async function recordBalanceCheckAction(_prev: FormState, formData: FormD
   const raw = str(formData, 'balance')
   if (raw === '') return { fields: { balance: await fieldError('required') } }
   if (!Number.isFinite(n.num('balance'))) return { fields: { balance: await fieldError('invalidAmount') } }
+  const invalid = await checkFields(formData, [{ name: 'checkedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await recordBalanceCheck(userId, str(formData, 'accountId'), n.num('balance'))
+    await recordBalanceCheck(
+      userId,
+      str(formData, 'accountId'),
+      n.num('balance'),
+      str(formData, 'checkedOn'),
+      opt(formData, 'note'),
+    )
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -594,6 +613,8 @@ export async function correctBalanceCheckAction(_prev: FormState, formData: Form
     await correctBalanceCheck(userId, str(formData, 'checkId'), {
       declaredBalance: n.num('balance'),
       checkedOn: str(formData, 'checkedOn'),
+      // The panel carries the note as it stands: emptied, it is cleared.
+      note: opt(formData, 'note') ?? null,
     })
   } catch (e) {
     return { error: await refusal(e) }
@@ -696,8 +717,10 @@ export async function reopenAccountAction(_prev: FormState, formData: FormData):
 
 export async function closeAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'closedOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await closeAccount(userId, str(formData, 'accountId'))
+    await closeAccount(userId, str(formData, 'accountId'), str(formData, 'closedOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -993,12 +1016,18 @@ export async function skipOccurrenceAction(formData: FormData): Promise<void> {
 /**
  * Judges a subscription. Called straight from the row rather than through a
  * form: the judgment travels as an argument, so there is no empty field to
- * swallow, and a refusal comes back to the row that asked for it.
+ * swallow, and a refusal comes back to the row that asked for it. The note
+ * comes from the panel that annotates the judgment; the row's selector sends
+ * none, which keeps the note already written.
  */
-export async function setJudgmentAction(commitmentId: string, judgment: Judgment): Promise<string | null> {
+export async function setJudgmentAction(
+  commitmentId: string,
+  judgment: Judgment,
+  note?: string,
+): Promise<string | null> {
   const userId = await requireUserId()
   try {
-    await setJudgment(userId, commitmentId, judgment)
+    await setJudgment(userId, commitmentId, judgment, note?.trim())
   } catch (e) {
     return refusal(e)
   }
@@ -1083,10 +1112,13 @@ export async function changeCommitmentAccountAction(
 export async function changePriceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
   const n = await numbersOf(formData)
-  const invalid = await checkFields(formData, [{ name: 'amount', kind: 'amount' }])
+  const invalid = await checkFields(formData, [
+    { name: 'amount', kind: 'amount' },
+    { name: 'effectiveOn', kind: 'date' },
+  ])
   if (invalid) return { fields: invalid }
   try {
-    await changeAmount(userId, str(formData, 'commitmentId'), n.num('amount'), undefined, {
+    await changeAmount(userId, str(formData, 'commitmentId'), n.num('amount'), str(formData, 'effectiveOn'), {
       currency: opt(formData, 'currency'),
     })
   } catch (e) {
@@ -1098,8 +1130,10 @@ export async function changePriceAction(_prev: FormState, formData: FormData): P
 
 export async function cancelCommitmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'effectiveOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await cancelCommitment(userId, str(formData, 'commitmentId'))
+    await cancelCommitment(userId, str(formData, 'commitmentId'), str(formData, 'effectiveOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }
@@ -1190,6 +1224,7 @@ function invoiceFigures(formData: FormData, n: Numbers) {
     vatAmount: n.optNum('vatAmount'),
     withholdingRate: n.optNum('withholdingRate'),
     withholdingAmount: n.optNum('withholdingAmount'),
+    currency: opt(formData, 'currency'),
     note: opt(formData, 'note'),
   }
 }
@@ -1254,14 +1289,23 @@ export async function settleInvoiceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
-export async function remindInvoiceAction(formData: FormData): Promise<void> {
+/**
+ * "Relancée": today from the row's menu, which sends no date, or on the day its
+ * panel says. A panel whose date was emptied is refused, not taken for today.
+ */
+export async function remindInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  if (formData.has('remindedOn')) {
+    const invalid = await checkFields(formData, [{ name: 'remindedOn', kind: 'date' }])
+    if (invalid) return { fields: invalid }
+  }
   try {
-    await remindInvoice(userId, str(formData, 'invoiceId'))
+    await remindInvoice(userId, str(formData, 'invoiceId'), opt(formData, 'remindedOn'))
   } catch (e) {
-    errorRedirect(formData, await refusal(e))
+    return { error: await refusal(e) }
   }
   refreshAll()
+  return { ok: true }
 }
 
 /** The due date a row of the schedule names, as the service takes it. */
@@ -1328,8 +1372,10 @@ export async function confirmLevyPaymentAction(formData: FormData): Promise<void
 
 export async function cancelInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
+  const invalid = await checkFields(formData, [{ name: 'cancelledOn', kind: 'date' }])
+  if (invalid) return { fields: invalid }
   try {
-    await cancelInvoice(userId, str(formData, 'invoiceId'))
+    await cancelInvoice(userId, str(formData, 'invoiceId'), str(formData, 'cancelledOn'))
   } catch (e) {
     return { error: await refusal(e) }
   }

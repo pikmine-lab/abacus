@@ -5,8 +5,9 @@ import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { closeShare, openClaims, removeShare, setShareSchedule } from '@abacus/core/services/advances'
 import { listCards } from '@abacus/core/services/cards'
-import { listCategories } from '@abacus/core/services/catalog'
+import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import { listCommitments } from '@abacus/core/services/commitments'
+import { listInvoices } from '@abacus/core/services/invoices'
 import {
   correctMovement,
   DEFAULT_MOVEMENT_SORT,
@@ -341,7 +342,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
     'list_movements',
     {
       description:
-        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name), and searchable by free text (search). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. An income received for a subscription or a financing carries forCommitment, and an occurrence that drew on that reserve drawnFromReserve, deducted from it in every net. list_outstanding_advances only lists the claims still open.',
+        'Browses the movement history, filterable by period, type, account, actor, category, activity or card (all by name), and searchable by free text (search). Each line carries its account, its counterparty and its category, so what was declared can be read back and checked, plus month when it is attached to a month other than its own, ghost when it is left out of the analyses, and the card that paid it. date is the day the money moved: a purchase on a deferred-debit card carries the debit of its statement there and its purchase day in purchasedOn, and awaitingDebit when that statement is not validated yet, in which case date is the expected debit and the purchase counts in no balance. Use it to see what is already there before an entry, to find the id of a movement to repair with fix_movement, or to answer "how much did I spend at X". For grouped totals, prefer analyze_flows. The list comes back newest first unless sortBy says otherwise, and the answer repeats the order it used: the limit cuts the list after it is ordered, so sortBy: amount returns the biggest movements of the selection and not the most recent ones, which is how "my biggest expense of the month" is answered in one call. It is also where the history of advances is read, the ones already refunded or written off included: an advanced expense carries claims, one per person who owes part of it (claimId, debtor, the share owed, what came back so far, its state, the day of the last refund), and claimState, where the expense stands across them; an income paying one back carries refunds, the id of that expense, or refundsFinancing when it pays back a claim on a financing\'s total, with its claimId. An income received for a subscription or a financing carries forCommitment, and an occurrence that drew on that reserve drawnFromReserve, deducted from it in every net. list_outstanding_advances only lists the claims still open. A line also carries, only when it has them: activity, the activity it belongs to; commitment, the label of the commitment it is tied to (an occurrence of it, money received for it, the refund of a claim on its total or of a share of one of its occurrences); invoice, the reference (when it has one) and issue day of the invoice an income pays; origin, what wrote it: commitment for a confirmed occurrence, balanceCheck for the adjustment that settled a balance check gap.',
       inputSchema: z.object({
         from: isoDate.optional(),
         to: isoDate.optional(),
@@ -409,14 +410,58 @@ export function registerMovementTools(server: McpServer, userId: string): void {
           limit: f.limit,
           sort,
         })
-        const [accounts, actors, categories, cards, commitments] = await Promise.all([
-          listAccounts(userId),
-          listActors(userId),
-          listCategories(userId),
-          listCards(userId),
-          listCommitments(userId, false),
-        ])
+        // A refund of a share advanced on an occurrence reaches the commitment
+        // through that occurrence, which the list may not hold.
+        const tiedOnlyByTheExpense = movements.filter(
+          (m) => !m.commitmentId && !m.reservesCommitmentId && !m.refundsCommitmentId && m.refundsMovementId,
+        )
+        // Read in one query each, whatever the number of rows.
+        const invoiceIds = [...new Set(movements.flatMap((m) => (m.invoiceId ? [m.invoiceId] : [])))]
+        const expenseIds = [...new Set(tiedOnlyByTheExpense.map((m) => m.refundsMovementId!))]
+        const [accounts, actors, categories, activities, cards, commitments, invoices, expenses] =
+          await Promise.all([
+            listAccounts(userId),
+            listActors(userId),
+            listCategories(userId),
+            listActivities(userId),
+            listCards(userId),
+            // Ended ones included: an old occurrence still belongs to its commitment.
+            listCommitments(userId, false),
+            invoiceIds.length > 0 ? listInvoices(userId, { ids: invoiceIds }) : [],
+            expenseIds.length > 0 ? listMovements(userId, { ids: expenseIds, limit: expenseIds.length }) : [],
+          ])
         const commitmentLabel = new Map(commitments.map((c) => [c.id, c.label]))
+        const activityName = new Map(activities.map((a) => [a.id, a.name]))
+        const invoiceById = new Map(invoices.map((i) => [i.id, i]))
+        const expenseCommitment = new Map(
+          expenses.flatMap((e) => (e.commitmentId ? [[e.id, e.commitmentId] as const] : [])),
+        )
+        // The links the web's reading panel shows, each absent when the movement has none.
+        const links = (m: (typeof movements)[number]) => {
+          const commitmentId =
+            m.commitmentId ??
+            m.reservesCommitmentId ??
+            m.refundsCommitmentId ??
+            (m.refundsMovementId ? expenseCommitment.get(m.refundsMovementId) : undefined)
+          const invoice = m.invoiceId ? invoiceById.get(m.invoiceId) : undefined
+          return {
+            ...(m.activityId ? { activity: activityName.get(m.activityId) } : {}),
+            ...(commitmentId ? { commitment: commitmentLabel.get(commitmentId) } : {}),
+            ...(invoice
+              ? {
+                  invoice: {
+                    ...(invoice.reference ? { reference: invoice.reference } : {}),
+                    issuedOn: invoice.issuedOn,
+                  },
+                }
+              : {}),
+            ...(m.commitmentId
+              ? { origin: 'commitment' }
+              : m.balanceCheckId
+                ? { origin: 'balanceCheck' }
+                : {}),
+          }
+        }
         const accountName = new Map(accounts.map((a) => [a.id, a.name]))
         const actorName = new Map(actors.map((a) => [a.id, a.name]))
         const categoryName = new Map(categories.map((c) => [c.id, c.name]))
@@ -477,6 +522,7 @@ export function registerMovementTools(server: McpServer, userId: string): void {
                     : {}),
                 }
               : {}),
+            ...links(m),
             note: m.note ?? undefined,
           })),
         })

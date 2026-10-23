@@ -8,6 +8,7 @@
     "./db": "./src/db/client.ts",
     "./domain": "./src/domain/types.ts",
     "./domain/*": "./src/domain/*.ts",
+    "./driver": "./driver/index.ts",
     "./oauth": "./src/oauth.ts",
     "./oauth-clients": "./src/oauth-clients.ts",
     "./prices/*": "./src/prices/*.ts",
@@ -23,6 +24,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@abacus/test-harness": "workspace:*",
+    "@abacus/use-case-language": "workspace:*",
     "@types/pg": "^8.23.1"
+  },
+  "scripts": {
+    "test": "node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./node_modules/@abacus/test-harness/src/setup.ts --test --test-concurrency=1"
   }
 }

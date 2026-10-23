@@ -191,6 +191,27 @@ test('balance series runs the daily cumulative sum per account', async () => {
   assert.equal(at('2026-05-05', savings.id), '300.00')
 })
 
+test('balance series of one account leaves the other accounts out', async () => {
+  const user = await seedUser()
+  const checking = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const savings = await createAccount({ userId: user, name: 'Savings', behavior: 'savings' })
+  await declareMovement(user, {
+    happenedOn: '2026-05-02',
+    amount: 300,
+    sourceAccountId: checking.id,
+    targetAccountId: savings.id,
+  })
+
+  const rows = await balanceSeries(user, '2026-05-01', '2026-05-02', savings.id)
+  assert.deepEqual(
+    rows.map((r) => [r.day, r.accountId, r.balance]),
+    [
+      ['2026-05-01', savings.id, '0.00'],
+      ['2026-05-02', savings.id, '300.00'],
+    ],
+  )
+})
+
 /** Re-reads a movement: the service exposes lists, not a get by id. */
 async function reread(userId: string, id: string) {
   const found = (await listMovements(userId)).find((m) => m.id === id)
@@ -454,5 +475,20 @@ test('a claim needs an amount, an actor, and an expense to sit on', async () => 
       refundShares: [{ debtorActorId: friend.id, amount: 10 }],
     }),
     (e: DomainError) => e.code === 'advance_is_expense',
+  )
+})
+
+test('a balance check note holds 500 characters at most, recorded as corrected', async () => {
+  const user = await seedUser()
+  const account = await createAccount({ userId: user, name: 'Checking', behavior: 'payment' })
+  const tooLong = 'x'.repeat(501)
+  await assert.rejects(
+    recordBalanceCheck(user, account.id, 0, '2026-03-31', tooLong),
+    (e: DomainError) => e.code === 'note_too_long',
+  )
+  const { check } = await recordBalanceCheck(user, account.id, 0, '2026-03-31', 'x'.repeat(500))
+  await assert.rejects(
+    correctBalanceCheck(user, check.id, { note: tooLong }),
+    (e: DomainError) => e.code === 'note_too_long',
   )
 })

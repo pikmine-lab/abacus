@@ -6,8 +6,10 @@ import type { AuthInfo } from '@modelcontextprotocol/server'
  * The MCP server is an OAuth protected resource; the web app is its
  * authorization server, on another domain. An access token is a JWT the web
  * app signed for this exact endpoint: it is verified here against the web
- * app's published keys, without a database round trip, and its subject is the
- * user every tool call is scoped to.
+ * app's published keys, and its subject is the user every tool call is scoped
+ * to. Nothing more is checked: revoking an application is the authorization
+ * server's business, which stops its renewal, and the token it already holds
+ * runs out within ten minutes.
  */
 
 function required(name: string): string {
@@ -51,7 +53,7 @@ export function protect(
 ): (request: Request) => Promise<Response> {
   return createMcpProtectedRequestHandler(
     { issuer, audience: resource, jwksUrl: `${issuer}/jwks`, requiredScopes: [MCP_SCOPE] },
-    (request, claims) => {
+    async (request, claims) => {
       const token = request.headers.get('authorization')?.replace(/^\w+\s+/, '') ?? ''
       const authInfo: AuthInfo = {
         token,

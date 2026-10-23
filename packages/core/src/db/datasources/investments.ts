@@ -658,20 +658,37 @@ export async function upsertAssetPrice(
   `
 }
 
-/** The price history of one asset, for its own detail view. */
+/**
+ * Which prices of an asset to read: the days between two dates, both
+ * included, or the last days that end on its latest known price.
+ */
+export type HistoryWindow = { from: string; to: string } | { lastDays: number }
+
+/** The price history of one asset, for its own detail view; all of it without a window. */
 export async function assetHistory(
   tx: Executor,
   userId: string,
   assetId: string,
+  window?: HistoryWindow,
 ): Promise<{ quotedOn: string; price: string }[]> {
   return await tx<{ quotedOn: string; price: string }[]>`
-    select coalesce(p.quoted_on, ap.quoted_on) as quoted_on,
-           coalesce(p.price, ap.price) as price
-    from asset a
-    left join instrument_price p on p.instrument_id = a.instrument_id
-    left join asset_price ap on ap.asset_id = a.id
-    where a.user_id = ${userId} and a.id = ${assetId}
-      and coalesce(p.quoted_on, ap.quoted_on) is not null
+    with prices as (
+      select coalesce(p.quoted_on, ap.quoted_on) as quoted_on,
+             coalesce(p.price, ap.price) as price
+      from asset a
+      left join instrument_price p on p.instrument_id = a.instrument_id
+      left join asset_price ap on ap.asset_id = a.id
+      where a.user_id = ${userId} and a.id = ${assetId}
+        and coalesce(p.quoted_on, ap.quoted_on) is not null
+    )
+    select quoted_on, price from prices
+    ${
+      window === undefined
+        ? tx``
+        : 'lastDays' in window
+          ? tx`where quoted_on > (select max(quoted_on) from prices) - ${window.lastDays}::int`
+          : tx`where quoted_on between ${window.from} and ${window.to}`
+    }
     order by 1
   `
 }

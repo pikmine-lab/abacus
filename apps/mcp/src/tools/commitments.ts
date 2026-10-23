@@ -3,6 +3,7 @@ import { resolveSort } from '@abacus/core/domain/sort'
 import { listAccounts } from '@abacus/core/services/accounts'
 import { listActors } from '@abacus/core/services/actors'
 import { listCards } from '@abacus/core/services/cards'
+import { listActivities, listCategories } from '@abacus/core/services/catalog'
 import {
   COMMITMENT_SORTS,
   cancelCommitment,
@@ -17,6 +18,7 @@ import {
   groupCommitments,
   listCommitmentsWithProgress,
   monthlyEquivalentEur,
+  monthlyExpectedRefundEur,
   moveAccount,
   reviseSchedule,
   setJudgment,
@@ -36,7 +38,7 @@ import {
   requireCommitment,
 } from '../resolve.ts'
 import { expectedRefunds, sharesOf } from './movements.ts'
-import { clearable, fail, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
+import { clearable, fail, freeNote, GUIDANCE, isoDate, ok, orderedBy, run, sortDirection } from './shared.ts'
 
 /** Who owes what of a commitment: per occurrence, or, on a financing, on its total. */
 const commitmentRefunds = z
@@ -113,7 +115,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
           .optional()
           .describe('create: sphere of the generated movements (e.g. Freelance)'),
         judgment: z.enum(['essential', 'reducible', 'to_cancel']).optional().describe('create/set_judgment'),
-        judgmentNote: z.string().optional(),
+        judgmentNote: freeNote.optional(),
         engagedUntil: isoDate.optional().describe('create: end of the contractual lock-in period, if any'),
         card: z
           .string()
@@ -506,7 +508,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     'list_commitments',
     {
       description:
-        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is what leaves the account: what others are expected to pay back (expectedRefunds: per occurrence in the billing currency, or onTotal of the total of a financing, in euros) is never taken off it, because a net only deducts money that has actually come back. Once a refund lands, analyze_flows reads that expense net of it. A financing claimed on its total says what came back: coveredByRefunds, deducted from the installments already paid, and refundedAhead, money received ahead of the installments it will cover, deducted from nothing yet: say it, the user holds that money for now but will spend it on the installments to come. A subscription or a financing someone gave money for (declare_movements forCommitment) carries its reserve: received, drawn by the occurrences confirmed so far (each reads net of it), and remaining, held for the coming ones and counted as income only once the commitment ends (releasedOn). Say what is left, and how many occurrences it still covers.',
+        'The commitments review: subscriptions with monthly-equivalent cost and judgment (essential / reducible / to_cancel), financings with paid installments and remaining due. This is the tool for "what could I cut?" and for tracking installment purchases. Includes ended ones (cancelled, or a financing paid off, which closes on its last installment) only with includeCancelled. Ranked by monthly-equivalent cost, biggest first: every money criterion ranks in euros, so a plan billed in another currency sits where its cost puts it and not where its face value would. The answer repeats the order it used. It also gives costByAccount, what each account has to cover a month in euros, split between each card that pays some of it and what the account pays by direct debit: the running subscriptions and financings only (a recurring income and a scheduled placement are no cost). Accounts and means come heaviest first, as on screen, and each means splits its subscriptions from its financings, each with its own monthly cost and its lines in the requested order or, without one, in the order the screen uses (subscriptions by monthly cost, financings by next due date). Quote those totals rather than adding the lines up. Every cost is what leaves the account: what others are expected to pay back (expectedRefunds: per occurrence in the billing currency, or onTotal of the total of a financing, in euros) is never taken off it, because a net only deducts money that has actually come back. Once a refund lands, analyze_flows reads that expense net of it. A financing claimed on its total says what came back: coveredByRefunds, deducted from the installments already paid, and refundedAhead, money received ahead of the installments it will cover, deducted from nothing yet: say it, the user holds that money for now but will spend it on the installments to come. A subscription or a financing someone gave money for (declare_movements forCommitment) carries its reserve: received, drawn by the occurrences confirmed so far (each reads net of it), and remaining, held for the coming ones and counted as income only once the commitment ends (releasedOn). Say what is left, and how many occurrences it still covers. Each line carries, when it has them: payee, the actor it pays (for a recurring income, the one paying it); category and activity, how its occurrences are filed; monthlyExpectedRefund, what others are expected to pay back of it a month, in euros at the latest rate, as a decimal string with its currency, said beside the cost and never taken off it.',
       inputSchema: z.object({
         includeCancelled: z.boolean().optional(),
         sortBy: z
@@ -521,11 +523,18 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     async ({ includeCancelled, sortBy, direction }) =>
       run(async () => {
         const sort = resolveSort(COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, sortBy, direction)
-        const commitments = sortCommitments(
-          await listCommitmentsWithProgress(userId, !includeCancelled),
-          sort,
-        )
-        const names = new Map((await listAccounts(userId)).map((a) => [a.id, a.name]))
+        // Independent reads, run together.
+        const [listed, accounts, assets, cards, actors, categories, activities] = await Promise.all([
+          listCommitmentsWithProgress(userId, !includeCancelled),
+          listAccounts(userId),
+          listAssets(userId),
+          listCards(userId),
+          listActors(userId),
+          listCategories(userId),
+          listActivities(userId),
+        ])
+        const commitments = sortCommitments(listed, sort)
+        const names = new Map(accounts.map((a) => [a.id, a.name]))
         // A move already declared for a later date belongs in the review: it is
         // state nothing else would show before the day it takes effect.
         const account = (c: (typeof commitments)[number]) => ({
@@ -534,9 +543,21 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             ? { account: names.get(c.nextAccountMove.accountId), on: c.nextAccountMove.effectiveOn }
             : undefined,
         })
-        const assetNames = new Map((await listAssets(userId)).map((a) => [a.id, a.name]))
-        const cardNames = new Map((await listCards(userId)).map((card) => [card.id, card.name]))
-        const actorNames = new Map((await listActors(userId)).map((a) => [a.id, a.name]))
+        const assetNames = new Map(assets.map((a) => [a.id, a.name]))
+        const cardNames = new Map(cards.map((card) => [card.id, card.name]))
+        const actorNames = new Map(actors.map((a) => [a.id, a.name]))
+        const categoryNames = new Map(categories.map((c) => [c.id, c.name]))
+        const activityNames = new Map(activities.map((a) => [a.id, a.name]))
+        // Who it pays (or, for a recurring income, who pays it), how it is
+        // filed, and what is expected back a month: each absent when it has none.
+        const about = (c: (typeof commitments)[number]) => ({
+          ...(c.actorId ? { payee: actorNames.get(c.actorId) } : {}),
+          ...(c.categoryId ? { category: categoryNames.get(c.categoryId) } : {}),
+          ...(c.activityId ? { activity: activityNames.get(c.activityId) } : {}),
+          ...(c.refundEur !== null
+            ? { monthlyExpectedRefund: { amount: monthlyExpectedRefundEur(c).toFixed(2), currency: 'EUR' } }
+            : {}),
+        })
         // Absent unless someone pays part of it back: who, how much, and whether
         // of every occurrence or of a financing's total.
         const owedBack = (c: (typeof commitments)[number]) =>
@@ -576,6 +597,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               label: c.label,
               id: c.id,
               ...account(c),
+              ...about(c),
               amount: Number(c.amount),
               every: `${c.periodCount} ${c.periodUnit}`,
               // Saving, not spending: the caller must not add this into a cost
@@ -593,6 +615,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
               label: c.label,
               id: c.id,
               ...account(c),
+              ...about(c),
               ...(c.cardId ? { card: cardNames.get(c.cardId) } : {}),
               // The plan's own currency: installment, remaining due and total
               // are all stated in it.
@@ -613,6 +636,7 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             label: c.label,
             id: c.id,
             ...account(c),
+            ...about(c),
             direction: c.direction,
             ...(c.cardId ? { card: cardNames.get(c.cardId) } : {}),
             amount: Number(c.amount),

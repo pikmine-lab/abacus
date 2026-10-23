@@ -11,6 +11,7 @@ import {
 } from '../db/datasources/balanceChecks.ts'
 import { accountBalance, movementByBalanceCheck } from '../db/datasources/movements.ts'
 import { DomainError, rethrowUnique } from '../domain/errors.ts'
+import { boundedNote } from '../domain/note.ts'
 import { today } from '../domain/period.ts'
 import type { BalanceCheck, Movement } from '../domain/types.ts'
 import { correctMovementIn, declareMovementIn, deleteMovementIn } from './movements.ts'
@@ -77,7 +78,7 @@ export async function recordBalanceCheck(
       checkedOn: on,
       declaredBalance,
       computedBalance: computed,
-      note: note ?? null,
+      note: boundedNote(note) ?? null,
     })
     return entryOf({ ...check, adjustmentId: null })
   })
@@ -133,7 +134,7 @@ export async function correctBalanceCheck(
       checkedOn,
       declaredBalance: input.declaredBalance ?? Number(current.declaredBalance),
       computedBalance: computed,
-      note: input.note !== undefined ? input.note : current.note,
+      note: input.note !== undefined ? boundedNote(input.note) : current.note,
     }))!
     const gap = gapOf(check)
     if (!adjustment) return { ...entryOf({ ...check, adjustmentId: null }), adjustment: 'none' }

@@ -213,6 +213,12 @@ export function ExpenseRow({
     })),
   }
   const attributes = [
+    // Why it was judged so, in the person's own words: reread at the next review.
+    !financing && c.judgmentNote && (
+      <span key="judgment-note" className="text-muted-foreground">
+        {t('judgmentNote', { note: c.judgmentNote })}
+      </span>
+    ),
     cardName && (
       <span key="card" className="inline-flex items-center gap-1">
         <CreditCardIcon aria-hidden className="size-3" />
@@ -358,6 +364,7 @@ export function ExpenseRow({
           today={today}
           options={options}
           defaults={defaults}
+          judgment={financing ? undefined : { value: c.judgment, note: c.judgmentNote }}
         />
       </div>
     </div>

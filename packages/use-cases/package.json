@@ -1,0 +1,17 @@
+{
+  "name": "@abacus/use-cases",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@abacus/core": "workspace:*",
+    "@abacus/mcp": "workspace:*",
+    "@abacus/use-case-language": "workspace:*",
+    "@abacus/web": "workspace:*"
+  },
+  "scripts": {
+    "test": "ABACUS_CASES_COVERAGE=1 node --env-file-if-exists=../../.env.test --import @abacus/test-harness/preload --test-global-setup=./src/environment/index.ts --test --test-randomize --test-concurrency=4 'cases/**/*.test.ts' 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@abacus/test-harness": "workspace:*"
+  }
+}
