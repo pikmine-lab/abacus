@@ -143,6 +143,69 @@ test('a driver that cannot open its session fails the case, naming case and driv
   assert.equal(preparationClosed, true)
 })
 
+/** A preparation driver that says whether its session was closed. */
+function closingPreparation(): { driver: Driver; closed: () => boolean } {
+  let closed = false
+  return {
+    driver: {
+      name: 'preparation',
+      async open(user) {
+        const session = await preparation.open(user)
+        return {
+          ...session,
+          close: async () => {
+            closed = true
+          },
+        }
+      },
+    },
+    closed: () => closed,
+  }
+}
+
+/** A driver whose session fails to close. */
+function failingToClose(change?: (steps: Partial<Steps>) => Partial<Steps>): Driver {
+  const driver = fakeDriver('web', change)
+  return {
+    name: driver.name,
+    async open(user) {
+      const session = await driver.open(user)
+      return {
+        ...session,
+        close: async () => {
+          throw new Error('browser did not close')
+        },
+      }
+    },
+  }
+}
+
+test('a session that cannot close fails the case, naming case and driver, and the preparation is closed', async () => {
+  const prepared = closingPreparation()
+  await assert.rejects(
+    playCase(expense, failingToClose(), { preparation: prepared.driver, newUser }),
+    (error: Error) => {
+      for (const part of ['ledger.movement.declare-expense', 'web', 'browser did not close'])
+        assert.ok(error.message.includes(part), part)
+      return true
+    },
+  )
+  assert.equal(prepared.closed(), true)
+})
+
+test('a session that cannot close does not hide the failure of the case', async () => {
+  const prepared = closingPreparation()
+  const wrong = failingToClose((steps) => ({ ...steps, readAccountBalance: async () => eur('100.00') }))
+  await assert.rejects(
+    playCase(expense, wrong, { preparation: prepared.driver, newUser }),
+    (error: Error) => {
+      assert.match(error.message, /87\.50/)
+      return true
+    },
+  )
+  assert.equal(prepared.closed(), true)
+})
+
 test('a case marked unstable without a reason is refused with unstable_without_reason, naming it', () => {
   for (const unstable of ['', '   '])
     assert.throws(

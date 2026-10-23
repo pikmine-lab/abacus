@@ -12,7 +12,9 @@ import { gestures, offers } from './inventory/index.ts'
  * driver, which goes through the back; what the case is about goes through the
  * driver under test. A step that driver lacks fails the case
  * (`step_not_implemented`), and a step it fails names the case, the step and
- * the driver, with the interface's own words.
+ * the driver, with the interface's own words. Both sessions are closed
+ * whatever happens; one that fails to close fails the case, without hiding a
+ * failure of the case itself.
  */
 
 export interface UseCase {
@@ -50,10 +52,27 @@ function guarded(caseId: string, driver: string, steps: Partial<Steps>): Steps {
   })
 }
 
+/** A failure as the run reports it: naming the case and the driver, unless it already does. */
+function named(caseId: string, driver: string, error: unknown): Error {
+  if (error instanceof StepNotImplemented) return error
+  const message = (error as Error).message
+  if (message.startsWith(`case ${caseId}`)) return error as Error
+  return new Error(`case ${caseId}, driver ${driver}: ${message}`, { cause: error })
+}
+
+async function closing(caseId: string, driver: string, session: DriverSession): Promise<Error | undefined> {
+  try {
+    await session.close()
+  } catch (error) {
+    return named(caseId, driver, error)
+  }
+}
+
 export async function playCase(useCase: UseCase, driver: Driver, players: Players): Promise<void> {
   const user = await players.newUser()
   const preparation = await players.preparation.open(user)
   let session: DriverSession | undefined
+  let failure: Error | undefined
   try {
     session = await driver.open(user)
     await useCase.body({
@@ -61,14 +80,12 @@ export async function playCase(useCase: UseCase, driver: Driver, players: Player
       act: guarded(useCase.id, driver.name, session.steps),
     })
   } catch (error) {
-    if (error instanceof StepNotImplemented) throw error
-    const message = (error as Error).message
-    if (message.startsWith(`case ${useCase.id}`)) throw error
-    throw new Error(`case ${useCase.id}, driver ${driver.name}: ${message}`, { cause: error })
-  } finally {
-    await session?.close()
-    await preparation.close()
+    failure = named(useCase.id, driver.name, error)
   }
+  const sessionClosed = session && (await closing(useCase.id, driver.name, session))
+  const preparationClosed = await closing(useCase.id, players.preparation.name, preparation)
+  const reported = failure ?? sessionClosed ?? preparationClosed
+  if (reported) throw reported
 }
 
 export interface CaseOptions {
