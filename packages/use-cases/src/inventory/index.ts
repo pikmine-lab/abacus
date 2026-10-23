@@ -29,14 +29,16 @@ export type Entry = Record<string, Offering>
 const PROTOCOL =
   'Signing up, signing in and consenting are web pages by construction of OAuth: an MCP client opens them in the browser, then holds a token.'
 const NO_SESSION =
-  'An MCP client holds a token, not a session: it has nothing to sign out of, and cutting its access is revoking its connection.'
+  'An MCP client holds a token, not a session: it has nothing to sign out of, and cutting its access is revoking its connection, on the web.'
+const MCP_CONFIGURATION =
+  'The applications connected to the MCP are its configuration, and the MCP does not configure itself: listing and revoking them belongs to the web.'
 
 export const gestures: Record<string, Entry> = {
   'auth.sign-up': { web: 'screen:/login', mcp: { missingReason: PROTOCOL } },
   'auth.sign-in': { web: 'screen:/login', mcp: { missingReason: PROTOCOL } },
   'auth.sign-out': { web: 'screen:/', mcp: { missingReason: NO_SESSION } },
   'auth.consent': { web: 'screen:/consent', mcp: { missingReason: PROTOCOL } },
-  'connection.revoke': { web: 'revokeAuthorizationAction', mcp: 'manage_connections · revoke' },
+  'connection.revoke': { web: 'revokeAuthorizationAction', mcp: { missingReason: MCP_CONFIGURATION } },
 
   'movement.declare': { web: 'declareMovementAction', mcp: 'declare_movements' },
   'movement.correct': { web: 'correctMovementAction', mcp: 'fix_movement · correct' },
@@ -168,7 +170,7 @@ export const informations: Record<string, Entry> = {
   figures: { web: 'screen:/settings/activities/[activityId]', mcp: 'set_activity_inputs · list' },
   thresholds: { web: 'screen:/settings/activities/[activityId]', mcp: 'manage_thresholds · list' },
   preferences: { web: 'screen:/settings', mcp: 'manage_preferences · show' },
-  connections: { web: 'screen:/connect-ai', mcp: 'manage_connections · list' },
+  connections: { web: 'screen:/connect-ai', mcp: { missingReason: MCP_CONFIGURATION } },
   assets: { web: 'screen:/investments', mcp: 'manage_assets · list' },
   'asset.price-history': { web: 'screen:/investments/[assetId]', mcp: 'manage_assets · history' },
   portfolio: { web: 'screen:/investments', mcp: 'get_portfolio' },

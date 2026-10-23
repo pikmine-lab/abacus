@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import { directsToSignIn, eur, type Steps } from '@abacus/use-case-language'
 import { DomainError } from '../src/domain/errors.ts'
+import { authIssuer, PREREGISTERED_CLIENT_IDS } from '../src/oauth.ts'
 import { createAccount, listAccounts } from '../src/services/accounts.ts'
 import { createActor, listActors } from '../src/services/actors.ts'
 import { createSubscription, editCommitment, listCommitments } from '../src/services/commitments.ts'
-import { listUserConnections } from '../src/services/connections.ts'
 import { correctMovement, declareMovement, listMovements, readMovement } from '../src/services/movements.ts'
 import { amountOf, type PreparationContext } from './context.ts'
 
@@ -19,9 +19,11 @@ async function refusedOr(gesture: () => Promise<unknown>): Promise<'corrected' |
   }
 }
 
-export function identitySteps({ user, mcpUrl }: PreparationContext): Partial<Steps> {
+export function identitySteps({ user, mcpUrl, webUrl }: PreparationContext): Partial<Steps> {
   // Who the other person of a case is, by what they declared: only the back knows.
   const owners = new Map<string, string>()
+  // Each renewal hands out a new refresh token and retires the one it used.
+  let refreshToken = user.refreshToken
   return {
     async someoneElseDeclares({ account, amount, payee, on, subscription }) {
       // Loaded when used: the auth module needs the suite's addresses to load.
@@ -76,7 +78,29 @@ export function identitySteps({ user, mcpUrl }: PreparationContext): Partial<Ste
       return refusedOr(() => editCommitment(user.id, commitmentId, { label }))
     },
     async readConnectedApps() {
-      return (await listUserConnections(user.id)).map(({ name, domain }) => ({ name, domain }))
+      const { listAuthorizations } = await import('../src/authorizations.ts')
+      const authorizations = await listAuthorizations(user.id, new Headers({ cookie: user.cookie }))
+      return authorizations.map(({ name, domain }) => ({ name, domain }))
+    },
+    async connectedAppRenews() {
+      // As the application the case signed in with renews its access, from an address of its own.
+      const [a, b, c] = randomBytes(3)
+      const response = await fetch(`${authIssuer(webUrl)}/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'x-forwarded-for': `10.${a}.${b}.${c}`,
+        },
+        body: new URLSearchParams({
+          client_id: PREREGISTERED_CLIENT_IDS.cursor,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          resource: mcpUrl,
+        }),
+      })
+      if (!response.ok) return 'refused'
+      refreshToken = ((await response.json()) as { refresh_token: string }).refresh_token
+      return 'renews'
     },
     async connectedAppReaches() {
       // A call any MCP client makes first, with the token the case signed in with.

@@ -20,11 +20,11 @@ import { venuesSteps } from './venues.ts'
  * (#192), its step here calls the API instead, and no case changes. It also
  * plays every step, so a case can be checked against the back alone.
  */
-export function preparationDriver(env: { mcpUrl: string }): Driver {
+export function preparationDriver(env: { mcpUrl: string; webUrl: string }): Driver {
   return {
     name: 'preparation',
     async open(user) {
-      const ctx = preparationContext(user, env.mcpUrl)
+      const ctx = preparationContext(user, env.mcpUrl, env.webUrl)
       const steps: Partial<Steps> = {
         ...ledgerSteps(ctx),
         ...accountsSteps(ctx),

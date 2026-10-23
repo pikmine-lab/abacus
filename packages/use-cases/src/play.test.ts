@@ -33,7 +33,14 @@ const preparation = fakeDriver('preparation')
 let users = 0
 const newUser = async (): Promise<CaseUser> => {
   users += 1
-  return { id: `u${users}`, email: `u${users}@test.local`, password: 'x', cookie: '', accessToken: '' }
+  return {
+    id: `u${users}`,
+    email: `u${users}@test.local`,
+    password: 'x',
+    cookie: '',
+    accessToken: '',
+    refreshToken: '',
+  }
 }
 
 const expense = {

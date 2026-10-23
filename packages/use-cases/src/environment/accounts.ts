@@ -27,7 +27,7 @@ function clientAddress(): string {
   return `10.${a}.${b}.${c}`
 }
 
-async function signUp(address: string): Promise<Omit<CaseUser, 'accessToken'>> {
+async function signUp(address: string): Promise<Omit<CaseUser, 'accessToken' | 'refreshToken'>> {
   const { webUrl } = environment()
   const email = `case-${randomBytes(6).toString('hex')}@${SUITE_MARKER}.test`
   const password = `pw-${randomBytes(12).toString('hex')}`
@@ -46,7 +46,10 @@ async function signUp(address: string): Promise<Omit<CaseUser, 'accessToken'>> {
 }
 
 /** Authorize, consent and code exchange, as a browser and a client would. */
-export async function mcpAccessToken(cookie: string, address = clientAddress()): Promise<string> {
+export async function mcpTokens(
+  cookie: string,
+  address = clientAddress(),
+): Promise<{ accessToken: string; refreshToken: string }> {
   const { webUrl, mcpUrl } = environment()
   const issuer = authIssuer(webUrl)
   const verifier = randomBytes(32).toString('base64url')
@@ -90,11 +93,16 @@ export async function mcpAccessToken(cookie: string, address = clientAddress()):
     }),
   })
   if (!token.ok) throw new Error(`the token exchange answered ${token.status}: ${await token.text()}`)
-  return ((await token.json()) as { access_token: string }).access_token
+  const { access_token, refresh_token } = (await token.json()) as {
+    access_token: string
+    refresh_token?: string
+  }
+  if (!refresh_token) throw new Error('the token exchange gave no refresh token')
+  return { accessToken: access_token, refreshToken: refresh_token }
 }
 
 export async function newUser(): Promise<CaseUser> {
   const address = clientAddress()
   const user = await signUp(address)
-  return { ...user, accessToken: await mcpAccessToken(user.cookie, address) }
+  return { ...user, ...(await mcpTokens(user.cookie, address)) }
 }

@@ -1,8 +1,5 @@
 import { APIError } from 'better-auth/api'
 import { auth } from './auth.ts'
-import { clientDomain } from './services/connections.ts'
-
-export { clientDomain }
 
 /**
  * What a user has let into their account: one row per AI client they
@@ -19,6 +16,23 @@ export interface Authorization {
   grantedAt: Date
   /** Last token refresh; tokens last ten minutes, so it reads as "last used". */
   lastUsedAt: Date | null
+}
+
+/**
+ * The domain a client is known by. A metadata-document client IS the URL of
+ * its document, and its name comes from that document, so the host of the URL
+ * is the one thing about it the client cannot choose. A pre-registered client
+ * carries the product's site instead.
+ */
+export function clientDomain(clientId: string, clientUri?: string | null): string | null {
+  for (const candidate of [clientId, clientUri]) {
+    if (!candidate) continue
+    try {
+      const url = new URL(candidate)
+      if (url.protocol === 'https:' || url.protocol === 'http:') return url.hostname
+    } catch {}
+  }
+  return null
 }
 
 export async function listAuthorizations(userId: string, headers: Headers): Promise<Authorization[]> {
@@ -58,8 +72,8 @@ export async function listAuthorizations(userId: string, headers: Headers): Prom
  * Cuts a client off. Better Auth only deletes the consent row: the refresh
  * grant never reads it, so the client would keep renewing its tokens for as
  * long as it kept using them. The tokens of that client for that user go with
- * it, and the access token already issued is refused from its next call: the
- * MCP server checks on each call that the authorization still exists.
+ * it, so it can no longer renew its access; the access token already issued
+ * holds until it expires, ten minutes at most.
  */
 export async function revokeAuthorization(
   userId: string,

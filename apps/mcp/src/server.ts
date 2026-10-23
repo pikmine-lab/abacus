@@ -5,7 +5,6 @@ import { registerBalanceTools } from './tools/balances.ts'
 import { registerCardTools } from './tools/cards.ts'
 import { registerCatalogTools } from './tools/catalog.ts'
 import { registerCommitmentTools } from './tools/commitments.ts'
-import { registerConnectionTools } from './tools/connections.ts'
 import { registerInvestmentTools } from './tools/investments.ts'
 import { registerInvoiceTools } from './tools/invoices.ts'
 import { registerLevyTools } from './tools/levies.ts'
@@ -38,7 +37,6 @@ export function buildServer(userId: string): McpServer {
   registerLevyTools(server, userId)
   registerPreferenceTools(server, userId)
   registerActivityTools(server, userId)
-  registerConnectionTools(server, userId)
   registerRegimeTools(server)
   return server
 }

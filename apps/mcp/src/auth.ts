@@ -1,5 +1,4 @@
 import { authIssuer, MCP_SCOPE } from '@abacus/core/oauth'
-import { isConnected } from '@abacus/core/services/connections'
 import { createMcpProtectedRequestHandler } from '@better-auth/mcp'
 import type { AuthInfo } from '@modelcontextprotocol/server'
 
@@ -8,7 +7,9 @@ import type { AuthInfo } from '@modelcontextprotocol/server'
  * authorization server, on another domain. An access token is a JWT the web
  * app signed for this exact endpoint: it is verified here against the web
  * app's published keys, and its subject is the user every tool call is scoped
- * to. One query checks the application is still authorized.
+ * to. Nothing more is checked: revoking an application is the authorization
+ * server's business, which stops its renewal, and the token it already holds
+ * runs out within ten minutes.
  */
 
 function required(name: string): string {
@@ -54,32 +55,14 @@ export function protect(
     { issuer, audience: resource, jwksUrl: `${issuer}/jwks`, requiredScopes: [MCP_SCOPE] },
     async (request, claims) => {
       const token = request.headers.get('authorization')?.replace(/^\w+\s+/, '') ?? ''
-      const clientId = String(claims.client_id ?? claims.azp ?? '')
-      // A signature proves the token was issued, not that it still stands:
-      // once the user revoked the application, its tokens open nothing more,
-      // however long they had left.
-      if (!(await isConnected(String(claims.sub), clientId))) return revoked()
       const authInfo: AuthInfo = {
         token,
-        clientId,
+        clientId: String(claims.client_id ?? claims.azp ?? ''),
         scopes: typeof claims.scope === 'string' ? claims.scope.split(' ') : [],
         expiresAt: claims.exp,
         extra: { userId: claims.sub },
       }
       return handler(request, authInfo)
-    },
-  )
-}
-
-/** The same challenge as for a missing token, so a client goes back through authorization. */
-function revoked(): Response {
-  return Response.json(
-    { error: 'invalid_token', error_description: 'This application was disconnected: authorize it again.' },
-    {
-      status: 401,
-      headers: {
-        'WWW-Authenticate': `Bearer resource_metadata="${new URL(resource).origin}${protectedResourceMetadataPath}"`,
-      },
     },
   )
 }

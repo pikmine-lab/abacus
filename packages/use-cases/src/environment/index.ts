@@ -163,6 +163,8 @@ export async function globalSetup(): Promise<void> {
   process.env.DATABASE_URL = databaseUrl
   process.env.PUBLIC_URL = webUrl
   process.env.MCP_URL = mcpUrl
+  // The preparation driver asks the auth server with a case user's session, which this secret signs.
+  process.env.BETTER_AUTH_SECRET = env.BETTER_AUTH_SECRET
   process.env.ABACUS_TEST_TODAY = SUITE_DAY
 }
 

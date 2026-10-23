@@ -40,6 +40,8 @@ export interface IdentitySteps {
   revokeConnectedApp(name: string): Promise<void>
   /** Whether the AI application the case signed in with still reaches the person's data, or is told where to sign in again. */
   connectedAppReaches(): Promise<'reaches' | 'sent-to-sign-in' | 'refused'>
+  /** Whether that application can still renew its access once what it holds runs out. */
+  connectedAppRenews(): Promise<'renews' | 'refused'>
   /** Corrects a movement by its id: whether the correction went through. */
   correctSomeoneElsesMovement(movementId: string, amount: Money): Promise<'corrected' | 'refused'>
   /** Renames a commitment by its id: whether the correction went through. */

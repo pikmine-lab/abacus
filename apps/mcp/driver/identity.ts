@@ -23,24 +23,6 @@ export function identitySteps({ url, call }: McpContext): Partial<Steps> {
       if (await directsToSignIn(response)) return 'sent-to-sign-in'
       return response.status === 401 ? 'refused' : 'let-in'
     },
-    async readConnectedApps() {
-      const { connections } = await call<{ connections: { name: string; domain: string | null }[] }>(
-        'manage_connections',
-        { action: 'list' },
-      )
-      return connections.map(({ name, domain }) => ({ name, domain }))
-    },
-    async revokeConnectedApp(name) {
-      const { connections } = await call<{ connections: { id: string; name: string }[] }>(
-        'manage_connections',
-        {
-          action: 'list',
-        },
-      )
-      const found = connections.find((c) => c.name === name)
-      if (!found) throw new Error(`no connected application named "${name}"`)
-      await call('manage_connections', { action: 'revoke', connectionId: found.id })
-    },
     async readAccountNames() {
       const { accounts } = await call<{ accounts: { name: string }[] }>('manage_accounts', { action: 'list' })
       return accounts.map((a) => a.name)

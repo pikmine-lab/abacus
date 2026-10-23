@@ -40,6 +40,8 @@ export interface CaseUser {
   cookie: string
   /** An access token to the MCP server, obtained through its OAuth flow. */
   accessToken: string
+  /** The refresh token of that same flow, with which the application renews its access. */
+  refreshToken: string
 }
 
 /** Every step a case can take, one file per domain under steps/. */

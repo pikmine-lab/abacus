@@ -6,15 +6,10 @@ import { after, before, beforeEach, test } from 'node:test'
 import { auth } from '@abacus/core/auth'
 import { listAuthorizations, revokeAuthorization } from '@abacus/core/authorizations'
 import { authIssuer, MCP_SCOPE, PREREGISTERED_CLIENT_IDS } from '@abacus/core/oauth'
-import { listUserConnections, revokeUserConnection } from '@abacus/core/services/connections'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { toNodeHandler } from '@modelcontextprotocol/node'
-import type { AuthInfo } from '@modelcontextprotocol/server'
-import { createMcpHandler } from '@modelcontextprotocol/server'
 import { setupDb, teardownDb, truncateAll } from '../../../packages/core/test/helpers.ts'
 import { createApp } from './app.ts'
-import { protect, userIdOf } from './auth.ts'
-import { buildServer } from './server.ts'
+import { protect } from './auth.ts'
 
 /**
  * The whole authorization flow a client runs, against the real authorization
@@ -231,96 +226,12 @@ test('revoking an authorization stops its refresh token at once', async () => {
   assert.equal(refreshed.status, 400)
 })
 
-test('a revoked client is refused at its very next call, however long its token had left', async () => {
-  const { cookie, userId } = await signUp()
-  const tokens = await connect(cookie)
-  assert.equal((await whoAmI(mcpRequest(tokens.access_token))).status, 200)
-
-  const [connection] = await listUserConnections(userId)
-  assert.equal(await revokeUserConnection(userId, connection!.id), true)
-
-  const refused = await whoAmI(mcpRequest(tokens.access_token))
-  assert.equal(refused.status, 401)
-  assert.ok(
-    (refused.headers.get('www-authenticate') ?? '').includes(
-      `resource_metadata="${new URL(MCP_URL).origin}/.well-known/oauth-protected-resource/mcp"`,
-    ),
-  )
-})
-
-/** The MCP surface of one user, in process, as the other MCP tests reach it. */
-async function toolsOf(userId: string) {
-  const authInfo: AuthInfo = { token: 'test', clientId: userId, scopes: ['mcp'], extra: { userId } }
-  const handler = createMcpHandler(({ authInfo: info }) => buildServer(userIdOf(info)))
-  const client = new Client({ name: 'test-client', version: '0.0.0' })
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL('http://in-process.test/mcp'), {
-      fetch: (url, init) => handler.fetch(new Request(url, init), { authInfo }),
-    }),
-  )
-  return async (args: Record<string, unknown>) => {
-    const reply = (await client.callTool({ name: 'manage_connections', arguments: args })) as {
-      isError?: boolean
-      content: { text: string }[]
-    }
-    return {
-      isError: reply.isError ?? false,
-      json: JSON.parse(reply.content[0]!.text.startsWith('{') ? reply.content[0]!.text : '{}') as Record<
-        string,
-        unknown
-      >,
-      text: reply.content[0]!.text,
-    }
-  }
-}
-
-test('the MCP lists the connected applications as the web does, and revokes one', async () => {
+test('a revoked client keeps the access token it holds until it expires, the authorization server alone cutting it off', async () => {
   const { cookie, userId } = await signUp()
   const tokens = await connect(cookie)
   const headers = new Headers({ cookie })
-  const call = await toolsOf(userId)
+  const [authorization] = await listAuthorizations(userId, headers)
+  await revokeAuthorization(userId, authorization!.consentId, headers)
 
-  const [web] = await listAuthorizations(userId, headers)
-  const listed = (await call({ action: 'list' })).json.connections as Record<string, unknown>[]
-  assert.equal(listed.length, 1)
-  assert.equal(listed[0]!.id, web!.consentId)
-  assert.equal(listed[0]!.name, web!.name)
-  assert.equal(listed[0]!.domain, web!.domain)
-
-  const revoked = await call({ action: 'revoke', connectionId: web!.consentId })
-  assert.equal(revoked.isError, false, revoked.text)
-  assert.deepEqual(await listAuthorizations(userId, headers), [])
-  assert.deepEqual((await call({ action: 'list' })).json.connections, [])
-  assert.equal((await whoAmI(mcpRequest(tokens.access_token))).status, 401)
-  const refreshed = await token({
-    grant_type: 'refresh_token',
-    refresh_token: tokens.refresh_token as string,
-  })
-  assert.equal(refreshed.status, 400)
-
-  const again = await call({ action: 'revoke', connectionId: web!.consentId })
-  assert.equal(again.isError, true)
-  assert.equal((await call({ action: 'revoke' })).isError, true)
-})
-
-test('the MCP lists the connected applications page by page', async () => {
-  const { cookie, userId } = await signUp()
-  await connect(cookie)
-  await authorize(
-    cookie,
-    'https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect',
-    pkce().challenge,
-    PREREGISTERED_CLIENT_IDS.microsoft365Copilot,
-  )
-  const call = await toolsOf(userId)
-  const page = async (offset: number) =>
-    ((await call({ action: 'list', limit: 1, offset })).json.connections as { name: string }[]).map(
-      (c) => c.name,
-    )
-
-  const [first, second, third] = [await page(0), await page(1), await page(2)]
-  assert.equal(first.length, 1)
-  assert.equal(second.length, 1)
-  assert.deepEqual([...first, ...second].sort(), ['Cursor', 'Microsoft 365 Copilot'])
-  assert.deepEqual(third, [])
+  assert.equal((await whoAmI(mcpRequest(tokens.access_token))).status, 200)
 })
