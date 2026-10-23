@@ -108,6 +108,34 @@ test('each play of a case gets a user of its own, shared by its preparation and 
   assert.notEqual(a, c)
 })
 
+test('a driver that cannot open its session fails the case, naming case and driver, and the preparation is closed', async () => {
+  let preparationClosed = false
+  const closing: Driver = {
+    name: 'preparation',
+    async open(user) {
+      const session = await preparation.open(user)
+      return {
+        ...session,
+        close: async () => {
+          preparationClosed = true
+        },
+      }
+    },
+  }
+  const broken: Driver = {
+    name: 'web',
+    async open() {
+      throw new Error('browser did not start')
+    },
+  }
+  await assert.rejects(playCase(expense, broken, { preparation: closing, newUser }), (error: Error) => {
+    for (const part of ['ledger.movement.declare-expense', 'web', 'browser did not start'])
+      assert.ok(error.message.includes(part), part)
+    return true
+  })
+  assert.equal(preparationClosed, true)
+})
+
 test('a case marked unstable without a reason is refused with unstable_without_reason, naming it', () => {
   for (const unstable of ['', '   '])
     assert.throws(

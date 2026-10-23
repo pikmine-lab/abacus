@@ -1,5 +1,5 @@
 import { after, describe, test } from 'node:test'
-import type { CaseUser, Driver, Steps } from '@abacus/use-case-language'
+import type { CaseUser, Driver, DriverSession, Steps } from '@abacus/use-case-language'
 import { drivers, preparationDriver } from './drivers.ts'
 import { newUser } from './environment/accounts.ts'
 import { gestures, offers } from './inventory/index.ts'
@@ -53,8 +53,9 @@ function guarded(caseId: string, driver: string, steps: Partial<Steps>): Steps {
 export async function playCase(useCase: UseCase, driver: Driver, players: Players): Promise<void> {
   const user = await players.newUser()
   const preparation = await players.preparation.open(user)
-  const session = await driver.open(user)
+  let session: DriverSession | undefined
   try {
+    session = await driver.open(user)
     await useCase.body({
       arrange: guarded(useCase.id, players.preparation.name, preparation.steps),
       act: guarded(useCase.id, driver.name, session.steps),
@@ -65,7 +66,7 @@ export async function playCase(useCase: UseCase, driver: Driver, players: Player
     if (message.startsWith(`case ${useCase.id}`)) throw error
     throw new Error(`case ${useCase.id}, driver ${driver.name}: ${message}`, { cause: error })
   } finally {
-    await session.close()
+    await session?.close()
     await preparation.close()
   }
 }
