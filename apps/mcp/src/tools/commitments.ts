@@ -523,11 +523,18 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
     async ({ includeCancelled, sortBy, direction }) =>
       run(async () => {
         const sort = resolveSort(COMMITMENT_SORTS, DEFAULT_COMMITMENT_SORT, sortBy, direction)
-        const commitments = sortCommitments(
-          await listCommitmentsWithProgress(userId, !includeCancelled),
-          sort,
-        )
-        const names = new Map((await listAccounts(userId)).map((a) => [a.id, a.name]))
+        // Independent reads, run together.
+        const [listed, accounts, assets, cards, actors, categories, activities] = await Promise.all([
+          listCommitmentsWithProgress(userId, !includeCancelled),
+          listAccounts(userId),
+          listAssets(userId),
+          listCards(userId),
+          listActors(userId),
+          listCategories(userId),
+          listActivities(userId),
+        ])
+        const commitments = sortCommitments(listed, sort)
+        const names = new Map(accounts.map((a) => [a.id, a.name]))
         // A move already declared for a later date belongs in the review: it is
         // state nothing else would show before the day it takes effect.
         const account = (c: (typeof commitments)[number]) => ({
@@ -536,11 +543,11 @@ export function registerCommitmentTools(server: McpServer, userId: string): void
             ? { account: names.get(c.nextAccountMove.accountId), on: c.nextAccountMove.effectiveOn }
             : undefined,
         })
-        const assetNames = new Map((await listAssets(userId)).map((a) => [a.id, a.name]))
-        const cardNames = new Map((await listCards(userId)).map((card) => [card.id, card.name]))
-        const actorNames = new Map((await listActors(userId)).map((a) => [a.id, a.name]))
-        const categoryNames = new Map((await listCategories(userId)).map((c) => [c.id, c.name]))
-        const activityNames = new Map((await listActivities(userId)).map((a) => [a.id, a.name]))
+        const assetNames = new Map(assets.map((a) => [a.id, a.name]))
+        const cardNames = new Map(cards.map((card) => [card.id, card.name]))
+        const actorNames = new Map(actors.map((a) => [a.id, a.name]))
+        const categoryNames = new Map(categories.map((c) => [c.id, c.name]))
+        const activityNames = new Map(activities.map((a) => [a.id, a.name]))
         // Who it pays (or, for a recurring income, who pays it), how it is
         // filed, and what is expected back a month: each absent when it has none.
         const about = (c: (typeof commitments)[number]) => ({
