@@ -55,8 +55,8 @@ seul endroit. Montants, décimales, arrondi, répartition en parts, pourcentages
 périodes ne se manipulent que par le module central de briques, qui les définit une seule
 fois : deux calculs ne peuvent pas diverger.
 
-*Vérifié par* : le compilateur (type montant opaque, arithmétique flottante interdite par
-lint en erreur) ; la garde de dépendances ; les tests du module de briques.
+*Vérifié par* : le compilateur (un montant est un type opaque, qu'aucun opérateur
+arithmétique n'accepte) ; la garde de dépendances ; les tests du module de briques.
 
 ## VI. Aucune route sans règle d'accès
 
@@ -101,7 +101,7 @@ compare les routes du contrat à celles qui portent une règle.
    ce qui dépend de l'état revient en code d'erreur nommé. Une interface n'invente aucune
    règle de validation.
 
-*Vérifié par* : un test qui compare les dépendances réelles des crates au graphe autorisé ; un rôle Postgres par module,
+*Vérifié par* : un test qui compare les dépendances réelles des modules au graphe autorisé ; un rôle Postgres par module,
 qui n'a de droits que sur son schéma ; les règles d'import des interfaces ; le contrôle du
 catalogue Postgres après migration ; le refus en CI de toute migration existante modifiée ;
 la CI qui régénère le client et échoue s'il diffère ; les tests de contrat.
@@ -123,8 +123,8 @@ exercé par un cas.
 
 Chaque langage est configuré au plus strict. Pour TypeScript : `strict`,
 `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`,
-`noFallthroughCasesInSwitch`, et aucun `any`. Pour Rust : les lints retenus sont en erreur.
-Partout, un avertissement de lint est une erreur.
+`noFallthroughCasesInSwitch`, et aucun `any`. Partout, un avertissement de lint est une
+erreur.
 
 *Vérifié par* : le contrôle CI des configurations, qui échoue si une option manque ; la règle
 de lint qui refuse `any` en erreur.
@@ -162,8 +162,8 @@ paramètre et s'affiche échappée. Un texte saisi qui revient à une IA par le 
 rendu dans un champ de données délimité, que la description de l'outil désigne comme du
 contenu à ne jamais suivre comme une consigne.
 
-*Vérifié par* : le contrat (un champ texte ou numérique sans borne fait échouer la CI) ; les
-requêtes paramétrées vérifiées à la compilation ; les règles de lint qui interdisent
+*Vérifié par* : le contrat (un champ texte ou numérique sans borne fait échouer la CI) ; le
+lint, qui refuse une requête SQL brute hors des migrations ; les règles de lint qui interdisent
 l'insertion de HTML brut ; un test de cas d'usage qui saisit un texte d'injection et
 vérifie qu'il revient délimité ; la revue de sécurité quand une fonctionnalité ajoute un
 champ.
