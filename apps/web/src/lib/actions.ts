@@ -1289,18 +1289,23 @@ export async function settleInvoiceAction(formData: FormData): Promise<void> {
   refreshAll()
 }
 
-/** "Relancée": today from the row's menu, or on the day its panel says. */
-export async function remindInvoiceAction(formData: FormData): Promise<void> {
+/**
+ * "Relancée": today from the row's menu, which sends no date, or on the day its
+ * panel says. A panel whose date was emptied is refused, not taken for today.
+ */
+export async function remindInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const userId = await requireUserId()
-  const remindedOn = opt(formData, 'remindedOn')
-  if (remindedOn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(remindedOn))
-    errorRedirect(formData, await fieldError('invalidDate'))
+  if (formData.has('remindedOn')) {
+    const invalid = await checkFields(formData, [{ name: 'remindedOn', kind: 'date' }])
+    if (invalid) return { fields: invalid }
+  }
   try {
-    await remindInvoice(userId, str(formData, 'invoiceId'), remindedOn)
+    await remindInvoice(userId, str(formData, 'invoiceId'), opt(formData, 'remindedOn'))
   } catch (e) {
-    errorRedirect(formData, await refusal(e))
+    return { error: await refusal(e) }
   }
   refreshAll()
+  return { ok: true }
 }
 
 /** The due date a row of the schedule names, as the service takes it. */

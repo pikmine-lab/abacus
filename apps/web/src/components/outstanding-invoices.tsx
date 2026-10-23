@@ -110,8 +110,7 @@ function InvoiceRow({
   const [confirming, setConfirming] = useState(false)
   const [reminding, setReminding] = useState(false)
   const [state, cancel, pending] = useActionState(cancelInvoiceAction, {})
-  const inCurrency = (value: number) =>
-    invoice.currency === 'EUR' ? format.eur(value, 2) : format.money(value, invoice.currency, 2)
+  const [reminded, remind] = useActionState(remindInvoiceAction, {})
   const late = invoice.dueOn ? daysBetween(invoice.dueOn, today) : 0
   const label = `${invoice.client}${invoice.reference ? ` · ${invoice.reference}` : ''}`
 
@@ -119,6 +118,10 @@ function InvoiceRow({
   useEffect(() => {
     if (state.ok) setConfirming(false)
   }, [state.ok])
+  // Keyed on the whole state: a second reminder from the panel is a new success.
+  useEffect(() => {
+    if (reminded.ok) setReminding(false)
+  }, [reminded])
 
   return (
     <div className="flex flex-wrap items-center gap-2 py-2.5">
@@ -129,7 +132,8 @@ function InvoiceRow({
             t('outstanding.issuedOn', { date: format.date(invoice.issuedOn) }),
             invoice.dueOn && t('outstanding.dueOn', { date: format.date(invoice.dueOn) }),
             invoice.remindedOn && t('outstanding.remindedOn', { date: format.date(invoice.remindedOn) }),
-            invoice.paid > 0 && t('outstanding.alreadyPaid', { amount: inCurrency(invoice.paid) }),
+            invoice.paid > 0 &&
+              t('outstanding.alreadyPaid', { amount: format.money(invoice.paid, invoice.currency, 2) }),
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -144,7 +148,9 @@ function InvoiceRow({
         {invoice.overdue ? t('outstanding.overdue', { days: late }) : t('invoiceState.pending')}
       </span>
 
-      <span className="ml-auto font-mono text-[13px] tabular">{inCurrency(invoice.receivable)}</span>
+      <span className="ml-auto font-mono text-[13px] tabular">
+        {format.money(invoice.receivable, invoice.currency, 2)}
+      </span>
 
       <form action={settleInvoiceAction} className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
@@ -174,11 +180,11 @@ function InvoiceRow({
         </Button>
       </form>
 
+      {reminded.error && !reminding && <p className="text-xs text-destructive">{reminded.error}</p>}
       <RowMenu label={label}>
         <DropdownMenuItem asChild>
-          <form action={remindInvoiceAction}>
+          <form action={remind}>
             <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
-            <input type="hidden" name="back" value={back} />
             <button type="submit" className="flex w-full items-center gap-2">
               <SendIcon />
               {t('outstanding.remindedToday')}
@@ -209,19 +215,15 @@ function InvoiceRow({
           <DialogHeader>
             <DialogTitle className="text-[15px]">{t('outstanding.remindTitle')}</DialogTitle>
           </DialogHeader>
-          <form
-            action={async (formData) => {
-              await remindInvoiceAction(formData)
-              setReminding(false)
-            }}
-            className="flex flex-col gap-3"
-          >
+          <form action={remind} className="flex flex-col gap-3">
             <input type="hidden" name="invoiceId" value={invoice.invoiceId} />
-            <input type="hidden" name="back" value={back} />
             <p className="text-[12px] text-muted-foreground">{label}</p>
-            <Field label={t('outstanding.remindedOnField')} name="remindedOn">
-              <DateField name="remindedOn" defaultValue={today} />
-            </Field>
+            <FieldErrors.Provider value={reminded.fields}>
+              <Field label={t('outstanding.remindedOnField')} name="remindedOn">
+                <DateField name="remindedOn" defaultValue={today} />
+              </Field>
+            </FieldErrors.Provider>
+            {reminded.error && <p className="text-xs text-destructive">{reminded.error}</p>}
             <SubmitButton className="self-start">{t('outstanding.remindSave')}</SubmitButton>
           </form>
         </DialogContent>
