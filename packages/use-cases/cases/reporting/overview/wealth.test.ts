@@ -3,7 +3,8 @@ import { eur } from '@abacus/use-case-language'
 import { useCase } from '../../../src/play.ts'
 
 // What the person owns: the balance of every account, an investment
-// account's cash included, plus its holdings at their last known price.
+// account's cash included, plus its holdings at their last known price. The
+// overview never asks the market itself, so the price is made known first.
 useCase('reporting.overview.wealth', async ({ arrange, act }) => {
   await arrange.createAccount({ name: 'Compte courant', opening: eur('1000.00') })
   await arrange.createInvestmentAccount({ name: 'PEA', opening: eur('6000.00'), openedOn: '2026-05-01' })
@@ -22,5 +23,6 @@ useCase('reporting.overview.wealth', async ({ arrange, act }) => {
     payee: 'Le Bistrot',
     on: '2026-06-03',
   })
+  await arrange.refreshPrices()
   assert.deepEqual(await act.readWealth(), eur('7160.00'))
 })
