@@ -92,11 +92,16 @@ compare les routes du contrat à celles qui portent une règle.
 2. **Chaque route est un geste atomique** qui laisse les données cohérentes à elle seule.
    Deux écritures qui n'ont de sens qu'ensemble forment une seule route. La route ouvre la
    transaction et la prête aux modules ; un module ne valide ni n'annule jamais une
-   transaction lui-même.
+   transaction lui-même. Chaque geste et chaque lecture de l'API vit dans son propre
+   fichier, du nom de son entrée dans l'inventaire de la suite de cas d'usage. Il enchaîne
+   les modules et leur passe ce que les autres ont rendu, sans rien calculer : il n'importe
+   pas le module de briques.
 3. **L'API ne touche jamais la base**, elle passe par les modules. Un module possède ses
    tables, dans son propre schéma, et ne lit jamais celles d'un autre : il passe par
-   l'interface de ce module, qui n'expose que le nécessaire. Les dépendances entre modules
-   vont dans un seul sens, le grand livre ne dépend d'aucun autre module, et le graphe des
+   l'interface de ce module, qui n'expose que le nécessaire. Un module n'écrit que dans ses
+   propres tables : une écriture qui traverse deux modules est enchaînée par le geste, jamais
+   par un module chez un autre. Les dépendances entre modules sont des lectures, et vont
+   dans un seul sens, le grand livre ne dépend d'aucun autre module, et le graphe des
    dépendances autorisées est écrit à un seul endroit : y ajouter une flèche est validé par
    un humain. Le socle technique et le noyau de briques, dont tout module peut dépendre, ne
    contiennent aucun métier.
@@ -115,7 +120,8 @@ compare les routes du contrat à celles qui portent une règle.
 
 *Vérifié par* : un test qui compare les dépendances réelles des modules au graphe autorisé ; un rôle Postgres par module,
 qui n'a de droits que sur son schéma ; les règles d'import des interfaces (seul le
-contrat) ; le lint des interfaces, qui refuse l'horloge hors d'un fichier de présentation
+contrat) et de la couche des gestes (ni briques, ni tables) ; un contrôle qui compare les
+fichiers de cette couche aux entrées de l'inventaire ; le lint des interfaces, qui refuse l'horloge hors d'un fichier de présentation
 nommé et la conversion d'un montant reçu en nombre ; le contrôle du catalogue Postgres après
 migration ; le refus en CI de toute migration existante modifiée ; la CI qui régénère le
 client et échoue s'il diffère ; les tests de contrat ; la revue de code, qui refuse une
