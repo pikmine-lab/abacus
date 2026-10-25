@@ -55,8 +55,15 @@ seul endroit. Montants, décimales, arrondi, répartition en parts, pourcentages
 périodes ne se manipulent que par le module central de briques, qui les définit une seule
 fois : deux calculs ne peuvent pas diverger.
 
+Une date du calendrier (le jour d'une dépense, d'une échéance) n'a ni heure ni fuseau et
+n'en traverse jamais : changer de fuseau ne la déplace pas. Un instant se stocke en UTC. Le
+jour courant d'une personne se calcule à un seul endroit, depuis l'horloge du socle et le
+fuseau de ses préférences, et vaut pour toutes les interfaces.
+
 *Vérifié par* : le compilateur (un montant est un type opaque, qu'aucun opérateur
-arithmétique n'accepte) ; la garde de dépendances ; les tests du module de briques.
+arithmétique n'accepte ; date du calendrier et instant sont deux types distincts) ; la garde
+de dépendances ; le lint, qui refuse `new Date()` et `Date.now()` hors de l'horloge du
+socle ; les tests du module de briques.
 
 ## VI. Aucune route sans règle d'accès
 
@@ -76,35 +83,54 @@ compare les routes du contrat à celles qui portent une règle.
 
 ## VII. L'architecture
 
-1. **Les interfaces ne parlent qu'à l'API**, par le client généré depuis son contrat. Ni
-   appel réseau à côté, ni import du back. Le client généré ne s'édite jamais à la main.
-2. **Chaque route est un geste atomique** qui laisse les données cohérentes à elle seule.
-   Deux écritures qui n'ont de sens qu'ensemble forment une seule route. La route ouvre la
-   transaction et la prête aux modules ; un module ne valide ni n'annule jamais une
-   transaction lui-même.
-3. **L'API ne touche jamais la base**, elle passe par les modules. Un module possède ses
-   tables, dans son propre schéma, et ne lit jamais celles d'un autre : il passe par
-   l'interface de ce module, qui n'expose que le nécessaire. Les dépendances entre modules
-   vont dans un seul sens, le grand livre ne dépend d'aucun autre module, et le graphe des
-   dépendances autorisées est écrit à un seul endroit : y ajouter une flèche est validé par
-   un humain. Le socle technique et le noyau de briques, dont tout module peut dépendre, ne
-   contiennent aucun métier.
+1. **Les interfaces ne parlent qu'à l'API et n'importent que son contrat généré** : ni
+   appel réseau à côté, ni module du back, ni brique. Le client généré ne s'édite jamais à
+   la main. Une interface n'invente aucune donnée : montants, totaux, états, dates, jour
+   courant et valeurs proposées par défaut viennent de l'API. Elle n'apporte que ce que la
+   personne saisit et la mise en forme. Un aperçu pendant la saisie est une route de l'API
+   qui calcule sans enregistrer.
+2. **L'API est la porte, la couche application porte les gestes.** Une route déclare sa
+   règle d'accès et son schéma, puis appelle une seule entrée de la couche application ;
+   elle ne touche aucun module. Chaque geste et chaque lecture vit dans son propre fichier
+   de cette couche, du nom de son entrée dans l'inventaire de la suite de cas d'usage. Un
+   geste est atomique : il laisse les données cohérentes à lui seul, et deux écritures qui
+   n'ont de sens qu'ensemble forment un seul geste. Il ouvre la transaction et la prête aux
+   modules ; un module ne valide ni n'annule jamais une transaction lui-même. Il enchaîne
+   les modules et leur passe ce que les autres ont rendu, sans rien calculer : il n'importe
+   pas le module de briques.
+3. **Ni l'API ni la couche application ne touchent la base**, elles passent par les
+   modules. Un module possède ses tables, dans son propre schéma, et ne lit jamais celles
+   d'un autre : il passe par l'interface de ce module, qui n'expose que le nécessaire. Un
+   module n'écrit que dans ses propres tables : une écriture qui traverse deux modules est
+   enchaînée par le geste, jamais par un module chez un autre. Les dépendances entre
+   modules sont des lectures, et vont dans un seul sens, le grand livre ne dépend d'aucun
+   autre module, et le graphe des dépendances autorisées est écrit à un seul endroit : y
+   ajouter une flèche est validé par un humain. Une dépendance que le graphe refuse ne se
+   contourne pas (donnée copiée, appel détourné) : elle signale d'abord un découpage à
+   revoir, que l'agent propose plutôt que d'ajouter la flèche. Le socle technique et le
+   noyau de briques, dont tout module peut dépendre, ne contiennent aucun métier.
 4. **La base ne porte que la structure** : types, NOT NULL, clés étrangères, unicité. Ni
    colonne générée, ni CHECK métier, ni fonction, ni trigger, ni vue : la logique vit dans
    le code, où elle est testée. Une migration ne se modifie plus une fois sur `main`.
-5. **Un calcul métier vit dans le module qui le possède**, sans entrée-sortie. Un calcul
-   métier produit un chiffre qui a un sens pour l'utilisateur (montant, total, net, taux,
-   solde, échéance) ; il ne se fait ni en base, ni côté client, ni dans une interface. Une
-   interface ne fait que de la présentation : trier, filtrer, mettre en page, mettre à
-   l'échelle un graphe.
+5. **Un calcul métier vit dans le module qui le possède**, sans entrée-sortie. Une notion
+   qui produit un chiffre ou une date (solde, net, total, échéance, période, jour courant)
+   n'a qu'une définition, que tous appellent. Un calcul métier produit un chiffre qui a un
+   sens pour l'utilisateur (montant, total, net, taux, solde, échéance) ; il ne se fait ni
+   en base, ni côté client, ni dans une interface. Une interface ne fait que de la
+   présentation : trier, filtrer, mettre en page, mettre à l'échelle un graphe.
 6. **Les règles d'entrée viennent du contrat** : ce qu'un schéma sait dire y est déclaré,
    ce qui dépend de l'état revient en code d'erreur nommé. Une interface n'invente aucune
    règle de validation.
 
 *Vérifié par* : un test qui compare les dépendances réelles des modules au graphe autorisé ; un rôle Postgres par module,
-qui n'a de droits que sur son schéma ; les règles d'import des interfaces ; le contrôle du
-catalogue Postgres après migration ; le refus en CI de toute migration existante modifiée ;
-la CI qui régénère le client et échoue s'il diffère ; les tests de contrat.
+qui n'a de droits que sur son schéma ; les règles d'import des interfaces (seul le
+contrat), de l'API (ni modules, ni briques) et de la couche application (ni briques, ni
+tables, ni HTTP) ; un contrôle qui compare les fichiers de la couche application aux
+entrées de l'inventaire, chacune exposée par une route et une seule ; le lint des interfaces, qui refuse l'horloge hors d'un fichier de présentation
+nommé et la conversion d'un montant reçu en nombre ; le contrôle du catalogue Postgres après
+migration ; le refus en CI de toute migration existante modifiée ; la CI qui régénère le
+client et échoue s'il diffère ; les tests de contrat ; la revue de code, qui refuse une
+seconde définition d'une notion là où aucun contrôle ne la voit.
 
 ## VIII. Deux interfaces, un même pouvoir
 
@@ -126,8 +152,11 @@ Chaque langage est configuré au plus strict. Pour TypeScript : `strict`,
 `noFallthroughCasesInSwitch`, et aucun `any`. Partout, un avertissement de lint est une
 erreur.
 
-*Vérifié par* : le contrôle CI des configurations, qui échoue si une option manque ; la règle
-de lint qui refuse `any` en erreur.
+*Vérifié par* : une configuration de base unique, que chaque projet étend sans redéfinir une
+option de rigueur ; le contrôle CI des configurations, qui tient la liste des options
+attendues et échoue sur toute configuration qui s'en écarte ; une raison exigée dans la PR
+pour toute modification de ces fichiers, jugée par la revue ; la règle de lint qui refuse
+`any` en erreur.
 
 ## X. Les tests disent le comportement
 
