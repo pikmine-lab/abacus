@@ -55,7 +55,8 @@ branche se nomme `<numéro de l'issue>-<slug>`, et sa PR close l'issue.
 
 **Lire une fonctionnalité** :
 
-- le corps de l'issue porte l'intention (Intention, Pourquoi, Cadre, Fin) ;
+- le corps de l'issue porte l'intention de départ (Intention, Pourquoi, Cadre, Fin) ;
+  quand une spec s'en écarte, la spec fait foi, sans corriger le corps ;
 - un commentaire de l'issue qui commence par `<!-- speckit-artifact: … -->` est un
   artefact (spec, plan…), et fait foi : le cache local, ignoré par git, n'en est qu'une
   copie reconstruite à chaque étape ; `assess/…` est la réflexion préalable, `bug/…` le
