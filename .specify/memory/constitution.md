@@ -105,8 +105,10 @@ compare les routes du contrat à celles qui portent une règle.
    enchaînée par le geste, jamais par un module chez un autre. Les dépendances entre
    modules sont des lectures, et vont dans un seul sens, le grand livre ne dépend d'aucun
    autre module, et le graphe des dépendances autorisées est écrit à un seul endroit : y
-   ajouter une flèche est validé par un humain. Le socle technique et le noyau de briques,
-   dont tout module peut dépendre, ne contiennent aucun métier.
+   ajouter une flèche est validé par un humain. Une dépendance que le graphe refuse ne se
+   contourne pas (donnée copiée, appel détourné) : elle signale d'abord un découpage à
+   revoir, que l'agent propose plutôt que d'ajouter la flèche. Le socle technique et le
+   noyau de briques, dont tout module peut dépendre, ne contiennent aucun métier.
 4. **La base ne porte que la structure** : types, NOT NULL, clés étrangères, unicité. Ni
    colonne générée, ni CHECK métier, ni fonction, ni trigger, ni vue : la logique vit dans
    le code, où elle est testée. Une migration ne se modifie plus une fois sur `main`.
