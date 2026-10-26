@@ -1,7 +1,7 @@
 /**
- * Loads provision/.env for local runs; in CI the secrets come from the vault
- * (vault.ts) and IMAGE_TAG from the job. The repository is public, so anything
- * naming a machine (DOKPLOY_URL first of all) stays out of it.
+ * Loads provision/.env for local runs. In CI every value comes from the vault
+ * (vault.ts) or from the job. Keep provision/.env out of git: it holds the same
+ * secrets the vault does.
  */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'

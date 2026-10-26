@@ -5,22 +5,20 @@
  *   node provision/src/provision.ts             # apply
  *
  * Inputs:
- *   DOKPLOY_URL, DOKPLOY_AUTH_TOKEN, DATABASE_URL, BETTER_AUTH_SECRET:
- *     provision/.env locally, the vault in CI (vault.ts, through the job's
- *     OIDC token and INFISICAL_IDENTITY_ID);
- *   IMAGE_TAG (immutable sha-… tag produced by the build job).
+ *   DOKPLOY_URL, DOKPLOY_AUTH_TOKEN and the secrets declared in specs.ts:
+ *     provision/.env locally, the vault in CI (vault.ts, through the job's OIDC
+ *     token and INFISICAL_IDENTITY_ID);
+ *   IMAGE_TAG: the immutable sha-… tag produced by the build job.
  *
  * Safe to re-run: every step reads the current state first and acts only on a
- * real difference. Nothing is ever deleted. The one-time database creation
- * (role + database + extensions on the shared instance) is not handled here:
- * it needs SSH, not the Dokploy API, and happens once per environment.
+ * real difference. Nothing is ever deleted. No value is ever printed.
  */
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { type ComposeRef, compose, domains, findEnvironment, type Project, projects } from './dokploy.ts'
 import { required } from './env.ts'
 import { SPEC } from './specs.ts'
-import { loadCiSecrets } from './vault.ts'
+import { loadSecrets } from './vault.ts'
 
 const ROOT = resolve(import.meta.dirname, '..', '..')
 const DRY_RUN = process.argv.slice(2).includes('--dry-run')
@@ -90,15 +88,13 @@ async function ensureDomains(composeId: string): Promise<boolean> {
   return changed
 }
 
-async function ensureCompose(refs: ComposeRef[], environmentId: string) {
+async function ensureCompose(refs: ComposeRef[], environmentId: string, secrets: Map<string, string>) {
   // Normalised to LF so a CRLF checkout never reads as drift.
   const wantedFile = readFileSync(join(ROOT, SPEC.composeFile), 'utf8').replace(/\r\n/g, '\n')
   const wantedEnv = [
     `IMAGE_TAG=${imageTag}`,
-    `DATABASE_URL=${required('DATABASE_URL')}`,
-    `BETTER_AUTH_SECRET=${required('BETTER_AUTH_SECRET')}`,
-    `PUBLIC_URL=${SPEC.publicUrl}`,
-    `MCP_URL=${SPEC.mcpUrl}`,
+    ...Object.entries(SPEC.env).map(([k, v]) => `${k}=${v}`),
+    ...SPEC.secrets.filter((x) => x.for !== 'ci').map((x) => `${x.name}=${secrets.get(x.name)}`),
   ].join('\n')
 
   const ref = refs.find((c) => c.name === SPEC.service)
@@ -171,7 +167,7 @@ async function ensureCompose(refs: ComposeRef[], environmentId: string) {
   same(`compose ${SPEC.service} (${status}, ${imageTag})`)
 }
 
-await loadCiSecrets()
+const secrets = await loadSecrets()
 
 console.log(DRY_RUN ? 'Plan (nothing will be changed)' : 'Provisioning')
 console.log(`\n${SPEC.project}`)
@@ -179,7 +175,7 @@ console.log(`\n${SPEC.project}`)
 const project = await ensureProject()
 if (project) {
   const env = findEnvironment(project)
-  await ensureCompose(env.compose ?? [], env.environmentId)
+  await ensureCompose(env.compose ?? [], env.environmentId, secrets)
 } else {
   planned(`compose ${SPEC.service}`, 'create')
 }

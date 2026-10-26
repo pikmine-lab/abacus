@@ -15,7 +15,7 @@ fraîchement construit.
 - **Stack** : `deploy/docker-compose.yml`, projet Dokploy `abacus`, réseau
   `dokploy-network`, domaines `abacus.payangar.dev` (web) et `abacus-mcp.payangar.dev`
   (MCP), TLS Let's Encrypt via Traefik. Base et rôle `abacus` sur le Postgres partagé du
-  socle, créés une fois hors provisionneur.
+  socle, déclarés dans `APPS` de `vendors/infra` et créés par son provisionneur.
 - **Sauvegardes** : la base de production est sauvegardée par le socle, chaque jour et
   chaque semaine ; leur déclaration est dans `vendors/infra`.
 
@@ -29,7 +29,8 @@ topologie serveur ici.
   `INFISICAL_IDENTITY_ID`. Cette identité n'accepte qu'un jeton signé pour `main` de ce
   dépôt : le job ne déclare donc pas d'`environment`, qui changerait le sujet du jeton.
 - Il lit `DOKPLOY_URL` et `DOKPLOY_TOKEN` dans le projet `ci`, dossier `/apps`, puis
-  `DATABASE_URL` et `BETTER_AUTH_SECRET` dans le projet `abacus`. Une variable qui n'est
+  les secrets de `SPEC.secrets` dans le projet `abacus` : `/infra` pour ce que le socle
+  écrit et tient à jour (`DATABASE_URL`), `/app` pour ceux d'abacus. Une variable qui n'est
   pas secrète reste dans le provisionneur (`SPEC`).
 - Variables des conteneurs : `DATABASE_URL`, `PUBLIC_URL`, `BETTER_AUTH_SECRET`
   (obligatoire en production, sinon crash à la première requête), `PORT` (MCP), `MCP_URL`

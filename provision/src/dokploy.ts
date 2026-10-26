@@ -1,8 +1,8 @@
 /**
- * Minimal typed adapter over the Dokploy REST API, trimmed to what abacus
- * needs: a project, one compose service, and its domains.
+ * Minimal typed adapter over the Dokploy REST API: a project, one compose
+ * service, its environment and its domains.
  *
- * Hard-won details from the infra repository, still true on v0.29.x:
+ * Details that hold on the Dokploy version the platform runs:
  *   - The auth header is `x-api-key`; `Authorization: Bearer` answers 401.
  *   - No OpenAPI spec is served, but validation errors return Zod issues that
  *     name the offending fields.
@@ -11,33 +11,20 @@
  *   - A fresh compose is created as sourceType "github" with an empty file; it
  *     has to be updated to "raw" with the YAML inline before it can deploy.
  *   - Deployments are asynchronous: the call returns "queued", not a result.
- *   - `domain.byComposeId` nests the whole compose object, env included: never
- *     log such a response as-is.
+ *   - Some responses nest the whole compose object, environment included:
+ *     never log a response as-is.
  */
-import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { optional, required } from './env.ts'
-
-const TOKEN_FILE = join(homedir(), '.config', 'dokploy', 'token')
+import { required } from './env.ts'
 
 // Resolved on the first call, not at import: in CI both come from the vault,
-// read after this module is loaded.
+// read after this module is loaded. Locally, provision/.env provides them.
 let credentials: { base: string; token: string } | undefined
 
 function connection(): { base: string; token: string } {
-  if (credentials) return credentials
-  // Public repository: the control-plane address never appears in it.
-  const base = required('DOKPLOY_URL').replace(/\/+$/, '')
-  let token = optional('DOKPLOY_AUTH_TOKEN')
-  if (!token) {
-    try {
-      token = readFileSync(TOKEN_FILE, 'utf8').trim()
-    } catch {
-      throw new Error(`No Dokploy token. Set DOKPLOY_AUTH_TOKEN or write it to ${TOKEN_FILE}`)
-    }
+  credentials ??= {
+    base: required('DOKPLOY_URL').replace(/\/+$/, ''),
+    token: required('DOKPLOY_AUTH_TOKEN'),
   }
-  credentials = { base, token }
   return credentials
 }
 
